@@ -1,6 +1,9 @@
 export interface SubscriptionFeatures {
-  communications: boolean; // Forums/Discussions
-  advancedAnalytics: boolean;
+  communications: boolean; // Forums/Discussions/Chat
+  advancedAnalytics: boolean; // SaaS Telemetry
+  billing: boolean; // Fee Management
+  quizzes: boolean; // Online Exams
+  auditLogs: boolean; // Global Audit Logs
 }
 
 export interface SubscriptionLimits {
@@ -18,6 +21,9 @@ export const subscriptionPlans: Record<string, SubscriptionConfig> = {
     features: {
       communications: false,
       advancedAnalytics: false,
+      billing: false,
+      quizzes: false,
+      auditLogs: false,
     },
     limits: {
       maxStudents: 50,
@@ -28,6 +34,9 @@ export const subscriptionPlans: Record<string, SubscriptionConfig> = {
     features: {
       communications: true,
       advancedAnalytics: false,
+      billing: false,
+      quizzes: true,
+      auditLogs: false,
     },
     limits: {
       maxStudents: 500,
@@ -37,7 +46,10 @@ export const subscriptionPlans: Record<string, SubscriptionConfig> = {
   pro: {
     features: {
       communications: true,
-      advancedAnalytics: true,
+      advancedAnalytics: false,
+      billing: true,
+      quizzes: true,
+      auditLogs: true,
     },
     limits: {
       maxStudents: 2500,
@@ -48,6 +60,9 @@ export const subscriptionPlans: Record<string, SubscriptionConfig> = {
     features: {
       communications: true,
       advancedAnalytics: true,
+      billing: true,
+      quizzes: true,
+      auditLogs: true,
     },
     limits: {
       maxStudents: 9999999, // practically unlimited

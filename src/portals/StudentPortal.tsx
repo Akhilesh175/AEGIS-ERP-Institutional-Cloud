@@ -11,10 +11,14 @@ import {
   Calendar, Clock, BookOpen, PenTool, Award, Download, 
   ExternalLink, UploadCloud, MessageCircle, DollarSign, PlayCircle 
 } from 'lucide-react';
+import PremiumLock from '../components/PremiumLock';
+import { subscriptionPlans } from '../services/subscriptionConfig';
 
 export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const { session } = useStore();
   const studentId = session?.studentId;
+  const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
+  const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
 
   // General States
   const [timetable, setTimetable] = useState<Timetable[]>([]);
@@ -485,7 +489,12 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       )}
 
       {activeTab === 'quizzes' && (
-        <div className="space-y-6 animate-fade-in">
+        <PremiumLock 
+          isLocked={!plan.features.quizzes} 
+          requiredTier="Basic" 
+          featureName="Quizzes & Online Tests"
+        >
+          <div className="space-y-6 animate-fade-in">
           
           {/* Active Quiz player frame */}
           {activeQuiz ? (
@@ -586,6 +595,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
             </GlassCard>
           )}
         </div>
+        </PremiumLock>
       )}
 
       {activeTab === 'grades' && (
@@ -633,128 +643,134 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       )}
 
       {activeTab === 'forums' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
-          
-          {/* Create Post and list posts */}
-          <div className="lg:col-span-2 space-y-6">
-            {selectedPost ? (
-              <GlassCard className="space-y-6">
-                <button 
-                  onClick={() => setSelectedPost(null)}
-                  className="text-xs text-brand-400 hover:text-brand-300 font-semibold"
-                >
-                  &larr; Back to discussion catalog
-                </button>
-                
-                <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl space-y-3">
-                  <h4 className="font-bold text-slate-100 text-base">{selectedPost.title}</h4>
-                  <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{selectedPost.content}</p>
-                  <p className="text-[10px] text-slate-500">Posted by: {selectedPost.authorName}</p>
-                </div>
+        <PremiumLock 
+          isLocked={!plan.features.communications} 
+          requiredTier="Basic" 
+          featureName="Discussions & Forums"
+        >
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+            
+            {/* Create Post and list posts */}
+            <div className="lg:col-span-2 space-y-6">
+              {selectedPost ? (
+                <GlassCard className="space-y-6">
+                  <button 
+                    onClick={() => setSelectedPost(null)}
+                    className="text-xs text-brand-400 hover:text-brand-300 font-semibold"
+                  >
+                    &larr; Back to discussion catalog
+                  </button>
+                  
+                  <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl space-y-3">
+                    <h4 className="font-bold text-slate-100 text-base">{selectedPost.title}</h4>
+                    <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{selectedPost.content}</p>
+                    <p className="text-[10px] text-slate-500">Posted by: {selectedPost.authorName}</p>
+                  </div>
 
-                <div className="space-y-4">
-                  <h5 className="font-semibold text-slate-200 text-xs">Activity replies</h5>
-                  <div className="space-y-3 max-h-72 overflow-y-auto">
-                    {postReplies.length === 0 ? (
-                      <div className="text-center py-6 text-slate-500 text-xs">No responses posted yet. Be the first to reply!</div>
-                    ) : (
-                      postReplies.map(r => (
-                        <div key={r.id} className="p-3 bg-slate-900/20 border border-slate-850 rounded-xl space-y-1">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="font-semibold text-slate-200 text-xs">{r.authorName}</span>
-                            <span className="text-[9px] uppercase tracking-wider text-slate-500">{r.authorRole}</span>
+                  <div className="space-y-4">
+                    <h5 className="font-semibold text-slate-200 text-xs">Activity replies</h5>
+                    <div className="space-y-3 max-h-72 overflow-y-auto">
+                      {postReplies.length === 0 ? (
+                        <div className="text-center py-6 text-slate-500 text-xs">No responses posted yet. Be the first to reply!</div>
+                      ) : (
+                        postReplies.map(r => (
+                          <div key={r.id} className="p-3 bg-slate-900/20 border border-slate-850 rounded-xl space-y-1">
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="font-semibold text-slate-200 text-xs">{r.authorName}</span>
+                              <span className="text-[9px] uppercase tracking-wider text-slate-500">{r.authorRole}</span>
+                            </div>
+                            <p className="text-xs text-slate-300 leading-relaxed">{r.content}</p>
                           </div>
-                          <p className="text-xs text-slate-300 leading-relaxed">{r.content}</p>
+                        ))
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Forum response creator */}
+                  <form onSubmit={handleForumReplySubmit} className="space-y-3">
+                    <textarea 
+                      placeholder="Write a constructive response..."
+                      rows={3}
+                      value={replyText}
+                      onChange={(e) => setReplyText(e.target.value)}
+                      className="w-full bg-slate-900/50 border border-slate-800 text-xs text-slate-100 rounded-xl p-3 focus:outline-none focus:border-brand-500 transition-colors"
+                      required
+                    />
+                    <button type="submit" className="glass-btn-primary text-xs">
+                      Publish Reply
+                    </button>
+                  </form>
+                </GlassCard>
+              ) : (
+                // List posts
+                <GlassCard className="space-y-6">
+                  <h3 className="font-bold text-slate-100 pb-3 border-b border-slate-850">Homeroom Classroom Forums</h3>
+                  <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                    {forumPosts.length === 0 ? (
+                      <div className="text-center py-12 text-slate-500 text-xs">No active discussions.</div>
+                    ) : (
+                      forumPosts.map(p => (
+                        <div 
+                          key={p.id}
+                          onClick={() => handleSelectPost(p)}
+                          className="p-4 bg-slate-900/30 border border-slate-850 hover:border-slate-800 rounded-2xl cursor-pointer transition-all"
+                        >
+                          <div className="flex items-center justify-between mb-1.5">
+                            <span className="text-[9px] font-bold text-brand-400 uppercase tracking-widest">{p.categoryName}</span>
+                            <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                              <MessageCircle size={10} />
+                              {p.repliesCount} replies
+                            </span>
+                          </div>
+                          <h4 className="font-bold text-slate-200 text-sm truncate">{p.title}</h4>
+                          <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">{p.content}</p>
+                          <div className="mt-3 flex items-center justify-between text-[10px] text-slate-500">
+                            <span>By: {p.authorName}</span>
+                            <span>{new Date(p.createdAt).toLocaleDateString()}</span>
+                          </div>
                         </div>
                       ))
                     )}
                   </div>
-                </div>
+                </GlassCard>
+              )}
+            </div>
 
-                {/* Forum response creator */}
-                <form onSubmit={handleForumReplySubmit} className="space-y-3">
-                  <textarea 
-                    placeholder="Write a constructive response..."
-                    rows={3}
-                    value={replyText}
-                    onChange={(e) => setReplyText(e.target.value)}
-                    className="w-full bg-slate-900/50 border border-slate-800 text-xs text-slate-100 rounded-xl p-3 focus:outline-none focus:border-brand-500 transition-colors"
-                    required
-                  />
-                  <button type="submit" className="glass-btn-primary text-xs">
-                    Publish Reply
+            {/* Create Post Form */}
+            <div className="space-y-6">
+              <GlassCard className="space-y-4">
+                <h3 className="font-bold text-slate-200 text-sm">Start New Discussion Thread</h3>
+                <form onSubmit={handleCreateForumPost} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Post Title</label>
+                    <input 
+                      type="text"
+                      placeholder="e.g. Help with Vector calculus question 4"
+                      value={postTitle}
+                      onChange={(e) => setPostTitle(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                      required
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Thread Context</label>
+                    <textarea 
+                      placeholder="Explain your queries or share thoughts clearly..."
+                      rows={4}
+                      value={postContent}
+                      onChange={(e) => setPostContent(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                      required
+                    />
+                  </div>
+                  <button type="submit" className="w-full glass-btn-primary text-xs">
+                    Create Thread
                   </button>
                 </form>
               </GlassCard>
-            ) : (
-              // List posts
-              <GlassCard className="space-y-6">
-                <h3 className="font-bold text-slate-100 pb-3 border-b border-slate-850">Homeroom Classroom Forums</h3>
-                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
-                  {forumPosts.length === 0 ? (
-                    <div className="text-center py-12 text-slate-500 text-xs">No active discussions.</div>
-                  ) : (
-                    forumPosts.map(p => (
-                      <div 
-                        key={p.id}
-                        onClick={() => handleSelectPost(p)}
-                        className="p-4 bg-slate-900/30 border border-slate-850 hover:border-slate-800 rounded-2xl cursor-pointer transition-all"
-                      >
-                        <div className="flex items-center justify-between mb-1.5">
-                          <span className="text-[9px] font-bold text-brand-400 uppercase tracking-widest">{p.categoryName}</span>
-                          <span className="text-[10px] text-slate-500 flex items-center gap-1">
-                            <MessageCircle size={10} />
-                            {p.repliesCount} replies
-                          </span>
-                        </div>
-                        <h4 className="font-bold text-slate-200 text-sm truncate">{p.title}</h4>
-                        <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">{p.content}</p>
-                        <div className="mt-3 flex items-center justify-between text-[10px] text-slate-500">
-                          <span>By: {p.authorName}</span>
-                          <span>{new Date(p.createdAt).toLocaleDateString()}</span>
-                        </div>
-                      </div>
-                    ))
-                  )}
-                </div>
-              </GlassCard>
-            )}
+            </div>
           </div>
-
-          {/* Create Post Form */}
-          <div className="space-y-6">
-            <GlassCard className="space-y-4">
-              <h3 className="font-bold text-slate-200 text-sm">Start New Discussion Thread</h3>
-              <form onSubmit={handleCreateForumPost} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Post Title</label>
-                  <input 
-                    type="text"
-                    placeholder="e.g. Help with Vector calculus question 4"
-                    value={postTitle}
-                    onChange={(e) => setPostTitle(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Thread Context</label>
-                  <textarea 
-                    placeholder="Explain your queries or share thoughts clearly..."
-                    rows={4}
-                    value={postContent}
-                    onChange={(e) => setPostContent(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
-                    required
-                  />
-                </div>
-                <button type="submit" className="w-full glass-btn-primary text-xs">
-                  Create Thread
-                </button>
-              </form>
-            </GlassCard>
-          </div>
-        </div>
+        </PremiumLock>
       )}
 
       {/* Assignment Upload Drawer Overlay */}

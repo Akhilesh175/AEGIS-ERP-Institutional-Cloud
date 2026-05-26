@@ -6,6 +6,7 @@ import {
   Notification, AuditLog, StudyMaterial, ExamSchedule, 
   TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply
 } from '../types';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans } from './subscriptionConfig';
 
 // Helper to simulate network latency
@@ -20,6 +21,7 @@ export interface AuthSession {
   studentId?: string; // Cache primary id
   teacherId?: string;
   parentId?: string;
+  schoolSubscriptionPlan?: string;
 }
 
 export const getAdminSchoolId = (): string => {
@@ -44,26 +46,91 @@ export const mockApi = {
   // ==========================================
   
   async login(email: string, password_hash: string): Promise<AuthSession> {
-    await delay(600);
-    // --- FALLBACK TO LOCAL MOCK DB ---
-    const user = mockDb.users.find(u => u.email.toLowerCase() === email.toLowerCase());
-    if (!user) {
-      mockDb.addLog(null, 'LOGIN_FAILED', { email, reason: 'User not found' });
-      throw new Error('Invalid email or password');
+    // 1. Authenticate with Supabase Auth
+    const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
+      email: email,
+      password: password_hash
+    });
+
+    if (authError || !authData.user) {
+      mockDb.addLog(null, 'LOGIN_FAILED', { email, reason: authError?.message || 'Authentication failed' });
+      throw new Error(authError?.message || 'Invalid email or password');
     }
 
-    // Verify secure password
-    if (user.password && password_hash !== user.password) {
-      mockDb.addLog(user.id, 'LOGIN_FAILED', { email, reason: 'Incorrect password key' });
-      throw new Error('Invalid email or password');
+    // 2. Fetch user profile from public.users table
+    // For superadmin (school_id is null), standard RLS policies prevent selecting from users.
+    // Therefore, we must use the supabaseAdmin client strictly for Super Admin profiles.
+    let userProfile = null;
+    let profileError = null;
+
+    if (email === 'superadmin@aegis.com') {
+      const { data, error } = await supabaseAdmin
+        .from('users')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+      userProfile = data;
+      profileError = error;
+    } else {
+      const { data, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', authData.user.id)
+        .single();
+      userProfile = data;
+      profileError = error;
     }
 
-    if (!user.isActive) {
-      mockDb.addLog(user.id, 'LOGIN_BLOCKED', { email });
+    if (profileError || !userProfile) {
+      // In a real scenario, this shouldn't happen unless the database is out of sync.
+      // But because this is a partial connection, we'll check if it's the superadmin and mock their session if their profile is missing.
+      if (email === 'superadmin@aegis.com') {
+         // --- AUTO-SEED MECHANISM ---
+         // 1. Create auth user bypassing RLS
+         let superAdminId = authData.user.id;
+         
+         // 2. Ensure profile exists in users table bypassing RLS
+         const { error: seedError } = await supabaseAdmin.from('users').upsert({
+           id: superAdminId,
+           email: email,
+           role: 'SUPER_ADMIN',
+           first_name: 'Super',
+           last_name: 'Admin',
+           is_active: true
+         });
+         
+         if (seedError) throw new Error('Failed to auto-seed superadmin profile: ' + seedError.message);
+         
+         // Re-fetch profile using admin client
+         const { data: refetchedProfile } = await supabaseAdmin.from('users').select('*').eq('id', superAdminId).single();
+         if (refetchedProfile) userProfile = refetchedProfile;
+         else throw new Error('Failed to retrieve auto-seeded profile.');
+      } else {
+        throw new Error('User profile not found in database. Ensure you created the user record.');
+      }
+    }
+
+    if (!userProfile.is_active) {
+      mockDb.addLog(userProfile.id, 'LOGIN_BLOCKED', { email });
       throw new Error('Account deactivated. Please contact administration.');
     }
 
-    // Determine sub-entity IDs
+    // Map database profile to frontend User object
+    const user: User = {
+      id: userProfile.id,
+      email: userProfile.email,
+      role: userProfile.role,
+      firstName: userProfile.first_name,
+      lastName: userProfile.last_name,
+      phone: userProfile.phone || '',
+      avatarUrl: userProfile.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+      isActive: userProfile.is_active,
+      schoolId: userProfile.school_id,
+      createdAt: userProfile.created_at || new Date().toISOString(),
+      updatedAt: userProfile.created_at || new Date().toISOString()
+    };
+
+    // Determine sub-entity IDs for the mock DB if needed
     let studentId: string | undefined;
     let teacherId: string | undefined;
     let parentId: string | undefined;
@@ -79,12 +146,15 @@ export const mockApi = {
       parentId = pr?.id;
     }
 
+    const school = mockDb.schools.find(s => s.id === user.schoolId);
+
     const session: AuthSession = {
       user,
-      token: 'jwt-mock-token-' + Math.random().toString(36).substring(7),
+      token: authData.session?.access_token || 'jwt-mock-token-' + Math.random().toString(36).substring(7),
       studentId,
       teacherId,
-      parentId
+      parentId,
+      schoolSubscriptionPlan: school?.subscriptionPlan || 'enterprise'
     };
 
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -685,7 +755,11 @@ export const mockApi = {
 
   async adminCreateStudent(adminId: string, email: string, firstName: string, lastName: string, classId: string, admissionNumber: string, rollNumber: number, gender: 'MALE' | 'FEMALE' | 'OTHER', dob: string): Promise<void> {
     await delay(600);
-    const schoolId = getAdminSchoolId();
+    const admin = mockDb.users.find(u => u.id === adminId);
+    if (!admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+
+    const schoolId = admin.schoolId;
+    if (!schoolId) throw new Error('Admin has no associated school');
 
     // Check limits
     const school = mockDb.schools.find(s => s.id === schoolId);
@@ -928,9 +1002,13 @@ export const mockApi = {
     mockDb.saveAll();
   },
 
-  async adminCreateTeacher(adminId: string, email: string, firstName: string, lastName: string, employeeId: string, specialization: string, qualification: string, phone: string): Promise<void> {
+  async adminCreateTeacher(adminId: string, email: string, firstName: string, lastName: string, employeeId: string, qualification: string, specialization: string, phone: string): Promise<void> {
     await delay(600);
-    const schoolId = getAdminSchoolId();
+    const admin = mockDb.users.find(u => u.id === adminId);
+    if (!admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+
+    const schoolId = admin.schoolId;
+    if (!schoolId) throw new Error('Admin has no associated school');
 
     // Check limits
     const school = mockDb.schools.find(s => s.id === schoolId);
@@ -947,7 +1025,7 @@ export const mockApi = {
       role: 'TEACHER',
       firstName,
       lastName,
-      phone,
+      phone: '',
       avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
       isActive: true,
       schoolId,
@@ -1094,6 +1172,15 @@ export const mockApi = {
     }
 
     const schoolId = teacher.schoolId;
+
+    // Check limits
+    const school = mockDb.schools.find(s => s.id === schoolId);
+    if (!school) throw new Error('School not found.');
+    const plan = subscriptionPlans[school.subscriptionPlan] || subscriptionPlans.freemium;
+    const currentStudentsCount = mockDb.students.filter(s => s.schoolId === schoolId).length;
+    if (currentStudentsCount >= plan.limits.maxStudents) {
+      throw new Error(`Registration failed: Your ${school.subscriptionPlan} plan is limited to ${plan.limits.maxStudents} students. Please upgrade your subscription.`);
+    }
 
     const user: User = {
       id: 'u-' + Math.random().toString(36).substr(2, 9),
@@ -1244,127 +1331,133 @@ export const mockApi = {
   // ==========================================
 
   async superAdminGetStats(superAdminId: string) {
-    await delay(700);
+    await delay(200);
 
-    // Multi-tenant institution telemetry
-    const revenue = mockDb.feePayments.filter(p => p.status === 'PAID').reduce((acc, p) => acc + p.amountPaid, 0);
+    // Fetch live data from Supabase bypassing RLS using the admin client for Super Admin dashboard visibility
+    const { count: schoolCount } = await supabaseAdmin.from('schools').select('*', { count: 'exact', head: true });
+    const { count: userCount } = await supabaseAdmin.from('users').select('*', { count: 'exact', head: true });
+    const { data: schoolsData } = await supabaseAdmin.from('schools').select('*');
+    const { data: adminsData } = await supabaseAdmin.from('users').select('*').eq('role', 'ADMIN');
+
+    const mappedSchools = (schoolsData || []).map(s => ({
+      id: s.id,
+      name: s.name,
+      address: s.address,
+      phone: s.phone,
+      subscriptionPlan: s.subscription_plan,
+      createdAt: s.created_at
+    }));
+
+    const mappedAdmins = (adminsData || []).map(a => ({
+      id: a.id,
+      email: a.email,
+      firstName: a.first_name,
+      lastName: a.last_name,
+      phone: a.phone,
+      schoolId: a.school_id,
+      role: a.role,
+      isActive: a.is_active
+    }));
 
     return {
-      totalSchools: mockDb.schools.length,
-      totalUsers: mockDb.users.length,
-      totalSubscriptionsIncome: revenue * 0.12, // SaaS takes 12% cut of fee processing
+      totalSchools: schoolCount || 0,
+      totalUsers: userCount || 0,
+      totalSubscriptionsIncome: 0, 
       activeSessions: getSystemTelemetry().activeSessions,
       systemTelemetry: getSystemTelemetry(),
-      schoolsList: mockDb.schools
+      schoolsList: mappedSchools,
+      adminsList: mappedAdmins
     };
   },
 
   async superAdminGetAuditLogs(superAdminId: string, query = ''): Promise<(AuditLog & { userName: string; userEmail: string })[]> {
-    await delay();
-    let logs = [...mockDb.auditLogs];
-
+    await delay(300);
+    // Left as mockDb for now until audit logs are moved to Supabase
+    let filtered = [...mockDb.auditLogs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    
     if (query) {
-      const q = query.toLowerCase();
-      logs = logs.filter(l => 
-        l.action.toLowerCase().includes(q) || 
-        JSON.stringify(l.details || {}).toLowerCase().includes(q)
+      filtered = filtered.filter(log => 
+        log.action.toLowerCase().includes(query.toLowerCase()) || 
+        log.userId?.toLowerCase().includes(query.toLowerCase())
       );
     }
 
-    return logs.map(l => {
-      const u = l.userId ? mockDb.users.find(usr => usr.id === l.userId) : null;
+    return filtered.map(log => {
+      const u = mockDb.users.find(x => x.id === log.userId);
       return {
-        ...l,
-        userName: u ? `${u.firstName} ${u.lastName}` : 'Anonymous System',
-        userEmail: u ? u.email : 'system@aegis.com'
+        ...log,
+        userName: u ? `${u.firstName} ${u.lastName}` : 'System',
+        userEmail: u?.email || 'system@aegis.com'
       };
     });
   },
 
   async superAdminCreateSchool(superAdminId: string, name: string, address: string, phone: string, subscription: string): Promise<School> {
-    await delay(600);
-
-    const school: School = {
-      id: 'school-' + Math.random().toString(36).substr(2, 9),
+    const { data, error } = await supabaseAdmin.from('schools').insert({
       name,
       address,
       phone,
-      subscriptionPlan: subscription as any,
-      createdAt: new Date().toISOString()
-    };
+      subscription_plan: subscription
+    }).select().single();
 
-    mockDb.schools.push(school);
-    mockDb.addLog(superAdminId, 'CREATE_SCHOOL', { name, subscription });
-    mockDb.saveAll();
-    return school;
+    if (error || !data) throw new Error('Failed to create school in database: ' + (error?.message || 'Unknown error'));
+
+    return {
+      id: data.id,
+      name: data.name,
+      address: data.address,
+      phone: data.phone,
+      subscriptionPlan: data.subscription_plan as any,
+      createdAt: data.created_at
+    };
   },
 
   async superAdminCreateAdmin(superAdminId: string, email: string, firstName: string, lastName: string, schoolId: string, phone: string): Promise<void> {
-    await delay(600);
-    const user: User = {
-      id: 'u-' + Math.random().toString(36).substr(2, 9),
+    // 1. Create auth user
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: 'password', // Default password
+      email_confirm: true
+    });
+
+    if (authError || !authData.user) throw new Error('Failed to create admin auth user: ' + (authError?.message || 'Unknown error'));
+
+    // 2. Insert into users table
+    const { error: dbError } = await supabaseAdmin.from('users').insert({
+      id: authData.user.id,
       email,
       role: 'ADMIN',
-      firstName,
-      lastName,
+      first_name: firstName,
+      last_name: lastName,
       phone,
-      avatarUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150',
-      isActive: true,
-      schoolId,
-      password: 'password', // Default password
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    mockDb.users.push(user);
-    mockDb.addLog(superAdminId, 'CREATE_ADMIN', { adminName: `${firstName} ${lastName}`, email, schoolId });
-    mockDb.saveAll();
+      school_id: schoolId,
+      is_active: true
+    });
+
+    if (dbError) {
+      await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+      throw new Error('Failed to create admin user profile: ' + dbError.message);
+    }
   },
 
   async superAdminDeleteSchool(superAdminId: string, schoolId: string): Promise<void> {
-    await delay(500);
-    const index = mockDb.schools.findIndex(s => s.id === schoolId);
-    if (index === -1) throw new Error('School not found');
-    
-    const school = mockDb.schools[index];
-    mockDb.schools.splice(index, 1);
-    mockDb.users = mockDb.users.filter(u => u.schoolId !== schoolId);
-
-    mockDb.addLog(superAdminId, 'DELETE_SCHOOL', { schoolName: school.name, schoolId });
-    mockDb.saveAll();
+    const { error } = await supabaseAdmin.from('schools').delete().eq('id', schoolId);
+    if (error) throw new Error('Failed to delete school: ' + error.message);
   },
 
   async superAdminUpdateSchoolSubscription(superAdminId: string, schoolId: string, subscriptionPlan: string): Promise<void> {
-    await delay(500);
-    const index = mockDb.schools.findIndex(s => s.id === schoolId);
-    if (index === -1) throw new Error('School not found');
-    
-    mockDb.schools[index].subscriptionPlan = subscriptionPlan as any;
-    
-    mockDb.addLog(superAdminId, 'UPDATE_SCHOOL_SUBSCRIPTION', { schoolId, newPlan: subscriptionPlan });
-    mockDb.saveAll();
+    const { error } = await supabaseAdmin.from('schools').update({ subscription_plan: subscriptionPlan }).eq('id', schoolId);
+    if (error) throw new Error('Failed to update school subscription: ' + error.message);
   },
 
   async superAdminDeleteAdmin(superAdminId: string, adminUserId: string): Promise<void> {
-    await delay(500);
-    const index = mockDb.users.findIndex(u => u.id === adminUserId && u.role === 'ADMIN');
-    if (index === -1) throw new Error('Admin not found');
-    
-    const adminUser = mockDb.users[index];
-    mockDb.users.splice(index, 1);
-    mockDb.addLog(superAdminId, 'DELETE_ADMIN', { email: adminUser.email });
-    mockDb.saveAll();
+    const { error } = await supabaseAdmin.auth.admin.deleteUser(adminUserId);
+    if (error) throw new Error('Failed to delete admin: ' + error.message);
   },
 
   async superAdminResetPassword(superAdminId: string, targetUserId: string, newPasswordPlain: string): Promise<void> {
-    await delay(500);
-    const target = mockDb.users.find(u => u.id === targetUserId);
-    if (!target) throw new Error('User not found');
-    
-    target.password = newPasswordPlain;
-    target.updatedAt = new Date().toISOString();
-    
-    mockDb.addLog(superAdminId, 'RESET_PASSWORD_GLOBAL', { targetEmail: target.email, targetRole: target.role });
-    mockDb.saveAll();
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, { password: newPasswordPlain });
+    if (error) throw new Error('Failed to reset password: ' + error.message);
   },
 
   async adminResetPassword(adminId: string, targetUserId: string, newPasswordPlain: string): Promise<void> {

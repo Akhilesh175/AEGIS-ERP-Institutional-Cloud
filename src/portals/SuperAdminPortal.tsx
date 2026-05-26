@@ -425,16 +425,10 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-850">
-                  {mockDb.users
-                    .filter(u => u.role === 'ADMIN')
-                    .map((usr: User) => {
-                      const getSchoolName = (email: string) => {
-                        const log = mockDb.auditLogs.find(
-                          l => l.action === 'CREATE_ADMIN' && l.details?.email?.toLowerCase() === email.toLowerCase()
-                        );
-                        const schoolId = log?.details?.schoolId || 'school-1';
-                        const school = stats?.schoolsList?.find((s: any) => s.id === schoolId) || mockDb.schools.find(s => s.id === schoolId);
-                        return school ? school.name : 'Aegis Academy of Excellence';
+                  {stats?.adminsList?.map((usr: User) => {
+                      const getSchoolName = (schoolId: string) => {
+                        const school = stats?.schoolsList?.find((s: any) => s.id === schoolId);
+                        return school ? school.name : 'Unknown Institution';
                       };
 
                       return (
@@ -442,7 +436,7 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                           <td className="py-3 px-4 font-semibold">{usr.firstName} {usr.lastName}</td>
                           <td className="py-3 px-4 font-mono text-slate-300">{usr.email}</td>
                           <td className="py-3 px-4 text-slate-400 font-mono">{usr.phone || 'N/A'}</td>
-                          <td className="py-3 px-4 text-brand-400 font-bold uppercase tracking-wider">{getSchoolName(usr.email)}</td>
+                          <td className="py-3 px-4 text-brand-400 font-bold uppercase tracking-wider">{getSchoolName(usr.schoolId!)}</td>
                           <td className="py-3 px-4">
                             <span className="bg-green-500/10 border border-green-500/20 text-green-400 font-bold px-2 py-0.5 rounded text-[10px] uppercase font-mono tracking-wider">
                               SECURE SESSION

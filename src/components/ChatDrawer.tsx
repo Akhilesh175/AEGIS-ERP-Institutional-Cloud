@@ -4,6 +4,8 @@ import { mockApi } from '../services/mockApi';
 import { ChatMessage, User } from '../types';
 import { MessageSquare, Send, X, ArrowLeft } from 'lucide-react';
 import { GlassCard } from './GlassCard';
+import PremiumLock from './PremiumLock';
+import { subscriptionPlans } from '../services/subscriptionConfig';
 
 interface ChatDrawerProps {
   isOpen: boolean;
@@ -12,6 +14,9 @@ interface ChatDrawerProps {
 
 export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
   const { session } = useStore();
+  const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
+  const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
+
   const [contacts, setContacts] = useState<(User & { lastMessage?: string; unreadCount: number })[]>([]);
   const [activeContact, setActiveContact] = useState<User | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -138,7 +143,12 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
 
         {/* Messaging Container */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          {!activeContact ? (
+          <PremiumLock 
+            isLocked={!plan.features.communications} 
+            requiredTier="Basic" 
+            featureName="Direct Messaging"
+          >
+            {!activeContact ? (
             // Contact list
             contacts.length === 0 ? (
               <div className="text-center py-12 text-slate-500 text-sm">No active channels found.</div>
@@ -221,6 +231,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
               </form>
             </div>
           )}
+          </PremiumLock>
         </div>
       </div>
     </div>

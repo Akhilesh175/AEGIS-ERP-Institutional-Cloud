@@ -8,10 +8,14 @@ import {
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
   Eye, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown
 } from 'lucide-react';
+import PremiumLock from '../components/PremiumLock';
+import { subscriptionPlans } from '../services/subscriptionConfig';
 
 export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const { session, setSession } = useStore();
   const adminId = session?.user.id;
+  const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
+  const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
 
   // Datasets
   const [overview, setOverview] = useState<any | null>(null);
@@ -900,12 +904,18 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       )}
 
       {activeTab === 'fees' && (
-        <GlassCard className="space-y-6">
-          <h3 className="font-bold text-slate-100 pb-3 border-b border-slate-850">Institutional Finance Ledger</h3>
-          <p className="text-xs text-slate-400">
-            For advanced institutional billing reports, please access your head admin payment drawer. In this version, manual collections are fully managed. Click custom mapping links above to tie student billing structures.
-          </p>
-        </GlassCard>
+        <PremiumLock 
+          isLocked={!plan.features.billing} 
+          requiredTier="Pro" 
+          featureName="Billing & Invoicing"
+        >
+          <GlassCard className="space-y-6">
+            <h3 className="font-bold text-slate-100 pb-3 border-b border-slate-850">Institutional Finance Ledger</h3>
+            <p className="text-xs text-slate-400">
+              For advanced institutional billing reports, please access your head admin payment drawer. In this version, manual collections are fully managed. Click custom mapping links above to tie student billing structures.
+            </p>
+          </GlassCard>
+        </PremiumLock>
       )}
 
       {/* Register Student Drawer overlay */}
