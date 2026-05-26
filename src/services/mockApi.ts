@@ -40,6 +40,11 @@ export const getAdminSchoolId = (): string => {
 };
 
 
+// ── Super Admin Identity Lock ────────────────────────────────────────────────
+// ONLY this exact email address is permitted to log in as SUPER_ADMIN.
+// Any other email attempting to use a SUPER_ADMIN role will be rejected.
+const SUPER_ADMIN_EMAIL = 'jy7018080@gmail.com';
+
 export const mockApi = {
   // ==========================================
   // 1. AUTHENTICATION & SESSION MANAGEMENT
@@ -63,7 +68,9 @@ export const mockApi = {
     let userProfile = null;
     let profileError = null;
 
-    if (email === 'superadmin@aegis.com') {
+    // Super Admin profile must be fetched using the admin client (RLS bypass)
+    // because SUPER_ADMIN users have school_id = NULL which blocks standard RLS queries.
+    if (email === SUPER_ADMIN_EMAIL) {
       const { data, error } = await supabaseAdmin
         .from('users')
         .select('*')
@@ -82,32 +89,15 @@ export const mockApi = {
     }
 
     if (profileError || !userProfile) {
-      // In a real scenario, this shouldn't happen unless the database is out of sync.
-      // But because this is a partial connection, we'll check if it's the superadmin and mock their session if their profile is missing.
-      if (email === 'superadmin@aegis.com') {
-         // --- AUTO-SEED MECHANISM ---
-         // 1. Create auth user bypassing RLS
-         let superAdminId = authData.user.id;
-         
-         // 2. Ensure profile exists in users table bypassing RLS
-         const { error: seedError } = await supabaseAdmin.from('users').upsert({
-           id: superAdminId,
-           email: email,
-           role: 'SUPER_ADMIN',
-           first_name: 'Super',
-           last_name: 'Admin',
-           is_active: true
-         });
-         
-         if (seedError) throw new Error('Failed to auto-seed superadmin profile: ' + seedError.message);
-         
-         // Re-fetch profile using admin client
-         const { data: refetchedProfile } = await supabaseAdmin.from('users').select('*').eq('id', superAdminId).single();
-         if (refetchedProfile) userProfile = refetchedProfile;
-         else throw new Error('Failed to retrieve auto-seeded profile.');
-      } else {
-        throw new Error('User profile not found in database. Ensure you created the user record.');
-      }
+      throw new Error('User profile not found. Please contact your administrator.');
+    }
+
+    // ── Security Guard ────────────────────────────────────────────────────────
+    // Prevent any account other than the designated Super Admin email from
+    // ever receiving SUPER_ADMIN privileges — even if the database record says so.
+    if (userProfile.role === 'SUPER_ADMIN' && email !== SUPER_ADMIN_EMAIL) {
+      mockDb.addLog(null, 'SECURITY_VIOLATION', { email, reason: 'SUPER_ADMIN_IMPERSONATION_ATTEMPT' });
+      throw new Error('Access Denied: Unauthorized account.');
     }
 
     if (!userProfile.is_active) {
