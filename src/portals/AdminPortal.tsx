@@ -6,7 +6,7 @@ import { Student, Teacher, Parent, Class, Subject, User } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
-  Eye, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown
+  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -39,6 +39,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [tcSpecial, setTcSpecial] = useState('');
   const [tcQual, setTcQual] = useState('');
   const [tcPhone, setTcPhone] = useState('');
+  const [tcPassword, setTcPassword] = useState('');
+  const [showTcPassword, setShowTcPassword] = useState(false);
 
   const [showAddParent, setShowAddParent] = useState(false);
   const [prEmail, setPrEmail] = useState('');
@@ -50,6 +52,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [prStudentId, setPrStudentId] = useState('');
   const [prAdmissionNum, setPrAdmissionNum] = useState('');
   const [prRelation, setPrRelation] = useState('Father');
+  const [prPassword, setPrPassword] = useState('');
+  const [showPrPassword, setShowPrPassword] = useState(false);
 
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [stEmail, setStEmail] = useState('');
@@ -60,6 +64,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [stRoll, setStRoll] = useState(1);
   const [stGender, setStGender] = useState<'MALE' | 'FEMALE' | 'OTHER'>('MALE');
   const [stDob, setStDob] = useState('2010-01-01');
+  const [stPassword, setStPassword] = useState('');
+  const [showStPassword, setShowStPassword] = useState(false);
 
   const [showAddClass, setShowAddClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
@@ -181,9 +187,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const handleCreateTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminId || !tcEmail.trim()) return;
+    if (!tcPassword || tcPassword.length < 6) {
+      alert('Password must be at least 6 characters long.');
+      return;
+    }
     try {
       await mockApi.adminCreateTeacher(
-        adminId, tcEmail, tcFirst, tcLast, tcEmpId, tcSpecial, tcQual, tcPhone
+        adminId, tcEmail, tcFirst, tcLast, tcEmpId, tcSpecial, tcQual, tcPhone, tcPassword
       );
       setShowAddTeacher(false);
       setTcEmail('');
@@ -193,6 +203,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       setTcSpecial('');
       setTcQual('');
       setTcPhone('');
+      setTcPassword('');
+      setShowTcPassword(false);
       loadData();
       alert('Teacher account created successfully!');
     } catch (err: any) {
@@ -203,10 +215,14 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const handleCreateParent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminId || !prEmail.trim()) return;
+    if (!prPassword || prPassword.length < 6) {
+      alert('Password must be at least 6 characters long.');
+      return;
+    }
     try {
       await mockApi.adminCreateParent(
         adminId, prEmail, prFirst, prLast, prOccup, prAddr, prPhone,
-        prStudentId, prAdmissionNum, prRelation
+        prStudentId, prAdmissionNum, prRelation, prPassword
       );
       setShowAddParent(false);
       setPrEmail('');
@@ -218,6 +234,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       setPrStudentId('');
       setPrAdmissionNum('');
       setPrRelation('Father');
+      setPrPassword('');
+      setShowPrPassword(false);
       loadData();
       alert('Parent account created and linked successfully!');
     } catch (err: any) {
@@ -228,10 +246,14 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminId || !stEmail.trim()) return;
+    if (!stPassword || stPassword.length < 6) {
+      alert('Password must be at least 6 characters long.');
+      return;
+    }
 
     try {
       await mockApi.adminCreateStudent(
-        adminId, stEmail, stFirst, stLast, stClass, stAdmission, stRoll, stGender, stDob
+        adminId, stEmail, stFirst, stLast, stClass, stAdmission, stRoll, stGender, stDob, stPassword
       );
       setShowAddStudent(false);
       setStEmail('');
@@ -239,6 +261,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       setStLast('');
       setStClass('');
       setStAdmission('');
+      setStPassword('');
+      setShowStPassword(false);
       loadData();
       alert('Student registered in classroom listings!');
     } catch (err: any) {
@@ -970,6 +994,28 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <input type="date" value={stDob} onChange={(e) => setStDob(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
               </div>
 
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Student Portal Password</label>
+                <div className="relative">
+                  <input 
+                    type={showStPassword ? 'text' : 'password'}
+                    placeholder="Min. 6 characters"
+                    value={stPassword}
+                    onChange={(e) => setStPassword(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 pr-9 focus:outline-none focus:border-brand-500 text-slate-100"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowStPassword(p => !p)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    {showStPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+
               <div className="col-span-1 sm:col-span-2 flex justify-end gap-2 pt-2 border-t border-slate-850">
                 <button type="button" onClick={() => setShowAddStudent(false)} className="glass-btn-secondary text-xs">Cancel</button>
                 <button type="submit" className="glass-btn-primary text-xs">Register</button>
@@ -1221,6 +1267,28 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <input type="text" placeholder="+1 (555) 000-0000" value={tcPhone} onChange={(e) => setTcPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
               </div>
 
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Teacher Portal Password</label>
+                <div className="relative">
+                  <input 
+                    type={showTcPassword ? 'text' : 'password'}
+                    placeholder="Min. 6 characters"
+                    value={tcPassword}
+                    onChange={(e) => setTcPassword(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 pr-9 focus:outline-none focus:border-brand-500 text-slate-100"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowTcPassword(p => !p)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    {showTcPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
+              </div>
+
               <div className="col-span-1 sm:col-span-2 flex justify-end gap-2 pt-2 border-t border-slate-850">
                 <button type="button" onClick={() => setShowAddTeacher(false)} className="glass-btn-secondary text-xs">Cancel</button>
                 <button type="submit" className="glass-btn-primary text-xs">Register Faculty</button>
@@ -1309,6 +1377,28 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                       required
                     />
                   </div>
+                </div>
+              </div>
+
+              <div className="space-y-1 sm:col-span-2 mt-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Parent Portal Password</label>
+                <div className="relative">
+                  <input 
+                    type={showPrPassword ? 'text' : 'password'}
+                    placeholder="Min. 6 characters"
+                    value={prPassword}
+                    onChange={(e) => setPrPassword(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 pr-9 focus:outline-none focus:border-brand-500 text-slate-100"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowPrPassword(p => !p)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    {showPrPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
                 </div>
               </div>
 
