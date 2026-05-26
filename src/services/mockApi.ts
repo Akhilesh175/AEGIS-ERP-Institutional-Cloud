@@ -745,19 +745,20 @@ export const mockApi = {
 
   async adminCreateStudent(adminId: string, email: string, firstName: string, lastName: string, classId: string, admissionNumber: string, rollNumber: number, gender: 'MALE' | 'FEMALE' | 'OTHER', dob: string): Promise<void> {
     await delay(600);
-    const admin = mockDb.users.find(u => u.id === adminId);
-    if (!admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+    const { data: admin, error: adminErr } = await supabase.from('users').select('role, school_id').eq('id', adminId).single();
+    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
 
-    const schoolId = admin.schoolId;
+    const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
 
     // Check limits
-    const school = mockDb.schools.find(s => s.id === schoolId);
-    if (!school) throw new Error('School not found.');
-    const plan = subscriptionPlans[school.subscriptionPlan] || subscriptionPlans.freemium;
+    const { data: school, error: schoolErr } = await supabase.from('schools').select('subscription_plan').eq('id', schoolId).single();
+    if (schoolErr || !school) throw new Error('School not found.');
+    
+    const plan = subscriptionPlans[school.subscription_plan] || subscriptionPlans.freemium;
     const currentStudentsCount = mockDb.students.filter(s => s.schoolId === schoolId).length;
     if (currentStudentsCount >= plan.limits.maxStudents) {
-      throw new Error(`Registration failed: Your ${school.subscriptionPlan} plan is limited to ${plan.limits.maxStudents} students. Please upgrade your subscription.`);
+      throw new Error(`Registration failed: Your ${school.subscription_plan} plan is limited to ${plan.limits.maxStudents} students. Please upgrade your subscription.`);
     }
 
     const user: User = {
@@ -994,19 +995,20 @@ export const mockApi = {
 
   async adminCreateTeacher(adminId: string, email: string, firstName: string, lastName: string, employeeId: string, qualification: string, specialization: string, phone: string): Promise<void> {
     await delay(600);
-    const admin = mockDb.users.find(u => u.id === adminId);
-    if (!admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+    const { data: admin, error: adminErr } = await supabase.from('users').select('role, school_id').eq('id', adminId).single();
+    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
 
-    const schoolId = admin.schoolId;
+    const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
 
     // Check limits
-    const school = mockDb.schools.find(s => s.id === schoolId);
-    if (!school) throw new Error('School not found.');
-    const plan = subscriptionPlans[school.subscriptionPlan] || subscriptionPlans.freemium;
+    const { data: school, error: schoolErr } = await supabase.from('schools').select('subscription_plan').eq('id', schoolId).single();
+    if (schoolErr || !school) throw new Error('School not found.');
+    
+    const plan = subscriptionPlans[school.subscription_plan] || subscriptionPlans.freemium;
     const currentTeachersCount = mockDb.teachers.filter(t => t.schoolId === schoolId).length;
     if (currentTeachersCount >= plan.limits.maxTeachers) {
-      throw new Error(`Registration failed: Your ${school.subscriptionPlan} plan is limited to ${plan.limits.maxTeachers} teachers. Please upgrade your subscription.`);
+      throw new Error(`Registration failed: Your ${school.subscription_plan} plan is limited to ${plan.limits.maxTeachers} teachers. Please upgrade your subscription.`);
     }
 
     const user: User = {
@@ -1467,14 +1469,14 @@ export const mockApi = {
 
   async adminResetPassword(adminId: string, targetUserId: string, newPasswordPlain: string): Promise<void> {
     await delay(500);
-    const admin = mockDb.users.find(u => u.id === adminId);
-    if (!admin || admin.role !== 'ADMIN') throw new Error('Unauthorized operational context.');
+    const { data: admin, error: adminErr } = await supabase.from('users').select('role, school_id').eq('id', adminId).single();
+    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized operational context.');
 
     const target = mockDb.users.find(u => u.id === targetUserId);
     if (!target) throw new Error('User not found');
 
     // Strict multi-school scoped isolation boundary check
-    if (target.schoolId !== admin.schoolId) {
+    if (target.schoolId !== admin.school_id) {
       mockDb.addLog(adminId, 'SECURITY_VIOLATION', { action: 'RESET_PASSWORD_OUT_OF_SCOPE', targetUserId });
       throw new Error('Access Denied: You can only reset passwords for users in your own school.');
     }
