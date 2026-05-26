@@ -743,7 +743,7 @@ export const mockApi = {
   },
 
 
-  async adminCreateStudent(adminId: string, email: string, firstName: string, lastName: string, classId: string, admissionNumber: string, rollNumber: number, gender: 'MALE' | 'FEMALE' | 'OTHER', dob: string): Promise<void> {
+  async adminCreateStudent(adminId: string, email: string, firstName: string, lastName: string, classId: string, admissionNumber: string, rollNumber: number, gender: 'MALE' | 'FEMALE' | 'OTHER', dob: string, password: string): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabase.from('users').select('role, school_id').eq('id', adminId).single();
     if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
@@ -761,8 +761,33 @@ export const mockApi = {
       throw new Error(`Registration failed: Your ${school.subscription_plan} plan is limited to ${plan.limits.maxStudents} students. Please upgrade your subscription.`);
     }
 
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true
+    });
+    if (authError || !authData.user) throw new Error('Failed to create student auth user: ' + (authError?.message || 'Unknown error'));
+    
+    const newUserId = authData.user.id;
+    
+    const { error: dbError } = await supabaseAdmin.from('users').insert({
+      id: newUserId,
+      email,
+      role: 'STUDENT',
+      first_name: firstName,
+      last_name: lastName,
+      phone: '',
+      school_id: schoolId,
+      is_active: true
+    });
+    
+    if (dbError) {
+      await supabaseAdmin.auth.admin.deleteUser(newUserId);
+      throw new Error('Failed to create student database profile: ' + dbError.message);
+    }
+
     const user: User = {
-      id: 'u-' + Math.random().toString(36).substr(2, 9),
+      id: newUserId,
       email,
       role: 'STUDENT',
       firstName,
@@ -771,7 +796,7 @@ export const mockApi = {
       avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
       isActive: true,
       schoolId,
-      password: 'password', // Default credentials seed
+      password: password, // Dynamic user-defined password
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -993,7 +1018,7 @@ export const mockApi = {
     mockDb.saveAll();
   },
 
-  async adminCreateTeacher(adminId: string, email: string, firstName: string, lastName: string, employeeId: string, qualification: string, specialization: string, phone: string): Promise<void> {
+  async adminCreateTeacher(adminId: string, email: string, firstName: string, lastName: string, employeeId: string, qualification: string, specialization: string, phone: string, password: string): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabase.from('users').select('role, school_id').eq('id', adminId).single();
     if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
@@ -1011,17 +1036,42 @@ export const mockApi = {
       throw new Error(`Registration failed: Your ${school.subscription_plan} plan is limited to ${plan.limits.maxTeachers} teachers. Please upgrade your subscription.`);
     }
 
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password,
+      email_confirm: true
+    });
+    if (authError || !authData.user) throw new Error('Failed to create teacher auth user: ' + (authError?.message || 'Unknown error'));
+    
+    const newUserId = authData.user.id;
+    
+    const { error: dbError } = await supabaseAdmin.from('users').insert({
+      id: newUserId,
+      email,
+      role: 'TEACHER',
+      first_name: firstName,
+      last_name: lastName,
+      phone: phone,
+      school_id: schoolId,
+      is_active: true
+    });
+    
+    if (dbError) {
+      await supabaseAdmin.auth.admin.deleteUser(newUserId);
+      throw new Error('Failed to create teacher database profile: ' + dbError.message);
+    }
+
     const user: User = {
-      id: 'u-' + Math.random().toString(36).substr(2, 9),
+      id: newUserId,
       email,
       role: 'TEACHER',
       firstName,
       lastName,
-      phone: '',
+      phone: phone || '',
       avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
       isActive: true,
       schoolId,
-      password: 'password', // Default credentials seed
+      password: password, // Dynamic user-defined password
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
@@ -1051,7 +1101,8 @@ export const mockApi = {
     phone: string,
     studentId?: string,
     admissionNumber?: string,
-    relationship?: string
+    relationship?: string,
+    password?: string
   ): Promise<void> {
     await delay(600);
     const schoolId = getAdminSchoolId();
@@ -1066,8 +1117,34 @@ export const mockApi = {
       }
     }
 
+    const pass = password || 'password';
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email,
+      password: pass,
+      email_confirm: true
+    });
+    if (authError || !authData.user) throw new Error('Failed to create parent auth user: ' + (authError?.message || 'Unknown error'));
+    
+    const newUserId = authData.user.id;
+    
+    const { error: dbError } = await supabaseAdmin.from('users').insert({
+      id: newUserId,
+      email,
+      role: 'PARENT',
+      first_name: firstName,
+      last_name: lastName,
+      phone: phone,
+      school_id: schoolId,
+      is_active: true
+    });
+    
+    if (dbError) {
+      await supabaseAdmin.auth.admin.deleteUser(newUserId);
+      throw new Error('Failed to create parent database profile: ' + dbError.message);
+    }
+
     const user: User = {
-      id: 'u-' + Math.random().toString(36).substr(2, 9),
+      id: newUserId,
       email,
       role: 'PARENT',
       firstName,
@@ -1076,7 +1153,7 @@ export const mockApi = {
       avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150',
       isActive: true,
       schoolId,
-      password: 'password', // Default credentials seed
+      password: pass, // Dynamic user-defined password
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
