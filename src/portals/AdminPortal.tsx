@@ -575,17 +575,24 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               Enrolled Student Directory
             </h3>
             
-            <div className="flex gap-2 w-full sm:w-auto">
+            <div className="flex gap-2 w-full sm:w-auto items-center">
+              {overview && (
+                <div className="text-[10px] font-bold tracking-wider px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-slate-400">QUOTA:</span> <span className={overview.totalStudents >= overview.subscription.limits.maxStudents ? "text-red-400" : "text-brand-400"}>{overview.totalStudents} / {overview.subscription.limits.maxStudents}</span>
+                </div>
+              )}
               <input 
                 type="text" 
                 placeholder="Search name / admission..."
                 value={studentSearch}
                 onChange={(e) => setStudentSearch(e.target.value)}
-                className="bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none w-full sm:w-64"
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none w-full sm:w-48"
               />
               <button 
                 onClick={() => setShowAddStudent(true)}
-                className="glass-btn-primary text-xs flex items-center gap-1 shrink-0"
+                disabled={overview?.totalStudents >= overview?.subscription.limits.maxStudents}
+                className="glass-btn-primary text-xs flex items-center gap-1 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={overview?.totalStudents >= overview?.subscription.limits.maxStudents ? 'Student limit reached for your plan' : ''}
               >
                 <Plus size={14} /> Add
               </button>
@@ -648,19 +655,32 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               Academic Faculty Directory
             </h3>
 
-            <div className="flex gap-2 w-full sm:w-auto">
+            <div className="flex gap-2 w-full sm:w-auto items-center">
+              {overview && (
+                <div className="text-[10px] font-bold tracking-wider px-3 py-1.5 rounded-lg bg-slate-900 border border-slate-800">
+                  <span className="text-slate-400">QUOTA:</span> <span className={overview.totalTeachers >= overview.subscription.limits.maxTeachers ? "text-red-400" : "text-brand-400"}>{overview.totalTeachers} / {overview.subscription.limits.maxTeachers}</span>
+                </div>
+              )}
               <input 
                 type="text" 
                 placeholder="Search teacher..."
                 value={teacherSearch}
                 onChange={(e) => setTeacherSearch(e.target.value)}
-                className="bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none w-full sm:w-64"
+                className="bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none w-full sm:w-48"
               />
               <button 
                 onClick={() => setShowMapTeacher(true)}
                 className="glass-btn-primary text-xs flex items-center gap-1 shrink-0"
               >
                 <Link size={14} /> Map Faculty
+              </button>
+              <button 
+                onClick={() => setShowAddTeacher(true)}
+                disabled={overview?.totalTeachers >= overview?.subscription.limits.maxTeachers}
+                className="glass-btn-primary text-xs flex items-center gap-1 shrink-0 disabled:opacity-50 disabled:cursor-not-allowed"
+                title={overview?.totalTeachers >= overview?.subscription.limits.maxTeachers ? 'Teacher limit reached for your plan' : ''}
+              >
+                <Plus size={14} /> Add
               </button>
             </div>
           </div>

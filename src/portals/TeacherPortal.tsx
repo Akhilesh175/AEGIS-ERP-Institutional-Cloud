@@ -11,10 +11,14 @@ import {
   Clipboard, UserCheck, Edit3, Award, PlusCircle, 
   UploadCloud, FileText, CheckCircle, AlertCircle, Save, Calendar, Clock, MapPin, Layers
 } from 'lucide-react';
+import PremiumLock from '../components/PremiumLock';
+import { subscriptionPlans } from '../services/subscriptionConfig';
 
 export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: string) => void }> = ({ activeTab, setActiveTab }) => {
   const { session } = useStore();
   const teacherId = session?.teacherId;
+  const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
+  const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
 
   // Mappings
   const [classMappings, setClassMappings] = useState<(TeacherClassSubjectMapping & { className: string; subjectName: string; classId: string; subjectCode: string })[]>([]);
@@ -1580,12 +1584,18 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       )}
 
       {activeTab === 'forums' && (
-        <GlassCard className="space-y-4">
-          <h3 className="font-bold text-slate-100">Discussion Boards</h3>
-          <p className="text-xs text-slate-400">
-            Forums are available inside portal contexts. Homeroom teachers can reply to students via the Student Portal forum link, or open secure direct chats to communicate individually with parents and students!
-          </p>
-        </GlassCard>
+        <PremiumLock 
+          isLocked={!plan.features.communications} 
+          requiredTier="Basic" 
+          featureName="Communications & Forums"
+        >
+          <GlassCard className="space-y-4">
+            <h3 className="font-bold text-slate-100">Discussion Boards</h3>
+            <p className="text-xs text-slate-400">
+              Forums are available inside portal contexts. Homeroom teachers can reply to students via the Student Portal forum link, or open secure direct chats to communicate individually with parents and students!
+            </p>
+          </GlassCard>
+        </PremiumLock>
       )}
 
       {/* Homework Grading Modal overlay */}

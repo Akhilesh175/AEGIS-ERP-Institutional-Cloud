@@ -8,10 +8,14 @@ import {
   Eye, Award, DollarSign, Calendar, FileText, 
   User as UserIcon, ShieldAlert, CheckCircle, AlertCircle, UsersRound, Clock
 } from 'lucide-react';
+import PremiumLock from '../components/PremiumLock';
+import { subscriptionPlans } from '../services/subscriptionConfig';
 
 export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const { session } = useStore();
   const parentId = session?.parentId;
+  const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
+  const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
 
   // States
   const [assignedStudents, setAssignedStudents] = useState<(Student & { userDetails: User; className: string })[]>([]);
@@ -360,47 +364,59 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
             )}
 
             {activeTab === 'fees' && (
-              <GlassCard className="space-y-6">
-                <div className="border-b border-slate-850 pb-3">
-                  <h3 className="font-bold text-slate-100 flex items-center gap-2">
-                    <DollarSign className="text-brand-500" size={18} />
-                    Outstanding Fee Structure & Invoices
-                  </h3>
-                </div>
+              <PremiumLock 
+                isLocked={!plan.features.billing} 
+                requiredTier="Pro" 
+                featureName="Fee Management"
+              >
+                <GlassCard className="space-y-6">
+                  <div className="border-b border-slate-850 pb-3">
+                    <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                      <DollarSign className="text-brand-500" size={18} />
+                      Outstanding Fee Structure & Invoices
+                    </h3>
+                  </div>
 
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {academicRecord.fees.map((f: any, idx: number) => (
-                    <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
-                      <div className="space-y-1">
-                        <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                          f.status === 'PAID' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
-                        }`}>
-                          {f.status}
-                        </span>
-                        <h4 className="font-bold text-slate-200 text-sm mt-2">{f.description}</h4>
-                        <p className="text-xs text-slate-400">Total Bill Amount: ${f.amount.toFixed(2)}</p>
-                        <p className="text-[10px] text-slate-500">Bill Due: {new Date(f.dueDate).toLocaleDateString()}</p>
-                      </div>
-
-                      {f.status === 'PAID' && (
-                        <div className="text-[10px] text-slate-500 border-t border-slate-850 pt-2 flex justify-between">
-                          <span>Receipt Download Ready</span>
-                          <span>Paid on {new Date(f.paymentDate).toLocaleDateString()}</span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {academicRecord.fees.map((f: any, idx: number) => (
+                      <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div className="space-y-1">
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                            f.status === 'PAID' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                          }`}>
+                            {f.status}
+                          </span>
+                          <h4 className="font-bold text-slate-200 text-sm mt-2">{f.description}</h4>
+                          <p className="text-xs text-slate-400">Total Bill Amount: ${f.amount.toFixed(2)}</p>
+                          <p className="text-[10px] text-slate-500">Bill Due: {new Date(f.dueDate).toLocaleDateString()}</p>
                         </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </GlassCard>
+
+                        {f.status === 'PAID' && (
+                          <div className="text-[10px] text-slate-500 border-t border-slate-850 pt-2 flex justify-between">
+                            <span>Receipt Download Ready</span>
+                            <span>Paid on {new Date(f.paymentDate).toLocaleDateString()}</span>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </GlassCard>
+              </PremiumLock>
             )}
 
             {activeTab === 'forums' && (
-              <GlassCard className="space-y-4">
-                <h3 className="font-bold text-slate-100">Discussion Boards</h3>
-                <p className="text-xs text-slate-400">
-                  Discussion boards are currently in read-only mode for parents. To discuss academic performance or syllabus details, please open the direct secure Chat Messenger drawer and select your child's homeroom teacher.
-                </p>
-              </GlassCard>
+              <PremiumLock 
+                isLocked={!plan.features.communications} 
+                requiredTier="Basic" 
+                featureName="Communications & Forums"
+              >
+                <GlassCard className="space-y-4">
+                  <h3 className="font-bold text-slate-100">Discussion Boards</h3>
+                  <p className="text-xs text-slate-400">
+                    Discussion boards are currently in read-only mode for parents. To discuss academic performance or syllabus details, please open the direct secure Chat Messenger drawer and select your child's homeroom teacher.
+                  </p>
+                </GlassCard>
+              </PremiumLock>
             )}
 
           </div>
