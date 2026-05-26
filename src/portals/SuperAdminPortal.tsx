@@ -6,7 +6,7 @@ import { mockDb } from '../services/mockDb';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Activity, Building, Settings, ShieldAlert, Cpu, 
-  Layers, Key, PlusCircle, Search, RefreshCw 
+  Layers, Key, PlusCircle, Search, RefreshCw, Eye, EyeOff
 } from 'lucide-react';
 
 export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
@@ -33,6 +33,8 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
   const [admLast, setAdmLast] = useState('');
   const [admPhone, setAdmPhone] = useState('');
   const [admSchoolId, setAdmSchoolId] = useState('');
+  const [admPassword, setAdmPassword] = useState('');
+  const [showAdmPassword, setShowAdmPassword] = useState(false);
 
   // Password Reset Modal states
   const [showResetModal, setShowResetModal] = useState(false);
@@ -122,6 +124,10 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
       alert('Please fill out all required fields, including selecting an institutional school node.');
       return;
     }
+    if (!admPassword || admPassword.length < 6) {
+      alert('Password must be at least 6 characters long.');
+      return;
+    }
 
     try {
       setLoading(true);
@@ -131,13 +137,16 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
         admFirst,
         admLast,
         admSchoolId,
-        admPhone
+        admPhone,
+        admPassword
       );
       setShowAddAdmin(false);
       setAdmEmail('');
       setAdmFirst('');
       setAdmLast('');
       setAdmPhone('');
+      setAdmPassword('');
+      setShowAdmPassword(false);
       loadData();
       setLoading(false);
       alert('School Administrative key and security context successfully deployed!');
@@ -751,10 +760,26 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                 </div>
               </div>
 
-              <div className="p-3 bg-brand-500/5 border border-brand-500/10 rounded-xl">
-                <p className="text-[10px] text-brand-400 font-mono leading-relaxed">
-                  🔒 The password for this administrative session defaults to <span className="font-bold underline">password</span>. Users can authenticate immediately after registration.
-                </p>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Admin Password</label>
+                <div className="relative">
+                  <input 
+                    type={showAdmPassword ? 'text' : 'password'}
+                    placeholder="Min. 6 characters"
+                    value={admPassword}
+                    onChange={(e) => setAdmPassword(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 pr-9 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                    required
+                    minLength={6}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowAdmPassword(p => !p)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                  >
+                    {showAdmPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                  </button>
+                </div>
               </div>
 
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-850">

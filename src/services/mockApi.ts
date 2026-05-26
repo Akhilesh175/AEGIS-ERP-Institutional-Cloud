@@ -1402,11 +1402,25 @@ export const mockApi = {
     };
   },
 
-  async superAdminCreateAdmin(superAdminId: string, email: string, firstName: string, lastName: string, schoolId: string, phone: string): Promise<void> {
-    // 1. Create auth user
+  async superAdminCreateAdmin(superAdminId: string, email: string, firstName: string, lastName: string, schoolId: string, phone: string, password: string): Promise<void> {
+    // 0. Validate that the school actually exists in Supabase before inserting
+    const { data: schoolCheck, error: schoolCheckError } = await supabaseAdmin
+      .from('schools')
+      .select('id')
+      .eq('id', schoolId)
+      .single();
+
+    if (schoolCheckError || !schoolCheck) {
+      throw new Error(
+        'The selected institution does not exist in the database. ' +
+        'Please refresh the page and try again — the school list may be out of sync.'
+      );
+    }
+
+    // 1. Create auth user with the provided password
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
-      password: 'password', // Default password
+      password,
       email_confirm: true
     });
 
@@ -1425,6 +1439,7 @@ export const mockApi = {
     });
 
     if (dbError) {
+      // Rollback: remove the auth user if the DB insert failed
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
       throw new Error('Failed to create admin user profile: ' + dbError.message);
     }
