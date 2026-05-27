@@ -120,20 +120,70 @@ export const mockApi = {
       updatedAt: userProfile.created_at || new Date().toISOString()
     };
 
-    // Determine sub-entity IDs for the mock DB if needed
+    // Determine sub-entity IDs from Supabase database tables directly on login
     let studentId: string | undefined;
     let teacherId: string | undefined;
     let parentId: string | undefined;
 
     if (user.role === 'STUDENT') {
-      const st = mockDb.students.find(s => s.userId === user.id);
-      studentId = st?.id;
+      const { data: stRow } = await supabaseAdmin.from('students').select('id').eq('user_id', user.id).maybeSingle();
+      studentId = stRow?.id;
+      
+      // Reconcile and sync local mockDb student cache
+      if (stRow) {
+        const { data: fullSt } = await supabaseAdmin.from('students').select('*').eq('id', stRow.id).maybeSingle();
+        if (fullSt) {
+          const studentMapped: Student = {
+            id: fullSt.id, userId: fullSt.user_id, schoolId: fullSt.school_id,
+            classId: fullSt.class_id || '', admissionNumber: fullSt.admission_number,
+            rollNumber: fullSt.roll_number, dateOfBirth: fullSt.date_of_birth || '',
+            gender: fullSt.gender, createdAt: fullSt.created_at
+          };
+          const existingStudent = mockDb.students.findIndex(s => s.id === fullSt.id);
+          if (existingStudent === -1) mockDb.students.push(studentMapped);
+          else mockDb.students[existingStudent] = studentMapped;
+          mockDb.saveAll();
+        }
+      }
     } else if (user.role === 'TEACHER') {
-      const tc = mockDb.teachers.find(t => t.userId === user.id);
-      teacherId = tc?.id;
+      const { data: tcRow } = await supabaseAdmin.from('teachers').select('id').eq('user_id', user.id).maybeSingle();
+      teacherId = tcRow?.id;
+      
+      // Reconcile and sync local mockDb teacher cache
+      if (tcRow) {
+        const { data: fullTc } = await supabaseAdmin.from('teachers').select('*').eq('id', tcRow.id).maybeSingle();
+        if (fullTc) {
+          const teacherMapped: Teacher = {
+            id: fullTc.id, userId: fullTc.user_id, schoolId: fullTc.school_id,
+            employeeId: fullTc.employee_id, qualification: fullTc.qualification || '',
+            joiningDate: fullTc.joining_date || '', specialization: fullTc.specialization || '',
+            createdAt: fullTc.created_at
+          };
+          const existingTeacher = mockDb.teachers.findIndex(t => t.id === fullTc.id);
+          if (existingTeacher === -1) mockDb.teachers.push(teacherMapped);
+          else mockDb.teachers[existingTeacher] = teacherMapped;
+          mockDb.saveAll();
+        }
+      }
     } else if (user.role === 'PARENT') {
-      const pr = mockDb.parents.find(p => p.userId === user.id);
-      parentId = pr?.id;
+      const { data: prRow } = await supabaseAdmin.from('parents').select('id').eq('user_id', user.id).maybeSingle();
+      parentId = prRow?.id;
+      
+      // Reconcile and sync local mockDb parent cache
+      if (prRow) {
+        const { data: fullPr } = await supabaseAdmin.from('parents').select('*').eq('id', prRow.id).maybeSingle();
+        if (fullPr) {
+          const parentMapped: Parent = {
+            id: fullPr.id, userId: fullPr.user_id, schoolId: fullPr.school_id,
+            occupation: fullPr.occupation || '', address: fullPr.address || '',
+            createdAt: fullPr.created_at
+          };
+          const existingParent = mockDb.parents.findIndex(p => p.id === fullPr.id);
+          if (existingParent === -1) mockDb.parents.push(parentMapped);
+          else mockDb.parents[existingParent] = parentMapped;
+          mockDb.saveAll();
+        }
+      }
     }
 
     const school = mockDb.schools.find(s => s.id === user.schoolId);
@@ -831,11 +881,13 @@ export const mockApi = {
       class_id: classId || null,
       admission_number: admissionNumber,
       roll_number: rollNumber,
-      date_of_birth: dob,
+      date_of_birth: dob || null, // Safety: use null if date_of_birth is empty string to prevent invalid date syntax database errors
       gender
     }).select('id').single();
 
     if (studentErr || !studentRow) {
+      // Force manual database rollback on profile table failure
+      await supabaseAdmin.from('users').delete().eq('id', newUserId);
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create student record: ' + (studentErr?.message || 'Unknown error'));
     }
@@ -1226,12 +1278,14 @@ export const mockApi = {
       user_id: newUserId,
       school_id: schoolId,
       employee_id: employeeId,
-      qualification,
-      specialization,
+      qualification: qualification || null,
+      specialization: specialization || null,
       joining_date: new Date().toISOString().split('T')[0]
     }).select('id').single();
 
     if (teacherErr || !teacherRow) {
+      // Force manual database rollback on profile table failure
+      await supabaseAdmin.from('users').delete().eq('id', newUserId);
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create teacher record: ' + (teacherErr?.message || 'Unknown error'));
     }
@@ -1310,11 +1364,13 @@ export const mockApi = {
     const { data: parentRow, error: parentErr } = await supabaseAdmin.from('parents').insert({
       user_id: newUserId,
       school_id: schoolId,
-      occupation,
-      address
+      occupation: occupation || null,
+      address: address || null
     }).select('id').single();
 
     if (parentErr || !parentRow) {
+      // Force manual database rollback on profile table failure
+      await supabaseAdmin.from('users').delete().eq('id', newUserId);
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create parent record: ' + (parentErr?.message || 'Unknown error'));
     }
