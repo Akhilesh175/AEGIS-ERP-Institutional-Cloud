@@ -181,6 +181,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   useEffect(() => {
     loadData();
+    // Auto-poll every 30 seconds so external DB deletions are reflected
+    const pollInterval = setInterval(loadData, 30000);
+    return () => clearInterval(pollInterval);
   }, [activeTab]);
 
   // CRUD Submissions

@@ -681,18 +681,20 @@ export const mockApi = {
   async adminGetInstitutionOverview() {
     await delay();
     const schoolId = getAdminSchoolId();
-    const schoolStudents = mockDb.students.filter(s => s.schoolId === schoolId);
-    const schoolTeachers = mockDb.teachers.filter(t => t.schoolId === schoolId);
-    const schoolParents = mockDb.parents.filter(p => p.schoolId === schoolId);
+
+    // Fetch counts directly from Supabase for accuracy after DB deletions
+    const [studentsRes, teachersRes, parentsRes] = await Promise.all([
+      supabase.from('users').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'STUDENT'),
+      supabase.from('users').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'TEACHER'),
+      supabase.from('users').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'PARENT'),
+    ]);
+
+    const totalStudents = studentsRes.count ?? 0;
+    const totalTeachers = teachersRes.count ?? 0;
+    const totalParents = parentsRes.count ?? 0;
+
     const schoolClasses = mockDb.classes.filter(c => c.schoolId === schoolId);
     const schoolSubjects = mockDb.subjects.filter(s => s.schoolId === schoolId);
-
-    const userIds = [
-      ...schoolStudents.map(s => s.userId),
-      ...schoolTeachers.map(t => t.userId),
-      ...schoolParents.map(p => p.userId)
-    ];
-    const recentRegs = mockDb.users.filter(u => userIds.includes(u.id)).slice(0, 5);
 
     const structures = mockDb.feeStructures.filter(fs => fs.schoolId === schoolId);
     const structureIds = structures.map(fs => fs.id);
@@ -702,20 +704,19 @@ export const mockApi = {
     const plan = school ? subscriptionPlans[school.subscriptionPlan] || subscriptionPlans.freemium : subscriptionPlans.freemium;
 
     return {
-      totalStudents: schoolStudents.length,
-      totalTeachers: schoolTeachers.length,
-      totalParents: schoolParents.length,
+      totalStudents,
+      totalTeachers,
+      totalParents,
       totalClasses: schoolClasses.length,
       totalSubjects: schoolSubjects.length,
-      recentRegistrations: recentRegs,
+      recentRegistrations: [],
       feeCollections: {
         paid: payments.filter(p => p.status === 'PAID').reduce((acc, p) => acc + p.amountPaid, 0),
         pending: structures.reduce((acc, fs) => {
-          const count = schoolStudents.filter(s => s.classId === fs.classId).length;
           const paidAmt = payments
             .filter(p => p.feeStructureId === fs.id && p.status === 'PAID')
             .reduce((sum, p) => sum + p.amountPaid, 0);
-          return acc + (fs.amount * count - paidAmt);
+          return acc + (fs.amount - paidAmt);
         }, 0)
       },
       subscription: {
@@ -729,17 +730,42 @@ export const mockApi = {
   async adminGetStudents(): Promise<(Student & { userDetails: User; className: string })[]> {
     await delay();
     const schoolId = getAdminSchoolId();
+
+    // Fetch live from Supabase so DB deletions are always reflected
+    const { data: userRows, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, phone, role, school_id, is_active, created_at')
+      .eq('school_id', schoolId)
+      .eq('role', 'STUDENT');
+
+    if (error || !userRows) return [];
+
+    // Sync mockDb users array with Supabase truth
+    userRows.forEach(row => {
+      const existing = mockDb.users.findIndex(u => u.id === row.id);
+      const mapped: User = {
+        id: row.id, email: row.email, role: row.role,
+        firstName: row.first_name, lastName: row.last_name,
+        phone: row.phone || '', avatarUrl: '', isActive: row.is_active,
+        schoolId: row.school_id, password: '', createdAt: row.created_at, updatedAt: row.created_at
+      };
+      if (existing === -1) mockDb.users.push(mapped);
+      else mockDb.users[existing] = { ...mockDb.users[existing], ...mapped };
+    });
+    // Remove any local users not in Supabase for this school+role
+    const supabaseIds = new Set(userRows.map(r => r.id));
+    mockDb.users = mockDb.users.filter(u => !(u.schoolId === schoolId && u.role === 'STUDENT') || supabaseIds.has(u.id));
+    mockDb.students = mockDb.students.filter(s => !(s.schoolId === schoolId) || mockDb.users.some(u => u.id === s.userId));
+    mockDb.saveAll();
+
     return mockDb.students
       .filter(s => s.schoolId === schoolId)
       .map(s => {
         const u = mockDb.users.find(usr => usr.id === s.userId)!;
         const c = mockDb.classes.find(cls => cls.id === s.classId);
-        return {
-          ...s,
-          userDetails: u,
-          className: c ? c.name : 'Unassigned'
-        };
-      });
+        return { ...s, userDetails: u, className: c ? c.name : 'Unassigned' };
+      })
+      .filter(s => s.userDetails); // guard against orphaned records
   },
 
 
@@ -824,37 +850,86 @@ export const mockApi = {
   async adminGetTeachers(): Promise<(Teacher & { userDetails: User })[]> {
     await delay();
     const schoolId = getAdminSchoolId();
+
+    // Fetch live from Supabase so DB deletions are always reflected
+    const { data: userRows, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, phone, role, school_id, is_active, created_at')
+      .eq('school_id', schoolId)
+      .eq('role', 'TEACHER');
+
+    if (error || !userRows) return [];
+
+    // Sync mockDb
+    userRows.forEach(row => {
+      const existing = mockDb.users.findIndex(u => u.id === row.id);
+      const mapped: User = {
+        id: row.id, email: row.email, role: row.role,
+        firstName: row.first_name, lastName: row.last_name,
+        phone: row.phone || '', avatarUrl: '', isActive: row.is_active,
+        schoolId: row.school_id, password: '', createdAt: row.created_at, updatedAt: row.created_at
+      };
+      if (existing === -1) mockDb.users.push(mapped);
+      else mockDb.users[existing] = { ...mockDb.users[existing], ...mapped };
+    });
+    const supabaseIds = new Set(userRows.map(r => r.id));
+    mockDb.users = mockDb.users.filter(u => !(u.schoolId === schoolId && u.role === 'TEACHER') || supabaseIds.has(u.id));
+    mockDb.teachers = mockDb.teachers.filter(t => !(t.schoolId === schoolId) || mockDb.users.some(u => u.id === t.userId));
+    mockDb.saveAll();
+
     return mockDb.teachers
       .filter(t => t.schoolId === schoolId)
       .map(t => {
         const u = mockDb.users.find(usr => usr.id === t.userId)!;
-        return {
-          ...t,
-          userDetails: u
-        };
-      });
+        return { ...t, userDetails: u };
+      })
+      .filter(t => t.userDetails);
   },
 
   async adminGetParents(): Promise<(Parent & { userDetails: User; linkedStudentNames: string[] })[]> {
     await delay();
     const schoolId = getAdminSchoolId();
+
+    // Fetch live from Supabase
+    const { data: userRows, error } = await supabase
+      .from('users')
+      .select('id, email, first_name, last_name, phone, role, school_id, is_active, created_at')
+      .eq('school_id', schoolId)
+      .eq('role', 'PARENT');
+
+    if (error || !userRows) return [];
+
+    // Sync mockDb
+    userRows.forEach(row => {
+      const existing = mockDb.users.findIndex(u => u.id === row.id);
+      const mapped: User = {
+        id: row.id, email: row.email, role: row.role,
+        firstName: row.first_name, lastName: row.last_name,
+        phone: row.phone || '', avatarUrl: '', isActive: row.is_active,
+        schoolId: row.school_id, password: '', createdAt: row.created_at, updatedAt: row.created_at
+      };
+      if (existing === -1) mockDb.users.push(mapped);
+      else mockDb.users[existing] = { ...mockDb.users[existing], ...mapped };
+    });
+    const supabaseIds = new Set(userRows.map(r => r.id));
+    mockDb.users = mockDb.users.filter(u => !(u.schoolId === schoolId && u.role === 'PARENT') || supabaseIds.has(u.id));
+    mockDb.parents = mockDb.parents.filter(p => !(p.schoolId === schoolId) || mockDb.users.some(u => u.id === p.userId));
+    mockDb.saveAll();
+
     return mockDb.parents
       .filter(p => p.schoolId === schoolId)
       .map(p => {
         const u = mockDb.users.find(usr => usr.id === p.userId)!;
         const mappings = mockDb.parentStudentMappings.filter(m => m.parentId === p.id);
         const linkedStudentNames = mappings.map(m => {
-          const s = mockDb.students.find(st => st.id === m.studentId)!;
-          const su = mockDb.users.find(usr => usr.id === s.userId)!;
-          return `${su.firstName} ${su.lastName}`;
-        });
-
-        return {
-          ...p,
-          userDetails: u,
-          linkedStudentNames
-        };
-      });
+          const s = mockDb.students.find(st => st.id === m.studentId);
+          if (!s) return null;
+          const su = mockDb.users.find(usr => usr.id === s.userId);
+          return su ? `${su.firstName} ${su.lastName}` : null;
+        }).filter(Boolean) as string[];
+        return { ...p, userDetails: u, linkedStudentNames };
+      })
+      .filter(p => p.userDetails);
   },
 
 
