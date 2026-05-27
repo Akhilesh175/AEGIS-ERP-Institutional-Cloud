@@ -9,7 +9,7 @@ import {
 import { GlassCard } from '../components/GlassCard';
 import { 
   Clipboard, UserCheck, Edit3, Award, PlusCircle, 
-  UploadCloud, FileText, CheckCircle, AlertCircle, Save, Calendar, Clock, MapPin, Layers
+  UploadCloud, FileText, CheckCircle, AlertCircle, Save, Calendar, Clock, MapPin, Layers, Users
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -1067,6 +1067,102 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
         </div>
       )}
 
+      {activeTab === 'classroster' && (
+        <PremiumLock
+          isLocked={currentPlanName === 'freemium'}
+          requiredTier="Basic"
+          featureName="Class Roster"
+        >
+          <div className="space-y-6 animate-fade-in">
+            <GlassCard className="space-y-6">
+              <div className="border-b border-slate-850 pb-3">
+                <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                  <Users className="text-brand-500" size={18} />
+                  Class Roster Directory
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Academic directory of students enrolled in the selected session along with their details and parents.
+                </p>
+              </div>
+
+              {students.length === 0 ? (
+                <div className="p-8 text-center bg-slate-900/10 border border-slate-850/50 rounded-2xl text-slate-500 text-xs italic">
+                  No students currently enrolled in this class.
+                </div>
+              ) : (
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 text-slate-400 font-bold uppercase tracking-wider text-[9px]">
+                        <th className="py-3 px-4">Roll No</th>
+                        <th className="py-3 px-4">Admission No</th>
+                        <th className="py-3 px-4">Student Name</th>
+                        <th className="py-3 px-4">Gender & DOB</th>
+                        <th className="py-3 px-4">Parent / Guardian Contacts</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850">
+                      {students.map(s => {
+                        const parentMappings = mockDb.parentStudentMappings.filter(m => m.studentId === s.id);
+                        const parentsList = parentMappings.map(m => {
+                          const p = mockDb.parents.find(pDb => pDb.id === m.parentId);
+                          const u = p ? mockDb.users.find(uDb => uDb.id === p.userId) : null;
+                          return {
+                            relationship: m.relationship || 'Guardian',
+                            name: u ? `${u.firstName} ${u.lastName}` : 'N/A',
+                            phone: u ? u.phone || 'N/A' : 'N/A',
+                            email: u ? u.email : 'N/A'
+                          };
+                        });
+
+                        return (
+                          <tr key={s.id} className="hover:bg-slate-900/10 text-slate-200 transition-colors">
+                            <td className="py-3 px-4 font-mono font-bold text-brand-400">{s.rollNumber}</td>
+                            <td className="py-3 px-4 font-mono text-slate-400">{s.admissionNumber}</td>
+                            <td className="py-3 px-4">
+                              <div className="font-semibold text-slate-100">{s.userDetails.firstName} {s.userDetails.lastName}</div>
+                              <div className="text-[10px] text-slate-500">{s.userDetails.email}</div>
+                            </td>
+                            <td className="py-3 px-4 space-y-1">
+                              <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-slate-800 border border-slate-700 text-slate-300">
+                                {s.gender}
+                              </span>
+                              <div className="text-[10px] text-slate-400 font-sans mt-0.5">
+                                {s.dateOfBirth}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 space-y-2">
+                              {parentsList.length === 0 ? (
+                                <span className="text-[10px] text-slate-500 italic">No parent linked</span>
+                              ) : (
+                                parentsList.map((p, idx) => (
+                                  <div key={idx} className="bg-slate-950/40 border border-slate-850 p-2 rounded-xl space-y-1 max-w-sm">
+                                    <div className="flex items-center gap-1.5 justify-between">
+                                      <span className="font-bold text-slate-200 text-[10px]">{p.name}</span>
+                                      <span className="text-[8px] font-bold uppercase bg-brand-500/10 border border-brand-500/20 text-brand-400 px-1 py-0.2 rounded-md">
+                                        {p.relationship}
+                                      </span>
+                                    </div>
+                                    <div className="text-[9px] text-slate-400 flex flex-wrap gap-x-3">
+                                      <span>📞 {p.phone}</span>
+                                      <span>✉️ {p.email}</span>
+                                    </div>
+                                  </div>
+                                ))
+                              )}
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </GlassCard>
+          </div>
+        </PremiumLock>
+      )}
+
       {activeTab === 'attendance' && (
         <GlassCard className="space-y-6">
           <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
@@ -1231,131 +1327,137 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       )}
 
       {activeTab === 'marksheets' && (
-        <div className="space-y-6 animate-fade-in">
-          <GlassCard className="space-y-6">
-            <div className="border-b border-slate-850 pb-3 flex flex-col md:flex-row justify-between md:items-center gap-4">
-              <div>
-                <h3 className="font-bold text-slate-100 flex items-center gap-2">
-                  <Clipboard className="text-brand-500" size={18} />
-                  Homeroom Marksheets Management
-                </h3>
-                <p className="text-xs text-slate-400 mt-1">
-                  Update report cards and marks for students in your assigned homeroom class.
-                </p>
-              </div>
-              {managedClasses.length > 0 && (
-                <div className="flex flex-wrap items-center gap-2">
-                  <select
-                    value={selectedManagedClass}
-                    onChange={(e) => {
-                      setSelectedManagedClass(e.target.value);
-                      setHmSelectedStudent('');
-                    }}
-                    className="bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brand-500"
-                  >
-                    {managedClasses.map(c => (
-                      <option key={c.id} value={c.id}>{c.name}</option>
-                    ))}
-                  </select>
-                  <select 
-                    value={hmSelectedExam}
-                    onChange={(e) => setHmSelectedExam(e.target.value)}
-                    className="bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brand-500"
-                  >
-                    <option value="">-- Select Exam --</option>
-                    {hmExams.map(ex => (
-                      <option key={ex.id} value={ex.id}>{ex.name}</option>
-                    ))}
-                  </select>
-                  <select 
-                    value={hmSelectedStudent}
-                    onChange={(e) => setHmSelectedStudent(e.target.value)}
-                    className="bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brand-500"
-                  >
-                    <option value="">-- Select Student --</option>
-                    {mockDb.students.filter(s => s.classId === selectedManagedClass).map(st => {
-                      const u = mockDb.users.find(u => u.id === st.userId);
-                      return <option key={st.id} value={st.id}>{u?.firstName} {u?.lastName}</option>;
-                    })}
-                  </select>
+        <PremiumLock
+          isLocked={currentPlanName === 'freemium'}
+          requiredTier="Basic"
+          featureName="Homeroom Marksheets"
+        >
+          <div className="space-y-6 animate-fade-in">
+            <GlassCard className="space-y-6">
+              <div className="border-b border-slate-850 pb-3 flex flex-col md:flex-row justify-between md:items-center gap-4">
+                <div>
+                  <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                    <Clipboard className="text-brand-500" size={18} />
+                    Homeroom Marksheets Management
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1">
+                    Update report cards and marks for students in your assigned homeroom class.
+                  </p>
                 </div>
-              )}
-            </div>
-
-            {managedClasses.length === 0 ? (
-              <div className="text-center p-8 text-slate-400 italic text-sm">
-                You do not have any homeroom classes assigned.
-              </div>
-            ) : hmSelectedStudent && hmSelectedExam ? (
-              <form onSubmit={handleSaveReportCard} className="space-y-4">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-850 text-slate-400 font-bold">
-                        <th className="py-3 px-4">Subject</th>
-                        <th className="py-3 px-4">Max Marks</th>
-                        <th className="py-3 px-4">Marks Obtained</th>
-                        <th className="py-3 px-4">Remarks</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-850">
-                      {hmReportCard.length === 0 ? (
-                        <tr>
-                          <td colSpan={4} className="py-8 text-center text-slate-500 italic">No schedules found for this exam.</td>
-                        </tr>
-                      ) : (
-                        hmReportCard.map((rc, idx) => (
-                          <tr key={rc.scheduleId} className="hover:bg-slate-900/10 text-slate-200">
-                            <td className="py-3 px-4 font-semibold">{rc.subjectName}</td>
-                            <td className="py-3 px-4 text-slate-400">{rc.maxMarks}</td>
-                            <td className="py-3 px-4">
-                              <input 
-                                type="number"
-                                min={0}
-                                max={rc.maxMarks}
-                                value={rc.marksObtained ?? ''}
-                                onChange={(e) => {
-                                  const newRc = [...hmReportCard];
-                                  newRc[idx].marksObtained = parseFloat(e.target.value) || 0;
-                                  setHmReportCard(newRc);
-                                }}
-                                className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs w-20 focus:outline-none focus:border-brand-500"
-                              />
-                            </td>
-                            <td className="py-3 px-4">
-                              <input 
-                                type="text"
-                                value={rc.remarks ?? ''}
-                                onChange={(e) => {
-                                  const newRc = [...hmReportCard];
-                                  newRc[idx].remarks = e.target.value;
-                                  setHmReportCard(newRc);
-                                }}
-                                className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs w-full focus:outline-none focus:border-brand-500"
-                                placeholder="Optional remarks..."
-                              />
-                            </td>
-                          </tr>
-                        ))
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-                {hmReportCard.length > 0 && (
-                  <div className="flex justify-end pt-4">
-                    <button type="submit" className="glass-btn-primary text-xs flex items-center gap-1.5">
-                      <Save size={14} /> Save Report Card
-                    </button>
+                {managedClasses.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select
+                      value={selectedManagedClass}
+                      onChange={(e) => {
+                        setSelectedManagedClass(e.target.value);
+                        setHmSelectedStudent('');
+                      }}
+                      className="bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brand-500"
+                    >
+                      {managedClasses.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                    <select 
+                      value={hmSelectedExam}
+                      onChange={(e) => setHmSelectedExam(e.target.value)}
+                      className="bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brand-500"
+                    >
+                      <option value="">-- Select Exam --</option>
+                      {hmExams.map(ex => (
+                        <option key={ex.id} value={ex.id}>{ex.name}</option>
+                      ))}
+                    </select>
+                    <select 
+                      value={hmSelectedStudent}
+                      onChange={(e) => setHmSelectedStudent(e.target.value)}
+                      className="bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brand-500"
+                    >
+                      <option value="">-- Select Student --</option>
+                      {mockDb.students.filter(s => s.classId === selectedManagedClass).map(st => {
+                        const u = mockDb.users.find(u => u.id === st.userId);
+                        return <option key={st.id} value={st.id}>{u?.firstName} {u?.lastName}</option>;
+                      })}
+                    </select>
                   </div>
                 )}
-              </form>
-            ) : (
-              <div className="text-center p-8 text-slate-400 italic text-sm border border-slate-850/50 bg-slate-900/20 rounded-2xl">
-                Please select both an Exam and a Student to view and edit the report card.
               </div>
-            )}
-          </GlassCard>
-        </div>
+
+              {managedClasses.length === 0 ? (
+                <div className="text-center p-8 text-slate-400 italic text-sm">
+                  You do not have any homeroom classes assigned.
+                </div>
+              ) : hmSelectedStudent && hmSelectedExam ? (
+                <form onSubmit={handleSaveReportCard} className="space-y-4">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-850 text-slate-400 font-bold">
+                          <th className="py-3 px-4">Subject</th>
+                          <th className="py-3 px-4">Max Marks</th>
+                          <th className="py-3 px-4">Marks Obtained</th>
+                          <th className="py-3 px-4">Remarks</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850">
+                        {hmReportCard.length === 0 ? (
+                          <tr>
+                            <td colSpan={4} className="py-8 text-center text-slate-500 italic">No schedules found for this exam.</td>
+                          </tr>
+                        ) : (
+                          hmReportCard.map((rc, idx) => (
+                            <tr key={rc.scheduleId} className="hover:bg-slate-900/10 text-slate-200">
+                              <td className="py-3 px-4 font-semibold">{rc.subjectName}</td>
+                              <td className="py-3 px-4 text-slate-400">{rc.maxMarks}</td>
+                              <td className="py-3 px-4">
+                                <input 
+                                  type="number"
+                                  min={0}
+                                  max={rc.maxMarks}
+                                  value={rc.marksObtained ?? ''}
+                                  onChange={(e) => {
+                                    const newRc = [...hmReportCard];
+                                    newRc[idx].marksObtained = parseFloat(e.target.value) || 0;
+                                    setHmReportCard(newRc);
+                                  }}
+                                  className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs w-20 focus:outline-none focus:border-brand-500"
+                                />
+                              </td>
+                              <td className="py-3 px-4">
+                                <input 
+                                  type="text"
+                                  value={rc.remarks ?? ''}
+                                  onChange={(e) => {
+                                    const newRc = [...hmReportCard];
+                                    newRc[idx].remarks = e.target.value;
+                                    setHmReportCard(newRc);
+                                  }}
+                                  className="bg-slate-950 border border-slate-800 rounded px-2 py-1 text-xs w-full focus:outline-none focus:border-brand-500"
+                                  placeholder="Optional remarks..."
+                                />
+                              </td>
+                            </tr>
+                          ))
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                  {hmReportCard.length > 0 && (
+                    <div className="flex justify-end pt-4">
+                      <button type="submit" className="glass-btn-primary text-xs flex items-center gap-1.5">
+                        <Save size={14} /> Save Report Card
+                      </button>
+                    </div>
+                  )}
+                </form>
+              ) : (
+                <div className="text-center p-8 text-slate-400 italic text-sm border border-slate-850/50 bg-slate-900/20 rounded-2xl">
+                  Please select both an Exam and a Student to view and edit the report card.
+                </div>
+              )}
+            </GlassCard>
+          </div>
+        </PremiumLock>
       )}
 
       {activeTab === 'assignments' && (

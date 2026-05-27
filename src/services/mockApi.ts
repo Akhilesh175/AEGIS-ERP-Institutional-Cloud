@@ -4,7 +4,7 @@ import {
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizAttempt, 
   Exam, ExamMark, FeeStructure, FeePayment, ChatMessage, Announcement, 
   Notification, AuditLog, StudyMaterial, ExamSchedule, 
-  TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply
+  TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans } from './subscriptionConfig';
@@ -499,8 +499,137 @@ export const mockApi = {
   // 4. TEACHER PORTAL ENDPOINTS
   // ==========================================
 
+  async teacherSyncData(teacherId: string): Promise<void> {
+    try {
+      const teacher = mockDb.teachers.find(t => t.id === teacherId);
+      if (!teacher) return;
+      const schoolId = teacher.schoolId;
+
+      // 1. Sync Classes
+      const { data: classRows } = await supabaseAdmin
+        .from('classes')
+        .select('*')
+        .eq('school_id', schoolId);
+      if (classRows) {
+        classRows.forEach((r: any) => {
+          const cls: Class = {
+            id: r.id, schoolId: r.school_id, name: r.name,
+            academicSessionId: r.academic_session_id || 'session-1',
+            classTeacherId: r.class_teacher_id || undefined,
+            createdAt: r.created_at
+          };
+          const idx = mockDb.classes.findIndex(c => c.id === cls.id);
+          if (idx === -1) mockDb.classes.push(cls);
+          else mockDb.classes[idx] = cls;
+        });
+        const classIds = new Set(classRows.map(c => c.id));
+        mockDb.classes = mockDb.classes.filter(c => c.schoolId !== schoolId || classIds.has(c.id));
+      }
+
+      // 2. Sync Students and associated Users
+      const { data: studentRows } = await supabaseAdmin
+        .from('students')
+        .select(`
+          id, user_id, school_id, class_id, admission_number, roll_number, date_of_birth, gender, created_at,
+          users(id, email, first_name, last_name, phone, role, school_id, is_active, created_at)
+        `)
+        .eq('school_id', schoolId);
+      if (studentRows) {
+        studentRows.forEach((row: any) => {
+          const u = row.users as any;
+          if (u) {
+            const userMapped: User = {
+              id: u.id, email: u.email, role: u.role,
+              firstName: u.first_name, lastName: u.last_name,
+              phone: u.phone || '', avatarUrl: '', isActive: u.is_active,
+              schoolId: u.school_id, password: '', createdAt: u.created_at, updatedAt: u.created_at
+            };
+            const existingUser = mockDb.users.findIndex(usr => usr.id === u.id);
+            if (existingUser === -1) mockDb.users.push(userMapped);
+            else mockDb.users[existingUser] = { ...mockDb.users[existingUser], ...userMapped };
+          }
+
+          const studentMapped: Student = {
+            id: row.id, userId: row.user_id, schoolId: row.school_id,
+            classId: row.class_id || '', admissionNumber: row.admission_number,
+            rollNumber: row.roll_number, dateOfBirth: row.date_of_birth || '',
+            gender: row.gender, createdAt: row.created_at
+          };
+          const idx = mockDb.students.findIndex(s => s.id === studentMapped.id);
+          if (idx === -1) mockDb.students.push(studentMapped);
+          else mockDb.students[idx] = studentMapped;
+        });
+        const studentIds = new Set(studentRows.map(s => s.id));
+        mockDb.students = mockDb.students.filter(s => s.schoolId !== schoolId || studentIds.has(s.id));
+      }
+
+      // 3. Sync Parents and associated Users
+      const { data: parentRows } = await supabaseAdmin
+        .from('parents')
+        .select(`
+          id, user_id, school_id, occupation, address, created_at,
+          users(id, email, first_name, last_name, phone, role, school_id, is_active, created_at)
+        `)
+        .eq('school_id', schoolId);
+      if (parentRows) {
+        parentRows.forEach((row: any) => {
+          const u = row.users as any;
+          if (u) {
+            const userMapped: User = {
+              id: u.id, email: u.email, role: u.role,
+              firstName: u.first_name, lastName: u.last_name,
+              phone: u.phone || '', avatarUrl: '', isActive: u.is_active,
+              schoolId: u.school_id, password: '', createdAt: u.created_at, updatedAt: u.created_at
+            };
+            const existingUser = mockDb.users.findIndex(usr => usr.id === u.id);
+            if (existingUser === -1) mockDb.users.push(userMapped);
+            else mockDb.users[existingUser] = { ...mockDb.users[existingUser], ...userMapped };
+          }
+
+          const parentMapped: Parent = {
+            id: row.id, userId: row.user_id, schoolId: row.school_id,
+            occupation: row.occupation || '', address: row.address || '',
+            createdAt: row.created_at
+          };
+          const idx = mockDb.parents.findIndex(p => p.id === parentMapped.id);
+          if (idx === -1) mockDb.parents.push(parentMapped);
+          else mockDb.parents[idx] = parentMapped;
+        });
+        const parentIds = new Set(parentRows.map(p => p.id));
+        mockDb.parents = mockDb.parents.filter(p => p.schoolId !== schoolId || parentIds.has(p.id));
+
+        // 4. Sync Parent-Student Mappings
+        if (parentRows.length > 0) {
+          const pIds = parentRows.map((p: any) => p.id);
+          const { data: mappingRows } = await supabaseAdmin
+            .from('parent_student_mapping')
+            .select('*')
+            .in('parent_id', pIds);
+          if (mappingRows) {
+            mappingRows.forEach((m: any) => {
+              const map: ParentStudentMapping = {
+                parentId: m.parent_id,
+                studentId: m.student_id,
+                relationship: m.relationship
+              };
+              const exists = mockDb.parentStudentMappings.some(
+                cur => cur.parentId === map.parentId && cur.studentId === map.studentId
+              );
+              if (!exists) mockDb.parentStudentMappings.push(map);
+            });
+          }
+        }
+      }
+
+      mockDb.saveAll();
+    } catch (e) {
+      console.error('Failed to sync teacher portal data:', e);
+    }
+  },
+
   async teacherGetClassSubjectMappings(teacherId: string): Promise<(TeacherClassSubjectMapping & { className: string; subjectName: string; classId: string; subjectCode: string })[]> {
     await delay();
+    await this.teacherSyncData(teacherId);
     const mappings = mockDb.teacherClassSubjectMappings.filter(m => m.teacherId === teacherId);
 
     return mappings.map(m => {
@@ -517,6 +646,7 @@ export const mockApi = {
 
   async teacherGetClassStudents(teacherId: string, classId: string): Promise<(Student & { userDetails: User; attendanceState?: string })[]> {
     await delay();
+    await this.teacherSyncData(teacherId);
     
     // Safety check: is teacher mapped to this class?
     const isMapped = mockDb.teacherClassSubjectMappings.some(
@@ -1901,6 +2031,7 @@ export const mockApi = {
 
   async classTeacherGetManagedClasses(teacherId: string): Promise<Class[]> {
     await delay();
+    await this.teacherSyncData(teacherId);
     return mockDb.classes.filter(c => c.classTeacherId === teacherId);
   },
 
