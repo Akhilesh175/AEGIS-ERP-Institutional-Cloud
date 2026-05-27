@@ -63,6 +63,13 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
   }, [parentId]);
 
   useEffect(() => {
+    const interval = setInterval(() => {
+      syncSubscriptionPlan();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [syncSubscriptionPlan]);
+
+  useEffect(() => {
     if (selectedStudent) {
       loadAcademicRecord();
     }
@@ -367,7 +374,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
             {activeTab === 'fees' && (
               <PremiumLock 
                 isLocked={!plan.features.billing} 
-                requiredTier="Pro" 
+                requiredTier="Basic" 
                 featureName="Fee Management"
               >
                 <GlassCard className="space-y-6">

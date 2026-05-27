@@ -170,6 +170,13 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   }, [teacherId, session, refreshTrigger]);
 
   useEffect(() => {
+    const interval = setInterval(() => {
+      syncSubscriptionPlan();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [syncSubscriptionPlan]);
+
+  useEffect(() => {
     if (selectedMapping) {
       loadSelectionDetails();
     }
@@ -1330,8 +1337,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {activeTab === 'marksheets' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium'}
-          requiredTier="Basic"
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          requiredTier="Pro"
           featureName="Homeroom Marksheets"
         >
           <div className="space-y-6 animate-fade-in">
@@ -1525,171 +1532,183 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
           {/* Quiz Creator Form */}
           <div className="lg:col-span-2">
-            <GlassCard className="space-y-4">
-              <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                <PlusCircle className="text-brand-500" size={16} />
-                Interactive MCQ Online Quiz Builder
-              </h3>
+            <PremiumLock
+              isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+              requiredTier="Pro"
+              featureName="Interactive MCQ Online Quiz Builder"
+            >
+              <GlassCard className="space-y-4">
+                <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <PlusCircle className="text-brand-500" size={16} />
+                  Interactive MCQ Online Quiz Builder
+                </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="space-y-4">
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Quiz Title</label>
-                    <input 
-                      type="text"
-                      placeholder="e.g. TypeScript Type Safety Test"
-                      value={quizTitle}
-                      onChange={(e) => setQuizTitle(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Duration (Minutes)</label>
-                    <input 
-                      type="number"
-                      value={quizDuration}
-                      onChange={(e) => setQuizDuration(parseInt(e.target.value) || 15)}
-                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
-                    />
-                  </div>
-
-                  <div className="p-3 bg-slate-950/40 border border-slate-850 rounded-xl space-y-2">
-                    <h4 className="text-xs font-semibold text-slate-200">Added Questions ({quizQuestions.length})</h4>
-                    <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
-                      {quizQuestions.length === 0 ? (
-                        <p className="text-[10px] text-slate-500 italic">No questions added yet. Use form on right.</p>
-                      ) : (
-                        quizQuestions.map((q, idx) => (
-                          <div key={idx} className="text-[10px] text-slate-400 truncate">
-                            {idx + 1}. {q.question} ({q.marks}m)
-                          </div>
-                        ))
-                      )}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-4">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Quiz Title</label>
+                      <input 
+                        type="text"
+                        placeholder="e.g. TypeScript Type Safety Test"
+                        value={quizTitle}
+                        onChange={(e) => setQuizTitle(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
+                      />
                     </div>
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Duration (Minutes)</label>
+                      <input 
+                        type="number"
+                        value={quizDuration}
+                        onChange={(e) => setQuizDuration(parseInt(e.target.value) || 15)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="p-3 bg-slate-950/40 border border-slate-850 rounded-xl space-y-2">
+                      <h4 className="text-xs font-semibold text-slate-200">Added Questions ({quizQuestions.length})</h4>
+                      <div className="max-h-36 overflow-y-auto space-y-1 pr-1">
+                        {quizQuestions.length === 0 ? (
+                          <p className="text-[10px] text-slate-500 italic">No questions added yet. Use form on right.</p>
+                        ) : (
+                          quizQuestions.map((q, idx) => (
+                            <div key={idx} className="text-[10px] text-slate-400 truncate">
+                              {idx + 1}. {q.question} ({q.marks}m)
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <button 
+                      onClick={handleCreateQuiz}
+                      disabled={!quizTitle.trim() || quizQuestions.length === 0}
+                      className="w-full glass-btn-primary text-xs disabled:opacity-40 disabled:pointer-events-none"
+                    >
+                      Publish Quiz & Deploy
+                    </button>
                   </div>
 
-                  <button 
-                    onClick={handleCreateQuiz}
-                    disabled={!quizTitle.trim() || quizQuestions.length === 0}
-                    className="w-full glass-btn-primary text-xs disabled:opacity-40 disabled:pointer-events-none"
-                  >
-                    Publish Quiz & Deploy
-                  </button>
+                  {/* Add single question */}
+                  <form onSubmit={handleAddQuizQuestion} className="bg-slate-900/20 border border-slate-850 p-3 rounded-2xl space-y-3">
+                    <h4 className="text-xs font-semibold text-slate-200">Add Question Form</h4>
+                    <div className="space-y-1">
+                      <input 
+                        type="text" 
+                        placeholder="Question string..." 
+                        value={qText}
+                        onChange={(e) => setQText(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-[11px] text-slate-200 focus:outline-none"
+                        required
+                      />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <input type="text" placeholder="Option A" value={qOpt1} onChange={(e) => setQOpt1(e.target.value)} className="bg-slate-950 border border-slate-800 rounded p-1 text-[10px] text-slate-200" required />
+                      <input type="text" placeholder="Option B" value={qOpt2} onChange={(e) => setQOpt2(e.target.value)} className="bg-slate-950 border border-slate-800 rounded p-1 text-[10px] text-slate-200" required />
+                      <input type="text" placeholder="Option C (Opt)" value={qOpt3} onChange={(e) => setQOpt3(e.target.value)} className="bg-slate-950 border border-slate-800 rounded p-1 text-[10px] text-slate-200" />
+                      <input type="text" placeholder="Option D (Opt)" value={qOpt4} onChange={(e) => setQOpt4(e.target.value)} className="bg-slate-950 border border-slate-800 rounded p-1 text-[10px] text-slate-200" />
+                    </div>
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[8px] text-slate-500 block uppercase">Correct Index</label>
+                        <select value={qCorrect} onChange={(e) => setQCorrect(parseInt(e.target.value))} className="bg-slate-950 border border-slate-800 text-[10px] rounded p-1 w-full">
+                          <option value={0}>Option A</option>
+                          <option value={1}>Option B</option>
+                          <option value={2}>Option C</option>
+                          <option value={3}>Option D</option>
+                        </select>
+                      </div>
+                      <div>
+                        <label className="text-[8px] text-slate-500 block uppercase">Marks weight</label>
+                        <input type="number" value={qMarks} onChange={(e) => setQMarks(parseInt(e.target.value) || 1)} className="bg-slate-950 border border-slate-800 text-[10px] rounded p-1 w-full" />
+                      </div>
+                    </div>
+                    <button type="submit" className="w-full bg-slate-800 hover:bg-slate-750 text-slate-200 py-1.5 rounded font-semibold text-[10px] transition-colors">
+                      Push to quiz list
+                    </button>
+                  </form>
                 </div>
-
-                {/* Add single question */}
-                <form onSubmit={handleAddQuizQuestion} className="bg-slate-900/20 border border-slate-850 p-3 rounded-2xl space-y-3">
-                  <h4 className="text-xs font-semibold text-slate-200">Add Question Form</h4>
-                  <div className="space-y-1">
-                    <input 
-                      type="text" 
-                      placeholder="Question string..." 
-                      value={qText}
-                      onChange={(e) => setQText(e.target.value)}
-                      className="w-full bg-slate-950 border border-slate-800 rounded p-1.5 text-[11px] text-slate-200 focus:outline-none"
-                      required
-                    />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <input type="text" placeholder="Option A" value={qOpt1} onChange={(e) => setQOpt1(e.target.value)} className="bg-slate-950 border border-slate-800 rounded p-1 text-[10px] text-slate-200" required />
-                    <input type="text" placeholder="Option B" value={qOpt2} onChange={(e) => setQOpt2(e.target.value)} className="bg-slate-950 border border-slate-800 rounded p-1 text-[10px] text-slate-200" required />
-                    <input type="text" placeholder="Option C (Opt)" value={qOpt3} onChange={(e) => setQOpt3(e.target.value)} className="bg-slate-950 border border-slate-800 rounded p-1 text-[10px] text-slate-200" />
-                    <input type="text" placeholder="Option D (Opt)" value={qOpt4} onChange={(e) => setQOpt4(e.target.value)} className="bg-slate-950 border border-slate-800 rounded p-1 text-[10px] text-slate-200" />
-                  </div>
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <label className="text-[8px] text-slate-500 block uppercase">Correct Index</label>
-                      <select value={qCorrect} onChange={(e) => setQCorrect(parseInt(e.target.value))} className="bg-slate-950 border border-slate-800 text-[10px] rounded p-1 w-full">
-                        <option value={0}>Option A</option>
-                        <option value={1}>Option B</option>
-                        <option value={2}>Option C</option>
-                        <option value={3}>Option D</option>
-                      </select>
-                    </div>
-                    <div>
-                      <label className="text-[8px] text-slate-500 block uppercase">Marks weight</label>
-                      <input type="number" value={qMarks} onChange={(e) => setQMarks(parseInt(e.target.value) || 1)} className="bg-slate-950 border border-slate-800 text-[10px] rounded p-1 w-full" />
-                    </div>
-                  </div>
-                  <button type="submit" className="w-full bg-slate-800 hover:bg-slate-750 text-slate-200 py-1.5 rounded font-semibold text-[10px] transition-colors">
-                    Push to quiz list
-                  </button>
-                </form>
-              </div>
-            </GlassCard>
+              </GlassCard>
+            </PremiumLock>
           </div>
         </div>
       )}
 
       {activeTab === 'materials' && (
-        <GlassCard className="space-y-4 max-w-xl mx-auto">
-          <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-            <UploadCloud className="text-brand-500" size={16} />
-            Publish Class Notes, PDFs, and MP4 Videos
-          </h3>
+        <PremiumLock
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          requiredTier="Pro"
+          featureName="Study Materials Upload"
+        >
+          <GlassCard className="space-y-4 max-w-xl mx-auto">
+            <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+              <UploadCloud className="text-brand-500" size={16} />
+              Publish Class Notes, PDFs, and MP4 Videos
+            </h3>
 
-          <form onSubmit={handleUploadMaterial} className="space-y-4">
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource Title</label>
-              <input 
-                type="text"
-                placeholder="e.g. Spacetime Curvature Video Lecture"
-                value={materialTitle}
-                onChange={(e) => setMaterialTitle(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
-                required
-              />
-            </div>
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource Description</label>
-              <textarea 
-                placeholder="Summarize the core syllabus contents covered..."
-                rows={2}
-                value={materialDesc}
-                onChange={(e) => setMaterialDesc(e.target.value)}
-                className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
+            <form onSubmit={handleUploadMaterial} className="space-y-4">
               <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource File Link</label>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource Title</label>
                 <input 
                   type="text"
-                  placeholder="https://example.com/lecture.mp4"
-                  value={materialUrl}
-                  onChange={(e) => setMaterialUrl(e.target.value)}
+                  placeholder="e.g. Spacetime Curvature Video Lecture"
+                  value={materialTitle}
+                  onChange={(e) => setMaterialTitle(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
                   required
                 />
               </div>
               <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Format</label>
-                <select 
-                  value={materialType}
-                  onChange={(e) => setMaterialType(e.target.value as any)}
-                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
-                >
-                  <option value="pdf">PDF Handbook</option>
-                  <option value="docx">Word Docx</option>
-                  <option value="mp4">MP4 Video Clip</option>
-                </select>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource Description</label>
+                <textarea 
+                  placeholder="Summarize the core syllabus contents covered..."
+                  rows={2}
+                  value={materialDesc}
+                  onChange={(e) => setMaterialDesc(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                />
               </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <input 
-                type="checkbox"
-                id="isStreamCheck"
-                checked={materialStreamable}
-                onChange={(e) => setMaterialStreamable(e.target.checked)}
-                className="bg-slate-900 border border-slate-800 rounded h-4 w-4 text-brand-500 focus:ring-brand-500"
-              />
-              <label htmlFor="isStreamCheck" className="text-xs text-slate-300">Mark as streamable in-browser lecture video</label>
-            </div>
-            <button type="submit" className="w-full glass-btn-primary text-xs">
-              Upload study files
-            </button>
-          </form>
-        </GlassCard>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource File Link</label>
+                  <input 
+                    type="text"
+                    placeholder="https://example.com/lecture.mp4"
+                    value={materialUrl}
+                    onChange={(e) => setMaterialUrl(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Format</label>
+                  <select 
+                    value={materialType}
+                    onChange={(e) => setMaterialType(e.target.value as any)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
+                  >
+                    <option value="pdf">PDF Handbook</option>
+                    <option value="docx">Word Docx</option>
+                    <option value="mp4">MP4 Video Clip</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox"
+                  id="isStreamCheck"
+                  checked={materialStreamable}
+                  onChange={(e) => setMaterialStreamable(e.target.checked)}
+                  className="bg-slate-900 border border-slate-800 rounded h-4 w-4 text-brand-500 focus:ring-brand-500"
+                />
+                <label htmlFor="isStreamCheck" className="text-xs text-slate-300">Mark as streamable in-browser lecture video</label>
+              </div>
+              <button type="submit" className="w-full glass-btn-primary text-xs">
+                Upload study files
+              </button>
+            </form>
+          </GlassCard>
+        </PremiumLock>
       )}
 
       {activeTab === 'forums' && (

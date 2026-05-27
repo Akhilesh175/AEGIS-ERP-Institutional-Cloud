@@ -87,6 +87,13 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
     loadData();
   }, [studentId, activeTab]);
 
+  useEffect(() => {
+    const interval = setInterval(() => {
+      syncSubscriptionPlan();
+    }, 10000);
+    return () => clearInterval(interval);
+  }, [syncSubscriptionPlan]);
+
   // Quiz Timer
   useEffect(() => {
     if (activeQuiz && quizDurationLeft > 0) {

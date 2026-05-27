@@ -47,13 +47,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         return [
           { id: 'dashboard', label: 'Classes Taught', icon: LayoutDashboard },
           { id: 'timetable', label: 'Teaching Schedule', icon: Calendar },
-          { id: 'classroster', label: 'Class Roster', icon: Users },
+          { id: 'classroster', label: 'Class Roster', icon: Users, locked: !school || school.subscriptionPlan === 'freemium' },
           { id: 'attendance', label: 'Attendance Roll', icon: Layers },
           { id: 'grades', label: 'Gradebook Matrix', icon: Award },
-          { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList },
+          { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: !school || school.subscriptionPlan === 'freemium' || school.subscriptionPlan === 'basic' },
           { id: 'assignments', label: 'Assignment Creator', icon: PenTool },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
-          { id: 'materials', label: 'Upload Materials', icon: BookOpen },
+          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: !school || school.subscriptionPlan === 'freemium' || school.subscriptionPlan === 'basic' },
           { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: !plan.features.communications }
         ];
       case 'ADMIN':

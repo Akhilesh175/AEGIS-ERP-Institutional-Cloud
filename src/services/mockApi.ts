@@ -502,9 +502,14 @@ export const mockApi = {
   async verifyClassTeacherHubSubscription(teacherId: string): Promise<void> {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher not found.');
-    const school = mockDb.schools.find(s => s.id === teacher.schoolId);
-    if (!school) throw new Error('School not found.');
-    const planName = school.subscriptionPlan.toLowerCase();
+    const schoolId = teacher.schoolId;
+    if (!schoolId) throw new Error('Teacher has no school association.');
+    const { data: dbSchool } = await supabaseAdmin
+      .from('schools')
+      .select('subscription_plan')
+      .eq('id', schoolId)
+      .maybeSingle();
+    const planName = dbSchool?.subscription_plan?.toLowerCase() || 'freemium';
     if (planName !== 'pro' && planName !== 'enterprise') {
       throw new Error('Class Teacher Hub features are only available in Pro and Enterprise subscription plans.');
     }
@@ -847,6 +852,19 @@ export const mockApi = {
     await delay(600);
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId)!;
+    if (!teacher) throw new Error('Teacher not found.');
+    const schoolId = teacher.schoolId;
+    if (!schoolId) throw new Error('Teacher has no school association.');
+    const { data: dbSchool } = await supabaseAdmin
+      .from('schools')
+      .select('subscription_plan')
+      .eq('id', schoolId)
+      .maybeSingle();
+    const planName = dbSchool?.subscription_plan?.toLowerCase() || 'freemium';
+    if (planName !== 'pro' && planName !== 'enterprise') {
+      throw new Error('Interactive Online Quizzes are only available in Pro and Enterprise subscription plans.');
+    }
+
     const totalMarks = questions.reduce((acc, q) => acc + q.marks, 0);
 
     const quiz: Quiz = {
@@ -2009,6 +2027,13 @@ export const mockApi = {
   async superAdminUpdateSchoolSubscription(superAdminId: string, schoolId: string, subscriptionPlan: string): Promise<void> {
     const { error } = await supabaseAdmin.from('schools').update({ subscription_plan: subscriptionPlan }).eq('id', schoolId);
     if (error) throw new Error('Failed to update school subscription: ' + error.message);
+    
+    // Sync local mockDb schools cache
+    const idx = mockDb.schools.findIndex(s => s.id === schoolId);
+    if (idx !== -1) {
+      mockDb.schools[idx].subscriptionPlan = subscriptionPlan.toLowerCase() as any;
+      mockDb.saveAll();
+    }
   },
 
   async superAdminDeleteAdmin(superAdminId: string, adminUserId: string): Promise<void> {
@@ -2416,7 +2441,19 @@ export const mockApi = {
     await delay(500);
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId)!;
-    
+    if (!teacher) throw new Error('Teacher not found.');
+    const schoolId = teacher.schoolId;
+    if (!schoolId) throw new Error('Teacher has no school association.');
+    const { data: dbSchool } = await supabaseAdmin
+      .from('schools')
+      .select('subscription_plan')
+      .eq('id', schoolId)
+      .maybeSingle();
+    const planName = dbSchool?.subscription_plan?.toLowerCase() || 'freemium';
+    if (planName !== 'pro' && planName !== 'enterprise') {
+      throw new Error('Study Materials upload features are only available in Pro and Enterprise subscription plans.');
+    }
+
     const mat: StudyMaterial = {
       id: 'sm-' + Math.random().toString(36).substr(2, 9),
       subjectId,
