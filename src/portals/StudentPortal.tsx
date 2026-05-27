@@ -15,7 +15,7 @@ import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 
 export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
-  const { session } = useStore();
+  const { session, syncSubscriptionPlan } = useStore();
   const studentId = session?.studentId;
   const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
@@ -54,6 +54,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   const loadData = async () => {
     if (!studentId) return;
     try {
+      await syncSubscriptionPlan();
       const tt = await mockApi.studentGetTimetable(studentId);
       setTimetable(tt);
 

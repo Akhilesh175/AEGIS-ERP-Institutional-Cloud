@@ -11,6 +11,7 @@ interface SchoolERPStore {
   setActiveStudentId: (studentId: string | null) => void;
   setActiveChatUserId: (userId: string | null) => void;
   initializeStore: () => void;
+  syncSubscriptionPlan: () => Promise<void>;
 }
 
 export const useStore = create<SchoolERPStore>((set, get) => ({
@@ -59,9 +60,43 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
     const recovered = localStorage.getItem('aegis_session');
     if (recovered) {
       try {
-        set({ session: JSON.parse(recovered) });
+        const parsed = JSON.parse(recovered);
+        set({ session: parsed });
+        
+        // Dynamically fetch and sync the subscription plan from Supabase in the background
+        if (parsed?.user?.schoolId) {
+          import('../services/mockApi').then(async ({ mockApi }) => {
+            try {
+              const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(parsed.user.schoolId);
+              if (livePlan) {
+                const updatedSession = { ...parsed, schoolSubscriptionPlan: livePlan };
+                set({ session: updatedSession });
+                localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+              }
+            } catch (e) {
+              console.error('Failed to sync live subscription plan:', e);
+            }
+          });
+        }
       } catch {
         localStorage.removeItem('aegis_session');
+      }
+    }
+  },
+
+  syncSubscriptionPlan: async () => {
+    const sess = get().session;
+    if (sess?.user?.schoolId) {
+      try {
+        const { mockApi } = await import('../services/mockApi');
+        const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(sess.user.schoolId);
+        if (livePlan && livePlan !== sess.schoolSubscriptionPlan) {
+          const updatedSession = { ...sess, schoolSubscriptionPlan: livePlan };
+          set({ session: updatedSession });
+          localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+        }
+      } catch (e) {
+        console.error('Failed to sync subscription plan in polling loop:', e);
       }
     }
   }

@@ -12,7 +12,7 @@ import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 
 export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
-  const { session } = useStore();
+  const { session, syncSubscriptionPlan } = useStore();
   const parentId = session?.parentId;
   const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
@@ -28,6 +28,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
   const loadAssignedStudents = async () => {
     if (!parentId) return;
     try {
+      await syncSubscriptionPlan();
       setLoading(true);
       const data = await mockApi.parentGetStudents(parentId);
       setAssignedStudents(data);

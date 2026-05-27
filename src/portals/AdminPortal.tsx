@@ -12,7 +12,7 @@ import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 
 export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
-  const { session, setSession } = useStore();
+  const { session, setSession, syncSubscriptionPlan } = useStore();
   const adminId = session?.user.id;
   const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
@@ -136,7 +136,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const handleDeleteStudent = async (studentId: string, name: string) => {
     if (!adminId) return;
-    if (!window.confirm(`Are you sure you want to delete student ${name}? This will remove their user credentials and clear parent-student linkages.`)) return;
+    if (!window.confirm(`Are you sure you want to delete student ${name}? This will clear their record from registries.`)) return;
     try {
       await mockApi.adminDeleteStudent(adminId, studentId);
       loadData();
@@ -160,6 +160,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const loadData = async () => {
     try {
+      // Sync subscription plan in real time during load / poll
+      await syncSubscriptionPlan();
+
       const [over, st, tc, pr, cls, sub] = await Promise.all([
         mockApi.adminGetInstitutionOverview(),
         mockApi.adminGetStudents(),

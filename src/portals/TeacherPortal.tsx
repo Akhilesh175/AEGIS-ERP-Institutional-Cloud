@@ -15,7 +15,7 @@ import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 
 export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: string) => void }> = ({ activeTab, setActiveTab }) => {
-  const { session } = useStore();
+  const { session, syncSubscriptionPlan } = useStore();
   const teacherId = session?.teacherId;
   const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
@@ -161,6 +161,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   };
 
   useEffect(() => {
+    syncSubscriptionPlan();
     loadMappings();
     loadManagedClasses();
     if (session?.user.schoolId) {

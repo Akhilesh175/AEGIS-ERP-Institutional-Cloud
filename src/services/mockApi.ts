@@ -186,7 +186,18 @@ export const mockApi = {
       }
     }
 
-    const school = mockDb.schools.find(s => s.id === user.schoolId);
+    // Fetch live subscription plan from Supabase
+    let subscriptionPlan = 'freemium';
+    if (user.schoolId) {
+      const { data: schoolRow } = await supabaseAdmin
+        .from('schools')
+        .select('subscription_plan')
+        .eq('id', user.schoolId)
+        .maybeSingle();
+      if (schoolRow?.subscription_plan) {
+        subscriptionPlan = schoolRow.subscription_plan.toLowerCase();
+      }
+    }
 
     const session: AuthSession = {
       user,
@@ -194,7 +205,7 @@ export const mockApi = {
       studentId,
       teacherId,
       parentId,
-      schoolSubscriptionPlan: school?.subscriptionPlan || 'enterprise'
+      schoolSubscriptionPlan: subscriptionPlan
     };
 
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
@@ -1328,7 +1339,11 @@ export const mockApi = {
     password?: string
   ): Promise<void> {
     await delay(600);
-    const schoolId = getAdminSchoolId();
+    const { data: admin, error: adminErr } = await supabase.from('users').select('role, school_id').eq('id', adminId).single();
+    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+
+    const schoolId = admin.school_id;
+    if (!schoolId) throw new Error('Admin has no associated school');
 
     if (studentId && admissionNumber) {
       const student = mockDb.students.find(s => s.id === studentId);
@@ -2215,6 +2230,21 @@ export const mockApi = {
     if (idx !== -1) {
       mockDb.notifications[idx].isRead = true;
       mockDb.saveAll();
+    }
+  },
+
+  async getLiveSchoolSubscriptionPlan(schoolId: string): Promise<string | null> {
+    if (!schoolId) return null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('schools')
+        .select('subscription_plan')
+        .eq('id', schoolId)
+        .maybeSingle();
+      if (error || !data) return null;
+      return data.subscription_plan ? data.subscription_plan.toLowerCase() : 'freemium';
+    } catch {
+      return null;
     }
   }
 };
