@@ -499,6 +499,17 @@ export const mockApi = {
   // 4. TEACHER PORTAL ENDPOINTS
   // ==========================================
 
+  async verifyClassTeacherHubSubscription(teacherId: string): Promise<void> {
+    const teacher = mockDb.teachers.find(t => t.id === teacherId);
+    if (!teacher) throw new Error('Teacher not found.');
+    const school = mockDb.schools.find(s => s.id === teacher.schoolId);
+    if (!school) throw new Error('School not found.');
+    const planName = school.subscriptionPlan.toLowerCase();
+    if (planName !== 'pro' && planName !== 'enterprise') {
+      throw new Error('Class Teacher Hub features are only available in Pro and Enterprise subscription plans.');
+    }
+  },
+
   async teacherSyncData(teacherId: string): Promise<void> {
     try {
       const teacher = mockDb.teachers.find(t => t.id === teacherId);
@@ -1694,6 +1705,7 @@ export const mockApi = {
     dob: string
   ): Promise<void> {
     await delay(600);
+    await this.verifyClassTeacherHubSubscription(teacherId);
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher not found.');
 
@@ -1760,6 +1772,7 @@ export const mockApi = {
     relationship: string
   ): Promise<void> {
     await delay(600);
+    await this.verifyClassTeacherHubSubscription(teacherId);
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher not found.');
 
@@ -1815,6 +1828,7 @@ export const mockApi = {
 
   async classTeacherDeleteStudent(teacherId: string, studentId: string): Promise<void> {
     await delay(300);
+    await this.verifyClassTeacherHubSubscription(teacherId);
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher not found.');
     const student = mockDb.students.find(s => s.id === studentId);
@@ -1834,6 +1848,7 @@ export const mockApi = {
 
   async classTeacherDeleteParent(teacherId: string, parentId: string): Promise<void> {
     await delay(300);
+    await this.verifyClassTeacherHubSubscription(teacherId);
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher not found.');
     const parent = mockDb.parents.find(p => p.id === parentId);
@@ -2193,6 +2208,7 @@ export const mockApi = {
     classroomNumber: string
   ): Promise<void> {
     await delay(300);
+    await this.verifyClassTeacherHubSubscription(teacherId);
 
     const cls = mockDb.classes.find(c => c.id === classId);
     if (!cls || cls.classTeacherId !== teacherId) {
@@ -2217,6 +2233,7 @@ export const mockApi = {
 
   async classTeacherDeleteTimetableEntry(teacherId: string, timetableId: string): Promise<void> {
     await delay(300);
+    await this.verifyClassTeacherHubSubscription(teacherId);
 
     const ttIdx = mockDb.timetables.findIndex(t => t.id === timetableId);
     if (ttIdx === -1) throw new Error('Timetable entry not found.');

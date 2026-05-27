@@ -167,13 +167,13 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     if (session?.user.schoolId) {
       mockApi.classTeacherGetExams(session.user.schoolId).then(setHmExams);
     }
-  }, [teacherId, session]);
+  }, [teacherId, session, refreshTrigger]);
 
   useEffect(() => {
     if (selectedMapping) {
       loadSelectionDetails();
     }
-  }, [selectedMapping, activeTab]);
+  }, [selectedMapping, activeTab, refreshTrigger]);
 
   useEffect(() => {
     if (teacherId && selectedManagedClass && hmSelectedStudent && hmSelectedExam) {
@@ -209,6 +209,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setNewAssignedStart('09:00');
       setNewAssignedEnd('10:30');
       setNewAssignedClassroom('Room 101');
+      setRefreshTrigger(prev => prev + 1);
       alert('Class timetable entry created successfully!');
       loadSelectionDetails();
     } catch (err: any) {
@@ -220,6 +221,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     if (!window.confirm('Are you sure you want to delete this lecture from the class timetable?')) return;
     try {
       await mockApi.classTeacherDeleteTimetableEntry(teacherId!, timetableId);
+      setRefreshTrigger(prev => prev + 1);
       alert('Class lecture successfully removed from schedule sheets.');
       loadSelectionDetails();
     } catch (err: any) {
