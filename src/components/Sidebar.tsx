@@ -4,7 +4,7 @@ import { mockDb } from '../services/mockDb';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 import { 
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare, 
-  Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList
+  Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList, ShieldAlert
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -65,7 +65,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'classes', label: 'Classes & Sections', icon: Layers },
           { id: 'subjects', label: 'Subject Catalog', icon: BookMarked },
           { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing },
-          { id: 'impersonation', label: 'Portal Gateway', icon: Eye }
+          { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
+          { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert }
         ];
       case 'SUPER_ADMIN':
         return [

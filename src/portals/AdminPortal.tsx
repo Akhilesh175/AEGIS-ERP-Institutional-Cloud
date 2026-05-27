@@ -6,7 +6,7 @@ import { Student, Teacher, Parent, Class, Subject, User } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
-  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown
+  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Trash2, AlertTriangle, CheckCircle, XCircle
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -99,6 +99,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [resetUserName, setResetUserName] = useState('');
   const [newPassword, setNewPassword] = useState('');
 
+  // Danger Zone states
+  const [dangerEmail, setDangerEmail] = useState('');
+  const [dangerLoading, setDangerLoading] = useState(false);
+  const [dangerResults, setDangerResults] = useState<{ email: string; deleted: boolean; role: string; message: string }[]>([]);
+  const [bulkEmails, setBulkEmails] = useState('jp@gmail.com\nakash@gmail.com\nsk@gmail.com\nram@gmail.com\njk@gmail.com\nmanan2@gmail.com\nbasant1@gmail.com\nrajan@gmail.com\nmanan3@gmail.com\nvishal1@gmail.com\njj@gmail.com\nak@gmail.com\nmanan@gmail.com\nmanan1@gmail.com\nvishal@gmail.com\nbasant@gmail.com');
+  const [bulkLoading, setBulkLoading] = useState(false);
+
   const handleResetPassword = (userId: string, name: string) => {
     setResetUserId(userId);
     setResetUserName(name);
@@ -156,6 +163,43 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     } catch (err: any) {
       alert(err.message || 'Error deleting parent');
     }
+  };
+
+  const handleDeleteByEmail = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminId || !dangerEmail.trim()) return;
+    setDangerLoading(true);
+    try {
+      const result = await mockApi.adminDeleteUserByEmail(adminId, dangerEmail.trim().toLowerCase());
+      setDangerResults(prev => [{ email: dangerEmail.trim(), ...result }, ...prev]);
+      if (result.deleted) { loadData(); setDangerEmail(''); }
+    } catch (err: any) {
+      setDangerResults(prev => [{ email: dangerEmail.trim(), deleted: false, role: 'ERROR', message: err.message || 'Deletion failed' }, ...prev]);
+    } finally {
+      setDangerLoading(false);
+    }
+  };
+
+  const handleBulkDelete = async () => {
+    if (!adminId) return;
+    const emails = bulkEmails.split('\n').map(e => e.trim().toLowerCase()).filter(Boolean);
+    if (emails.length === 0) return;
+    if (!window.confirm(`This will permanently delete ${emails.length} user accounts and all their associated data. This action cannot be undone. Proceed?`)) return;
+    setBulkLoading(true);
+    setDangerResults([]);
+    const results: { email: string; deleted: boolean; role: string; message: string }[] = [];
+    for (const email of emails) {
+      try {
+        const result = await mockApi.adminDeleteUserByEmail(adminId, email);
+        results.push({ email, ...result });
+        setDangerResults([...results]);
+      } catch (err: any) {
+        results.push({ email, deleted: false, role: 'ERROR', message: err.message || 'Failed' });
+        setDangerResults([...results]);
+      }
+    }
+    loadData();
+    setBulkLoading(false);
   };
 
   const loadData = async () => {
@@ -1509,6 +1553,114 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
           </GlassCard>
         </div>
       )}
+      {activeTab === 'dangerzone' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <GlassCard className="border border-red-500/20 bg-red-950/10">
+            <div className="flex items-center gap-3 mb-2">
+              <div className="p-2 rounded-xl bg-red-500/10 border border-red-500/20">
+                <AlertTriangle className="text-red-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-red-300 text-sm">Danger Zone — Permanent User Deletion</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Deleted accounts are permanently removed from the database, auth system, and all related records. This action is irreversible.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Single email delete */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Trash2 className="text-red-400" size={15} />
+                Delete Single User by Email
+              </h4>
+              <form onSubmit={handleDeleteByEmail} className="space-y-3">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Email Address</label>
+                  <input
+                    id="danger-single-email"
+                    type="email"
+                    placeholder="user@example.com"
+                    value={dangerEmail}
+                    onChange={(e) => setDangerEmail(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-red-500/50"
+                    required
+                  />
+                </div>
+                <button
+                  id="danger-single-delete-btn"
+                  type="submit"
+                  disabled={dangerLoading}
+                  className="w-full py-2 rounded-xl text-xs font-bold bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 transition-all disabled:opacity-50"
+                >
+                  {dangerLoading ? 'Deleting…' : 'Permanently Delete User'}
+                </button>
+              </form>
+            </GlassCard>
+
+            {/* Bulk email delete */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <ShieldAlert className="text-red-400" size={15} />
+                Bulk Delete by Email List
+              </h4>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Email List (one per line)</label>
+                <textarea
+                  id="danger-bulk-emails"
+                  rows={8}
+                  value={bulkEmails}
+                  onChange={(e) => setBulkEmails(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-red-500/50 font-mono resize-none"
+                />
+              </div>
+              <button
+                id="danger-bulk-delete-btn"
+                type="button"
+                onClick={handleBulkDelete}
+                disabled={bulkLoading}
+                className="w-full py-2 rounded-xl text-xs font-bold bg-red-600/20 hover:bg-red-600/30 border border-red-500/30 text-red-300 transition-all disabled:opacity-50"
+              >
+                {bulkLoading ? `Deleting… (${dangerResults.length} done)` : `Delete All ${bulkEmails.split('\n').filter(e => e.trim()).length} Accounts`}
+              </button>
+            </GlassCard>
+          </div>
+
+          {/* Results log */}
+          {dangerResults.length > 0 && (
+            <GlassCard className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h4 className="font-bold text-slate-200 text-sm">Deletion Results</h4>
+                <span className="text-[10px] text-slate-500">
+                  {dangerResults.filter(r => r.deleted).length}/{dangerResults.length} deleted successfully
+                </span>
+              </div>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {dangerResults.map((r, i) => (
+                  <div key={i} className={`flex items-start gap-3 p-2.5 rounded-xl border text-xs ${
+                    r.deleted
+                      ? 'bg-green-950/20 border-green-500/20'
+                      : 'bg-red-950/20 border-red-500/20'
+                  }`}>
+                    {r.deleted
+                      ? <CheckCircle className="text-green-400 shrink-0 mt-0.5" size={13} />
+                      : <XCircle className="text-red-400 shrink-0 mt-0.5" size={13} />}
+                    <div>
+                      <span className={`font-bold font-mono ${r.deleted ? 'text-green-300' : 'text-red-300'}`}>{r.email}</span>
+                      {r.role !== 'UNKNOWN' && r.role !== 'ERROR' && (
+                        <span className="ml-2 text-[10px] text-slate-500 uppercase">[{r.role}]</span>
+                      )}
+                      <p className="text-slate-400 mt-0.5 text-[10px]">{r.message}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+          )}
+        </div>
+      )}
+
     </div>
   );
 };

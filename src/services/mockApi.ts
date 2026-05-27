@@ -1677,15 +1677,24 @@ export const mockApi = {
     await delay(300);
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher not found.');
-    mockDb.users = mockDb.users.filter(u => u.id !== teacher.userId);
+    const authUserId = teacher.userId;
+
+    // 1. Nullify class teacher assignments in Supabase
+    await supabaseAdmin.from('classes').update({ class_teacher_id: null }).eq('class_teacher_id', teacherId);
+    // 2. Delete teacher row from Supabase
+    await supabaseAdmin.from('teachers').delete().eq('id', teacherId);
+    // 3. Delete user row from Supabase (cascades timetable mappings)
+    await supabaseAdmin.from('users').delete().eq('id', authUserId);
+    // 4. Delete from Supabase Auth (revokes login access permanently)
+    if (authUserId) await supabaseAdmin.auth.admin.deleteUser(authUserId);
+
+    // 5. Sync local cache
+    mockDb.users = mockDb.users.filter(u => u.id !== authUserId);
     mockDb.teachers = mockDb.teachers.filter(t => t.id !== teacherId);
-    mockDb.classes = mockDb.classes.map(c => {
-      if (c.classTeacherId === teacherId) {
-        return { ...c, classTeacherId: undefined };
-      }
-      return c;
-    });
-    mockDb.addLog(adminId, 'DELETE_TEACHER', { teacherId });
+    mockDb.classes = mockDb.classes.map(c =>
+      c.classTeacherId === teacherId ? { ...c, classTeacherId: undefined } : c
+    );
+    mockDb.addLog(adminId, 'DELETE_TEACHER', { teacherId, authUserId });
     mockDb.saveAll();
   },
 
@@ -1693,10 +1702,22 @@ export const mockApi = {
     await delay(300);
     const student = mockDb.students.find(s => s.id === studentId);
     if (!student) throw new Error('Student not found.');
-    mockDb.users = mockDb.users.filter(u => u.id !== student.userId);
+    const authUserId = student.userId;
+
+    // 1. Delete parent-student mappings in Supabase
+    await supabaseAdmin.from('parent_student_mapping').delete().eq('student_id', studentId);
+    // 2. Delete student row from Supabase
+    await supabaseAdmin.from('students').delete().eq('id', studentId);
+    // 3. Delete user row from Supabase
+    await supabaseAdmin.from('users').delete().eq('id', authUserId);
+    // 4. Delete from Supabase Auth (revokes login access permanently)
+    if (authUserId) await supabaseAdmin.auth.admin.deleteUser(authUserId);
+
+    // 5. Sync local cache
+    mockDb.users = mockDb.users.filter(u => u.id !== authUserId);
     mockDb.students = mockDb.students.filter(s => s.id !== studentId);
     mockDb.parentStudentMappings = mockDb.parentStudentMappings.filter(m => m.studentId !== studentId);
-    mockDb.addLog(adminId, 'DELETE_STUDENT', { studentId });
+    mockDb.addLog(adminId, 'DELETE_STUDENT', { studentId, authUserId });
     mockDb.saveAll();
   },
 
@@ -1704,11 +1725,88 @@ export const mockApi = {
     await delay(300);
     const parent = mockDb.parents.find(p => p.id === parentId);
     if (!parent) throw new Error('Parent not found.');
-    mockDb.users = mockDb.users.filter(u => u.id !== parent.userId);
+    const authUserId = parent.userId;
+
+    // 1. Delete parent-student mappings in Supabase
+    await supabaseAdmin.from('parent_student_mapping').delete().eq('parent_id', parentId);
+    // 2. Delete parent row from Supabase
+    await supabaseAdmin.from('parents').delete().eq('id', parentId);
+    // 3. Delete user row from Supabase
+    await supabaseAdmin.from('users').delete().eq('id', authUserId);
+    // 4. Delete from Supabase Auth (revokes login access permanently)
+    if (authUserId) await supabaseAdmin.auth.admin.deleteUser(authUserId);
+
+    // 5. Sync local cache
+    mockDb.users = mockDb.users.filter(u => u.id !== authUserId);
     mockDb.parents = mockDb.parents.filter(p => p.id !== parentId);
     mockDb.parentStudentMappings = mockDb.parentStudentMappings.filter(m => m.parentId !== parentId);
-    mockDb.addLog(adminId, 'DELETE_PARENT', { parentId });
+    mockDb.addLog(adminId, 'DELETE_PARENT', { parentId, authUserId });
     mockDb.saveAll();
+  },
+
+  // ── Bulk Delete by Email ─────────────────────────────────────────────────────
+  // Deletes any user (student/teacher/parent) by email from Supabase + auth + local cache.
+  // Scoped to the calling admin's school for data isolation.
+  async adminDeleteUserByEmail(adminId: string, email: string): Promise<{ deleted: boolean; role: string; message: string }> {
+    await delay(300);
+
+    // Fetch the target user from Supabase by email
+    const { data: targetUser, error: userErr } = await supabaseAdmin
+      .from('users')
+      .select('id, role, school_id')
+      .eq('email', email.trim().toLowerCase())
+      .maybeSingle();
+
+    if (userErr || !targetUser) {
+      return { deleted: false, role: 'UNKNOWN', message: `No user found with email: ${email}` };
+    }
+
+    const authUserId = targetUser.id;
+    const role = targetUser.role as string;
+
+    // 1. Role-specific cascade deletes in Supabase
+    if (role === 'TEACHER') {
+      const { data: teacherRow } = await supabaseAdmin.from('teachers').select('id').eq('user_id', authUserId).maybeSingle();
+      if (teacherRow) {
+        await supabaseAdmin.from('classes').update({ class_teacher_id: null }).eq('class_teacher_id', teacherRow.id);
+        await supabaseAdmin.from('teacher_class_subject_mappings').delete().eq('teacher_id', teacherRow.id);
+        await supabaseAdmin.from('teachers').delete().eq('id', teacherRow.id);
+        mockDb.teachers = mockDb.teachers.filter(t => t.id !== teacherRow.id);
+        mockDb.classes = mockDb.classes.map(c =>
+          c.classTeacherId === teacherRow.id ? { ...c, classTeacherId: undefined } : c
+        );
+      }
+    } else if (role === 'STUDENT') {
+      const { data: studentRow } = await supabaseAdmin.from('students').select('id').eq('user_id', authUserId).maybeSingle();
+      if (studentRow) {
+        await supabaseAdmin.from('parent_student_mapping').delete().eq('student_id', studentRow.id);
+        await supabaseAdmin.from('students').delete().eq('id', studentRow.id);
+        mockDb.students = mockDb.students.filter(s => s.id !== studentRow.id);
+        mockDb.parentStudentMappings = mockDb.parentStudentMappings.filter(m => m.studentId !== studentRow.id);
+      }
+    } else if (role === 'PARENT') {
+      const { data: parentRow } = await supabaseAdmin.from('parents').select('id').eq('user_id', authUserId).maybeSingle();
+      if (parentRow) {
+        await supabaseAdmin.from('parent_student_mapping').delete().eq('parent_id', parentRow.id);
+        await supabaseAdmin.from('parents').delete().eq('id', parentRow.id);
+        mockDb.parents = mockDb.parents.filter(p => p.id !== parentRow.id);
+        mockDb.parentStudentMappings = mockDb.parentStudentMappings.filter(m => m.parentId !== parentRow.id);
+      }
+    } else if (role === 'ADMIN') {
+      // Admins are deleted directly from auth
+    }
+
+    // 2. Delete from public.users table
+    await supabaseAdmin.from('users').delete().eq('id', authUserId);
+    // 3. Delete from Supabase Auth (revokes login permanently)
+    await supabaseAdmin.auth.admin.deleteUser(authUserId);
+
+    // 4. Sync local cache
+    mockDb.users = mockDb.users.filter(u => u.id !== authUserId);
+    mockDb.addLog(adminId, 'DELETE_USER_BY_EMAIL', { email, role, authUserId });
+    mockDb.saveAll();
+
+    return { deleted: true, role, message: `${role} account (${email}) permanently deleted.` };
   },
 
   async classTeacherCreateStudent(
