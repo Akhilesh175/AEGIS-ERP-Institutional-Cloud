@@ -757,7 +757,11 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
           </GlassCard>
 
           {managedClasses.length > 0 && (
-            <>
+            <PremiumLock
+              isLocked={currentPlanName !== 'pro' && currentPlanName !== 'enterprise'}
+              requiredTier="Pro"
+              featureName="Class Teacher Hub (Timetables, Students, Parents)"
+            >
               <GlassCard className="space-y-6 animate-fade-in border-brand-500/10">
               <div className="border-b border-slate-850 pb-3 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div>
@@ -1058,7 +1062,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 </div>
               </GlassCard>
             </div>
-          </>
+          </PremiumLock>
         )}
         </div>
       )}

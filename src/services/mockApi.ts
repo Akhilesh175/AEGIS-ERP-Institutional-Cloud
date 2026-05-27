@@ -883,6 +883,26 @@ export const mockApi = {
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
 
+    // Verify system-wide uniqueness of Admission Number
+    const { data: existingAdm } = await supabaseAdmin
+      .from('students')
+      .select('id')
+      .eq('admission_number', admissionNumber)
+      .maybeSingle();
+    if (existingAdm) {
+      throw new Error(`Registration failed: The admission number "${admissionNumber}" is already in use in the system.`);
+    }
+
+    // Verify uniqueness of Roll Number in the system
+    const { data: existingRoll } = await supabaseAdmin
+      .from('students')
+      .select('id')
+      .eq('roll_number', rollNumber)
+      .maybeSingle();
+    if (existingRoll) {
+      throw new Error(`Registration failed: The roll number "${rollNumber}" is already in use in the system.`);
+    }
+
     // Check limits
     const { data: school, error: schoolErr } = await supabase.from('schools').select('subscription_plan').eq('id', schoolId).single();
     if (schoolErr || !school) throw new Error('School not found.');
@@ -1288,6 +1308,16 @@ export const mockApi = {
 
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
+
+    // Verify system-wide uniqueness of Employee ID
+    const { data: existingEmp } = await supabaseAdmin
+      .from('teachers')
+      .select('id')
+      .eq('employee_id', employeeId)
+      .maybeSingle();
+    if (existingEmp) {
+      throw new Error(`Registration failed: The employee ID "${employeeId}" is already in use in the system.`);
+    }
 
     // Check limits
     const { data: school, error: schoolErr } = await supabase.from('schools').select('subscription_plan').eq('id', schoolId).single();
