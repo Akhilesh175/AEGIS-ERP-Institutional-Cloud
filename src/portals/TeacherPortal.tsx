@@ -767,8 +767,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
           {managedClasses.length > 0 && (
             <PremiumLock
-              isLocked={currentPlanName !== 'pro' && currentPlanName !== 'enterprise'}
-              requiredTier="Pro"
+              isLocked={currentPlanName !== 'enterprise'}
+              requiredTier="Enterprise"
               featureName="Class Teacher Hub (Timetables, Students, Parents)"
             >
               <GlassCard className="space-y-6 animate-fade-in border-brand-500/10">
@@ -1636,8 +1636,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {activeTab === 'materials' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
-          requiredTier="Pro"
+          isLocked={currentPlanName !== 'enterprise'}
+          requiredTier="Enterprise"
           featureName="Study Materials Upload"
         >
           <GlassCard className="space-y-4 max-w-xl mx-auto">

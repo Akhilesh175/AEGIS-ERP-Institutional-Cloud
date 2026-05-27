@@ -53,7 +53,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: !school || school.subscriptionPlan === 'freemium' || school.subscriptionPlan === 'basic' },
           { id: 'assignments', label: 'Assignment Creator', icon: PenTool },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
-          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: !school || school.subscriptionPlan === 'freemium' || school.subscriptionPlan === 'basic' },
+          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: !school || school.subscriptionPlan !== 'enterprise' },
           { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: !plan.features.communications }
         ];
       case 'ADMIN':

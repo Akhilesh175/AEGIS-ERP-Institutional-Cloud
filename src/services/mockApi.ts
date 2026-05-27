@@ -510,8 +510,8 @@ export const mockApi = {
       .eq('id', schoolId)
       .maybeSingle();
     const planName = dbSchool?.subscription_plan?.toLowerCase() || 'freemium';
-    if (planName !== 'pro' && planName !== 'enterprise') {
-      throw new Error('Class Teacher Hub features are only available in Pro and Enterprise subscription plans.');
+    if (planName !== 'enterprise') {
+      throw new Error('Class Teacher Hub features are only available in the Enterprise subscription plan.');
     }
   },
 
@@ -2450,8 +2450,8 @@ export const mockApi = {
       .eq('id', schoolId)
       .maybeSingle();
     const planName = dbSchool?.subscription_plan?.toLowerCase() || 'freemium';
-    if (planName !== 'pro' && planName !== 'enterprise') {
-      throw new Error('Study Materials upload features are only available in Pro and Enterprise subscription plans.');
+    if (planName !== 'enterprise') {
+      throw new Error('Study Materials upload features are only available in the Enterprise subscription plan.');
     }
 
     const mat: StudyMaterial = {
