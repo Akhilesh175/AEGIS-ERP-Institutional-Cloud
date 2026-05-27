@@ -186,16 +186,30 @@ export const mockApi = {
       }
     }
 
-    // Fetch live subscription plan from Supabase
+    // Fetch live subscription plan and school metadata from Supabase
     let subscriptionPlan = 'freemium';
     if (user.schoolId) {
-      const { data: schoolRow } = await supabaseAdmin
+      const { data: dbSchool } = await supabaseAdmin
         .from('schools')
-        .select('subscription_plan')
+        .select('*')
         .eq('id', user.schoolId)
         .maybeSingle();
-      if (schoolRow?.subscription_plan) {
-        subscriptionPlan = schoolRow.subscription_plan.toLowerCase();
+      if (dbSchool) {
+        subscriptionPlan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
+        
+        // Sync local mockDb schools cache
+        const schoolMapped = {
+          id: dbSchool.id,
+          name: dbSchool.name,
+          address: dbSchool.address || '',
+          phone: dbSchool.phone || '',
+          subscriptionPlan: subscriptionPlan as any,
+          createdAt: dbSchool.created_at
+        };
+        const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
+        if (idx === -1) mockDb.schools.push(schoolMapped);
+        else mockDb.schools[idx] = schoolMapped;
+        mockDb.saveAll();
       }
     }
 
@@ -761,8 +775,31 @@ export const mockApi = {
     const structureIds = structures.map(fs => fs.id);
     const payments = mockDb.feePayments.filter(p => structureIds.includes(p.feeStructureId));
 
-    const school = mockDb.schools.find(s => s.id === schoolId);
-    const plan = school ? subscriptionPlans[school.subscriptionPlan] || subscriptionPlans.freemium : subscriptionPlans.freemium;
+    // Fetch live school from Supabase and sync local mockDb in real time
+    let schoolName = 'Aegis Academy';
+    let subscriptionPlan = 'freemium';
+    if (schoolId) {
+      const { data: dbSchool } = await supabaseAdmin.from('schools').select('*').eq('id', schoolId).maybeSingle();
+      if (dbSchool) {
+        schoolName = dbSchool.name;
+        subscriptionPlan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
+        
+        // Sync local mockDb schools cache
+        const schoolMapped = {
+          id: dbSchool.id,
+          name: dbSchool.name,
+          address: dbSchool.address || '',
+          phone: dbSchool.phone || '',
+          subscriptionPlan: subscriptionPlan as any,
+          createdAt: dbSchool.created_at
+        };
+        const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
+        if (idx === -1) mockDb.schools.push(schoolMapped);
+        else mockDb.schools[idx] = schoolMapped;
+        mockDb.saveAll();
+      }
+    }
+    const plan = subscriptionPlans[subscriptionPlan] || subscriptionPlans.freemium;
 
     return {
       totalStudents,
@@ -781,7 +818,7 @@ export const mockApi = {
         }, 0)
       },
       subscription: {
-        plan: school?.subscriptionPlan || 'freemium',
+        plan: subscriptionPlan,
         limits: plan.limits,
         features: plan.features
       }
@@ -2236,13 +2273,30 @@ export const mockApi = {
   async getLiveSchoolSubscriptionPlan(schoolId: string): Promise<string | null> {
     if (!schoolId) return null;
     try {
-      const { data, error } = await supabaseAdmin
+      const { data: dbSchool, error } = await supabaseAdmin
         .from('schools')
-        .select('subscription_plan')
+        .select('*')
         .eq('id', schoolId)
         .maybeSingle();
-      if (error || !data) return null;
-      return data.subscription_plan ? data.subscription_plan.toLowerCase() : 'freemium';
+      if (error || !dbSchool) return null;
+      
+      const plan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
+      
+      // Update local mockDb.schools cache in real time!
+      const schoolMapped = {
+        id: dbSchool.id,
+        name: dbSchool.name,
+        address: dbSchool.address || '',
+        phone: dbSchool.phone || '',
+        subscriptionPlan: plan as any,
+        createdAt: dbSchool.created_at
+      };
+      const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
+      if (idx === -1) mockDb.schools.push(schoolMapped);
+      else mockDb.schools[idx] = schoolMapped;
+      mockDb.saveAll();
+      
+      return plan;
     } catch {
       return null;
     }
