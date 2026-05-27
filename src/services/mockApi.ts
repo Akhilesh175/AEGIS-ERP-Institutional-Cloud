@@ -1040,12 +1040,14 @@ export const mockApi = {
       .select('id, school_id, name, academic_session_id, class_teacher_id, created_at')
       .eq('school_id', schoolId);
 
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
     if (!error && classRows && classRows.length > 0) {
       // Sync to local cache
       const mapped: Class[] = classRows.map((r: any) => ({
         id: r.id, schoolId: r.school_id, name: r.name,
         academicSessionId: r.academic_session_id || 'session-1',
-        classTeacherId: r.class_teacher_id,
+        classTeacherId: r.class_teacher_id || undefined,
         createdAt: r.created_at
       }));
       // Merge into mockDb
@@ -1060,25 +1062,27 @@ export const mockApi = {
       return mapped;
     }
 
-    // Fallback: seed default classes into Supabase and local cache
-    let schoolClasses = mockDb.classes.filter(c => c.schoolId === schoolId);
-    if (schoolClasses.length === 0) {
-      const defaultClasses = [
-        { school_id: schoolId, name: 'Grade 10-A', academic_session_id: null },
-        { school_id: schoolId, name: 'Grade 11-B', academic_session_id: null }
-      ];
-      const { data: seeded } = await supabaseAdmin.from('classes').insert(defaultClasses).select('id, school_id, name, academic_session_id, created_at');
-      if (seeded) {
-        schoolClasses = seeded.map((r: any) => ({
-          id: r.id, schoolId: r.school_id, name: r.name,
-          academicSessionId: r.academic_session_id || 'session-1',
-          createdAt: r.created_at
-        }));
-        mockDb.classes.push(...schoolClasses);
-        mockDb.saveAll();
-      }
+    // Supabase has no classes for this school yet. Discard mock non-UUID classes and seed!
+    mockDb.classes = mockDb.classes.filter(c => c.schoolId === schoolId && isUUID(c.id));
+
+    const defaultClasses = [
+      { school_id: schoolId, name: 'Grade 9-C', academic_session_id: null },
+      { school_id: schoolId, name: 'Grade 10-A', academic_session_id: null },
+      { school_id: schoolId, name: 'Grade 11-B', academic_session_id: null }
+    ];
+
+    const { data: seeded } = await supabaseAdmin.from('classes').insert(defaultClasses).select('id, school_id, name, academic_session_id, created_at');
+    if (seeded && seeded.length > 0) {
+      const schoolClasses = seeded.map((r: any) => ({
+        id: r.id, schoolId: r.school_id, name: r.name,
+        academicSessionId: r.academic_session_id || 'session-1',
+        createdAt: r.created_at
+      }));
+      mockDb.classes.push(...schoolClasses);
+      mockDb.saveAll();
+      return schoolClasses;
     }
-    return schoolClasses;
+    return [];
   },
 
 
@@ -1126,6 +1130,8 @@ export const mockApi = {
       .select('id, school_id, name, code, description')
       .eq('school_id', schoolId);
 
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
     if (!error && subjectRows && subjectRows.length > 0) {
       const mapped: Subject[] = subjectRows.map((r: any) => ({
         id: r.id, schoolId: r.school_id, name: r.name, code: r.code, description: r.description || ''
@@ -1142,23 +1148,24 @@ export const mockApi = {
       return mapped;
     }
 
-    // Fallback: seed default subjects into Supabase
-    let schoolSubjects = mockDb.subjects.filter(s => s.schoolId === schoolId);
-    if (schoolSubjects.length === 0) {
-      const suffix = schoolId.substring(schoolId.length - 4).toUpperCase();
-      const defaultSubjects = [
-        { school_id: schoolId, name: 'Mathematics', code: 'MATH-' + suffix, description: 'Algebra, Geometry and Calculus' },
-        { school_id: schoolId, name: 'Physics', code: 'PHYS-' + suffix, description: 'Mechanics and Electromagnetism' },
-        { school_id: schoolId, name: 'Computer Science', code: 'COMP-' + suffix, description: 'Information systems and Programming' }
-      ];
-      const { data: seeded } = await supabaseAdmin.from('subjects').insert(defaultSubjects).select('id, school_id, name, code, description');
-      if (seeded) {
-        schoolSubjects = seeded.map((r: any) => ({ id: r.id, schoolId: r.school_id, name: r.name, code: r.code, description: r.description || '' }));
-        mockDb.subjects.push(...schoolSubjects);
-        mockDb.saveAll();
-      }
+    // Supabase has no subjects for this school yet. Discard mock non-UUID subjects and seed!
+    mockDb.subjects = mockDb.subjects.filter(s => s.schoolId === schoolId && isUUID(s.id));
+
+    const suffix = schoolId.substring(schoolId.length - 4).toUpperCase();
+    const defaultSubjects = [
+      { school_id: schoolId, name: 'Mathematics', code: 'MATH-' + suffix, description: 'Algebra, Geometry and Calculus' },
+      { school_id: schoolId, name: 'Physics', code: 'PHYS-' + suffix, description: 'Mechanics and Electromagnetism' },
+      { school_id: schoolId, name: 'Computer Science', code: 'COMP-' + suffix, description: 'Information systems and Programming' }
+    ];
+
+    const { data: seeded } = await supabaseAdmin.from('subjects').insert(defaultSubjects).select('id, school_id, name, code, description');
+    if (seeded && seeded.length > 0) {
+      const schoolSubjects = seeded.map((r: any) => ({ id: r.id, schoolId: r.school_id, name: r.name, code: r.code, description: r.description || '' }));
+      mockDb.subjects.push(...schoolSubjects);
+      mockDb.saveAll();
+      return schoolSubjects;
     }
-    return schoolSubjects;
+    return [];
   },
 
 
