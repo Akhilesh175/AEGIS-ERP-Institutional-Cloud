@@ -1809,6 +1809,47 @@ export const mockApi = {
     return { deleted: true, role, message: `${role} account (${email}) permanently deleted.` };
   },
 
+  // ── Purge Orphaned Auth Users ────────────────────────────────────────────────
+  // Finds auth.users entries for given emails (even when public.users is gone)
+  // and permanently deletes them from auth. Fixes "email already registered" errors
+  // caused by SQL-editor deletions that could not touch auth.users.
+  async adminPurgeOrphanAuthByEmail(adminId: string, emails: string[]): Promise<{ email: string; purged: boolean; message: string }[]> {
+    const results: { email: string; purged: boolean; message: string }[] = [];
+
+    for (const email of emails) {
+      const normalised = email.trim().toLowerCase();
+      try {
+        // List all auth users and find by email (Supabase admin API)
+        const { data: { users: authUsers }, error: listErr } = await supabaseAdmin.auth.admin.listUsers({ perPage: 10000 });
+        if (listErr) throw listErr;
+
+        const match = authUsers.find(u => u.email?.toLowerCase() === normalised);
+        if (!match) {
+          results.push({ email: normalised, purged: false, message: 'No auth entry found — already clean.' });
+          continue;
+        }
+
+        // Also clean up public.users if it somehow still exists
+        await supabaseAdmin.from('users').delete().eq('id', match.id);
+
+        // Delete from auth.users via admin API (bypasses SQL restrictions)
+        const { error: delErr } = await supabaseAdmin.auth.admin.deleteUser(match.id);
+        if (delErr) throw delErr;
+
+        // Sync local cache
+        mockDb.users = mockDb.users.filter(u => u.id !== match.id);
+        mockDb.saveAll();
+
+        results.push({ email: normalised, purged: true, message: `Auth entry deleted (id: ${match.id})` });
+      } catch (err: any) {
+        results.push({ email: normalised, purged: false, message: err.message || 'Failed' });
+      }
+    }
+
+    mockDb.addLog(adminId, 'PURGE_ORPHAN_AUTH', { emails });
+    return results;
+  },
+
   async classTeacherCreateStudent(
     teacherId: string, 
     email: string, 

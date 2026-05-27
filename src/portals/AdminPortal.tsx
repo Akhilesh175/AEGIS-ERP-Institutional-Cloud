@@ -105,6 +105,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [dangerResults, setDangerResults] = useState<{ email: string; deleted: boolean; role: string; message: string }[]>([]);
   const [bulkEmails, setBulkEmails] = useState('jp@gmail.com\nakash@gmail.com\nsk@gmail.com\nram@gmail.com\njk@gmail.com\nmanan2@gmail.com\nbasant1@gmail.com\nrajan@gmail.com\nmanan3@gmail.com\nvishal1@gmail.com\njj@gmail.com\nak@gmail.com\nmanan@gmail.com\nmanan1@gmail.com\nvishal@gmail.com\nbasant@gmail.com');
   const [bulkLoading, setBulkLoading] = useState(false);
+  const [purgeLoading, setPurgeLoading] = useState(false);
+  const [purgeResults, setPurgeResults] = useState<{ email: string; purged: boolean; message: string }[]>([]);
 
   const handleResetPassword = (userId: string, name: string) => {
     setResetUserId(userId);
@@ -200,6 +202,23 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     }
     loadData();
     setBulkLoading(false);
+  };
+
+  const handlePurgeOrphanAuth = async () => {
+    if (!adminId) return;
+    const emails = bulkEmails.split('\n').map(e => e.trim().toLowerCase()).filter(Boolean);
+    if (emails.length === 0) return;
+    if (!window.confirm(`This will force-delete the auth.users entries for ${emails.length} emails. Use this if you deleted from the SQL editor but still see "already registered" errors.`)) return;
+    setPurgeLoading(true);
+    setPurgeResults([]);
+    try {
+      const results = await mockApi.adminPurgeOrphanAuthByEmail(adminId, emails);
+      setPurgeResults(results);
+    } catch (err: any) {
+      alert('Purge failed: ' + (err.message || 'Unknown error'));
+    } finally {
+      setPurgeLoading(false);
+    }
   };
 
   const loadData = async () => {
@@ -1624,6 +1643,45 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               >
                 {bulkLoading ? `Deleting… (${dangerResults.length} done)` : `Delete All ${bulkEmails.split('\n').filter(e => e.trim()).length} Accounts`}
               </button>
+            </GlassCard>
+
+            {/* Purge orphaned auth entries */}
+            <GlassCard className="space-y-4 border border-orange-500/20 bg-orange-950/10 lg:col-span-2">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-orange-500/10 border border-orange-500/20">
+                  <ShieldAlert className="text-orange-400" size={16} />
+                </div>
+                <div>
+                  <h4 className="font-bold text-orange-300 text-sm">Purge Orphaned Auth Entries</h4>
+                  <p className="text-[10px] text-slate-400">Use this if you deleted users via SQL Editor but still see "email already registered" errors. This force-removes the leftover auth.users entries using the service-role API.</p>
+                </div>
+              </div>
+              <button
+                id="danger-purge-auth-btn"
+                type="button"
+                onClick={handlePurgeOrphanAuth}
+                disabled={purgeLoading}
+                className="w-full py-2 rounded-xl text-xs font-bold bg-orange-600/20 hover:bg-orange-600/30 border border-orange-500/30 text-orange-300 transition-all disabled:opacity-50"
+              >
+                {purgeLoading ? 'Purging auth entries…' : `Force-Purge Auth Entries for ${bulkEmails.split('\n').filter(e => e.trim()).length} Emails`}
+              </button>
+              {purgeResults.length > 0 && (
+                <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                  {purgeResults.map((r, i) => (
+                    <div key={i} className={`flex items-start gap-2 p-2 rounded-lg border text-xs ${
+                      r.purged ? 'bg-green-950/20 border-green-500/20' : 'bg-slate-900/50 border-slate-800'
+                    }`}>
+                      {r.purged
+                        ? <CheckCircle className="text-green-400 shrink-0 mt-0.5" size={12} />
+                        : <XCircle className="text-slate-500 shrink-0 mt-0.5" size={12} />}
+                      <div>
+                        <span className={`font-mono font-bold ${r.purged ? 'text-green-300' : 'text-slate-400'}`}>{r.email}</span>
+                        <p className="text-[10px] text-slate-500 mt-0.5">{r.message}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
             </GlassCard>
           </div>
 
