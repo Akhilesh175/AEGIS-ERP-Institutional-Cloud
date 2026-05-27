@@ -731,41 +731,49 @@ export const mockApi = {
     await delay();
     const schoolId = getAdminSchoolId();
 
-    // Fetch live from Supabase so DB deletions are always reflected
-    const { data: userRows, error } = await supabase
-      .from('users')
-      .select('id, email, first_name, last_name, phone, role, school_id, is_active, created_at')
-      .eq('school_id', schoolId)
-      .eq('role', 'STUDENT');
+    // Fetch live student profiles from Supabase (source of truth)
+    const { data: studentRows, error } = await supabase
+      .from('students')
+      .select(`
+        id, user_id, school_id, class_id, admission_number, roll_number, date_of_birth, gender, created_at,
+        users!inner(id, email, first_name, last_name, phone, role, school_id, is_active, created_at)
+      `)
+      .eq('school_id', schoolId);
 
-    if (error || !userRows) return [];
+    if (error || !studentRows) return [];
 
-    // Sync mockDb users array with Supabase truth
-    userRows.forEach(row => {
-      const existing = mockDb.users.findIndex(u => u.id === row.id);
-      const mapped: User = {
-        id: row.id, email: row.email, role: row.role,
-        firstName: row.first_name, lastName: row.last_name,
-        phone: row.phone || '', avatarUrl: '', isActive: row.is_active,
-        schoolId: row.school_id, password: '', createdAt: row.created_at, updatedAt: row.created_at
+    // Reconcile local cache
+    const result = studentRows.map((row: any) => {
+      const u = row.users;
+      const userMapped: User = {
+        id: u.id, email: u.email, role: u.role,
+        firstName: u.first_name, lastName: u.last_name,
+        phone: u.phone || '', avatarUrl: '', isActive: u.is_active,
+        schoolId: u.school_id, password: '', createdAt: u.created_at, updatedAt: u.created_at
       };
-      if (existing === -1) mockDb.users.push(mapped);
-      else mockDb.users[existing] = { ...mockDb.users[existing], ...mapped };
-    });
-    // Remove any local users not in Supabase for this school+role
-    const supabaseIds = new Set(userRows.map(r => r.id));
-    mockDb.users = mockDb.users.filter(u => !(u.schoolId === schoolId && u.role === 'STUDENT') || supabaseIds.has(u.id));
-    mockDb.students = mockDb.students.filter(s => !(s.schoolId === schoolId) || mockDb.users.some(u => u.id === s.userId));
-    mockDb.saveAll();
+      const existingUser = mockDb.users.findIndex(usr => usr.id === u.id);
+      if (existingUser === -1) mockDb.users.push(userMapped);
+      else mockDb.users[existingUser] = { ...mockDb.users[existingUser], ...userMapped };
 
-    return mockDb.students
-      .filter(s => s.schoolId === schoolId)
-      .map(s => {
-        const u = mockDb.users.find(usr => usr.id === s.userId)!;
-        const c = mockDb.classes.find(cls => cls.id === s.classId);
-        return { ...s, userDetails: u, className: c ? c.name : 'Unassigned' };
-      })
-      .filter(s => s.userDetails); // guard against orphaned records
+      const studentMapped: Student = {
+        id: row.id, userId: row.user_id, schoolId: row.school_id,
+        classId: row.class_id || '', admissionNumber: row.admission_number,
+        rollNumber: row.roll_number, dateOfBirth: row.date_of_birth || '',
+        gender: row.gender, createdAt: row.created_at
+      };
+      const existingStudent = mockDb.students.findIndex(s => s.id === row.id);
+      if (existingStudent === -1) mockDb.students.push(studentMapped);
+      else mockDb.students[existingStudent] = studentMapped;
+
+      const cls = mockDb.classes.find(c => c.id === row.class_id);
+      return { ...studentMapped, userDetails: userMapped, className: cls?.name || 'Unassigned' };
+    });
+
+    // Remove stale local entries not in Supabase
+    const supabaseIds = new Set(studentRows.map((r: any) => r.id));
+    mockDb.students = mockDb.students.filter(s => s.schoolId !== schoolId || supabaseIds.has(s.id));
+    mockDb.saveAll();
+    return result;
   },
 
 
@@ -781,9 +789,12 @@ export const mockApi = {
     const { data: school, error: schoolErr } = await supabase.from('schools').select('subscription_plan').eq('id', schoolId).single();
     if (schoolErr || !school) throw new Error('School not found.');
     
+    // Check limits from Supabase directly
     const plan = subscriptionPlans[school.subscription_plan] || subscriptionPlans.freemium;
-    const currentStudentsCount = mockDb.students.filter(s => s.schoolId === schoolId).length;
-    if (currentStudentsCount >= plan.limits.maxStudents) {
+    const { count: currentStudentsCount } = await supabase
+      .from('users').select('id', { count: 'exact', head: true })
+      .eq('school_id', schoolId).eq('role', 'STUDENT');
+    if ((currentStudentsCount ?? 0) >= plan.limits.maxStudents) {
       throw new Error(`Registration failed: Your ${school.subscription_plan} plan is limited to ${plan.limits.maxStudents} students. Please upgrade your subscription.`);
     }
 
@@ -796,6 +807,7 @@ export const mockApi = {
     
     const newUserId = authData.user.id;
     
+    // Insert into users table
     const { error: dbError } = await supabaseAdmin.from('users').insert({
       id: newUserId,
       email,
@@ -812,36 +824,35 @@ export const mockApi = {
       throw new Error('Failed to create student database profile: ' + dbError.message);
     }
 
-    const user: User = {
-      id: newUserId,
-      email,
-      role: 'STUDENT',
-      firstName,
-      lastName,
-      phone: '',
-      avatarUrl: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150',
-      isActive: true,
-      schoolId,
-      password: password, // Dynamic user-defined password
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
+    // Insert into students table
+    const { data: studentRow, error: studentErr } = await supabaseAdmin.from('students').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      class_id: classId || null,
+      admission_number: admissionNumber,
+      roll_number: rollNumber,
+      date_of_birth: dob,
+      gender
+    }).select('id').single();
 
+    if (studentErr || !studentRow) {
+      await supabaseAdmin.auth.admin.deleteUser(newUserId);
+      throw new Error('Failed to create student record: ' + (studentErr?.message || 'Unknown error'));
+    }
+
+    // Sync to local mockDb cache
+    const user: User = {
+      id: newUserId, email, role: 'STUDENT', firstName, lastName,
+      phone: '', avatarUrl: '', isActive: true, schoolId,
+      password, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
     const student: Student = {
-      id: 'st-' + Math.random().toString(36).substr(2, 9),
-      userId: user.id,
-      schoolId,
-      classId,
-      admissionNumber,
-      rollNumber,
-      dateOfBirth: dob,
-      gender,
+      id: studentRow.id, userId: newUserId, schoolId, classId,
+      admissionNumber, rollNumber, dateOfBirth: dob, gender,
       createdAt: new Date().toISOString()
     };
-
     mockDb.users.push(user);
     mockDb.students.push(student);
-
     mockDb.addLog(adminId, 'CREATE_STUDENT', { studentName: `${firstName} ${lastName}`, email });
     mockDb.saveAll();
   },
@@ -851,85 +862,105 @@ export const mockApi = {
     await delay();
     const schoolId = getAdminSchoolId();
 
-    // Fetch live from Supabase so DB deletions are always reflected
-    const { data: userRows, error } = await supabase
-      .from('users')
-      .select('id, email, first_name, last_name, phone, role, school_id, is_active, created_at')
-      .eq('school_id', schoolId)
-      .eq('role', 'TEACHER');
+    // Fetch live teacher profiles from Supabase (source of truth)
+    const { data: teacherRows, error } = await supabase
+      .from('teachers')
+      .select(`
+        id, user_id, school_id, employee_id, qualification, joining_date, specialization, created_at,
+        users!inner(id, email, first_name, last_name, phone, role, school_id, is_active, created_at)
+      `)
+      .eq('school_id', schoolId);
 
-    if (error || !userRows) return [];
+    if (error || !teacherRows) return [];
 
-    // Sync mockDb
-    userRows.forEach(row => {
-      const existing = mockDb.users.findIndex(u => u.id === row.id);
-      const mapped: User = {
-        id: row.id, email: row.email, role: row.role,
-        firstName: row.first_name, lastName: row.last_name,
-        phone: row.phone || '', avatarUrl: '', isActive: row.is_active,
-        schoolId: row.school_id, password: '', createdAt: row.created_at, updatedAt: row.created_at
+    const result = teacherRows.map((row: any) => {
+      const u = row.users;
+      const userMapped: User = {
+        id: u.id, email: u.email, role: u.role,
+        firstName: u.first_name, lastName: u.last_name,
+        phone: u.phone || '', avatarUrl: '', isActive: u.is_active,
+        schoolId: u.school_id, password: '', createdAt: u.created_at, updatedAt: u.created_at
       };
-      if (existing === -1) mockDb.users.push(mapped);
-      else mockDb.users[existing] = { ...mockDb.users[existing], ...mapped };
-    });
-    const supabaseIds = new Set(userRows.map(r => r.id));
-    mockDb.users = mockDb.users.filter(u => !(u.schoolId === schoolId && u.role === 'TEACHER') || supabaseIds.has(u.id));
-    mockDb.teachers = mockDb.teachers.filter(t => !(t.schoolId === schoolId) || mockDb.users.some(u => u.id === t.userId));
-    mockDb.saveAll();
+      const existingUser = mockDb.users.findIndex(usr => usr.id === u.id);
+      if (existingUser === -1) mockDb.users.push(userMapped);
+      else mockDb.users[existingUser] = { ...mockDb.users[existingUser], ...userMapped };
 
-    return mockDb.teachers
-      .filter(t => t.schoolId === schoolId)
-      .map(t => {
-        const u = mockDb.users.find(usr => usr.id === t.userId)!;
-        return { ...t, userDetails: u };
-      })
-      .filter(t => t.userDetails);
+      const teacherMapped: Teacher = {
+        id: row.id, userId: row.user_id, schoolId: row.school_id,
+        employeeId: row.employee_id, qualification: row.qualification || '',
+        joiningDate: row.joining_date || '', specialization: row.specialization || '',
+        createdAt: row.created_at
+      };
+      const existingTeacher = mockDb.teachers.findIndex(t => t.id === row.id);
+      if (existingTeacher === -1) mockDb.teachers.push(teacherMapped);
+      else mockDb.teachers[existingTeacher] = teacherMapped;
+
+      return { ...teacherMapped, userDetails: userMapped };
+    });
+
+    const supabaseIds = new Set(teacherRows.map((r: any) => r.id));
+    mockDb.teachers = mockDb.teachers.filter(t => t.schoolId !== schoolId || supabaseIds.has(t.id));
+    mockDb.saveAll();
+    return result;
   },
 
   async adminGetParents(): Promise<(Parent & { userDetails: User; linkedStudentNames: string[] })[]> {
     await delay();
     const schoolId = getAdminSchoolId();
 
-    // Fetch live from Supabase
-    const { data: userRows, error } = await supabase
-      .from('users')
-      .select('id, email, first_name, last_name, phone, role, school_id, is_active, created_at')
-      .eq('school_id', schoolId)
-      .eq('role', 'PARENT');
+    // Fetch live parent profiles from Supabase (source of truth)
+    const { data: parentRows, error } = await supabase
+      .from('parents')
+      .select(`
+        id, user_id, school_id, occupation, address, created_at,
+        users!inner(id, email, first_name, last_name, phone, role, school_id, is_active, created_at)
+      `)
+      .eq('school_id', schoolId);
 
-    if (error || !userRows) return [];
+    if (error || !parentRows) return [];
 
-    // Sync mockDb
-    userRows.forEach(row => {
-      const existing = mockDb.users.findIndex(u => u.id === row.id);
-      const mapped: User = {
-        id: row.id, email: row.email, role: row.role,
-        firstName: row.first_name, lastName: row.last_name,
-        phone: row.phone || '', avatarUrl: '', isActive: row.is_active,
-        schoolId: row.school_id, password: '', createdAt: row.created_at, updatedAt: row.created_at
+    // Fetch parent-student mappings
+    const parentIds = parentRows.map((r: any) => r.id);
+    const { data: mappingRows } = parentIds.length > 0
+      ? await supabase.from('parent_student_mapping').select('parent_id, student_id, relationship').in('parent_id', parentIds)
+      : { data: [] };
+
+    const result = parentRows.map((row: any) => {
+      const u = row.users;
+      const userMapped: User = {
+        id: u.id, email: u.email, role: u.role,
+        firstName: u.first_name, lastName: u.last_name,
+        phone: u.phone || '', avatarUrl: '', isActive: u.is_active,
+        schoolId: u.school_id, password: '', createdAt: u.created_at, updatedAt: u.created_at
       };
-      if (existing === -1) mockDb.users.push(mapped);
-      else mockDb.users[existing] = { ...mockDb.users[existing], ...mapped };
-    });
-    const supabaseIds = new Set(userRows.map(r => r.id));
-    mockDb.users = mockDb.users.filter(u => !(u.schoolId === schoolId && u.role === 'PARENT') || supabaseIds.has(u.id));
-    mockDb.parents = mockDb.parents.filter(p => !(p.schoolId === schoolId) || mockDb.users.some(u => u.id === p.userId));
-    mockDb.saveAll();
+      const existingUser = mockDb.users.findIndex(usr => usr.id === u.id);
+      if (existingUser === -1) mockDb.users.push(userMapped);
+      else mockDb.users[existingUser] = { ...mockDb.users[existingUser], ...userMapped };
 
-    return mockDb.parents
-      .filter(p => p.schoolId === schoolId)
-      .map(p => {
-        const u = mockDb.users.find(usr => usr.id === p.userId)!;
-        const mappings = mockDb.parentStudentMappings.filter(m => m.parentId === p.id);
-        const linkedStudentNames = mappings.map(m => {
-          const s = mockDb.students.find(st => st.id === m.studentId);
-          if (!s) return null;
-          const su = mockDb.users.find(usr => usr.id === s.userId);
-          return su ? `${su.firstName} ${su.lastName}` : null;
-        }).filter(Boolean) as string[];
-        return { ...p, userDetails: u, linkedStudentNames };
-      })
-      .filter(p => p.userDetails);
+      const parentMapped: Parent = {
+        id: row.id, userId: row.user_id, schoolId: row.school_id,
+        occupation: row.occupation || '', address: row.address || '',
+        createdAt: row.created_at
+      };
+      const existingParent = mockDb.parents.findIndex(p => p.id === row.id);
+      if (existingParent === -1) mockDb.parents.push(parentMapped);
+      else mockDb.parents[existingParent] = parentMapped;
+
+      const myMappings = (mappingRows || []).filter((m: any) => m.parent_id === row.id);
+      const linkedStudentNames = myMappings.map((m: any) => {
+        const s = mockDb.students.find(st => st.id === m.student_id);
+        if (!s) return null;
+        const su = mockDb.users.find(usr => usr.id === s.userId);
+        return su ? `${su.firstName} ${su.lastName}` : null;
+      }).filter(Boolean) as string[];
+
+      return { ...parentMapped, userDetails: userMapped, linkedStudentNames };
+    });
+
+    const supabaseIds = new Set(parentRows.map((r: any) => r.id));
+    mockDb.parents = mockDb.parents.filter(p => p.schoolId !== schoolId || supabaseIds.has(p.id));
+    mockDb.saveAll();
+    return result;
   },
 
 
@@ -950,31 +981,51 @@ export const mockApi = {
   async adminGetClasses(): Promise<Class[]> {
     await delay();
     const schoolId = getAdminSchoolId();
-    let schoolClasses = mockDb.classes.filter(c => c.schoolId === schoolId);
-    
-    // Proactive self-healing fallback: if no classes exist, auto-seed defaults!
-    if (schoolClasses.length === 0) {
-      const defaultClasses: Class[] = [
-        {
-          id: 'c-10a-' + schoolId,
-          schoolId: schoolId,
-          name: 'Grade 10-A',
-          academicSessionId: 'session-1',
-          createdAt: new Date().toISOString()
-        },
-        {
-          id: 'c-11b-' + schoolId,
-          schoolId: schoolId,
-          name: 'Grade 11-B',
-          academicSessionId: 'session-1',
-          createdAt: new Date().toISOString()
-        }
-      ];
-      mockDb.classes.push(...defaultClasses);
+
+    // Fetch from Supabase as source of truth
+    const { data: classRows, error } = await supabase
+      .from('classes')
+      .select('id, school_id, name, academic_session_id, class_teacher_id, created_at')
+      .eq('school_id', schoolId);
+
+    if (!error && classRows && classRows.length > 0) {
+      // Sync to local cache
+      const mapped: Class[] = classRows.map((r: any) => ({
+        id: r.id, schoolId: r.school_id, name: r.name,
+        academicSessionId: r.academic_session_id || 'session-1',
+        classTeacherId: r.class_teacher_id,
+        createdAt: r.created_at
+      }));
+      // Merge into mockDb
+      mapped.forEach(cls => {
+        const idx = mockDb.classes.findIndex(c => c.id === cls.id);
+        if (idx === -1) mockDb.classes.push(cls);
+        else mockDb.classes[idx] = cls;
+      });
+      const supabaseIds = new Set(mapped.map(c => c.id));
+      mockDb.classes = mockDb.classes.filter(c => c.schoolId !== schoolId || supabaseIds.has(c.id));
       mockDb.saveAll();
-      schoolClasses = defaultClasses;
+      return mapped;
     }
-    
+
+    // Fallback: seed default classes into Supabase and local cache
+    let schoolClasses = mockDb.classes.filter(c => c.schoolId === schoolId);
+    if (schoolClasses.length === 0) {
+      const defaultClasses = [
+        { school_id: schoolId, name: 'Grade 10-A', academic_session_id: null },
+        { school_id: schoolId, name: 'Grade 11-B', academic_session_id: null }
+      ];
+      const { data: seeded } = await supabaseAdmin.from('classes').insert(defaultClasses).select('id, school_id, name, academic_session_id, created_at');
+      if (seeded) {
+        schoolClasses = seeded.map((r: any) => ({
+          id: r.id, schoolId: r.school_id, name: r.name,
+          academicSessionId: r.academic_session_id || 'session-1',
+          createdAt: r.created_at
+        }));
+        mockDb.classes.push(...schoolClasses);
+        mockDb.saveAll();
+      }
+    }
     return schoolClasses;
   },
 
@@ -984,14 +1035,19 @@ export const mockApi = {
     await delay(500);
     const schoolId = getAdminSchoolId();
 
-    const cls: Class = {
-      id: 'c-' + Math.random().toString(36).substr(2, 9),
-      schoolId,
-      name: className,
-      academicSessionId: 'session-1',
-      createdAt: new Date().toISOString()
-    };
+    // Insert into Supabase classes table
+    const { data: classRow, error } = await supabaseAdmin.from('classes').insert({
+      school_id: schoolId,
+      name: className
+    }).select('id, school_id, name, academic_session_id, created_at').single();
 
+    if (error || !classRow) throw new Error('Failed to create class: ' + (error?.message || 'Unknown error'));
+
+    const cls: Class = {
+      id: classRow.id, schoolId: classRow.school_id, name: classRow.name,
+      academicSessionId: classRow.academic_session_id || 'session-1',
+      createdAt: classRow.created_at
+    };
     mockDb.classes.push(cls);
     mockDb.addLog(adminId, 'CREATE_CLASS', { className });
     mockDb.saveAll();
@@ -1011,20 +1067,45 @@ export const mockApi = {
   async adminGetSubjects(): Promise<Subject[]> {
     await delay();
     const schoolId = getAdminSchoolId();
-    let schoolSubjects = mockDb.subjects.filter(s => s.schoolId === schoolId);
 
-    // Proactive self-healing fallback: if no subjects exist, auto-seed defaults!
-    if (schoolSubjects.length === 0) {
-      const defaultSubjects: Subject[] = [
-        { id: 's-math-' + schoolId, schoolId: schoolId, name: 'Mathematics', code: 'MATH-' + schoolId.substring(schoolId.length - 3).toUpperCase(), description: 'Algebra, Geometry and Calculus' },
-        { id: 's-phys-' + schoolId, schoolId: schoolId, name: 'Physics', code: 'PHYS-' + schoolId.substring(schoolId.length - 3).toUpperCase(), description: 'Mechanics and Electromagnetism' },
-        { id: 's-comp-' + schoolId, schoolId: schoolId, name: 'Computer Science', code: 'COMP-' + schoolId.substring(schoolId.length - 3).toUpperCase(), description: 'Information systems and Programming' }
-      ];
-      mockDb.subjects.push(...defaultSubjects);
+    // Fetch from Supabase as source of truth
+    const { data: subjectRows, error } = await supabase
+      .from('subjects')
+      .select('id, school_id, name, code, description')
+      .eq('school_id', schoolId);
+
+    if (!error && subjectRows && subjectRows.length > 0) {
+      const mapped: Subject[] = subjectRows.map((r: any) => ({
+        id: r.id, schoolId: r.school_id, name: r.name, code: r.code, description: r.description || ''
+      }));
+      // Sync to local cache
+      mapped.forEach(sub => {
+        const idx = mockDb.subjects.findIndex(s => s.id === sub.id);
+        if (idx === -1) mockDb.subjects.push(sub);
+        else mockDb.subjects[idx] = sub;
+      });
+      const supabaseIds = new Set(mapped.map(s => s.id));
+      mockDb.subjects = mockDb.subjects.filter(s => s.schoolId !== schoolId || supabaseIds.has(s.id));
       mockDb.saveAll();
-      schoolSubjects = defaultSubjects;
+      return mapped;
     }
 
+    // Fallback: seed default subjects into Supabase
+    let schoolSubjects = mockDb.subjects.filter(s => s.schoolId === schoolId);
+    if (schoolSubjects.length === 0) {
+      const suffix = schoolId.substring(schoolId.length - 4).toUpperCase();
+      const defaultSubjects = [
+        { school_id: schoolId, name: 'Mathematics', code: 'MATH-' + suffix, description: 'Algebra, Geometry and Calculus' },
+        { school_id: schoolId, name: 'Physics', code: 'PHYS-' + suffix, description: 'Mechanics and Electromagnetism' },
+        { school_id: schoolId, name: 'Computer Science', code: 'COMP-' + suffix, description: 'Information systems and Programming' }
+      ];
+      const { data: seeded } = await supabaseAdmin.from('subjects').insert(defaultSubjects).select('id, school_id, name, code, description');
+      if (seeded) {
+        schoolSubjects = seeded.map((r: any) => ({ id: r.id, schoolId: r.school_id, name: r.name, code: r.code, description: r.description || '' }));
+        mockDb.subjects.push(...schoolSubjects);
+        mockDb.saveAll();
+      }
+    }
     return schoolSubjects;
   },
 
@@ -1034,14 +1115,14 @@ export const mockApi = {
     await delay(400);
     const schoolId = getAdminSchoolId();
 
-    const sub: Subject = {
-      id: 's-' + Math.random().toString(36).substr(2, 9),
-      schoolId,
-      name,
-      code,
-      description
-    };
+    // Insert into Supabase subjects table
+    const { data: subRow, error } = await supabaseAdmin.from('subjects').insert({
+      school_id: schoolId, name, code, description
+    }).select('id, school_id, name, code, description').single();
 
+    if (error || !subRow) throw new Error('Failed to create subject: ' + (error?.message || 'Unknown error'));
+
+    const sub: Subject = { id: subRow.id, schoolId: subRow.school_id, name: subRow.name, code: subRow.code, description: subRow.description || '' };
     mockDb.subjects.push(sub);
     mockDb.addLog(adminId, 'CREATE_SUBJECT', { name, code });
     mockDb.saveAll();
@@ -1105,9 +1186,12 @@ export const mockApi = {
     const { data: school, error: schoolErr } = await supabase.from('schools').select('subscription_plan').eq('id', schoolId).single();
     if (schoolErr || !school) throw new Error('School not found.');
     
+    // Check limits from Supabase directly
     const plan = subscriptionPlans[school.subscription_plan] || subscriptionPlans.freemium;
-    const currentTeachersCount = mockDb.teachers.filter(t => t.schoolId === schoolId).length;
-    if (currentTeachersCount >= plan.limits.maxTeachers) {
+    const { count: currentTeachersCount } = await supabase
+      .from('users').select('id', { count: 'exact', head: true })
+      .eq('school_id', schoolId).eq('role', 'TEACHER');
+    if ((currentTeachersCount ?? 0) >= plan.limits.maxTeachers) {
       throw new Error(`Registration failed: Your ${school.subscription_plan} plan is limited to ${plan.limits.maxTeachers} teachers. Please upgrade your subscription.`);
     }
 
@@ -1120,6 +1204,7 @@ export const mockApi = {
     
     const newUserId = authData.user.id;
     
+    // Insert into users table
     const { error: dbError } = await supabaseAdmin.from('users').insert({
       id: newUserId,
       email,
@@ -1136,29 +1221,31 @@ export const mockApi = {
       throw new Error('Failed to create teacher database profile: ' + dbError.message);
     }
 
+    // Insert into teachers table
+    const { data: teacherRow, error: teacherErr } = await supabaseAdmin.from('teachers').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      employee_id: employeeId,
+      qualification,
+      specialization,
+      joining_date: new Date().toISOString().split('T')[0]
+    }).select('id').single();
+
+    if (teacherErr || !teacherRow) {
+      await supabaseAdmin.auth.admin.deleteUser(newUserId);
+      throw new Error('Failed to create teacher record: ' + (teacherErr?.message || 'Unknown error'));
+    }
+
+    // Sync to local mockDb cache
     const user: User = {
-      id: newUserId,
-      email,
-      role: 'TEACHER',
-      firstName,
-      lastName,
-      phone: phone || '',
-      avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
-      isActive: true,
-      schoolId,
-      password: password, // Dynamic user-defined password
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      id: newUserId, email, role: 'TEACHER', firstName, lastName,
+      phone: phone || '', avatarUrl: '', isActive: true, schoolId,
+      password, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
     const teacher: Teacher = {
-      id: 't-' + Math.random().toString(36).substr(2, 9),
-      userId: user.id,
-      schoolId,
-      employeeId,
-      qualification,
-      joiningDate: new Date().toISOString().split('T')[0],
-      specialization,
-      createdAt: new Date().toISOString()
+      id: teacherRow.id, userId: newUserId, schoolId, employeeId,
+      qualification, joiningDate: new Date().toISOString().split('T')[0],
+      specialization, createdAt: new Date().toISOString()
     };
     mockDb.users.push(user);
     mockDb.teachers.push(teacher);
@@ -1202,6 +1289,7 @@ export const mockApi = {
     
     const newUserId = authData.user.id;
     
+    // Insert into users table
     const { error: dbError } = await supabaseAdmin.from('users').insert({
       id: newUserId,
       email,
@@ -1218,41 +1306,65 @@ export const mockApi = {
       throw new Error('Failed to create parent database profile: ' + dbError.message);
     }
 
-    const user: User = {
-      id: newUserId,
-      email,
-      role: 'PARENT',
-      firstName,
-      lastName,
-      phone,
-      avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150',
-      isActive: true,
-      schoolId,
-      password: pass, // Dynamic user-defined password
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
-    };
-    const parent: Parent = {
-      id: 'p-' + Math.random().toString(36).substr(2, 9),
-      userId: user.id,
-      schoolId,
+    // Insert into parents table
+    const { data: parentRow, error: parentErr } = await supabaseAdmin.from('parents').insert({
+      user_id: newUserId,
+      school_id: schoolId,
       occupation,
-      address,
-      createdAt: new Date().toISOString()
-    };
+      address
+    }).select('id').single();
 
-    mockDb.users.push(user);
-    mockDb.parents.push(parent);
+    if (parentErr || !parentRow) {
+      await supabaseAdmin.auth.admin.deleteUser(newUserId);
+      throw new Error('Failed to create parent record: ' + (parentErr?.message || 'Unknown error'));
+    }
 
-    // Map parent to student ward in database mappings sheet
-    if (studentId && relationship) {
-      mockDb.parentStudentMappings.push({
-        parentId: parent.id,
-        studentId,
-        relationship: relationship || 'Father'
+    // Verify student admission number if linking
+    let resolvedStudentId = studentId;
+    if (studentId && admissionNumber) {
+      const student = mockDb.students.find(s => s.id === studentId);
+      if (student && student.admissionNumber.toLowerCase().trim() !== admissionNumber.toLowerCase().trim()) {
+        throw new Error('Verification failed: Admission number does not match selected student.');
+      }
+      // Also try to find student from Supabase if not in local cache
+      if (!student) {
+        const { data: stRow } = await supabase.from('students').select('id, admission_number').eq('id', studentId).single();
+        if (stRow && stRow.admission_number.toLowerCase().trim() !== admissionNumber.toLowerCase().trim()) {
+          throw new Error('Verification failed: Admission number does not match selected student.');
+        }
+      }
+    }
+
+    // Map parent to student in Supabase parent_student_mapping table
+    if (resolvedStudentId && relationship) {
+      // Find the real Supabase student record for mapping
+      const { data: stSupabase } = await supabase.from('students').select('id').eq('user_id',
+        mockDb.students.find(s => s.id === resolvedStudentId)?.userId || resolvedStudentId
+      ).single();
+      const realStudentId = stSupabase?.id || resolvedStudentId;
+
+      await supabaseAdmin.from('parent_student_mapping').insert({
+        parent_id: parentRow.id,
+        student_id: realStudentId,
+        relationship
       });
     }
 
+    // Sync to local mockDb cache
+    const user: User = {
+      id: newUserId, email, role: 'PARENT', firstName, lastName,
+      phone, avatarUrl: '', isActive: true, schoolId,
+      password: pass, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+    const parent: Parent = {
+      id: parentRow.id, userId: newUserId, schoolId, occupation, address,
+      createdAt: new Date().toISOString()
+    };
+    mockDb.users.push(user);
+    mockDb.parents.push(parent);
+    if (resolvedStudentId && relationship) {
+      mockDb.parentStudentMappings.push({ parentId: parentRow.id, studentId: resolvedStudentId, relationship });
+    }
     mockDb.addLog(adminId, 'CREATE_PARENT', { parentName: `${firstName} ${lastName}`, email, studentId });
     mockDb.saveAll();
   },
