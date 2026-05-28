@@ -1287,7 +1287,7 @@ export const mockApi = {
       if (studentIds.length === 0) return;
 
       const { data: dbMappings } = await supabaseAdmin
-        .from('parent_student_mappings')
+        .from('parent_student_mapping')
         .select('*')
         .in('student_id', studentIds);
       

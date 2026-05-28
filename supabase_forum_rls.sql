@@ -40,7 +40,7 @@ RETURNS BOOLEAN AS $$
   SELECT EXISTS (
     SELECT 1 
     FROM public.students s
-    JOIN public.parent_student_mappings psm ON s.id = psm.student_id
+    JOIN public.parent_student_mapping psm ON s.id = psm.student_id
     JOIN public.parents p ON psm.parent_id = p.id
     WHERE p.user_id = auth.uid() AND s.class_id = cid
   );
