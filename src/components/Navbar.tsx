@@ -2,15 +2,87 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { Notification } from '../types';
-import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, User as UserIcon, Shield } from 'lucide-react';
+import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, User as UserIcon, Shield, Camera, Upload, Trash2, X, Check, Menu } from 'lucide-react';
 import { ChatDrawer } from './ChatDrawer';
 
 export const Navbar: React.FC = () => {
-  const { session, theme, toggleTheme, setSession } = useStore();
+  const { session, theme, toggleTheme, setSession, isMobileMenuOpen, setMobileMenuOpen } = useStore();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifyDrop, setShowNotifyDrop] = useState(false);
   const [showProfileDrop, setShowProfileDrop] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      const file = e.target.files[0];
+      if (file.size > 5242880) {
+        alert('File size exceeds the 5MB limit.');
+        return;
+      }
+      setSelectedFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviewUrl(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleUploadPhoto = async () => {
+    if (!session || !selectedFile) return;
+    setUploading(true);
+    try {
+      const publicUrl = await mockApi.uploadProfileImage(session.user.id, selectedFile);
+      const updatedSession = {
+        ...session,
+        user: {
+          ...session.user,
+          avatarUrl: publicUrl
+        }
+      };
+      setSession(updatedSession);
+      localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+      setIsPhotoModalOpen(false);
+      setSelectedFile(null);
+      setPreviewUrl(null);
+      alert('Profile photo updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to upload profile photo.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleRemovePhoto = async () => {
+    if (!session) return;
+    if (!window.confirm('Are you sure you want to remove your profile photo?')) return;
+    setUploading(true);
+    try {
+      await mockApi.removeProfileImage(session.user.id);
+      const updatedSession = {
+        ...session,
+        user: {
+          ...session.user,
+          avatarUrl: ''
+        }
+      };
+      setSession(updatedSession);
+      localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+      setIsPhotoModalOpen(false);
+      setSelectedFile(null);
+      setPreviewUrl(null);
+      alert('Profile photo removed.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove profile photo.');
+    } finally {
+      setUploading(false);
+    }
+  };
 
   const loadNotifications = async () => {
     if (!session) return;
@@ -55,6 +127,14 @@ export const Navbar: React.FC = () => {
       <header className="sticky top-0 z-40 w-full glass dark:glass-dark border-b border-slate-800 bg-[#070a13]/85 backdrop-blur-md px-6 py-3 flex items-center justify-between">
         {/* Branding Title */}
         <div className="flex items-center gap-2">
+          <button 
+            onClick={() => setMobileMenuOpen(!isMobileMenuOpen)}
+            className="p-2 -ml-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/40 rounded-xl transition-all duration-200 md:hidden"
+            title="Toggle Menu"
+          >
+            <Menu size={20} />
+          </button>
+          
           <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-400 flex items-center justify-center shadow-lg shadow-brand-500/20">
             <Shield className="text-white" size={20} />
           </div>
@@ -171,6 +251,16 @@ export const Navbar: React.FC = () => {
                 </div>
                 <div className="space-y-1">
                   <button 
+                    onClick={() => {
+                      setShowProfileDrop(false);
+                      setIsPhotoModalOpen(true);
+                    }}
+                    className="w-full flex items-center gap-2 text-left text-xs text-slate-300 hover:text-slate-100 hover:bg-slate-800/40 p-2 rounded-xl transition-all duration-200"
+                  >
+                    <Camera size={14} className="text-brand-400" />
+                    <span>Update Profile Photo</span>
+                  </button>
+                  <button 
                     onClick={handleLogout}
                     className="w-full flex items-center gap-2 text-left text-xs text-red-400 hover:text-red-300 hover:bg-red-500/5 p-2 rounded-xl transition-all duration-200"
                   >
@@ -186,6 +276,115 @@ export const Navbar: React.FC = () => {
 
       {/* Slideout communicator drawer */}
       <ChatDrawer isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+
+      {/* Profile Photo Modal */}
+      {isPhotoModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900 to-[#070a13] border border-slate-800 shadow-2xl p-6 md:p-8 animate-fade-in relative">
+            {/* Close Button */}
+            <button 
+              onClick={() => {
+                setIsPhotoModalOpen(false);
+                setSelectedFile(null);
+                setPreviewUrl(null);
+              }}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 rounded-full transition-all"
+            >
+              <X size={18} />
+            </button>
+
+            {/* Header */}
+            <div className="text-center mb-6">
+              <h3 className="text-lg font-bold text-slate-100 flex items-center justify-center gap-2">
+                <Camera className="text-brand-400" size={20} />
+                Update Profile Photo
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Enhance your digital identity across portals</p>
+            </div>
+
+            {/* Avatar Display & Ring */}
+            <div className="flex flex-col items-center justify-center mb-8">
+              <div className="relative group">
+                {/* Glowing Ring */}
+                <div className="absolute inset-0 -m-1 rounded-full bg-gradient-to-tr from-brand-600 to-indigo-500 blur-sm opacity-75" />
+                <div className="relative w-32 h-32 rounded-full overflow-hidden border-2 border-slate-800 bg-[#0c101f] flex items-center justify-center">
+                  <img 
+                    src={previewUrl || session.user.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'} 
+                    alt="Preview" 
+                    className="w-full h-full object-cover"
+                    onError={(e) => {
+                      (e.target as HTMLImageElement).src = 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150';
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Selection & Form Actions */}
+            <div className="space-y-4">
+              <div className="flex justify-center gap-3">
+                <label className="glass-btn-primary text-xs flex items-center gap-2 cursor-pointer transition-all">
+                  <Upload size={14} />
+                  <span>Choose Photo</span>
+                  <input 
+                    type="file" 
+                    accept="image/*"
+                    onChange={handleFileChange}
+                    className="hidden" 
+                  />
+                </label>
+
+                {session.user.avatarUrl && !session.user.avatarUrl.includes('unsplash.com') && (
+                  <button 
+                    onClick={handleRemovePhoto}
+                    disabled={uploading}
+                    className="flex items-center gap-1.5 px-3 py-2 rounded-xl bg-red-500/10 hover:bg-red-500/20 text-red-400 hover:text-red-300 border border-red-500/20 text-xs font-semibold transition-all disabled:opacity-50"
+                  >
+                    <Trash2 size={14} />
+                    Remove
+                  </button>
+                )}
+              </div>
+
+              <div className="text-[10px] text-slate-500 text-center uppercase tracking-wider font-mono">
+                Formats: PNG, JPG, WEBP, GIF (Max 5MB)
+              </div>
+
+              {selectedFile && (
+                <div className="pt-4 border-t border-slate-850 flex gap-3">
+                  <button
+                    onClick={handleUploadPhoto}
+                    disabled={uploading}
+                    className="flex-1 glass-btn-primary text-xs flex items-center justify-center gap-2 font-bold"
+                  >
+                    {uploading ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-slate-350 border-t-brand-500 rounded-full animate-spin" />
+                        <span>Uploading...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={14} />
+                        <span>Save Changes</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    onClick={() => {
+                      setSelectedFile(null);
+                      setPreviewUrl(null);
+                    }}
+                    disabled={uploading}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-350 hover:text-slate-100 font-semibold rounded-xl text-xs transition-all disabled:opacity-50"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 };

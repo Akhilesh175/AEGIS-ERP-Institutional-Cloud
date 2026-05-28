@@ -27,7 +27,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   const [quizzes, setQuizzes] = useState<{ quiz: Quiz; attempt?: QuizAttempt }[]>([]);
   const [materials, setMaterials] = useState<(StudyMaterial & { subjectName: string; teacherName: string })[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
-  const [forumPosts, setForumPosts] = useState<(ForumPost & { authorName: string; categoryName: string; repliesCount: number })[]>([]);
+  const [forumPosts, setForumPosts] = useState<(ForumPost & { schoolId: string; authorName: string; categoryName: string; repliesCount: number })[]>([]);
   const [fees, setFees] = useState<{ structure: any; payment?: any }[]>([]);
 
   // Interactive Action States
@@ -45,6 +45,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   const [quizDurationLeft, setQuizDurationLeft] = useState(0);
 
   // Discussion state
+  const [forumCategories, setForumCategories] = useState<any[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<any | null>(null);
   const [postTitle, setPostTitle] = useState('');
   const [postContent, setPostContent] = useState('');
   const [selectedPost, setSelectedPost] = useState<any | null>(null);
@@ -73,8 +75,11 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       const ann = await mockApi.getAnnouncements('STUDENT');
       setAnnouncements(ann);
 
+      await mockApi.syncForumCategoriesData(session.user.schoolId || '');
+      await mockApi.syncForumPostsData(session.user.schoolId || '');
+      await mockApi.syncForumRepliesData(session.user.schoolId || '');
       const posts = await mockApi.getForumPosts();
-      setForumPosts(posts);
+      setForumPosts(posts.filter(p => p.schoolId === session.user.schoolId || !p.schoolId));
 
       const f = await mockApi.studentGetFees(studentId);
       setFees(f);
@@ -136,11 +141,15 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   // Launch Quiz
   const handleStartQuiz = async (quiz: Quiz) => {
     // Load questions
-    const allQuestions = mockDb.quizQuestions.filter(q => q.quizId === quiz.id);
-    setQuizQuestions(allQuestions);
-    setQuizAnswers({});
-    setQuizDurationLeft(quiz.durationMinutes * 60);
-    setActiveQuiz(quiz);
+    try {
+      const allQuestions = await mockApi.studentGetQuizQuestions(quiz.id);
+      setQuizQuestions(allQuestions);
+      setQuizAnswers({});
+      setQuizDurationLeft(quiz.durationMinutes * 60);
+      setActiveQuiz(quiz);
+    } catch (err: any) {
+      alert(err.message || 'Error loading quiz questions');
+    }
   };
 
   // Submit Quiz Attempts
@@ -299,7 +308,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                   <div className="text-center py-8 text-slate-500 text-xs">No lecture schedules registered for today.</div>
                 ) : (
                   timetable.map(t => {
-                    const subject = mockDb.subjects.find(s => s.id === t.subjectId)!;
+                    const subject = mockDb.subjects.find(s => s.id === t.subjectId);
+                    if (!subject) return null;
                     return (
                       <div 
                         key={t.id}
@@ -360,7 +370,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
               <h4 className="font-semibold text-slate-200 text-xs">Weekly Timetable Schedule</h4>
               <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
                 {timetable.map(t => {
-                  const subject = mockDb.subjects.find(s => s.id === t.subjectId)!;
+                  const subject = mockDb.subjects.find(s => s.id === t.subjectId);
+                  if (!subject) return null;
                   return (
                     <div key={t.id} className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl flex items-center justify-between">
                       <div className="flex items-center gap-3">
@@ -383,7 +394,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
               <h4 className="font-semibold text-slate-200 text-xs">Upcoming Homework & Project Deadlines</h4>
               <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
                 {assignments.map(({ assignment, submission }) => {
-                  const subject = mockDb.subjects.find(s => s.id === assignment.subjectId)!;
+                  const subject = mockDb.subjects.find(s => s.id === assignment.subjectId);
+                  if (!subject) return null;
                   return (
                     <div key={assignment.id} className="p-3.5 bg-slate-900/40 border border-slate-850 rounded-xl space-y-3">
                       <div className="flex justify-between items-start">
@@ -570,7 +582,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 {quizzes.map(({ quiz, attempt }) => {
-                  const subject = mockDb.subjects.find(s => s.id === quiz.subjectId)!;
+                  const subject = mockDb.subjects.find(s => s.id === quiz.subjectId);
+                  if (!subject) return null;
                   return (
                     <div key={quiz.id} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-slate-800 rounded-2xl flex flex-col justify-between gap-4 transition-all">
                       <div className="space-y-2">

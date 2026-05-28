@@ -78,6 +78,7 @@ export interface Student {
   userId: string;
   schoolId: string;
   classId: string | null;
+  academicSessionId: string;
   admissionNumber: string;
   rollNumber: number;
   dateOfBirth: string;
@@ -117,12 +118,14 @@ export interface Timetable {
   startTime: string; // "HH:MM"
   endTime: string;
   classroomNumber?: string;
+  academicSessionId: string;
 }
 
 export interface Attendance {
   id: string;
   studentId: string;
   classId: string;
+  academicSessionId: string;
   date: string; // YYYY-MM-DD
   status: AttendanceStatus;
   remarks?: string;
@@ -140,6 +143,7 @@ export interface Assignment {
   maxMarks: number;
   fileAttachmentUrl?: string;
   isHomework: boolean;
+  academicSessionId: string;
   createdAt: string;
 }
 
@@ -164,6 +168,7 @@ export interface Quiz {
   durationMinutes: number;
   totalMarks: number;
   dueDate?: string;
+  academicSessionId: string;
   createdAt: string;
 }
 
@@ -243,6 +248,9 @@ export interface ForumCategory {
   schoolId: string;
   name: string;
   description: string;
+  classId?: string | null;
+  subjectId?: string | null;
+  academicSessionId?: string | null;
 }
 
 export interface ForumPost {

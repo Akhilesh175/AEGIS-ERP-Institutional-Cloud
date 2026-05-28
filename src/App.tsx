@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from './store/useStore';
 import { mockApi } from './services/mockApi';
+import { supabase } from './lib/supabase';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
 import { StudentPortal } from './portals/StudentPortal';
@@ -32,6 +33,30 @@ export const App: React.FC = () => {
   useEffect(() => {
     setActiveTab('dashboard');
   }, [session]);
+
+  // Session validation guard: if the user account was deleted from the database,
+  // log them out instantly to prevent broken state and unauthenticated RLS empty screens.
+  useEffect(() => {
+    const validateSession = async () => {
+      const SUPER_ADMIN_EMAIL = 'jy7018080@gmail.com';
+      if (session?.user?.id && session.user.email !== SUPER_ADMIN_EMAIL) {
+        const { data: userExists, error } = await supabase
+          .from('users')
+          .select('id')
+          .eq('id', session.user.id)
+          .maybeSingle();
+
+        // If user is completely deleted from the public.users database table,
+        // we must clear the session.
+        if (!userExists || error) {
+          console.warn('Session user does not exist in database. Clearing stale session...');
+          setSession(null);
+          localStorage.removeItem('aegis_session');
+        }
+      }
+    };
+    validateSession();
+  }, [session, setSession]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();

@@ -4,12 +4,13 @@ import { mockApi } from '../services/mockApi';
 import { mockDb } from '../services/mockDb';
 import { 
   TeacherClassSubjectMapping, Student, AssignmentSubmission, 
-  Class, Subject, Assignment, User, Timetable, Exam
+  Class, Subject, Assignment, User, Timetable, Exam, StudyMaterial, Quiz
 } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
-  Clipboard, UserCheck, Edit3, Award, PlusCircle, 
-  UploadCloud, FileText, CheckCircle, AlertCircle, Save, Calendar, Clock, MapPin, Layers, Users
+  Clipboard, UserCheck, Edit3, Award, PlusCircle, PenTool,
+  UploadCloud, FileText, CheckCircle, AlertCircle, Save, Calendar, Clock, MapPin, Layers, Users,
+  Trash2, Eye, X, Video, File, MessageSquare, MessageCircle, BookOpen
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -71,6 +72,16 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [newAssignedEnd, setNewAssignedEnd] = useState('10:30');
   const [newAssignedClassroom, setNewAssignedClassroom] = useState('Room 101');
 
+  // Timetable Edit Workflow states
+  const [isEditingManagedTt, setIsEditingManagedTt] = useState(false);
+  const [editingManagedTtId, setEditingManagedTtId] = useState('');
+  const [editManagedSubject, setEditManagedSubject] = useState('');
+  const [editManagedTeacher, setEditManagedTeacher] = useState('');
+  const [editManagedDay, setEditManagedDay] = useState(1);
+  const [editManagedClassroom, setEditManagedClassroom] = useState('');
+  const [editManagedStart, setEditManagedStart] = useState('09:00');
+  const [editManagedEnd, setEditManagedEnd] = useState('10:30');
+
   // Self-assigned timetable states
   const [selfAssignClass, setSelfAssignClass] = useState('');
   const [selfAssignSubject, setSelfAssignSubject] = useState('');
@@ -88,6 +99,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [ctStRoll, setCtStRoll] = useState(1);
   const [ctStGender, setCtStGender] = useState<'MALE' | 'FEMALE' | 'OTHER'>('MALE');
   const [ctStDob, setCtStDob] = useState('2010-01-01');
+  const [ctStPassword, setCtStPassword] = useState('password');
 
   const [showCTAddParent, setShowCTAddParent] = useState(false);
   const [ctPrEmail, setCtPrEmail] = useState('');
@@ -99,13 +111,180 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [ctPrStudentId, setCtPrStudentId] = useState('');
   const [ctPrAdmissionNum, setCtPrAdmissionNum] = useState('');
   const [ctPrRelation, setCtPrRelation] = useState('Father');
+  const [ctPrPassword, setCtPrPassword] = useState('password');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Assignments & Materials listing
+  const [assignmentsList, setAssignmentsList] = useState<(Assignment & { className: string; subjectName: string })[]>([]);
+  const [materialsList, setMaterialsList] = useState<(StudyMaterial & { subjectName: string })[]>([]);
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [quizzesList, setQuizzesList] = useState<Quiz[]>([]);
+  const [quizzesLoading, setQuizzesLoading] = useState(false);
+
+  // Edit Assignment modal
+  const [editingAssignment, setEditingAssignment] = useState<(Assignment & { className: string; subjectName: string }) | null>(null);
+  const [editAssignTitle, setEditAssignTitle] = useState('');
+  const [editAssignDesc, setEditAssignDesc] = useState('');
+  const [editAssignDueDate, setEditAssignDueDate] = useState('');
+  const [editAssignIsHomework, setEditAssignIsHomework] = useState(false);
+
+  // Edit Material modal
+  const [editingMaterial, setEditingMaterial] = useState<(StudyMaterial & { subjectName: string }) | null>(null);
+  const [editMatTitle, setEditMatTitle] = useState('');
+  const [editMatDesc, setEditMatDesc] = useState('');
+  const [editMatUrl, setEditMatUrl] = useState('');
+  const [editMatType, setEditMatType] = useState<'pdf' | 'docx' | 'mp4'>('pdf');
+  const [editMatStreamable, setEditMatStreamable] = useState(false);
+
+  // Edit Quiz modal
+  const [editingQuiz, setEditingQuiz] = useState<any | null>(null);
+  const [editQuizTitle, setEditQuizTitle] = useState('');
+  const [editQuizDuration, setEditQuizDuration] = useState(15);
 
   // Homeroom Marksheets
   const [hmExams, setHmExams] = useState<Exam[]>([]);
   const [hmSelectedExam, setHmSelectedExam] = useState('');
   const [hmSelectedStudent, setHmSelectedStudent] = useState('');
   const [hmReportCard, setHmReportCard] = useState<{ scheduleId: string; subjectId: string; subjectName: string; maxMarks: number; marksObtained?: number; remarks?: string }[]>([]);
+
+  // Forum/Discussion states
+  const [forumCategories, setForumCategories] = useState<any[]>([]);
+  const [selectedCategory, setSelectedCategory] = useState<any | null>(null);
+  const [forumPosts, setForumPosts] = useState<any[]>([]);
+  const [selectedPost, setSelectedPost] = useState<any | null>(null);
+  const [postReplies, setPostReplies] = useState<any[]>([]);
+  const [replyText, setReplyText] = useState('');
+  
+  // Category CRUD states
+  const [showCreateCategory, setShowCreateCategory] = useState(false);
+  const [editingCategory, setEditingCategory] = useState<any | null>(null);
+  const [catName, setCatName] = useState('');
+  const [catDesc, setCatDesc] = useState('');
+  const [catClassId, setCatClassId] = useState('');
+  const [catSubjectId, setCatSubjectId] = useState('');
+
+  // Post states
+  const [newPostTitle, setNewPostTitle] = useState('');
+  const [newPostContent, setNewPostContent] = useState('');
+
+  const loadForumsData = async () => {
+    if (!session?.user.schoolId) return;
+    try {
+      await mockApi.syncForumCategoriesData(session.user.schoolId);
+      await mockApi.syncForumPostsData(session.user.schoolId);
+      await mockApi.syncForumRepliesData(session.user.schoolId);
+
+      const cats = mockDb.forumCategories.filter(c => c.schoolId === session.user.schoolId);
+      setForumCategories(cats);
+
+      const posts = await mockApi.getForumPosts();
+      setForumPosts(posts.filter(p => p.schoolId === session.user.schoolId));
+    } catch (err) {
+      console.error('Failed to load forums:', err);
+    }
+  };
+
+  const handleSelectPost = async (post: any) => {
+    setSelectedPost(post);
+    try {
+      const reps = await mockApi.getForumPostReplies(post.id);
+      setPostReplies(reps);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleForumReplySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session || !selectedPost || !replyText.trim()) return;
+
+    try {
+      await mockApi.replyToForumPost(session.user.id, selectedPost.id, replyText);
+      setReplyText('');
+      const reps = await mockApi.getForumPostReplies(selectedPost.id);
+      setPostReplies(reps);
+      loadForumsData();
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCreateForumPost = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session || !selectedCategory || !newPostTitle.trim() || !newPostContent.trim()) return;
+
+    try {
+      await mockApi.createForumPost(session.user.id, newPostTitle, newPostContent, selectedCategory.id);
+      setNewPostTitle('');
+      setNewPostContent('');
+      loadForumsData();
+      alert('Discussion thread published!');
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleCreateCategorySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !catName.trim() || !catDesc.trim()) return;
+
+    try {
+      if (editingCategory) {
+        await mockApi.updateForumCategory(
+          editingCategory.id,
+          catName,
+          catDesc,
+          catClassId || null,
+          catSubjectId || null
+        );
+        alert('Discussion Board updated successfully!');
+      } else {
+        await mockApi.createForumCategory(
+          session.user.schoolId,
+          catName,
+          catDesc,
+          catClassId || null,
+          catSubjectId || null
+        );
+        alert('Discussion Board created successfully!');
+      }
+      setShowCreateCategory(false);
+      setEditingCategory(null);
+      setCatName('');
+      setCatDesc('');
+      setCatClassId('');
+      setCatSubjectId('');
+      loadForumsData();
+    } catch (err) {
+      console.error(err);
+      alert(err instanceof Error ? err.message : 'Operation failed');
+    }
+  };
+
+  const handleEditCategory = (cat: any) => {
+    setEditingCategory(cat);
+    setCatName(cat.name);
+    setCatDesc(cat.description);
+    setCatClassId(cat.classId || '');
+    setCatSubjectId(cat.subjectId || '');
+    setShowCreateCategory(true);
+  };
+
+  const handleDeleteCategory = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this Discussion Board? All threads and replies will be permanently deleted!')) return;
+    try {
+      await mockApi.deleteForumCategory(id);
+      if (selectedCategory?.id === id) {
+        setSelectedCategory(null);
+        setSelectedPost(null);
+      }
+      loadForumsData();
+      alert('Discussion Board deleted!');
+    } catch (err) {
+      console.error(err);
+    }
+  };
 
   const loadManagedClasses = async () => {
     if (!teacherId) return;
@@ -166,6 +345,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     loadManagedClasses();
     if (session?.user.schoolId) {
       mockApi.classTeacherGetExams(session.user.schoolId).then(setHmExams);
+      mockApi.syncQuizzesData(session.user.schoolId).catch(console.error);
     }
   }, [teacherId, session, refreshTrigger]);
 
@@ -194,6 +374,151 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setHmReportCard([]);
     }
   }, [teacherId, selectedManagedClass, hmSelectedStudent, hmSelectedExam]);
+
+  const loadAssignmentsList = async () => {
+    if (!teacherId) return;
+    setAssignmentsLoading(true);
+    try {
+      const data = await mockApi.teacherGetAssignments(teacherId);
+      setAssignmentsList(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setAssignmentsLoading(false);
+    }
+  };
+
+  const loadMaterialsList = async () => {
+    if (!teacherId) return;
+    setMaterialsLoading(true);
+    try {
+      const data = await mockApi.teacherGetStudyMaterials(teacherId);
+      setMaterialsList(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setMaterialsLoading(false);
+    }
+  };
+
+  const loadQuizzesList = async () => {
+    if (!teacherId) return;
+    setQuizzesLoading(true);
+    try {
+      const data = await mockApi.teacherGetQuizzes(teacherId);
+      setQuizzesList(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setQuizzesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'assignments') {
+      loadAssignmentsList();
+    } else if (activeTab === 'materials') {
+      loadMaterialsList();
+    } else if (activeTab === 'quizzes') {
+      loadQuizzesList();
+    } else if (activeTab === 'forums') {
+      loadForumsData();
+    }
+  }, [activeTab, teacherId, refreshTrigger]);
+
+  const handleDeleteAssignment = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this assignment?')) return;
+    try {
+      await mockApi.teacherDeleteAssignment(id);
+      alert('Assignment deleted.');
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err: any) {
+      alert(err.message || 'Error deleting assignment');
+    }
+  };
+
+  const handleEditAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingAssignment || !selectedMapping) return;
+    const mapping = classMappings.find(m => m.id === selectedMapping)!;
+    try {
+      await mockApi.teacherEditAssignment(
+        editingAssignment.id,
+        mapping.classId,
+        mapping.subjectId,
+        editAssignTitle,
+        editAssignDesc,
+        new Date(editAssignDueDate).toISOString(),
+        editAssignIsHomework
+      );
+      alert('Assignment updated successfully!');
+      setEditingAssignment(null);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err: any) {
+      alert(err.message || 'Error updating assignment');
+    }
+  };
+
+  const handleDeleteMaterial = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this study material?')) return;
+    try {
+      await mockApi.teacherDeleteStudyMaterial(id);
+      alert('Study material deleted.');
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err: any) {
+      alert(err.message || 'Error deleting material');
+    }
+  };
+
+  const handleEditMaterial = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMaterial || !selectedMapping) return;
+    const mapping = classMappings.find(m => m.id === selectedMapping)!;
+    try {
+      await mockApi.teacherEditStudyMaterial(
+        editingMaterial.id,
+        mapping.subjectId,
+        editMatTitle,
+        editMatDesc,
+        editMatUrl,
+        editMatType,
+        editMatStreamable
+      );
+      alert('Study material updated successfully!');
+      setEditingMaterial(null);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err: any) {
+      alert(err.message || 'Error updating material');
+    }
+  };
+
+  const handleDeleteQuiz = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this quiz?')) return;
+    try {
+      await mockApi.teacherDeleteQuiz(id);
+      alert('Quiz deleted.');
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err: any) {
+      alert(err.message || 'Error deleting quiz');
+    }
+  };
+
+  const handleEditQuiz = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingQuiz) return;
+    try {
+      await mockApi.teacherEditQuiz(
+        editingQuiz.id,
+        editQuizTitle,
+        editQuizDuration
+      );
+      alert('Quiz updated successfully!');
+      setEditingQuiz(null);
+      setRefreshTrigger(prev => prev + 1);
+    } catch (err: any) {
+      alert(err.message || 'Error updating quiz');
+    }
+  };
 
   const handleCreateManagedTimetable = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -233,6 +558,43 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       loadSelectionDetails();
     } catch (err: any) {
       alert(err.message || 'Error deleting timetable entry');
+    }
+  };
+
+  const handleEditManagedTimetableClick = (lecture: Timetable) => {
+    setEditingManagedTtId(lecture.id);
+    setEditManagedSubject(lecture.subjectId);
+    setEditManagedTeacher(lecture.teacherId || '');
+    setEditManagedDay(lecture.dayOfWeek);
+    setEditManagedClassroom(lecture.classroomNumber || '');
+    setEditManagedStart(lecture.startTime);
+    setEditManagedEnd(lecture.endTime);
+    setIsEditingManagedTt(true);
+  };
+
+  const handleUpdateManagedTimetable = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!teacherId || !selectedManagedClass || !editingManagedTtId || !editManagedSubject) return;
+
+    try {
+      await mockApi.classTeacherUpdateTimetableEntry(
+        teacherId,
+        editingManagedTtId,
+        selectedManagedClass,
+        editManagedSubject,
+        editManagedTeacher,
+        editManagedDay,
+        editManagedStart,
+        editManagedEnd,
+        editManagedClassroom
+      );
+      setIsEditingManagedTt(false);
+      setEditingManagedTtId('');
+      setRefreshTrigger(prev => prev + 1);
+      alert('Class timetable entry updated successfully!');
+      loadSelectionDetails();
+    } catch (err: any) {
+      alert(err.message || 'Error updating timetable entry');
     }
   };
   const handleCreateSelfTimetable = async (e: React.FormEvent) => {
@@ -286,7 +648,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
         ctStAdmission,
         ctStRoll,
         ctStGender,
-        ctStDob
+        ctStDob,
+        ctStPassword
       );
       setShowCTAddStudent(false);
       setCtStEmail('');
@@ -296,6 +659,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setCtStRoll(1);
       setCtStGender('MALE');
       setCtStDob('2010-01-01');
+      setCtStPassword('password');
       setRefreshTrigger(prev => prev + 1);
       loadSelectionDetails();
       alert('Student successfully registered and assigned to your class!');
@@ -319,7 +683,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
         ctPrPhone,
         ctPrStudentId,
         ctPrAdmissionNum,
-        ctPrRelation
+        ctPrRelation,
+        ctPrPassword
       );
       setShowCTAddParent(false);
       setCtPrEmail('');
@@ -331,6 +696,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setCtPrStudentId('');
       setCtPrAdmissionNum('');
       setCtPrRelation('Father');
+      setCtPrPassword('password');
       setRefreshTrigger(prev => prev + 1);
       alert('Parent registered and linked to student ward successfully!');
     } catch (err: any) {
@@ -409,7 +775,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teacherId || !selectedMapping || !assignTitle.trim()) return;
-    const mapping = classMappings.find(m => m.id === selectedMapping)!;
+    const mapping = classMappings.find(m => m.id === selectedMapping);
+    if (!mapping) return;
 
     try {
       await mockApi.teacherCreateAssignment(
@@ -426,6 +793,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setAssignDueDate('');
       setAssignIsHomework(false);
       alert('Assignment released to classroom feeds!');
+      setRefreshTrigger(prev => prev + 1);
     } catch (err: any) {
       alert(err.message || 'Error creating assignment');
     }
@@ -457,7 +825,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
   const handleCreateQuiz = async () => {
     if (!teacherId || !selectedMapping || !quizTitle.trim() || quizQuestions.length === 0) return;
-    const mapping = classMappings.find(m => m.id === selectedMapping)!;
+    const mapping = classMappings.find(m => m.id === selectedMapping);
+    if (!mapping) return;
 
     try {
       await mockApi.teacherCreateQuiz(
@@ -472,6 +841,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setQuizDuration(15);
       setQuizQuestions([]);
       alert('Interactive online quiz published successfully!');
+      setRefreshTrigger(prev => prev + 1);
     } catch (err: any) {
       alert(err.message || 'Error creating quiz');
     }
@@ -480,7 +850,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const handleUploadMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teacherId || !selectedMapping || !materialTitle.trim() || !materialUrl.trim()) return;
-    const mapping = classMappings.find(m => m.id === selectedMapping)!;
+    const mapping = classMappings.find(m => m.id === selectedMapping);
+    if (!mapping) return;
 
     try {
       await mockApi.teacherUploadStudyMaterial(
@@ -498,6 +869,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setMaterialType('pdf');
       setMaterialStreamable(false);
       alert('Study resource added to catalog!');
+      setRefreshTrigger(prev => prev + 1);
     } catch (err: any) {
       alert(err.message || 'Error uploading material');
     }
@@ -826,7 +1198,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                     >
                       <option value="">-- Choose Instructor --</option>
                       {mockDb.teachers.map(t => {
-                        const u = mockDb.users.find(usr => usr.id === t.userId)!;
+                        const u = mockDb.users.find(usr => usr.id === t.userId);
+                        if (!u) return null;
                         return (
                           <option key={t.id} value={t.id}>{u.firstName} {u.lastName} ({t.specialization})</option>
                         );
@@ -945,12 +1318,20 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                                     </div>
                                   </div>
 
-                                  <button
-                                    onClick={() => handleDeleteManagedTimetable(lecture.id)}
-                                    className="text-red-400 hover:text-red-300 font-semibold text-xs border border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 px-2.5 py-1.5 rounded-xl transition-all"
-                                  >
-                                    Delete
-                                  </button>
+                                  <div className="flex items-center gap-2 shrink-0">
+                                    <button
+                                      onClick={() => handleEditManagedTimetableClick(lecture)}
+                                      className="text-brand-400 hover:text-brand-300 font-semibold text-xs border border-brand-500/20 hover:border-brand-500/40 bg-brand-500/5 hover:bg-brand-500/10 px-2.5 py-1.5 rounded-xl transition-all"
+                                    >
+                                      Edit
+                                    </button>
+                                    <button
+                                      onClick={() => handleDeleteManagedTimetable(lecture.id)}
+                                      className="text-red-400 hover:text-red-300 font-semibold text-xs border border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 px-2.5 py-1.5 rounded-xl transition-all"
+                                    >
+                                      Delete
+                                    </button>
+                                  </div>
                                 </div>
                               );
                             })}
@@ -1041,10 +1422,13 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                       const linkedWards = mockDb.parentStudentMappings
                         .filter(m => m.parentId === p.id && classStudents.some(cs => cs.id === m.studentId))
                         .map(m => {
-                          const cs = classStudents.find(st => st.id === m.studentId)!;
-                          const csu = mockDb.users.find(usr => usr.id === cs.userId)!;
+                          const cs = classStudents.find(st => st.id === m.studentId);
+                          if (!cs) return null;
+                          const csu = mockDb.users.find(usr => usr.id === cs.userId);
+                          if (!csu) return null;
                           return `${csu.firstName} ${csu.lastName}`;
-                        });
+                        })
+                        .filter(Boolean) as string[];
 
                       return (
                         <div key={p.id} className="p-3 bg-slate-900/20 border border-slate-850/60 rounded-xl flex items-center justify-between animate-fade-in">
@@ -1467,89 +1851,152 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             </GlassCard>
           </div>
         </PremiumLock>
+      )}      {activeTab === 'assignments' && (
+        <div className="animate-fade-in">
+          <GlassCard className="space-y-4 max-w-xl mx-auto">
+            <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+              <PlusCircle className="text-brand-500" size={16} />
+              Deploy Homework / Assignment
+            </h3>
+
+            <form onSubmit={handleCreateAssignment} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Task Title</label>
+                <input 
+                  type="text"
+                  placeholder="e.g. Spacetime Calculus Proofs"
+                  value={assignTitle}
+                  onChange={(e) => setAssignTitle(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Problem Description</label>
+                <textarea 
+                  placeholder="Provide full problem questions or equations..."
+                  rows={4}
+                  value={assignDesc}
+                  onChange={(e) => setAssignDesc(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Due Date</label>
+                <input 
+                  type="datetime-local"
+                  value={assignDueDate}
+                  onChange={(e) => setAssignDueDate(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  required
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox"
+                  id="isHomeworkCheck"
+                  checked={assignIsHomework}
+                  onChange={(e) => setAssignIsHomework(e.target.checked)}
+                  className="bg-slate-900 border border-slate-800 rounded focus:ring-brand-500 h-4 w-4 text-brand-500"
+                />
+                <label htmlFor="isHomeworkCheck" className="text-xs text-slate-300">Mark as daily read/write homework</label>
+              </div>
+              <button type="submit" className="w-full glass-btn-primary text-xs">
+                Publish Assignment
+              </button>
+            </form>
+          </GlassCard>
+
+          <div className="mt-8 space-y-4 max-w-4xl mx-auto">
+            <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+              <Layers className="text-brand-500" size={16} />
+              Manage Uploaded Assignments
+            </h3>
+            
+            {assignmentsLoading ? (
+              <p className="text-xs text-slate-500">Loading assignments...</p>
+            ) : assignmentsList.length === 0 ? (
+              <p className="text-xs text-slate-500 italic border border-slate-850/50 bg-slate-900/20 p-4 rounded-xl text-center">No assignments published yet.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {assignmentsList.map(a => (
+                  <GlassCard key={a.id} className="p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-bold text-slate-100 text-sm">{a.title}</h4>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${a.isHomework ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'}`}>
+                          {a.isHomework ? 'Homework' : 'Assignment'}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 line-clamp-2 mb-3">{a.description}</p>
+                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-500 mb-4">
+                        <span className="flex items-center gap-1"><Calendar size={12} /> Due: {new Date(a.dueDate).toLocaleDateString()}</span>
+                        <span className="flex items-center gap-1"><Layers size={12} /> {a.className}</span>
+                        <span className="flex items-center gap-1"><FileText size={12} /> {a.subjectName}</span>
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 border-t border-slate-850 pt-3">
+                      <button 
+                        onClick={() => {
+                          setEditingAssignment(a);
+                          setEditAssignTitle(a.title);
+                          setEditAssignDesc(a.description);
+                          setEditAssignDueDate(new Date(a.dueDate).toISOString().slice(0, 16));
+                          setEditAssignIsHomework(a.isHomework);
+                        }}
+                        className="flex-1 glass-btn-secondary text-xs flex items-center justify-center gap-1"
+                      >
+                        <Edit3 size={12} /> Edit
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteAssignment(a.id)}
+                        className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    </div>
+                  </GlassCard>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
       )}
 
-      {activeTab === 'assignments' && (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          
-          {/* Create Homework Form */}
-          <div className="lg:col-span-1">
-            <GlassCard className="space-y-4">
-              <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                <PlusCircle className="text-brand-500" size={16} />
-                Deploy Homework / Assignment
+      {activeTab === 'quizzes' && (
+        <PremiumLock 
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          requiredTier="Pro"
+          featureName="Interactive MCQ Online Quizzes"
+        >
+          <div className="space-y-6 animate-fade-in">
+            <div>
+              <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                <PenTool className="text-brand-500" size={24} />
+                Interactive MCQ Online Quizzes
               </h3>
+              <p className="text-xs text-slate-400 mt-1">
+                Build online multiple-choice tests and view student attempt grades in real time.
+              </p>
+            </div>
 
-              <form onSubmit={handleCreateAssignment} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Task Title</label>
-                  <input 
-                    type="text"
-                    placeholder="e.g. Spacetime Calculus Proofs"
-                    value={assignTitle}
-                    onChange={(e) => setAssignTitle(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Problem Description</label>
-                  <textarea 
-                    placeholder="Provide full problem questions or equations..."
-                    rows={4}
-                    value={assignDesc}
-                    onChange={(e) => setAssignDesc(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Due Date</label>
-                  <input 
-                    type="datetime-local"
-                    value={assignDueDate}
-                    onChange={(e) => setAssignDueDate(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
-                    required
-                  />
-                </div>
-                <div className="flex items-center gap-2">
-                  <input 
-                    type="checkbox"
-                    id="isHomeworkCheck"
-                    checked={assignIsHomework}
-                    onChange={(e) => setAssignIsHomework(e.target.checked)}
-                    className="bg-slate-900 border border-slate-800 rounded focus:ring-brand-500 h-4 w-4 text-brand-500"
-                  />
-                  <label htmlFor="isHomeworkCheck" className="text-xs text-slate-300">Mark as daily read/write homework</label>
-                </div>
-                <button type="submit" className="w-full glass-btn-primary text-xs">
-                  Publish Assignment
-                </button>
-              </form>
-            </GlassCard>
-          </div>
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+              {/* Quiz Builder */}
+              <div className="lg:col-span-1">
+                <GlassCard className="space-y-4">
+                  <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                    <PlusCircle className="text-brand-500" size={16} />
+                    Create New MCQ Quiz
+                  </h3>
 
-          {/* Quiz Creator Form */}
-          <div className="lg:col-span-2">
-            <PremiumLock
-              isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
-              requiredTier="Pro"
-              featureName="Interactive MCQ Online Quiz Builder"
-            >
-              <GlassCard className="space-y-4">
-                <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                  <PlusCircle className="text-brand-500" size={16} />
-                  Interactive MCQ Online Quiz Builder
-                </h3>
-
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-4">
                     <div className="space-y-1">
                       <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Quiz Title</label>
                       <input 
                         type="text"
-                        placeholder="e.g. TypeScript Type Safety Test"
+                        placeholder="e.g. Spacetime Physics MCQ"
                         value={quizTitle}
                         onChange={(e) => setQuizTitle(e.target.value)}
                         className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
@@ -1590,8 +2037,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   </div>
 
                   {/* Add single question */}
-                  <form onSubmit={handleAddQuizQuestion} className="bg-slate-900/20 border border-slate-850 p-3 rounded-2xl space-y-3">
-                    <h4 className="text-xs font-semibold text-slate-200">Add Question Form</h4>
+                  <form onSubmit={handleAddQuizQuestion} className="bg-slate-900/20 border border-slate-850 p-3 rounded-2xl space-y-3 mt-4">
+                    <h4 className="text-xs font-semibold text-slate-200">Add Question</h4>
                     <div className="space-y-1">
                       <input 
                         type="text" 
@@ -1624,16 +2071,123 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                       </div>
                     </div>
                     <button type="submit" className="w-full bg-slate-800 hover:bg-slate-750 text-slate-200 py-1.5 rounded font-semibold text-[10px] transition-colors">
-                      Push to quiz list
+                      Add to Question List
                     </button>
                   </form>
-                </div>
-              </GlassCard>
-            </PremiumLock>
-          </div>
-        </div>
-      )}
+                </GlassCard>
+              </div>
 
+              {/* Published Quizzes & Attempts */}
+              <div className="lg:col-span-2 space-y-6">
+                <GlassCard className="space-y-4">
+                  <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                    <Clipboard className="text-brand-500" size={16} />
+                    Published Quizzes & Student Performance
+                  </h3>
+
+                  {quizzesLoading ? (
+                    <div className="text-center py-12 text-slate-400 italic text-sm">
+                      Loading quizzes...
+                    </div>
+                  ) : quizzesList.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 italic text-sm">
+                      No quizzes published by you yet. Use the creator form on the left.
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {quizzesList.map(quiz => {
+                        const quizAttempts = mockDb.quizAttempts.filter(a => a.quizId === quiz.id);
+                        
+                        return (
+                          <div key={quiz.id} className="p-4 bg-slate-950/20 border border-slate-850 rounded-2xl space-y-4">
+                            <div className="flex justify-between items-start border-b border-slate-850 pb-2">
+                              <div>
+                                <h4 className="font-bold text-slate-200 text-sm">{quiz.title}</h4>
+                                <p className="text-[10px] text-slate-400">Duration: {quiz.durationMinutes}m | Total Marks: {quiz.totalMarks}</p>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                                  {quizAttempts.length} Attempts
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    setEditingQuiz(quiz);
+                                    setEditQuizTitle(quiz.title);
+                                    setEditQuizDuration(quiz.durationMinutes);
+                                  }}
+                                  className="text-slate-400 hover:text-brand-400 transition-colors p-1"
+                                >
+                                  <Edit3 size={14} />
+                                </button>
+                                <button
+                                  onClick={() => handleDeleteQuiz(quiz.id)}
+                                  className="text-slate-400 hover:text-red-400 transition-colors p-1"
+                                >
+                                  <Trash2 size={14} />
+                                </button>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2">
+                              {quizAttempts.length === 0 ? (
+                                <p className="text-[10px] text-slate-500 italic">No student has attempted this quiz yet.</p>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left text-[11px] border-collapse">
+                                    <thead>
+                                      <tr className="border-b border-slate-850 text-slate-500 font-bold uppercase tracking-wider">
+                                        <th className="py-2 px-1">Student Name</th>
+                                        <th className="py-2 px-1">Marks Scored</th>
+                                        <th className="py-2 px-1">Correct Ans</th>
+                                        <th className="py-2 px-1">Incorrect Ans</th>
+                                        <th className="py-2 px-1">Attempt Date</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-850 text-slate-300">
+                                      {quizAttempts.map(attempt => {
+                                        const student = mockDb.students.find(s => s.id === attempt.studentId);
+                                        const studentUser = student ? mockDb.users.find(u => u.id === student.userId) : null;
+                                        const name = studentUser ? `${studentUser.firstName} ${studentUser.lastName}` : 'Unknown Student';
+
+                                        // Calculate correct/incorrect counts
+                                        const questions = mockDb.quizQuestions.filter(q => q.quizId === quiz.id);
+                                        let correctCount = 0;
+                                        let incorrectCount = 0;
+                                        questions.forEach(q => {
+                                          const ans = attempt.answers ? attempt.answers[q.id] : undefined;
+                                          if (ans !== undefined && ans === q.correctOption) {
+                                            correctCount++;
+                                          } else {
+                                            incorrectCount++;
+                                          }
+                                        });
+
+                                        return (
+                                          <tr key={attempt.id} className="hover:bg-slate-900/15">
+                                            <td className="py-2 px-1 font-semibold text-slate-200">{name}</td>
+                                            <td className="py-2 px-1 font-bold text-slate-100">{attempt.score} / {quiz.totalMarks}</td>
+                                            <td className="py-2 px-1 text-green-400 font-bold">{correctCount}</td>
+                                            <td className="py-2 px-1 text-red-400 font-bold">{incorrectCount}</td>
+                                            <td className="py-2 px-1 text-slate-500 font-mono">{new Date(attempt.attemptedAt).toLocaleDateString()}</td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </GlassCard>
+              </div>
+            </div>
+          </div>
+        </PremiumLock>
+      )}
       {activeTab === 'materials' && (
         <PremiumLock
           isLocked={currentPlanName !== 'enterprise'}
@@ -1708,6 +2262,73 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
               </button>
             </form>
           </GlassCard>
+
+          <div className="mt-8 space-y-4 max-w-4xl mx-auto">
+            <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+              <Layers className="text-brand-500" size={16} />
+              Manage Uploaded Materials
+            </h3>
+            
+            {materialsLoading ? (
+              <p className="text-xs text-slate-500">Loading materials...</p>
+            ) : materialsList.length === 0 ? (
+              <p className="text-xs text-slate-500 italic border border-slate-850/50 bg-slate-900/20 p-4 rounded-xl text-center">No study materials uploaded yet.</p>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {materialsList.map(m => (
+                  <GlassCard key={m.id} className="p-4 flex flex-col justify-between">
+                    <div>
+                      <div className="flex justify-between items-start mb-2">
+                        <h4 className="font-bold text-slate-100 text-sm">{m.title}</h4>
+                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
+                          m.fileType === 'pdf' ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 
+                          m.fileType === 'mp4' ? 'bg-brand-500/20 text-brand-400 border border-brand-500/30' : 
+                          'bg-blue-500/20 text-blue-400 border border-blue-500/30'
+                        }`}>
+                          {m.fileType}
+                        </span>
+                      </div>
+                      <p className="text-xs text-slate-400 line-clamp-2 mb-3">{m.description}</p>
+                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-500 mb-4">
+                        <span className="flex items-center gap-1"><FileText size={12} /> {m.subjectName}</span>
+                        {m.isVideoStreamable && <span className="flex items-center gap-1 text-green-400"><Video size={12} /> Streamable</span>}
+                      </div>
+                    </div>
+                    
+                    <div className="flex gap-2 border-t border-slate-850 pt-3">
+                      <a 
+                        href={m.fileUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer"
+                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <Eye size={12} /> View
+                      </a>
+                      <button 
+                        onClick={() => {
+                          setEditingMaterial(m);
+                          setEditMatTitle(m.title);
+                          setEditMatDesc(m.description || '');
+                          setEditMatUrl(m.fileUrl);
+                          setEditMatType(m.fileType);
+                          setEditMatStreamable(m.isVideoStreamable);
+                        }}
+                        className="flex-1 glass-btn-secondary text-xs flex items-center justify-center gap-1"
+                      >
+                        <Edit3 size={12} /> Edit
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteMaterial(m.id)}
+                        className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
+                      >
+                        <Trash2 size={12} /> Delete
+                      </button>
+                    </div>
+                  </GlassCard>
+                ))}
+              </div>
+            )}
+          </div>
         </PremiumLock>
       )}
 
@@ -1717,12 +2338,333 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
           requiredTier="Basic" 
           featureName="Communications & Forums"
         >
-          <GlassCard className="space-y-4">
-            <h3 className="font-bold text-slate-100">Discussion Boards</h3>
-            <p className="text-xs text-slate-400">
-              Forums are available inside portal contexts. Homeroom teachers can reply to students via the Student Portal forum link, or open secure direct chats to communicate individually with parents and students!
-            </p>
-          </GlassCard>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+            {/* Left Column - Category List */}
+            <div className="space-y-6">
+              <GlassCard className="space-y-4">
+                <div className="flex items-center justify-between border-b border-slate-850 pb-3">
+                  <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                    <Layers className="text-brand-500" size={18} />
+                    Forums & Boards
+                  </h3>
+                  <button 
+                    onClick={() => {
+                      setEditingCategory(null);
+                      setCatName('');
+                      setCatDesc('');
+                      setCatClassId('');
+                      setCatSubjectId('');
+                      setShowCreateCategory(true);
+                    }}
+                    className="p-1 hover:bg-slate-800 rounded-lg text-brand-400 hover:text-brand-300 transition-colors"
+                    title="Create Board"
+                  >
+                    <PlusCircle size={20} />
+                  </button>
+                </div>
+
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                  {forumCategories.length === 0 ? (
+                    <div className="text-center py-8 text-slate-500 text-xs">No active boards. Create one to begin!</div>
+                  ) : (
+                    forumCategories.map(cat => {
+                      const classObj = mockDb.classes.find(c => c.id === cat.classId);
+                      const subObj = mockDb.subjects.find(s => s.id === cat.subjectId);
+                      const isSelected = selectedCategory?.id === cat.id;
+                      return (
+                        <div 
+                          key={cat.id}
+                          onClick={() => {
+                            setSelectedCategory(cat);
+                            setSelectedPost(null);
+                          }}
+                          className={`p-3 border rounded-xl cursor-pointer transition-all ${
+                            isSelected 
+                              ? 'bg-brand-600/10 border-brand-500/50 shadow-md' 
+                              : 'bg-slate-900/20 border-slate-850 hover:border-slate-800'
+                          }`}
+                        >
+                          <div className="flex items-start justify-between">
+                            <div>
+                              <h4 className="font-semibold text-slate-200 text-xs">{cat.name}</h4>
+                              <p className="text-[10px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">{cat.description}</p>
+                            </div>
+                            <div className="flex items-center gap-1 ml-2">
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleEditCategory(cat);
+                                }}
+                                className="p-1 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition-colors"
+                              >
+                                <Edit3 size={12} />
+                              </button>
+                              <button 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleDeleteCategory(cat.id);
+                                }}
+                                className="p-1 hover:bg-slate-800 text-red-400 hover:text-red-300 rounded transition-colors"
+                              >
+                                <Trash2 size={12} />
+                              </button>
+                            </div>
+                          </div>
+
+                          {(classObj || subObj) && (
+                            <div className="flex flex-wrap gap-1 mt-2.5">
+                              {classObj && (
+                                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
+                                  {classObj.name}
+                                </span>
+                              )}
+                              {subObj && (
+                                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  {subObj.name}
+                                </span>
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
+              </GlassCard>
+            </div>
+
+            {/* Right Column - Posts and replies inside selected Category */}
+            <div className="lg:col-span-2 space-y-6">
+              {selectedCategory ? (
+                selectedPost ? (
+                  // Deep thread view
+                  <GlassCard className="space-y-6">
+                    <button 
+                      onClick={() => setSelectedPost(null)}
+                      className="text-xs text-brand-400 hover:text-brand-300 font-semibold flex items-center gap-1"
+                    >
+                      &larr; Back to category threads
+                    </button>
+                    
+                    <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl space-y-3">
+                      <div className="flex items-center justify-between">
+                        <h4 className="font-bold text-slate-100 text-sm">{selectedPost.title}</h4>
+                        <span className="text-[10px] text-slate-500">{new Date(selectedPost.createdAt).toLocaleDateString()}</span>
+                      </div>
+                      <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{selectedPost.content}</p>
+                      <p className="text-[10px] text-slate-500">Posted by: {selectedPost.authorName}</p>
+                    </div>
+
+                    <div className="space-y-4">
+                      <h5 className="font-semibold text-slate-200 text-xs">Replies & Comments</h5>
+                      <div className="space-y-3 max-h-64 overflow-y-auto">
+                        {postReplies.length === 0 ? (
+                          <div className="text-center py-6 text-slate-500 text-xs">No answers posted yet. Write one below!</div>
+                        ) : (
+                          postReplies.map(r => (
+                            <div key={r.id} className="p-3 bg-slate-900/20 border border-slate-850 rounded-xl space-y-1">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="font-semibold text-slate-200 text-xs">{r.authorName}</span>
+                                <span className="text-[9px] uppercase tracking-wider text-slate-500">{r.authorRole}</span>
+                              </div>
+                              <p className="text-xs text-slate-300 leading-relaxed">{r.content}</p>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+
+                    <form onSubmit={handleForumReplySubmit} className="space-y-3">
+                      <textarea 
+                        placeholder="Write a professional review or answer..."
+                        rows={3}
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        className="w-full bg-slate-900/50 border border-slate-800 text-xs text-slate-100 rounded-xl p-3 focus:outline-none focus:border-brand-500 transition-colors"
+                        required
+                      />
+                      <button type="submit" className="glass-btn-primary text-xs">
+                        Publish Comment
+                      </button>
+                    </form>
+                  </GlassCard>
+                ) : (
+                  // Threads listing & Thread Creator
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                    <div className="md:col-span-2">
+                      <GlassCard className="space-y-4">
+                        <h3 className="font-bold text-slate-100 border-b border-slate-850 pb-3 flex items-center gap-2">
+                          <MessageSquare className="text-brand-500" size={16} />
+                          Discussions: {selectedCategory.name}
+                        </h3>
+
+                        <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                          {forumPosts.filter(p => p.categoryId === selectedCategory.id).length === 0 ? (
+                            <div className="text-center py-12 text-slate-500 text-xs">No active discussions in this board yet.</div>
+                          ) : (
+                            forumPosts
+                              .filter(p => p.categoryId === selectedCategory.id)
+                              .map(p => (
+                                <div 
+                                  key={p.id}
+                                  onClick={() => handleSelectPost(p)}
+                                  className="p-3 bg-slate-900/30 border border-slate-850 hover:border-slate-800 rounded-xl cursor-pointer transition-all"
+                                >
+                                  <div className="flex items-center justify-between mb-1">
+                                    <span className="text-[10px] font-bold text-brand-400 truncate">{p.authorName}</span>
+                                    <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                      <MessageCircle size={10} />
+                                      {p.repliesCount}
+                                    </span>
+                                  </div>
+                                  <h4 className="font-semibold text-slate-200 text-xs truncate">{p.title}</h4>
+                                  <p className="text-[11px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">{p.content}</p>
+                                </div>
+                              ))
+                          )}
+                        </div>
+                      </GlassCard>
+                    </div>
+
+                    <div>
+                      <GlassCard className="space-y-4">
+                        <h4 className="font-bold text-slate-200 text-xs">Start New Discussion Thread</h4>
+                        <form onSubmit={handleCreateForumPost} className="space-y-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Post Title</label>
+                            <input 
+                              type="text"
+                              placeholder="e.g., Announcement regarding Midterm exam content"
+                              value={newPostTitle}
+                              onChange={(e) => setNewPostTitle(e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                              required
+                            />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Post Content</label>
+                            <textarea 
+                              placeholder="Details, announcements, or equations to discuss..."
+                              rows={4}
+                              value={newPostContent}
+                              onChange={(e) => setNewPostContent(e.target.value)}
+                              className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                              required
+                            />
+                          </div>
+                          <button type="submit" className="w-full glass-btn-primary text-xs">
+                            Publish Thread
+                          </button>
+                        </form>
+                      </GlassCard>
+                    </div>
+                  </div>
+                )
+              ) : (
+                <GlassCard className="flex flex-col items-center justify-center text-center py-16 space-y-3">
+                  <div className="w-12 h-12 bg-slate-900 rounded-full flex items-center justify-center text-brand-500 text-lg border border-slate-800/80 animate-pulse">💬</div>
+                  <div>
+                    <h4 className="font-bold text-slate-200 text-sm">No board selected</h4>
+                    <p className="text-xs text-slate-500 mt-1 max-w-sm">Select an active discussion board from the sidebar to inspect topics, answer parent queries, or broadcast class announcements!</p>
+                  </div>
+                </GlassCard>
+              )}
+            </div>
+          </div>
+
+          {/* Create / Edit category modal */}
+          {showCreateCategory && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+              <GlassCard className="w-full max-w-md space-y-6">
+                <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
+                  <h4 className="font-bold text-slate-100 text-sm">
+                    {editingCategory ? 'Modify Discussion Board' : 'Create Discussion Board'}
+                  </h4>
+                  <button 
+                    onClick={() => {
+                      setShowCreateCategory(false);
+                      setEditingCategory(null);
+                    }}
+                    className="text-xs text-slate-400 hover:text-slate-200"
+                  >
+                    Close
+                  </button>
+                </div>
+
+                <form onSubmit={handleCreateCategorySubmit} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Board Name</label>
+                    <input 
+                      type="text"
+                      placeholder="e.g. Grade 10-A Calculus Q&A"
+                      value={catName}
+                      onChange={(e) => setCatName(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                      required
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Description</label>
+                    <textarea 
+                      placeholder="Describe the topics and target audience for this forum..."
+                      rows={3}
+                      value={catDesc}
+                      onChange={(e) => setCatDesc(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                      required
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Link to Class (Optional)</label>
+                      <select 
+                        value={catClassId}
+                        onChange={(e) => setCatClassId(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                      >
+                        <option value="">General (School Wide)</option>
+                        {mockDb.classes.filter(c => c.schoolId === session?.user.schoolId).map(c => (
+                          <option key={c.id} value={c.id}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Link to Subject (Optional)</label>
+                      <select 
+                        value={catSubjectId}
+                        onChange={(e) => setCatSubjectId(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                      >
+                        <option value="">None (General)</option>
+                        {mockDb.subjects.filter(s => s.schoolId === session?.user.schoolId).map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-850">
+                    <button 
+                      type="button" 
+                      onClick={() => {
+                        setShowCreateCategory(false);
+                        setEditingCategory(null);
+                      }}
+                      className="glass-btn-secondary text-xs"
+                    >
+                      Cancel
+                    </button>
+                    <button type="submit" className="glass-btn-primary text-xs">
+                      {editingCategory ? 'Update Board' : 'Establish Board'}
+                    </button>
+                  </div>
+                </form>
+              </GlassCard>
+            </div>
+          )}
         </PremiumLock>
       )}
 
@@ -1796,6 +2738,10 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Email Address</label>
                 <input type="email" placeholder="student@aegis.com" value={ctStEmail} onChange={(e) => setCtStEmail(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
               </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Account Password</label>
+                <input type="text" placeholder="Secure password (e.g. password)" value={ctStPassword} onChange={(e) => setCtStPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+              </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">First Name</label>
                 <input type="text" placeholder="First Name" value={ctStFirst} onChange={(e) => setCtStFirst(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
@@ -1852,6 +2798,10 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Occupation</label>
                 <input type="text" placeholder="Architect, Doctor, etc." value={ctPrOccup} onChange={(e) => setCtPrOccup(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
               </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Account Password</label>
+                <input type="text" placeholder="Secure password (e.g. password)" value={ctPrPassword} onChange={(e) => setCtPrPassword(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+              </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">First Name</label>
                 <input type="text" placeholder="First Name" value={ctPrFirst} onChange={(e) => setCtPrFirst(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
@@ -1885,7 +2835,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                     >
                       <option value="">-- Choose Student --</option>
                       {mockDb.students.filter(s => s.classId === selectedManagedClass).map(s => {
-                        const u = mockDb.users.find(usr => usr.id === s.userId)!;
+                        const u = mockDb.users.find(usr => usr.id === s.userId);
+                        if (!u) return null;
                         return (
                           <option key={s.id} value={s.id}>{u.firstName} {u.lastName}</option>
                         );
@@ -1922,6 +2873,321 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
               <div className="col-span-1 sm:col-span-2 flex justify-end gap-2 pt-2 border-t border-slate-850">
                 <button type="button" onClick={() => setShowCTAddParent(false)} className="glass-btn-secondary text-xs">Cancel</button>
                 <button type="submit" className="glass-btn-primary text-xs">Register Guardian</button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Edit Assignment Modal overlay */}
+      {editingAssignment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-lg space-y-6 border-brand-500/25">
+            <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
+              <div>
+                <h4 className="font-bold text-slate-100">Edit Assignment</h4>
+                <p className="text-[10px] text-slate-400 mt-0.5">Task: {editingAssignment.title}</p>
+              </div>
+              <button onClick={() => setEditingAssignment(null)} className="text-xs text-slate-400 hover:text-slate-200">
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditAssignment} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Task Title</label>
+                <input 
+                  type="text"
+                  value={editAssignTitle}
+                  onChange={(e) => setEditAssignTitle(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Problem Description</label>
+                <textarea 
+                  rows={4}
+                  value={editAssignDesc}
+                  onChange={(e) => setEditAssignDesc(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Due Date</label>
+                <input 
+                  type="datetime-local"
+                  value={editAssignDueDate}
+                  onChange={(e) => setEditAssignDueDate(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  required
+                />
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox"
+                  id="editIsHomeworkCheck"
+                  checked={editAssignIsHomework}
+                  onChange={(e) => setEditAssignIsHomework(e.target.checked)}
+                  className="bg-slate-900 border border-slate-800 rounded focus:ring-brand-500 h-4 w-4 text-brand-500"
+                />
+                <label htmlFor="editIsHomeworkCheck" className="text-xs text-slate-300">Mark as daily read/write homework</label>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setEditingAssignment(null)} className="flex-1 glass-btn-secondary text-xs">Cancel</button>
+                <button type="submit" className="flex-1 glass-btn-primary text-xs">Save Changes</button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Edit Study Material Modal overlay */}
+      {editingMaterial && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-lg space-y-6 border-brand-500/25">
+            <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
+              <div>
+                <h4 className="font-bold text-slate-100">Edit Study Material</h4>
+                <p className="text-[10px] text-slate-400 mt-0.5">Resource: {editingMaterial.title}</p>
+              </div>
+              <button onClick={() => setEditingMaterial(null)} className="text-xs text-slate-400 hover:text-slate-200">
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditMaterial} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource Title</label>
+                <input 
+                  type="text"
+                  value={editMatTitle}
+                  onChange={(e) => setEditMatTitle(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource Description</label>
+                <textarea 
+                  rows={2}
+                  value={editMatDesc}
+                  onChange={(e) => setEditMatDesc(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                />
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource File Link</label>
+                  <input 
+                    type="text"
+                    value={editMatUrl}
+                    onChange={(e) => setEditMatUrl(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Format</label>
+                  <select 
+                    value={editMatType}
+                    onChange={(e) => setEditMatType(e.target.value as any)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
+                  >
+                    <option value="pdf">PDF Handbook</option>
+                    <option value="docx">Word Docx</option>
+                    <option value="mp4">MP4 Video Clip</option>
+                  </select>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox"
+                  id="editIsStreamCheck"
+                  checked={editMatStreamable}
+                  onChange={(e) => setEditMatStreamable(e.target.checked)}
+                  className="bg-slate-900 border border-slate-800 rounded h-4 w-4 text-brand-500 focus:ring-brand-500"
+                />
+                <label htmlFor="editIsStreamCheck" className="text-xs text-slate-300">Mark as streamable in-browser lecture video</label>
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setEditingMaterial(null)} className="flex-1 glass-btn-secondary text-xs">Cancel</button>
+                <button type="submit" className="flex-1 glass-btn-primary text-xs">Save Changes</button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Edit Quiz Modal overlay */}
+      {editingQuiz && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-lg space-y-6 border-brand-500/25">
+            <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
+              <div>
+                <h4 className="font-bold text-slate-100">Edit Quiz</h4>
+                <p className="text-[10px] text-slate-400 mt-0.5">Quiz: {editingQuiz.title}</p>
+              </div>
+              <button onClick={() => setEditingQuiz(null)} className="text-xs text-slate-400 hover:text-slate-200">
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleEditQuiz} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Quiz Title</label>
+                <input 
+                  type="text"
+                  value={editQuizTitle}
+                  onChange={(e) => setEditQuizTitle(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  required
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Duration (Minutes)</label>
+                <input 
+                  type="number"
+                  value={editQuizDuration}
+                  onChange={(e) => setEditQuizDuration(parseInt(e.target.value) || 15)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  required
+                />
+              </div>
+              <div className="flex gap-2 pt-2">
+                <button type="button" onClick={() => setEditingQuiz(null)} className="flex-1 glass-btn-secondary text-xs">Cancel</button>
+                <button type="submit" className="flex-1 glass-btn-primary text-xs">Save Changes</button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Class Timetable Edit Modal Overlay */}
+      {isEditingManagedTt && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <GlassCard className="w-full max-w-lg space-y-6 border-brand-500/20 shadow-2xl relative">
+            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
+              <div>
+                <h4 className="font-bold text-slate-100 uppercase tracking-widest text-xs flex items-center gap-2">
+                  <Layers className="text-brand-500" size={16} />
+                  Edit Timetable Lecture Period
+                </h4>
+                <p className="text-[10px] text-slate-400 mt-1">Modify scheduling information and instructor assignments in real time.</p>
+              </div>
+              <button 
+                onClick={() => setIsEditingManagedTt(false)}
+                className="text-slate-400 hover:text-slate-200"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <form onSubmit={handleUpdateManagedTimetable} className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Subject</label>
+                  <select
+                    value={editManagedSubject}
+                    onChange={(e) => setEditManagedSubject(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-2 text-slate-200 focus:outline-none"
+                    required
+                  >
+                    <option value="">-- Choose Subject --</option>
+                    {mockDb.subjects.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Assigned Teacher</label>
+                  <select
+                    value={editManagedTeacher}
+                    onChange={(e) => setEditManagedTeacher(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-2 text-slate-200 focus:outline-none"
+                    required
+                  >
+                    <option value="">-- Choose Instructor --</option>
+                    {mockDb.teachers.map(t => {
+                      const u = mockDb.users.find(usr => usr.id === t.userId);
+                      if (!u) return null;
+                      return (
+                        <option key={t.id} value={t.id}>{u.firstName} {u.lastName} ({t.specialization})</option>
+                      );
+                    })}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Day</label>
+                  <select
+                    value={editManagedDay}
+                    onChange={(e) => setEditManagedDay(parseInt(e.target.value))}
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-2 text-slate-200 focus:outline-none"
+                  >
+                    <option value={1}>Monday</option>
+                    <option value={2}>Tuesday</option>
+                    <option value={3}>Wednesday</option>
+                    <option value={4}>Thursday</option>
+                    <option value={5}>Friday</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Classroom</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Room 303"
+                    value={editManagedClassroom}
+                    onChange={(e) => setEditManagedClassroom(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-2 text-slate-100 focus:outline-none"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Start Time</label>
+                  <input
+                    type="time"
+                    value={editManagedStart}
+                    onChange={(e) => setEditManagedStart(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-2 text-slate-100 focus:outline-none"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">End Time</label>
+                  <input
+                    type="time"
+                    value={editManagedEnd}
+                    onChange={(e) => setEditManagedEnd(e.target.value)}
+                    className="w-full bg-slate-950 border border-slate-800 text-xs rounded-xl p-2 text-slate-100 focus:outline-none"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                <button 
+                  type="button" 
+                  onClick={() => setIsEditingManagedTt(false)} 
+                  className="flex-1 glass-btn-secondary text-xs py-2.5"
+                >
+                  Cancel
+                </button>
+                <button 
+                  type="submit" 
+                  className="flex-1 glass-btn-primary text-xs py-2.5"
+                >
+                  Save Changes
+                </button>
               </div>
             </form>
           </GlassCard>

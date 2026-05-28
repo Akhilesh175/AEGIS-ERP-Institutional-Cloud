@@ -1,8 +1,8 @@
 import { createClient } from '@supabase/supabase-js';
 
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
-const supabaseServiceKey = import.meta.env.VITE_SUPABASE_SERVICE_ROLE_KEY;
+const supabaseUrl = import.meta.env?.VITE_SUPABASE_URL || (typeof globalThis !== 'undefined' ? (globalThis as any).process?.env?.VITE_SUPABASE_URL : undefined);
+const supabaseAnonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY || (typeof globalThis !== 'undefined' ? (globalThis as any).process?.env?.VITE_SUPABASE_ANON_KEY : undefined);
+const supabaseServiceKey = import.meta.env?.VITE_SUPABASE_SERVICE_ROLE_KEY || (typeof globalThis !== 'undefined' ? (globalThis as any).process?.env?.VITE_SUPABASE_SERVICE_ROLE_KEY : undefined);
 
 // Validate that required environment variables are present.
 // Instead of throwing (which causes a blank page), we log a clear warning.

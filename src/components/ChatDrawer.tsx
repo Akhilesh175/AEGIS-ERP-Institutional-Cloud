@@ -28,6 +28,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
   const loadContacts = async () => {
     if (!session) return;
     try {
+      await mockApi.syncChatMessagesData(session.user.id);
       const data = await mockApi.getChatInbox(session.user.id);
       setContacts(data);
     } catch (err) {

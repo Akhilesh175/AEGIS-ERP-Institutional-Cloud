@@ -2,11 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { mockDb } from '../services/mockDb';
-import { Student, Teacher, Parent, Class, Subject, User } from '../types';
+import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePayment } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
-  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Trash2, AlertTriangle, CheckCircle, XCircle
+  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Trash2, AlertTriangle, CheckCircle, XCircle, Edit, CreditCard
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -107,6 +107,80 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [bulkLoading, setBulkLoading] = useState(false);
   const [purgeLoading, setPurgeLoading] = useState(false);
   const [purgeResults, setPurgeResults] = useState<{ email: string; purged: boolean; message: string }[]>([]);
+
+  // Academic Sessions states
+  const [academicSessionsList, setAcademicSessionsList] = useState<any[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [newSessionName, setNewSessionName] = useState('');
+  const [newSessionStart, setNewSessionStart] = useState('');
+  const [newSessionEnd, setNewSessionEnd] = useState('');
+  const [newSessionActive, setNewSessionActive] = useState(true);
+
+  // Invoicing Office States
+  const [feeStructures, setFeeStructures] = useState<FeeStructure[]>([]);
+  const [feePayments, setFeePayments] = useState<FeePayment[]>([]);
+  const [showAddFee, setShowAddFee] = useState(false);
+  const [showEditFee, setShowEditFee] = useState(false);
+  const [editFeeId, setEditFeeId] = useState('');
+  const [feeAmount, setFeeAmount] = useState('');
+  const [feeDueDate, setFeeDueDate] = useState('');
+  const [feeDescription, setFeeDescription] = useState('');
+  const [feeClassId, setFeeClassId] = useState('');
+  const [selectedFeeStructure, setSelectedFeeStructure] = useState<FeeStructure | null>(null);
+
+  // Payment Collection States
+  const [collectingPayment, setCollectingPayment] = useState<{ student: Student & { userDetails: User }; structure: FeeStructure } | null>(null);
+  const [paymentAmountPaid, setPaymentAmountPaid] = useState('');
+  const [paymentMethod, setPaymentMethod] = useState('Cash');
+  const [paymentTxId, setPaymentTxId] = useState('');
+  const [paymentStatus, setPaymentStatus] = useState<'PENDING' | 'PAID' | 'PARTIAL' | 'OVERDUE'>('PAID');
+
+  const loadAcademicSessions = async () => {
+    if (!session?.user?.schoolId) return;
+    setSessionsLoading(true);
+    try {
+      const data = await mockApi.adminGetAcademicSessions(session.user.schoolId);
+      setAcademicSessionsList(data);
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setSessionsLoading(false);
+    }
+  };
+
+  const handleCreateAcademicSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user?.schoolId || !newSessionName.trim() || !newSessionStart || !newSessionEnd) return;
+    try {
+      await mockApi.adminCreateAcademicSession(
+        session.user.schoolId,
+        newSessionName,
+        newSessionStart,
+        newSessionEnd,
+        newSessionActive
+      );
+      setNewSessionName('');
+      setNewSessionStart('');
+      setNewSessionEnd('');
+      setNewSessionActive(true);
+      loadAcademicSessions();
+      alert('Academic session created successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Error creating academic session');
+    }
+  };
+
+  const handleSetActiveSession = async (id: string) => {
+    if (!session?.user?.schoolId) return;
+    if (!window.confirm('Are you sure you want to change the active academic session? This will affect all timetables, fee calculations, and active terms.')) return;
+    try {
+      await mockApi.adminSetActiveAcademicSession(session.user.schoolId, id);
+      loadAcademicSessions();
+      alert('Active academic session updated!');
+    } catch (err: any) {
+      alert(err.message || 'Error updating active session');
+    }
+  };
 
   const handleResetPassword = (userId: string, name: string) => {
     setResetUserId(userId);
@@ -226,13 +300,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       // Sync subscription plan in real time during load / poll
       await syncSubscriptionPlan();
 
-      const [over, st, tc, pr, cls, sub] = await Promise.all([
+      const [over, st, tc, pr, cls, sub, fees, pays] = await Promise.all([
         mockApi.adminGetInstitutionOverview(),
         mockApi.adminGetStudents(),
         mockApi.adminGetTeachers(),
         mockApi.adminGetParents(),
         mockApi.adminGetClasses(),
-        mockApi.adminGetSubjects()
+        mockApi.adminGetSubjects(),
+        mockApi.adminGetFeeStructures(),
+        mockApi.adminGetFeePayments()
       ]);
       setOverview(over);
       setStudents(st);
@@ -240,6 +316,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       setParents(pr);
       setClasses(cls);
       setSubjects(sub);
+      setFeeStructures(fees);
+      setFeePayments(pays);
     } catch (err) {
       console.error(err);
     }
@@ -247,6 +325,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   useEffect(() => {
     loadData();
+    if (activeTab === 'academicsessions') {
+      loadAcademicSessions();
+    }
     // Auto-poll every 30 seconds so external DB deletions are reflected
     const pollInterval = setInterval(loadData, 30000);
     return () => clearInterval(pollInterval);
@@ -432,6 +513,93 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       alert('Class Teacher assigned successfully!');
     } catch (err: any) {
       alert(err.message || 'Error assigning class teacher');
+    }
+  };
+
+  const handleCreateFeeStructure = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminId || !feeClassId || !feeAmount || !feeDueDate || !feeDescription) return;
+
+    try {
+      await mockApi.adminCreateFeeStructure(
+        adminId,
+        feeClassId,
+        parseFloat(feeAmount),
+        feeDueDate,
+        feeDescription
+      );
+      setShowAddFee(false);
+      setFeeClassId('');
+      setFeeAmount('');
+      setFeeDueDate('');
+      setFeeDescription('');
+      loadData();
+      alert('Billing invoice defined and class-wide student records populated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Error defining fee invoice structure');
+    }
+  };
+
+  const handleEditFeeStructure = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminId || !editFeeId || !feeAmount || !feeDueDate || !feeDescription) return;
+
+    try {
+      await mockApi.adminEditFeeStructure(
+        adminId,
+        editFeeId,
+        parseFloat(feeAmount),
+        feeDueDate,
+        feeDescription
+      );
+      setShowEditFee(false);
+      setEditFeeId('');
+      setFeeAmount('');
+      setFeeDueDate('');
+      setFeeDescription('');
+      loadData();
+      alert('Fee invoice structure updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Error updating fee invoice structure');
+    }
+  };
+
+  const handleDeleteFeeStructure = async (id: string) => {
+    if (!adminId) return;
+    if (!window.confirm('WARNING: Deleting this billing structure will permanently erase ALL associated payments and invoicing history for all students! Are you absolutely sure?')) return;
+
+    try {
+      await mockApi.adminDeleteFeeStructure(adminId, id);
+      setSelectedFeeStructure(null);
+      loadData();
+      alert('Fee invoice structure and all associated records permanently removed.');
+    } catch (err: any) {
+      alert(err.message || 'Error deleting fee structure');
+    }
+  };
+
+  const handleRecordFeePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminId || !collectingPayment) return;
+
+    try {
+      await mockApi.adminRecordFeePayment(
+        adminId,
+        collectingPayment.student.id,
+        collectingPayment.structure.id,
+        parseFloat(paymentAmountPaid) || 0.00,
+        paymentMethod,
+        paymentTxId,
+        paymentStatus
+      );
+      setCollectingPayment(null);
+      setPaymentAmountPaid('');
+      setPaymentMethod('Cash');
+      setPaymentTxId('');
+      loadData();
+      alert('Student invoice payment recorded successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Error recording student payment');
     }
   };
 
@@ -901,7 +1069,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                         <h4 className="font-bold text-slate-200 text-sm">{c.name}</h4>
                         <p className="text-[10px] text-slate-500 uppercase mt-0.5">
                           {c.classTeacherId 
-                            ? `Class Teacher: ${teachers.find(t => t.id === c.classTeacherId)?.userDetails.firstName} ${teachers.find(t => t.id === c.classTeacherId)?.userDetails.lastName}` 
+                            ? `Class Teacher: ${teachers.find(t => t.id === c.classTeacherId)?.userDetails?.firstName || ''} ${teachers.find(t => t.id === c.classTeacherId)?.userDetails?.lastName || ''}` 
                             : 'No Class Teacher Assigned'}
                         </p>
                       </div>
@@ -981,6 +1149,125 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
         </div>
       )}
 
+      {activeTab === 'academicsessions' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+          {/* Create Academic Session Form */}
+          <div className="lg:col-span-1">
+            <GlassCard className="space-y-4">
+              <h3 className="font-bold text-slate-200 text-sm pb-2 border-b border-slate-850 flex items-center gap-2">
+                <Calendar className="text-brand-500" size={16} />
+                Create Academic Session
+              </h3>
+              <form onSubmit={handleCreateAcademicSession} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Session Name</label>
+                  <input 
+                    type="text" 
+                    placeholder="e.g. 2026-2027 Academic Year" 
+                    value={newSessionName} 
+                    onChange={(e) => setNewSessionName(e.target.value)} 
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none" 
+                    required 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Start Date</label>
+                  <input 
+                    type="date" 
+                    value={newSessionStart} 
+                    onChange={(e) => setNewSessionStart(e.target.value)} 
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none" 
+                    required 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">End Date</label>
+                  <input 
+                    type="date" 
+                    value={newSessionEnd} 
+                    onChange={(e) => setNewSessionEnd(e.target.value)} 
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none" 
+                    required 
+                  />
+                </div>
+                <div className="flex items-center gap-2 pt-2">
+                  <input 
+                    type="checkbox" 
+                    id="newSessionActive" 
+                    checked={newSessionActive} 
+                    onChange={(e) => setNewSessionActive(e.target.checked)} 
+                    className="w-4 h-4 bg-slate-900 border border-slate-800 rounded text-brand-500 focus:ring-0 focus:ring-offset-0" 
+                  />
+                  <label htmlFor="newSessionActive" className="text-xs font-semibold text-slate-350 cursor-pointer select-none">
+                    Set as Current Active Session
+                  </label>
+                </div>
+                <button type="submit" className="w-full glass-btn-primary text-xs">
+                  Establish Academic Session
+                </button>
+              </form>
+            </GlassCard>
+          </div>
+
+          {/* Academic Sessions List */}
+          <div className="lg:col-span-2 space-y-6">
+            <GlassCard className="space-y-4">
+              <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Building className="text-brand-500" size={16} />
+                Academic Terms & Sessions Catalog
+              </h3>
+
+              {sessionsLoading ? (
+                <div className="text-center py-12 text-slate-400 italic text-sm">
+                  Loading academic sessions...
+                </div>
+              ) : academicSessionsList.length === 0 ? (
+                <div className="text-center py-12 text-slate-400 italic text-sm">
+                  No academic sessions registered. Please establish a new term on the left.
+                </div>
+              ) : (
+                <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                  {academicSessionsList.map(session => (
+                    <div 
+                      key={session.id} 
+                      className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
+                        session.isCurrent 
+                          ? 'bg-brand-500/5 border-brand-500/30' 
+                          : 'bg-slate-950/20 border-slate-850'
+                      }`}
+                    >
+                      <div className="space-y-1">
+                        <div className="flex items-center gap-2">
+                          <h4 className="font-bold text-slate-200 text-sm">{session.name}</h4>
+                          {session.isCurrent && (
+                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 uppercase tracking-wider">
+                              Active Current Session
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-400">
+                          Duration: {new Date(session.startDate).toLocaleDateString()} &mdash; {new Date(session.endDate).toLocaleDateString()}
+                        </p>
+                      </div>
+
+                      {!session.isCurrent && (
+                        <button
+                          onClick={() => handleSetActiveSession(session.id)}
+                          className="glass-btn-primary text-[11px] font-bold px-3 py-1.5 flex items-center gap-1.5 transition-all"
+                        >
+                          <CheckCircle2 size={13} />
+                          Activate Session
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </GlassCard>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'impersonation' && (
         <GlassCard className="space-y-6 max-w-xl mx-auto">
           <div className="border-b border-slate-850 pb-3">
@@ -1022,13 +1309,523 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
           requiredTier="Pro" 
           featureName="Billing & Invoicing"
         >
-          <GlassCard className="space-y-6">
-            <h3 className="font-bold text-slate-100 pb-3 border-b border-slate-850">Institutional Finance Ledger</h3>
-            <p className="text-xs text-slate-400">
-              For advanced institutional billing reports, please access your head admin payment drawer. In this version, manual collections are fully managed. Click custom mapping links above to tie student billing structures.
-            </p>
-          </GlassCard>
+          <div className="space-y-6">
+            {/* Financial Overview Metrics Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <GlassCard className="p-4 flex items-center justify-between border-emerald-500/10 shadow-emerald-500/5">
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Collected Income</p>
+                  <h3 className="text-xl font-extrabold text-emerald-400">
+                    ${feePayments.filter(p => p.status === 'PAID').reduce((acc, p) => acc + p.amountPaid, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </h3>
+                  <span className="text-[9px] text-slate-500">Total cleared student payments</span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
+                  <CheckCircle size={20} />
+                </div>
+              </GlassCard>
+
+              <GlassCard className="p-4 flex items-center justify-between border-amber-500/10 shadow-amber-500/5">
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Outstanding Invoices</p>
+                  <h3 className="text-xl font-extrabold text-amber-400">
+                    ${(
+                      feeStructures.reduce((acc, fs) => acc + (fs.amount * students.filter(s => s.classId === fs.classId).length), 0) -
+                      feePayments.filter(p => p.status === 'PAID').reduce((acc, p) => acc + p.amountPaid, 0)
+                    ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </h3>
+                  <span className="text-[9px] text-slate-500">Total pending collectable fees</span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-amber-400">
+                  <AlertTriangle size={20} />
+                </div>
+              </GlassCard>
+
+              <GlassCard className="p-4 flex items-center justify-between border-brand-500/10 shadow-brand-500/5">
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Institutional Ledger</p>
+                  <h3 className="text-xl font-extrabold text-brand-400">
+                    ${feeStructures.reduce((acc, fs) => acc + (fs.amount * students.filter(s => s.classId === fs.classId).length), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </h3>
+                  <span className="text-[9px] text-slate-500">Total institutional billing mapped</span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center border border-brand-500/20 text-brand-400">
+                  <DollarSign size={20} />
+                </div>
+              </GlassCard>
+            </div>
+
+            {/* Invoices List and Student payments ledger view split */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+              {/* Left Column: List of class-wide Invoices */}
+              <div className="lg:col-span-1 space-y-4">
+                <GlassCard className="p-5 space-y-4">
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                    <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                      <CreditCard className="text-brand-500" size={16} />
+                      Class Billing Fees
+                    </h3>
+                    <button
+                      onClick={() => setShowAddFee(true)}
+                      className="px-2.5 py-1 text-[10px] font-bold bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors flex items-center gap-1 active:scale-95"
+                    >
+                      <Plus size={12} />
+                      Create Invoice
+                    </button>
+                  </div>
+
+                  <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
+                    {feeStructures.length === 0 ? (
+                      <div className="text-center py-8 text-slate-500 text-xs">No active invoices found. Create one to begin billing.</div>
+                    ) : (
+                      feeStructures.map(fs => {
+                        const classObj = classes.find(c => c.id === fs.classId);
+                        const isSelected = selectedFeeStructure?.id === fs.id;
+                        return (
+                          <div 
+                            key={fs.id}
+                            onClick={() => setSelectedFeeStructure(fs)}
+                            className={`p-3 rounded-xl border cursor-pointer transition-all duration-200 ${
+                              isSelected 
+                                ? 'bg-brand-500/5 border-brand-500/30' 
+                                : 'bg-slate-900/10 border-slate-850 hover:bg-slate-900/30'
+                            }`}
+                          >
+                            <div className="flex justify-between items-start gap-2">
+                              <div>
+                                <span className="text-[9px] font-bold uppercase tracking-wider text-brand-400 bg-brand-500/5 px-2 py-0.5 rounded-full border border-brand-500/15">
+                                  {classObj ? classObj.name : 'Unknown Class'}
+                                </span>
+                                <h4 className="font-semibold text-slate-200 text-xs mt-1.5 line-clamp-1">{fs.description}</h4>
+                              </div>
+                              <span className="text-xs font-extrabold text-slate-100 shrink-0">${fs.amount.toFixed(2)}</span>
+                            </div>
+
+                            <div className="flex items-center justify-between mt-3 text-[10px] text-slate-400 border-t border-slate-850/60 pt-2">
+                              <span>Due: {new Date(fs.dueDate).toLocaleDateString()}</span>
+                              <div className="flex gap-2 shrink-0">
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setEditFeeId(fs.id);
+                                    setFeeAmount(fs.amount.toString());
+                                    setFeeDueDate(fs.dueDate);
+                                    setFeeDescription(fs.description);
+                                    setFeeClassId(fs.classId);
+                                    setShowEditFee(true);
+                                  }}
+                                  className="p-1 text-slate-400 hover:text-slate-200 transition-colors"
+                                  title="Edit Invoice"
+                                >
+                                  <Edit size={12} />
+                                </button>
+                                <button
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleDeleteFeeStructure(fs.id);
+                                  }}
+                                  className="p-1 text-red-500/80 hover:text-red-400 transition-colors"
+                                  title="Delete Invoice"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                  </div>
+                </GlassCard>
+              </div>
+
+              {/* Right Column: Invoiced Student payments ledger */}
+              <div className="lg:col-span-2">
+                <GlassCard className="p-5 space-y-4">
+                  <div className="border-b border-slate-850 pb-3 flex justify-between items-center">
+                    <div>
+                      <h3 className="font-bold text-slate-100 text-sm">Student Payments Ledger</h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        {selectedFeeStructure 
+                          ? `Reviewing records for "${selectedFeeStructure.description}"` 
+                          : 'Select an invoice structure on the left to view payments details'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {!selectedFeeStructure ? (
+                    <div className="text-center py-20 text-slate-500 text-xs">
+                      Please select a billing fee structure from the left panel to load the student ledger.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto rounded-xl border border-slate-850">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-850 bg-slate-900/30 text-slate-400 font-bold">
+                            <th className="py-3 px-4">Student Name</th>
+                            <th className="py-3 px-4">Roll Number</th>
+                            <th className="py-3 px-4">Amount Paid</th>
+                            <th className="py-3 px-4">Status</th>
+                            <th className="py-3 px-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850/60">
+                          {students
+                            .filter(s => s.classId === selectedFeeStructure.classId)
+                            .map(student => {
+                              const payment = feePayments.find(
+                                p => p.feeStructureId === selectedFeeStructure.id && p.studentId === student.id
+                              );
+                              const status = payment ? payment.status : 'PENDING';
+                              return (
+                                <tr key={student.id} className="hover:bg-slate-900/10 text-slate-200">
+                                  <td className="py-3 px-4">
+                                    <div className="font-semibold text-slate-200">{student.userDetails.firstName} {student.userDetails.lastName}</div>
+                                    <div className="text-[9px] text-slate-500 font-mono">{student.admissionNumber}</div>
+                                  </td>
+                                  <td className="py-3 px-4 text-slate-400">{student.rollNumber || '-'}</td>
+                                  <td className="py-3 px-4">
+                                    {payment && payment.amountPaid > 0 ? (
+                                      <div className="font-semibold text-slate-200">${payment.amountPaid.toFixed(2)}</div>
+                                    ) : (
+                                      <span className="text-slate-500">$0.00</span>
+                                    )}
+                                    {payment?.paymentDate && (
+                                      <div className="text-[8px] text-slate-500">{new Date(payment.paymentDate).toLocaleDateString()}</div>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <span className={`text-[9px] font-bold px-2.5 py-0.5 rounded-full border ${
+                                      status === 'PAID' 
+                                        ? 'bg-green-500/10 border-green-500/20 text-green-400' 
+                                        : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                                    }`}>
+                                      {status}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4 text-right">
+                                    <button
+                                      onClick={() => {
+                                        setCollectingPayment({ student, structure: selectedFeeStructure });
+                                        setPaymentAmountPaid(selectedFeeStructure.amount.toString());
+                                        setPaymentMethod('Cash');
+                                        setPaymentTxId('TX' + Math.random().toString(36).substr(2, 8).toUpperCase());
+                                        setPaymentStatus('PAID');
+                                      }}
+                                      className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:shadow-lg active:scale-95 ${
+                                        status === 'PAID'
+                                          ? 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
+                                          : 'bg-brand-600 hover:bg-brand-500 text-white hover:shadow-brand-500/10'
+                                      }`}
+                                    >
+                                      {status === 'PAID' ? 'Edit Payment' : 'Collect Fee'}
+                                    </button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          {students.filter(s => s.classId === selectedFeeStructure.classId).length === 0 && (
+                            <tr>
+                              <td colSpan={5} className="py-8 text-center text-slate-500 text-xs">
+                                No students currently registered in this class section.
+                              </td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </GlassCard>
+              </div>
+            </div>
+          </div>
         </PremiumLock>
+      )}
+
+      {/* Create Invoicing Billing Structure Modal */}
+      {showAddFee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-md space-y-4">
+            <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+              <h4 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <CreditCard className="text-brand-500" size={16} />
+                Define Institutional Invoice
+              </h4>
+              <button 
+                onClick={() => {
+                  setShowAddFee(false);
+                  setFeeClassId('');
+                  setFeeAmount('');
+                  setFeeDueDate('');
+                  setFeeDescription('');
+                }} 
+                className="text-xs text-slate-400 hover:text-slate-200"
+              >
+                Close
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateFeeStructure} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Target Class Section</label>
+                <select 
+                  value={feeClassId} 
+                  onChange={(e) => setFeeClassId(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200" 
+                  required
+                >
+                  <option value="">-- Select Class --</option>
+                  {classes.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Billing Amount ($ USD)</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="3500.00" 
+                  value={feeAmount} 
+                  onChange={(e) => setFeeAmount(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-brand-500" 
+                  required 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Calendar Due Date</label>
+                <input 
+                  type="date" 
+                  value={feeDueDate} 
+                  onChange={(e) => setFeeDueDate(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-brand-500" 
+                  required 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Billing Description / Name</label>
+                <input 
+                  type="text" 
+                  placeholder="Grade 10 Semester 2 Tuition & Materials Fee" 
+                  value={feeDescription} 
+                  onChange={(e) => setFeeDescription(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-brand-500" 
+                  required 
+                />
+              </div>
+
+              <div className="pt-2 border-t border-slate-850 flex gap-3">
+                <button 
+                  type="submit" 
+                  className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                >
+                  Create Invoice Structure
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setShowAddFee(false);
+                    setFeeClassId('');
+                    setFeeAmount('');
+                    setFeeDueDate('');
+                    setFeeDescription('');
+                  }} 
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Edit Invoicing Billing Structure Modal */}
+      {showEditFee && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-md space-y-4">
+            <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+              <h4 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <Edit className="text-brand-500" size={16} />
+                Edit Invoice Structure
+              </h4>
+              <button 
+                onClick={() => {
+                  setShowEditFee(false);
+                  setEditFeeId('');
+                  setFeeAmount('');
+                  setFeeDueDate('');
+                  setFeeDescription('');
+                }} 
+                className="text-xs text-slate-400 hover:text-slate-200"
+              >
+                Close
+              </button>
+            </div>
+
+            <form onSubmit={handleEditFeeStructure} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Billing Amount ($ USD)</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="3500.00" 
+                  value={feeAmount} 
+                  onChange={(e) => setFeeAmount(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-brand-500" 
+                  required 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Calendar Due Date</label>
+                <input 
+                  type="date" 
+                  value={feeDueDate} 
+                  onChange={(e) => setFeeDueDate(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-brand-500" 
+                  required 
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Billing Description / Name</label>
+                <input 
+                  type="text" 
+                  placeholder="Grade 10 Semester 2 Tuition & Materials Fee" 
+                  value={feeDescription} 
+                  onChange={(e) => setFeeDescription(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200 focus:outline-none focus:border-brand-500" 
+                  required 
+                />
+              </div>
+
+              <div className="pt-2 border-t border-slate-850 flex gap-3">
+                <button 
+                  type="submit" 
+                  className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                >
+                  Save Changes
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => {
+                    setShowEditFee(false);
+                    setEditFeeId('');
+                    setFeeAmount('');
+                    setFeeDueDate('');
+                    setFeeDescription('');
+                  }} 
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Collect Student Fee Payment Modal */}
+      {collectingPayment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-md space-y-4">
+            <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+              <h4 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <DollarSign className="text-brand-400" size={16} />
+                Collect Payment Receipt
+              </h4>
+              <button 
+                onClick={() => setCollectingPayment(null)} 
+                className="text-xs text-slate-400 hover:text-slate-200"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl">
+              <p className="text-[10px] text-slate-500 uppercase tracking-widest leading-none">Student Account</p>
+              <h5 className="font-bold text-slate-200 mt-1">{collectingPayment.student.userDetails.firstName} {collectingPayment.student.userDetails.lastName}</h5>
+              <p className="text-[10px] text-slate-400 mt-0.5">Structure: {collectingPayment.structure.description}</p>
+            </div>
+
+            <form onSubmit={handleRecordFeePayment} className="space-y-4">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Amount Paid ($ USD)</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  placeholder="3500.00" 
+                  value={paymentAmountPaid} 
+                  onChange={(e) => setPaymentAmountPaid(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200 focus:outline-none" 
+                  required 
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Payment Method</label>
+                  <select 
+                    value={paymentMethod} 
+                    onChange={(e) => setPaymentMethod(e.target.value)} 
+                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200"
+                    required
+                  >
+                    <option value="Cash">Cash Handover</option>
+                    <option value="Bank Transfer">Bank Wire Transfer</option>
+                    <option value="Stripe Credit Card">Stripe Credit Card</option>
+                    <option value="Cheque">Physical Cheque</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Payment Status</label>
+                  <select 
+                    value={paymentStatus} 
+                    onChange={(e) => setPaymentStatus(e.target.value as any)} 
+                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200"
+                    required
+                  >
+                    <option value="PAID">PAID (Clear)</option>
+                    <option value="PENDING">PENDING (Unpaid)</option>
+                    <option value="OVERDUE">OVERDUE (Delayed)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Transaction ID / Reference</label>
+                <input 
+                  type="text" 
+                  placeholder="TX_8B1293K1" 
+                  value={paymentTxId} 
+                  onChange={(e) => setPaymentTxId(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2.5 text-slate-200 focus:outline-none" 
+                />
+              </div>
+
+              <div className="pt-2 border-t border-slate-850 flex gap-3">
+                <button 
+                  type="submit" 
+                  className="flex-1 bg-brand-600 hover:bg-brand-500 text-white py-2 rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                >
+                  Record Payment Received
+                </button>
+                <button 
+                  type="button" 
+                  onClick={() => setCollectingPayment(null)} 
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 rounded-xl text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
       )}
 
       {/* Register Student Drawer overlay */}

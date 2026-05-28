@@ -6,10 +6,12 @@ interface SchoolERPStore {
   theme: 'light' | 'dark';
   activeStudentId: string | null; // For parents viewing linked children
   activeChatUserId: string | null; // Selected user in drawer
+  isMobileMenuOpen: boolean; // Mobile navigation control
   setSession: (session: AuthSession | null) => void;
   toggleTheme: () => void;
   setActiveStudentId: (studentId: string | null) => void;
   setActiveChatUserId: (userId: string | null) => void;
+  setMobileMenuOpen: (isOpen: boolean) => void;
   initializeStore: () => void;
   syncSubscriptionPlan: () => Promise<void>;
 }
@@ -19,6 +21,9 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
   theme: 'dark',
   activeStudentId: null,
   activeChatUserId: null,
+  isMobileMenuOpen: false,
+
+  setMobileMenuOpen: (isOpen) => set({ isMobileMenuOpen: isOpen }),
 
   setSession: (session) => {
     set({ session });

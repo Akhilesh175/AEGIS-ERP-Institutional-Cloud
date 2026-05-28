@@ -78,9 +78,9 @@ const SEED_TEACHERS: Teacher[] = [
 ];
 
 const SEED_STUDENTS: Student[] = [
-  { id: 'st-1', userId: 'u-student1', schoolId: 'school-1', classId: 'c-10a', admissionNumber: 'ADM2025001', rollNumber: 10, dateOfBirth: '2010-04-12', gender: 'MALE', createdAt: new Date().toISOString() },
-  { id: 'st-2', userId: 'u-student2', schoolId: 'school-1', classId: 'c-10a', admissionNumber: 'ADM2025002', rollNumber: 11, dateOfBirth: '2010-06-25', gender: 'MALE', createdAt: new Date().toISOString() },
-  { id: 'st-3', userId: 'u-student3', schoolId: 'school-1', classId: 'c-11b', admissionNumber: 'ADM2025003', rollNumber: 1, dateOfBirth: '2009-11-07', gender: 'FEMALE', createdAt: new Date().toISOString() }
+  { id: 'st-1', userId: 'u-student1', schoolId: 'school-1', classId: 'c-10a', academicSessionId: 'session-1', admissionNumber: 'ADM2025001', rollNumber: 10, dateOfBirth: '2010-04-12', gender: 'MALE', createdAt: new Date().toISOString() },
+  { id: 'st-2', userId: 'u-student2', schoolId: 'school-1', classId: 'c-10a', academicSessionId: 'session-1', admissionNumber: 'ADM2025002', rollNumber: 11, dateOfBirth: '2010-06-25', gender: 'MALE', createdAt: new Date().toISOString() },
+  { id: 'st-3', userId: 'u-student3', schoolId: 'school-1', classId: 'c-11b', academicSessionId: 'session-1', admissionNumber: 'ADM2025003', rollNumber: 1, dateOfBirth: '2009-11-07', gender: 'FEMALE', createdAt: new Date().toISOString() }
 ];
 
 const SEED_PARENTS: Parent[] = [
@@ -107,33 +107,33 @@ const SEED_TEACHER_CLASS_SUBJECT_MAPPINGS: TeacherClassSubjectMapping[] = [
 
 const SEED_TIMETABLE: Timetable[] = [
   // Grade 10-A Schedule
-  { id: 'tt-1', classId: 'c-10a', subjectId: 's-math', teacherId: 't-1', dayOfWeek: 1, startTime: '09:00', endTime: '10:30', classroomNumber: 'Room 303' },
-  { id: 'tt-2', classId: 'c-10a', subjectId: 's-phys', teacherId: 't-1', dayOfWeek: 1, startTime: '11:00', endTime: '12:30', classroomNumber: 'Lab B' },
-  { id: 'tt-3', classId: 'c-10a', subjectId: 's-comp', teacherId: 't-2', dayOfWeek: 2, startTime: '09:00', endTime: '10:30', classroomNumber: 'CS Lab 1' },
-  { id: 'tt-4', classId: 'c-10a', subjectId: 's-math', teacherId: 't-1', dayOfWeek: 3, startTime: '09:00', endTime: '10:30', classroomNumber: 'Room 303' },
-  { id: 'tt-5', classId: 'c-10a', subjectId: 's-comp', teacherId: 't-2', dayOfWeek: 4, startTime: '11:00', endTime: '12:30', classroomNumber: 'CS Lab 1' }
+  { id: 'tt-1', classId: 'c-10a', subjectId: 's-math', teacherId: 't-1', dayOfWeek: 1, startTime: '09:00', endTime: '10:30', classroomNumber: 'Room 303', academicSessionId: 'session-1' },
+  { id: 'tt-2', classId: 'c-10a', subjectId: 's-phys', teacherId: 't-1', dayOfWeek: 1, startTime: '11:00', endTime: '12:30', classroomNumber: 'Lab B', academicSessionId: 'session-1' },
+  { id: 'tt-3', classId: 'c-10a', subjectId: 's-comp', teacherId: 't-2', dayOfWeek: 2, startTime: '09:00', endTime: '10:30', classroomNumber: 'CS Lab 1', academicSessionId: 'session-1' },
+  { id: 'tt-4', classId: 'c-10a', subjectId: 's-math', teacherId: 't-1', dayOfWeek: 3, startTime: '09:00', endTime: '10:30', classroomNumber: 'Room 303', academicSessionId: 'session-1' },
+  { id: 'tt-5', classId: 'c-10a', subjectId: 's-comp', teacherId: 't-2', dayOfWeek: 4, startTime: '11:00', endTime: '12:30', classroomNumber: 'CS Lab 1', academicSessionId: 'session-1' }
 ];
 
 const SEED_ATTENDANCE: Attendance[] = [
   // Student 1 (Leo)
-  { id: 'at-1', studentId: 'st-1', classId: 'c-10a', date: '2026-05-20', status: 'PRESENT', markedBy: 'u-teacher1' },
-  { id: 'at-2', studentId: 'st-1', classId: 'c-10a', date: '2026-05-21', status: 'PRESENT', markedBy: 'u-teacher1' },
-  { id: 'at-3', studentId: 'st-1', classId: 'c-10a', date: '2026-05-22', status: 'LATE', remarks: 'Bus was delayed by traffic', markedBy: 'u-teacher1' },
-  { id: 'at-4', studentId: 'st-1', classId: 'c-10a', date: '2026-05-23', status: 'PRESENT', markedBy: 'u-teacher1' },
-  { id: 'at-5', studentId: 'st-1', classId: 'c-10a', date: '2026-05-24', status: 'PRESENT', markedBy: 'u-teacher1' },
+  { id: 'at-1', studentId: 'st-1', classId: 'c-10a', date: '2026-05-20', status: 'PRESENT', markedBy: 'u-teacher1', academicSessionId: 'session-1' },
+  { id: 'at-2', studentId: 'st-1', classId: 'c-10a', date: '2026-05-21', status: 'PRESENT', markedBy: 'u-teacher1', academicSessionId: 'session-1' },
+  { id: 'at-3', studentId: 'st-1', classId: 'c-10a', date: '2026-05-22', status: 'LATE', remarks: 'Bus was delayed by traffic', markedBy: 'u-teacher1', academicSessionId: 'session-1' },
+  { id: 'at-4', studentId: 'st-1', classId: 'c-10a', date: '2026-05-23', status: 'PRESENT', markedBy: 'u-teacher1', academicSessionId: 'session-1' },
+  { id: 'at-5', studentId: 'st-1', classId: 'c-10a', date: '2026-05-24', status: 'PRESENT', markedBy: 'u-teacher1', academicSessionId: 'session-1' },
 
   // Student 2 (Albert)
-  { id: 'at-6', studentId: 'st-2', classId: 'c-10a', date: '2026-05-20', status: 'PRESENT', markedBy: 'u-teacher1' },
-  { id: 'at-7', studentId: 'st-2', classId: 'c-10a', date: '2026-05-21', status: 'ABSENT', remarks: 'Medical appointment', markedBy: 'u-teacher1' },
-  { id: 'at-8', studentId: 'st-2', classId: 'c-10a', date: '2026-05-22', status: 'PRESENT', markedBy: 'u-teacher1' },
-  { id: 'at-9', studentId: 'st-2', classId: 'c-10a', date: '2026-05-23', status: 'PRESENT', markedBy: 'u-teacher1' },
-  { id: 'at-10', studentId: 'st-2', classId: 'c-10a', date: '2026-05-24', status: 'PRESENT', markedBy: 'u-teacher1' }
+  { id: 'at-6', studentId: 'st-2', classId: 'c-10a', date: '2026-05-20', status: 'PRESENT', markedBy: 'u-teacher1', academicSessionId: 'session-1' },
+  { id: 'at-7', studentId: 'st-2', classId: 'c-10a', date: '2026-05-21', status: 'ABSENT', remarks: 'Medical appointment', markedBy: 'u-teacher1', academicSessionId: 'session-1' },
+  { id: 'at-8', studentId: 'st-2', classId: 'c-10a', date: '2026-05-22', status: 'PRESENT', markedBy: 'u-teacher1', academicSessionId: 'session-1' },
+  { id: 'at-9', studentId: 'st-2', classId: 'c-10a', date: '2026-05-23', status: 'PRESENT', markedBy: 'u-teacher1', academicSessionId: 'session-1' },
+  { id: 'at-10', studentId: 'st-2', classId: 'c-10a', date: '2026-05-24', status: 'PRESENT', markedBy: 'u-teacher1', academicSessionId: 'session-1' }
 ];
 
 const SEED_ASSIGNMENTS: Assignment[] = [
-  { id: 'as-1', classId: 'c-10a', subjectId: 's-math', teacherId: 't-1', title: 'Vector Space Calculus Proofs', description: 'Prove that the vector space properties hold for standard matrices. Write all proofs clearly. Submit in PDF format.', dueDate: '2026-05-30T23:59:00Z', maxMarks: 100, fileAttachmentUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', isHomework: false, createdAt: new Date('2026-05-20').toISOString() },
-  { id: 'as-2', classId: 'c-10a', subjectId: 's-phys', teacherId: 't-1', title: 'Schrödinger wave packet simulation', description: 'Answer problems 1 to 5 from chapter 8 on wave function collapse. Submit screenshots of your plotted probability density curves.', dueDate: '2026-06-03T18:00:00Z', maxMarks: 50, fileAttachmentUrl: '', isHomework: false, createdAt: new Date('2026-05-22').toISOString() },
-  { id: 'as-3', classId: 'c-10a', subjectId: 's-comp', teacherId: 't-2', title: 'Linked List and Pointer Operations', description: 'Complete tasks 1-3. Write a program to reverse a doubly linked list in O(n) time and O(1) space. Submit code file.', dueDate: '2026-05-28T23:59:00Z', maxMarks: 100, fileAttachmentUrl: '', isHomework: true, createdAt: new Date('2026-05-24').toISOString() }
+  { id: 'as-1', classId: 'c-10a', subjectId: 's-math', teacherId: 't-1', title: 'Vector Space Calculus Proofs', description: 'Prove that the vector space properties hold for standard matrices. Write all proofs clearly. Submit in PDF format.', dueDate: '2026-05-30T23:59:00Z', maxMarks: 100, fileAttachmentUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf', isHomework: false, academicSessionId: 'session-1', createdAt: new Date('2026-05-20').toISOString() },
+  { id: 'as-2', classId: 'c-10a', subjectId: 's-phys', teacherId: 't-1', title: 'Schrödinger wave packet simulation', description: 'Answer problems 1 to 5 from chapter 8 on wave function collapse. Submit screenshots of your plotted probability density curves.', dueDate: '2026-06-03T18:00:00Z', maxMarks: 50, fileAttachmentUrl: '', isHomework: false, academicSessionId: 'session-1', createdAt: new Date('2026-05-22').toISOString() },
+  { id: 'as-3', classId: 'c-10a', subjectId: 's-comp', teacherId: 't-2', title: 'Linked List and Pointer Operations', description: 'Complete tasks 1-3. Write a program to reverse a doubly linked list in O(n) time and O(1) space. Submit code file.', dueDate: '2026-05-28T23:59:00Z', maxMarks: 100, fileAttachmentUrl: '', isHomework: true, academicSessionId: 'session-1', createdAt: new Date('2026-05-24').toISOString() }
 ];
 
 const SEED_SUBMISSIONS: AssignmentSubmission[] = [
@@ -142,7 +142,7 @@ const SEED_SUBMISSIONS: AssignmentSubmission[] = [
 ];
 
 const SEED_QUIZZES: Quiz[] = [
-  { id: 'q-1', subjectId: 's-comp', teacherId: 't-2', title: 'TypeScript Types and Generics Quiz', durationMinutes: 10, totalMarks: 10, dueDate: '2026-05-29T23:59:00Z', createdAt: new Date('2026-05-24').toISOString() }
+  { id: 'q-1', subjectId: 's-comp', teacherId: 't-2', title: 'TypeScript Types and Generics Quiz', durationMinutes: 10, totalMarks: 10, dueDate: '2026-05-29T23:59:00Z', academicSessionId: 'session-1', createdAt: new Date('2026-05-24').toISOString() }
 ];
 
 const SEED_QUIZ_QUESTIONS: QuizQuestion[] = [
@@ -333,6 +333,7 @@ class MockDatabase {
     setStorage('study_materials', this.studyMaterials);
     setStorage('announcements', this.announcements);
     setStorage('notifications', this.notifications);
+    setStorage('forum_categories', this.forumCategories);
     setStorage('forum_posts', this.forumPosts);
     setStorage('forum_replies', this.forumReplies);
     setStorage('chat_messages', this.chatMessages);

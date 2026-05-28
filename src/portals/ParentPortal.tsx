@@ -6,7 +6,8 @@ import { Student, User } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Eye, Award, DollarSign, Calendar, FileText, 
-  User as UserIcon, ShieldAlert, CheckCircle, AlertCircle, UsersRound, Clock
+  User as UserIcon, ShieldAlert, CheckCircle, AlertCircle, UsersRound, Clock,
+  BookOpen, Play, Download
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -23,6 +24,11 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
   const [academicRecord, setAcademicRecord] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quizzes, setQuizzes] = useState<{ quiz: any; attempt?: any }[]>([]);
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+  const [materials, setMaterials] = useState<any[]>([]);
+  const [materialsLoading, setMaterialsLoading] = useState(false);
+  const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
 
   // Load parent's students
   const loadAssignedStudents = async () => {
@@ -48,12 +54,31 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
     try {
       setLoading(true);
       setError(null);
+      setMaterialsLoading(true);
       const data = await mockApi.parentGetStudentAcademicRecord(parentId, selectedStudent);
       setAcademicRecord(data);
+      const qz = await mockApi.studentGetQuizzes(selectedStudent);
+      setQuizzes(qz);
+      
+      const mat = await mockApi.getStudyMaterials();
+      const studentObj = mockDb.students.find(s => s.id === selectedStudent);
+      if (studentObj) {
+        const classSubjectIds = mockDb.teacherClassSubjectMappings
+          .filter(m => m.classId === studentObj.classId)
+          .map(m => m.subjectId);
+        const filteredMat = mat.filter(m => classSubjectIds.includes(m.subjectId));
+        setMaterials(filteredMat);
+      } else {
+        setMaterials([]);
+      }
+      setMaterialsLoading(false);
       setLoading(false);
     } catch (err: any) {
       setError(err.message || 'Access Denied: Isolation boundary violation');
       setAcademicRecord(null);
+      setQuizzes([]);
+      setMaterials([]);
+      setMaterialsLoading(false);
       setLoading(false);
     }
   };
@@ -389,8 +414,12 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                     {academicRecord.fees.map((f: any, idx: number) => (
                       <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
                         <div className="space-y-1">
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                            f.status === 'PAID' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                          <span className={`text-[9.5px] font-bold tracking-wider px-2.5 py-0.5 rounded-full uppercase border ${
+                            f.status === 'PAID' 
+                              ? 'bg-green-500/10 border-green-500/15 text-green-400' 
+                              : f.status === 'PENDING' 
+                                ? 'bg-amber-500/10 border-amber-500/15 text-amber-400' 
+                                : 'bg-red-500/10 border-red-500/15 text-red-400'
                           }`}>
                             {f.status}
                           </span>
@@ -423,6 +452,165 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                   <p className="text-xs text-slate-400">
                     Discussion boards are currently in read-only mode for parents. To discuss academic performance or syllabus details, please open the direct secure Chat Messenger drawer and select your child's homeroom teacher.
                   </p>
+                </GlassCard>
+              </PremiumLock>
+            )}
+
+            {activeTab === 'materials' && (
+              <GlassCard className="space-y-6">
+                <div className="border-b border-slate-850 pb-3">
+                  <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                    <BookOpen className="text-brand-500" size={18} />
+                    Ward's Academic Study Materials & Video Lectures
+                  </h3>
+                </div>
+
+                {activeVideoUrl && (
+                  <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl animate-fade-in space-y-2">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-semibold text-slate-200">Active Lecture Streaming Node</h4>
+                      <button 
+                        onClick={() => setActiveVideoUrl(null)}
+                        className="text-xs text-red-400 hover:text-red-300 font-semibold"
+                      >
+                        Close Screen
+                      </button>
+                    </div>
+                    <video 
+                      src={activeVideoUrl} 
+                      controls 
+                      className="w-full max-h-96 rounded-xl border border-slate-800 bg-black"
+                      autoPlay
+                    />
+                  </div>
+                )}
+
+                {materialsLoading ? (
+                  <div className="text-center py-12 text-slate-400 italic text-sm">
+                    Loading study materials...
+                  </div>
+                ) : materials.length === 0 ? (
+                  <div className="text-center py-12 text-slate-400 italic text-sm">
+                    No academic materials uploaded for this student's subjects yet.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                    {materials.map(m => (
+                      <div key={m.id} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-brand-500/20 rounded-2xl flex flex-col justify-between gap-4 transition-all">
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-bold text-brand-400 font-mono uppercase tracking-wider">{m.subjectName}</span>
+                          <h4 className="font-bold text-slate-200 text-sm mt-0.5">{m.title}</h4>
+                          <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">{m.description || 'No description provided.'}</p>
+                        </div>
+                        <div className="pt-2 flex items-center justify-between border-t border-slate-850">
+                          <span className="text-[10px] text-slate-500 truncate">Faculty: {m.teacherName}</span>
+                          {m.isVideoStreamable ? (
+                            <button 
+                              onClick={() => setActiveVideoUrl(m.fileUrl)}
+                              className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
+                            >
+                              <Play size={14} className="text-brand-500" />
+                              Stream Live
+                            </button>
+                          ) : (
+                            <a 
+                              href={m.fileUrl} 
+                              download 
+                              className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
+                            >
+                              <Download size={14} className="text-brand-500" />
+                              Get File
+                            </a>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </GlassCard>
+            )}
+
+            {activeTab === 'quizzes' && (
+              <PremiumLock 
+                isLocked={!plan.features.quizzes} 
+                requiredTier="Basic" 
+                featureName="Quizzes & Interactive Online Tests"
+              >
+                <GlassCard className="space-y-6">
+                  <div className="border-b border-slate-850 pb-3">
+                    <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                      <Award className="text-brand-500" size={18} />
+                      Ward's Quizzes & Interactive Test Results
+                    </h3>
+                  </div>
+
+                  {quizzes.length === 0 ? (
+                    <div className="text-center py-8 text-slate-400 italic text-xs">
+                      No quizzes published for this student's subjects yet.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {quizzes.map(({ quiz, attempt }) => {
+                        const subject = mockDb.subjects.find(s => s.id === quiz.subjectId);
+                        
+                        // Calculate score details if attempted
+                        let correctCount = 0;
+                        let incorrectCount = 0;
+                        if (attempt) {
+                          const questions = mockDb.quizQuestions.filter(q => q.quizId === quiz.id);
+                          questions.forEach(q => {
+                            const studentAns = attempt.answers ? attempt.answers[q.id] : undefined;
+                            if (studentAns !== undefined && studentAns === q.correctOption) {
+                              correctCount++;
+                            } else {
+                              incorrectCount++;
+                            }
+                          });
+                        }
+
+                        return (
+                          <div key={quiz.id} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                            <div className="space-y-2">
+                              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{subject ? subject.name : 'Subject'}</span>
+                              <h4 className="font-bold text-slate-200 text-sm mt-0.5">{quiz.title}</h4>
+                              <p className="text-xs text-slate-400">Duration: {quiz.durationMinutes} minutes | Marks: {quiz.totalMarks}</p>
+                            </div>
+                            
+                            <div className="pt-3 border-t border-slate-850 flex flex-col gap-2">
+                              {attempt ? (
+                                <div className="space-y-1.5">
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-slate-400 font-semibold">Status:</span>
+                                    <span className="text-green-400 font-bold bg-green-500/10 px-2 py-0.5 rounded uppercase tracking-wider text-[10px]">Attempted</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-slate-400 font-semibold">Marks:</span>
+                                    <span className="text-slate-200 font-bold">{attempt.score} / {quiz.totalMarks} ({Math.round((attempt.score / quiz.totalMarks) * 100)}%)</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-slate-400 font-semibold">Correct Answers:</span>
+                                    <span className="text-green-400 font-bold">{correctCount}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-xs">
+                                    <span className="text-slate-400 font-semibold">Incorrect Answers:</span>
+                                    <span className="text-red-400 font-bold">{incorrectCount}</span>
+                                  </div>
+                                  <div className="flex items-center justify-between text-[10px] text-slate-500 italic mt-1">
+                                    <span>Taken: {new Date(attempt.attemptedAt).toLocaleString()}</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <div className="flex items-center justify-between text-xs">
+                                  <span className="text-slate-500">Status:</span>
+                                  <span className="text-amber-400 font-bold bg-amber-500/10 px-2 py-0.5 rounded uppercase tracking-wider text-[10px]">Not Taken Yet</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
                 </GlassCard>
               </PremiumLock>
             )}

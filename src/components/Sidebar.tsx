@@ -4,7 +4,7 @@ import { mockDb } from '../services/mockDb';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 import { 
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare, 
-  Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList, ShieldAlert
+  Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList, ShieldAlert, X
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -13,7 +13,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
-  const { session } = useStore();
+  const { session, isMobileMenuOpen, setMobileMenuOpen } = useStore();
 
   if (!session) return null;
 
@@ -39,6 +39,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         return [
           { id: 'dashboard', label: 'Child Tracker', icon: Eye },
           { id: 'timetable', label: 'Class Schedule', icon: Calendar },
+          { id: 'materials', label: 'Materials', icon: BookOpen },
+          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
           { id: 'grades', label: 'Grades Progress', icon: Award },
           { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: !plan.features.billing },
           { id: 'forums', label: 'Forums', icon: MessageSquare, locked: !plan.features.communications }
@@ -64,6 +66,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'parents', label: 'Parent Directory', icon: UsersRound },
           { id: 'classes', label: 'Classes & Sections', icon: Layers },
           { id: 'subjects', label: 'Subject Catalog', icon: BookMarked },
+          { id: 'academicsessions', label: 'Academic Sessions', icon: Calendar },
           { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing },
           { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
           { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert }
@@ -82,8 +85,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
 
   const tabs = getTabs();
 
-  return (
-    <aside className="w-64 h-[calc(100vh-62px)] glass dark:glass-dark border-r border-slate-800 bg-[#070a13]/60 hidden md:flex flex-col justify-between p-4 z-30">
+  const sidebarContent = (
+    <>
       <div className="space-y-6">
         {/* Portal Title label */}
         <div className="px-3 py-2 bg-slate-900/40 rounded-xl border border-slate-850">
@@ -106,7 +109,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
             return (
               <button
                 key={tab.id}
-                onClick={() => setActiveTab(tab.id)}
+                onClick={() => {
+                  setActiveTab(tab.id);
+                  setMobileMenuOpen(false); // Auto close mobile menu on tab selection
+                }}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
                   isActive 
                     ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold' 
@@ -131,6 +137,33 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Version Control</p>
         <p className="text-[10px] font-mono text-slate-400 mt-0.5">AEGIS-CORE v1.4.2</p>
       </div>
-    </aside>
+    </>
+  );
+
+  return (
+    <>
+      {/* Desktop Sidebar */}
+      <aside className="w-64 h-[calc(100vh-62px)] glass dark:glass-dark border-r border-slate-800 bg-[#070a13]/60 hidden md:flex flex-col justify-between p-4 z-30">
+        {sidebarContent}
+      </aside>
+
+      {/* Mobile Sidebar Overlay Drawer */}
+      {isMobileMenuOpen && (
+        <div className="fixed inset-0 z-50 flex md:hidden bg-black/60 backdrop-blur-sm animate-fade-in">
+          {/* Click background to close */}
+          <div className="flex-1" onClick={() => setMobileMenuOpen(false)} />
+          <div className="w-64 h-full bg-[#070a13] border-r border-slate-800 flex flex-col justify-between p-4 z-50 animate-slide-right relative">
+            <button 
+              onClick={() => setMobileMenuOpen(false)}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 rounded-full transition-all"
+              title="Close Menu"
+            >
+              <X size={18} />
+            </button>
+            {sidebarContent}
+          </div>
+        </div>
+      )}
+    </>
   );
 };
