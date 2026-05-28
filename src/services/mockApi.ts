@@ -2188,6 +2188,15 @@ export const mockApi = {
 
   async adminCreateAcademicSession(schoolId: string, name: string, startDate: string, endDate: string, isCurrent: boolean): Promise<any> {
     await delay(500);
+
+    // Duplicate name prevention
+    const existingDuplicate = mockDb.academicSessions.find(
+      s => s.schoolId === schoolId && s.name.trim().toLowerCase() === name.trim().toLowerCase()
+    );
+    if (existingDuplicate) {
+      throw new Error(`An academic session named "${name.trim()}" already exists. Please choose a different name.`);
+    }
+
     // If setting as current active session, make all other sessions inactive in Supabase first
     if (isCurrent) {
       const { error: resetError } = await supabaseAdmin
@@ -2257,6 +2266,80 @@ export const mockApi = {
         s.isCurrent = s.id === sessionId;
       }
     });
+    mockDb.saveAll();
+  },
+
+  async adminEditAcademicSession(schoolId: string, sessionId: string, name: string, startDate: string, endDate: string): Promise<any> {
+    await delay(500);
+
+    // Duplicate name prevention (exclude self)
+    const existingDuplicate = mockDb.academicSessions.find(
+      s => s.schoolId === schoolId && s.id !== sessionId && s.name.trim().toLowerCase() === name.trim().toLowerCase()
+    );
+    if (existingDuplicate) {
+      throw new Error(`An academic session named "${name.trim()}" already exists. Please choose a different name.`);
+    }
+
+    const { data: dbSession, error } = await supabaseAdmin
+      .from('academic_sessions')
+      .update({
+        name,
+        start_date: startDate,
+        end_date: endDate
+      })
+      .eq('id', sessionId)
+      .eq('school_id', schoolId)
+      .select()
+      .single();
+
+    if (error || !dbSession) {
+      throw new Error(error?.message || 'Failed to update academic session.');
+    }
+
+    // Update local cache
+    const idx = mockDb.academicSessions.findIndex(s => s.id === sessionId);
+    const updated = {
+      id: dbSession.id,
+      schoolId: dbSession.school_id,
+      name: dbSession.name,
+      startDate: dbSession.start_date,
+      endDate: dbSession.end_date,
+      isCurrent: dbSession.is_current
+    };
+    if (idx !== -1) mockDb.academicSessions[idx] = updated;
+    else mockDb.academicSessions.push(updated);
+    mockDb.saveAll();
+    return updated;
+  },
+
+  async adminDeleteAcademicSession(schoolId: string, sessionId: string): Promise<void> {
+    await delay(500);
+
+    // Prevent deleting the currently active session
+    const target = mockDb.academicSessions.find(s => s.id === sessionId && s.schoolId === schoolId);
+    if (target?.isCurrent) {
+      throw new Error('Cannot delete the currently active academic session. Please activate a different session first, then delete this one.');
+    }
+
+    // Delete from database — CASCADE rules will handle dependent records
+    const { error } = await supabaseAdmin
+      .from('academic_sessions')
+      .delete()
+      .eq('id', sessionId)
+      .eq('school_id', schoolId);
+
+    if (error) {
+      throw new Error(error.message || 'Failed to delete academic session.');
+    }
+
+    // Clean local cache: remove the session and any data referencing it
+    mockDb.academicSessions = mockDb.academicSessions.filter(s => s.id !== sessionId);
+    mockDb.classes = mockDb.classes.filter(c => c.academicSessionId !== sessionId);
+    mockDb.timetables = mockDb.timetables.filter(t => t.academicSessionId !== sessionId);
+    mockDb.attendance = mockDb.attendance.filter(a => a.academicSessionId !== sessionId);
+    mockDb.quizzes = mockDb.quizzes.filter(q => q.academicSessionId !== sessionId);
+    mockDb.assignments = mockDb.assignments.filter(a => a.academicSessionId !== sessionId);
+    mockDb.students = mockDb.students.filter(s => s.academicSessionId !== sessionId);
     mockDb.saveAll();
   },
 

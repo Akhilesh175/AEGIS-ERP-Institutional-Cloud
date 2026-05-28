@@ -116,6 +116,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [newSessionEnd, setNewSessionEnd] = useState('');
   const [newSessionActive, setNewSessionActive] = useState(true);
 
+  // Edit Academic Session states
+  const [editingSession, setEditingSession] = useState<any | null>(null);
+  const [editSessionName, setEditSessionName] = useState('');
+  const [editSessionStart, setEditSessionStart] = useState('');
+  const [editSessionEnd, setEditSessionEnd] = useState('');
+
   // Invoicing Office States
   const [feeStructures, setFeeStructures] = useState<FeeStructure[]>([]);
   const [feePayments, setFeePayments] = useState<FeePayment[]>([]);
@@ -179,6 +185,52 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       alert('Active academic session updated!');
     } catch (err: any) {
       alert(err.message || 'Error updating active session');
+    }
+  };
+
+  const handleStartEditSession = (sess: any) => {
+    setEditingSession(sess);
+    setEditSessionName(sess.name);
+    setEditSessionStart(sess.startDate);
+    setEditSessionEnd(sess.endDate);
+  };
+
+  const handleEditAcademicSession = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user?.schoolId || !editingSession || !editSessionName.trim() || !editSessionStart || !editSessionEnd) return;
+    try {
+      await mockApi.adminEditAcademicSession(
+        session.user.schoolId,
+        editingSession.id,
+        editSessionName.trim(),
+        editSessionStart,
+        editSessionEnd
+      );
+      setEditingSession(null);
+      setEditSessionName('');
+      setEditSessionStart('');
+      setEditSessionEnd('');
+      loadAcademicSessions();
+      alert('Academic session updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Error updating academic session');
+    }
+  };
+
+  const handleDeleteAcademicSession = async (sess: any) => {
+    if (!session?.user?.schoolId) return;
+    if (sess.isCurrent) {
+      alert('Cannot delete the currently active academic session. Please activate a different session first.');
+      return;
+    }
+    if (!window.confirm(`Are you sure you want to permanently delete the academic session "${sess.name}"?\n\nWARNING: This will also remove ALL associated classes, students, timetables, attendance, assignments, and quizzes linked to this session. This action cannot be undone.`)) return;
+    try {
+      await mockApi.adminDeleteAcademicSession(session.user.schoolId, sess.id);
+      loadAcademicSessions();
+      loadData();
+      alert('Academic session and all associated data deleted successfully.');
+    } catch (err: any) {
+      alert(err.message || 'Error deleting academic session');
     }
   };
 
@@ -1152,7 +1204,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       {activeTab === 'academicsessions' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Create Academic Session Form */}
-          <div className="lg:col-span-1">
+          <div className="lg:col-span-1 space-y-6">
             <GlassCard className="space-y-4">
               <h3 className="font-bold text-slate-200 text-sm pb-2 border-b border-slate-850 flex items-center gap-2">
                 <Calendar className="text-brand-500" size={16} />
@@ -1166,7 +1218,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     placeholder="e.g. 2026-2027 Academic Year" 
                     value={newSessionName} 
                     onChange={(e) => setNewSessionName(e.target.value)} 
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none" 
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
                     required 
                   />
                 </div>
@@ -1176,7 +1228,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     type="date" 
                     value={newSessionStart} 
                     onChange={(e) => setNewSessionStart(e.target.value)} 
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none" 
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
                     required 
                   />
                 </div>
@@ -1186,7 +1238,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     type="date" 
                     value={newSessionEnd} 
                     onChange={(e) => setNewSessionEnd(e.target.value)} 
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none" 
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
                     required 
                   />
                 </div>
@@ -1207,15 +1259,78 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 </button>
               </form>
             </GlassCard>
+
+            {/* Edit Academic Session Drawer */}
+            {editingSession && (
+              <GlassCard className="space-y-4 border-amber-500/30 bg-amber-500/5">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-850">
+                  <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                    <Edit className="text-amber-400" size={16} />
+                    Edit Session
+                  </h3>
+                  <button 
+                    onClick={() => setEditingSession(null)} 
+                    className="text-slate-400 hover:text-slate-200 text-xs font-bold transition-colors"
+                  >
+                    ✕ Cancel
+                  </button>
+                </div>
+                <form onSubmit={handleEditAcademicSession} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Session Name</label>
+                    <input 
+                      type="text" 
+                      value={editSessionName} 
+                      onChange={(e) => setEditSessionName(e.target.value)} 
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500/50" 
+                      required 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Start Date</label>
+                    <input 
+                      type="date" 
+                      value={editSessionStart} 
+                      onChange={(e) => setEditSessionStart(e.target.value)} 
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500/50" 
+                      required 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">End Date</label>
+                    <input 
+                      type="date" 
+                      value={editSessionEnd} 
+                      onChange={(e) => setEditSessionEnd(e.target.value)} 
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-amber-500/50" 
+                      required 
+                    />
+                  </div>
+                  <div className="flex gap-2">
+                    <button type="submit" className="flex-1 glass-btn-primary text-xs" style={{ background: 'rgba(245, 158, 11, 0.15)', borderColor: 'rgba(245, 158, 11, 0.3)' }}>
+                      Save Changes
+                    </button>
+                    <button type="button" onClick={() => setEditingSession(null)} className="flex-1 glass-btn text-xs">
+                      Cancel
+                    </button>
+                  </div>
+                </form>
+              </GlassCard>
+            )}
           </div>
 
           {/* Academic Sessions List */}
           <div className="lg:col-span-2 space-y-6">
             <GlassCard className="space-y-4">
-              <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                <Building className="text-brand-500" size={16} />
-                Academic Terms & Sessions Catalog
-              </h3>
+              <div className="flex items-center justify-between">
+                <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Building className="text-brand-500" size={16} />
+                  Academic Terms & Sessions Catalog
+                </h3>
+                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                  {academicSessionsList.length} session{academicSessionsList.length !== 1 ? 's' : ''}
+                </span>
+              </div>
 
               {sessionsLoading ? (
                 <div className="text-center py-12 text-slate-400 italic text-sm">
@@ -1227,38 +1342,66 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 </div>
               ) : (
                 <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
-                  {academicSessionsList.map(session => (
+                  {academicSessionsList.map(sess => (
                     <div 
-                      key={session.id} 
-                      className={`p-4 rounded-2xl border transition-all flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 ${
-                        session.isCurrent 
+                      key={sess.id} 
+                      className={`p-4 rounded-2xl border transition-all ${
+                        sess.isCurrent 
                           ? 'bg-brand-500/5 border-brand-500/30' 
-                          : 'bg-slate-950/20 border-slate-850'
-                      }`}
+                          : 'bg-slate-950/20 border-slate-850 hover:border-slate-700'
+                      } ${editingSession?.id === sess.id ? 'ring-1 ring-amber-500/40' : ''}`}
                     >
-                      <div className="space-y-1">
-                        <div className="flex items-center gap-2">
-                          <h4 className="font-bold text-slate-200 text-sm">{session.name}</h4>
-                          {session.isCurrent && (
-                            <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 uppercase tracking-wider">
-                              Active Current Session
-                            </span>
+                      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                        <div className="space-y-1 flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h4 className="font-bold text-slate-200 text-sm">{sess.name}</h4>
+                            {sess.isCurrent && (
+                              <span className="text-[9px] font-bold px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20 uppercase tracking-wider">
+                                Active Current Session
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[11px] text-slate-400">
+                            Duration: {new Date(sess.startDate).toLocaleDateString()} &mdash; {new Date(sess.endDate).toLocaleDateString()}
+                          </p>
+                          <p className="text-[10px] text-slate-600 font-mono">
+                            ID: {sess.id.substring(0, 8)}...
+                          </p>
+                        </div>
+
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          <button
+                            onClick={() => handleStartEditSession(sess)}
+                            className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-300 hover:border-amber-500/30 hover:text-amber-400 hover:bg-amber-500/5 flex items-center gap-1.5 transition-all"
+                            title="Edit session name and dates"
+                          >
+                            <Edit size={12} />
+                            Edit
+                          </button>
+                          {!sess.isCurrent && (
+                            <>
+                              <button
+                                onClick={() => handleSetActiveSession(sess.id)}
+                                className="glass-btn-primary text-[11px] font-bold px-3 py-1.5 flex items-center gap-1.5 transition-all"
+                              >
+                                <CheckCircle2 size={13} />
+                                Activate
+                              </button>
+                              <button
+                                onClick={() => handleDeleteAcademicSession(sess)}
+                                className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-400 hover:border-red-500/30 hover:text-red-400 hover:bg-red-500/5 flex items-center gap-1.5 transition-all"
+                                title="Permanently delete this session and all related data"
+                              >
+                                <Trash2 size={12} />
+                                Delete
+                              </button>
+                            </>
+                          )}
+                          {sess.isCurrent && (
+                            <span className="text-[10px] text-slate-600 italic">Active — cannot delete</span>
                           )}
                         </div>
-                        <p className="text-[11px] text-slate-400">
-                          Duration: {new Date(session.startDate).toLocaleDateString()} &mdash; {new Date(session.endDate).toLocaleDateString()}
-                        </p>
                       </div>
-
-                      {!session.isCurrent && (
-                        <button
-                          onClick={() => handleSetActiveSession(session.id)}
-                          className="glass-btn-primary text-[11px] font-bold px-3 py-1.5 flex items-center gap-1.5 transition-all"
-                        >
-                          <CheckCircle2 size={13} />
-                          Activate Session
-                        </button>
-                      )}
                     </div>
                   ))}
                 </div>
