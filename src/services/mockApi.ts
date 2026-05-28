@@ -4206,28 +4206,64 @@ export const mockApi = {
         users!inner(email, first_name, last_name, phone, is_active)
       `);
 
-    const mappedSchools = (schoolsData || []).map(s => ({
-      id: s.id,
-      name: s.name,
-      address: s.address,
-      phone: s.phone,
-      subscriptionPlan: s.subscription_plan,
-      createdAt: s.created_at
-    }));
+    const mappedSchools = (schoolsData || []).map(s => {
+      const schoolMapped = {
+        id: s.id,
+        name: s.name,
+        address: s.address || '',
+        phone: s.phone || '',
+        subscriptionPlan: s.subscription_plan ? (s.subscription_plan.toLowerCase() as any) : 'freemium',
+        createdAt: s.created_at
+      };
+
+      const idx = mockDb.schools.findIndex(x => x.id === s.id);
+      if (idx === -1) {
+        mockDb.schools.push(schoolMapped);
+      } else {
+        mockDb.schools[idx] = schoolMapped;
+      }
+      return schoolMapped;
+    });
 
     const mappedAdmins = (adminsData || []).map((sa: any) => {
       const u = sa.users;
-      return {
+      const adminMapped = {
         id: sa.user_id,
         email: u.email,
         firstName: u.first_name,
         lastName: u.last_name,
         phone: u.phone || '',
         schoolId: sa.school_id,
-        role: sa.role_settings || 'ADMIN',
+        role: (sa.role_settings || 'ADMIN') as any,
         isActive: u.is_active
       };
+
+      const userMapped: User = {
+        id: sa.user_id,
+        email: u.email,
+        role: (sa.role_settings || 'ADMIN') as any,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        phone: u.phone || '',
+        avatarUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150',
+        isActive: u.is_active,
+        schoolId: sa.school_id,
+        createdAt: u.created_at || new Date().toISOString(),
+        updatedAt: u.created_at || new Date().toISOString()
+      };
+
+      const existingUserIdx = mockDb.users.findIndex(x => x.id === sa.user_id);
+      if (existingUserIdx === -1) {
+        mockDb.users.push(userMapped);
+      } else {
+        const pass = mockDb.users[existingUserIdx].password;
+        mockDb.users[existingUserIdx] = { ...userMapped, password: pass };
+      }
+
+      return adminMapped;
     });
+
+    mockDb.saveAll();
 
     return {
       totalSchools: schoolCount || 0,
@@ -4272,14 +4308,24 @@ export const mockApi = {
 
     if (error || !data) throw new Error('Failed to create school in database: ' + (error?.message || 'Unknown error'));
 
-    return {
+    const schoolMapped: School = {
       id: data.id,
       name: data.name,
-      address: data.address,
-      phone: data.phone,
-      subscriptionPlan: data.subscription_plan as any,
+      address: data.address || '',
+      phone: data.phone || '',
+      subscriptionPlan: data.subscription_plan ? (data.subscription_plan.toLowerCase() as any) : 'freemium',
       createdAt: data.created_at
     };
+
+    const idx = mockDb.schools.findIndex(x => x.id === data.id);
+    if (idx === -1) {
+      mockDb.schools.push(schoolMapped);
+    } else {
+      mockDb.schools[idx] = schoolMapped;
+    }
+    mockDb.saveAll();
+
+    return schoolMapped;
   },
 
   async superAdminCreateAdmin(superAdminId: string, email: string, firstName: string, lastName: string, schoolId: string, phone: string, password: string): Promise<void> {
@@ -4340,6 +4386,30 @@ export const mockApi = {
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
       throw new Error('Failed to create school admin record: ' + adminTableError.message);
     }
+
+    // Sync newly created school admin with local mockDb cache
+    const user: User = {
+      id: authData.user.id,
+      email,
+      role: 'ADMIN',
+      firstName,
+      lastName,
+      phone,
+      avatarUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150',
+      isActive: true,
+      schoolId,
+      password: password,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    const existingUserIdx = mockDb.users.findIndex(x => x.id === authData.user.id);
+    if (existingUserIdx === -1) {
+      mockDb.users.push(user);
+    } else {
+      mockDb.users[existingUserIdx] = user;
+    }
+    mockDb.saveAll();
   },
 
   async superAdminDeleteSchool(superAdminId: string, schoolId: string): Promise<void> {
@@ -4451,6 +4521,13 @@ export const mockApi = {
   async superAdminResetPassword(superAdminId: string, targetUserId: string, newPasswordPlain: string): Promise<void> {
     const { error } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, { password: newPasswordPlain });
     if (error) throw new Error('Failed to reset password: ' + error.message);
+
+    const userIdx = mockDb.users.findIndex(u => u.id === targetUserId);
+    if (userIdx !== -1) {
+      mockDb.users[userIdx].password = newPasswordPlain;
+      mockDb.users[userIdx].updatedAt = new Date().toISOString();
+      mockDb.saveAll();
+    }
   },
 
   async adminResetPassword(adminId: string, targetUserId: string, newPasswordPlain: string): Promise<void> {
