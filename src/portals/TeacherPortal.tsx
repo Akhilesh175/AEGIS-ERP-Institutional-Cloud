@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { mockDb } from '../services/mockDb';
+import { supabase } from '../lib/supabase';
 import { 
   TeacherClassSubjectMapping, Student, AssignmentSubmission, 
   Class, Subject, Assignment, User, Timetable, Exam, StudyMaterial, Quiz
@@ -413,6 +414,26 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setQuizzesLoading(false);
     }
   };
+
+  // Real-time Supabase Postgres changes subscription
+  useEffect(() => {
+    if (activeTab !== 'forums') return;
+
+    const handleForumsSync = () => {
+      loadForumsData();
+    };
+
+    const channel = supabase
+      .channel('teacher-forums-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_categories' }, handleForumsSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_posts' }, handleForumsSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_replies' }, handleForumsSync)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeTab, selectedCategory, selectedPost]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;

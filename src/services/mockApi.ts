@@ -1217,6 +1217,100 @@ export const mockApi = {
     }
   },
 
+  async syncStudentsData(schoolId: string): Promise<void> {
+    try {
+      const { data: dbStudents } = await supabaseAdmin
+        .from('students')
+        .select('*')
+        .eq('school_id', schoolId);
+      
+      if (dbStudents) {
+        dbStudents.forEach((r: any) => {
+          const studentMapped: Student = {
+            id: r.id,
+            userId: r.user_id,
+            schoolId: r.school_id,
+            classId: r.class_id || '',
+            academicSessionId: r.academic_session_id || 'session-1',
+            admissionNumber: r.admission_number,
+            rollNumber: r.roll_number,
+            dateOfBirth: r.date_of_birth || '',
+            gender: r.gender,
+            createdAt: r.created_at
+          };
+          const idx = mockDb.students.findIndex(s => s.id === r.id);
+          if (idx === -1) mockDb.students.push(studentMapped);
+          else mockDb.students[idx] = studentMapped;
+        });
+        const studentIds = new Set(dbStudents.map(s => s.id));
+        mockDb.students = mockDb.students.filter(s => s.schoolId !== schoolId || studentIds.has(s.id));
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync students:', e);
+    }
+  },
+
+  async syncParentsData(schoolId: string): Promise<void> {
+    try {
+      const { data: dbParents } = await supabaseAdmin
+        .from('parents')
+        .select('*')
+        .eq('school_id', schoolId);
+      
+      if (dbParents) {
+        dbParents.forEach((r: any) => {
+          const parentMapped: Parent = {
+            id: r.id,
+            userId: r.user_id,
+            schoolId: r.school_id,
+            occupation: r.occupation || '',
+            address: r.address || '',
+            createdAt: r.created_at
+          };
+          const idx = mockDb.parents.findIndex(p => p.id === r.id);
+          if (idx === -1) mockDb.parents.push(parentMapped);
+          else mockDb.parents[idx] = parentMapped;
+        });
+        const parentIds = new Set(dbParents.map(p => p.id));
+        mockDb.parents = mockDb.parents.filter(p => p.schoolId !== schoolId || parentIds.has(p.id));
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync parents:', e);
+    }
+  },
+
+  async syncParentStudentMappingsData(schoolId: string): Promise<void> {
+    try {
+      const studentIds = mockDb.students.filter(s => s.schoolId === schoolId).map(s => s.id);
+      if (studentIds.length === 0) return;
+
+      const { data: dbMappings } = await supabaseAdmin
+        .from('parent_student_mappings')
+        .select('*')
+        .in('student_id', studentIds);
+      
+      if (dbMappings) {
+        mockDb.parentStudentMappings = mockDb.parentStudentMappings.filter(
+          m => !studentIds.includes(m.studentId)
+        );
+
+        dbMappings.forEach((r: any) => {
+          const map: ParentStudentMapping = {
+            parentId: r.parent_id,
+            studentId: r.student_id,
+            relationship: r.relationship
+          };
+          mockDb.parentStudentMappings.push(map);
+        });
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync parent student mappings:', e);
+    }
+  },
+
   async syncChatMessagesData(userId: string): Promise<void> {
     try {
       const { data: dbChats } = await supabaseAdmin
@@ -4985,8 +5079,11 @@ export const mockApi = {
     }
 
     const user = mockDb.users.find(u => u.id === authorId);
-    if (user && user.schoolId) {
-      const school = mockDb.schools.find(s => s.id === user.schoolId);
+    const category = mockDb.forumCategories.find(c => c.id === categoryId);
+    const targetSchoolId = category?.schoolId || user?.schoolId || '';
+
+    if (targetSchoolId) {
+      const school = mockDb.schools.find(s => s.id === targetSchoolId);
       if (school) {
         const plan = subscriptionPlans[school.subscriptionPlan] || subscriptionPlans.freemium;
         if (!plan.features.communications) {
@@ -4995,7 +5092,7 @@ export const mockApi = {
       }
     }
 
-    const activeSessionId = await this.resolveActiveSessionId(user?.schoolId || '');
+    const activeSessionId = await this.resolveActiveSessionId(targetSchoolId);
 
     const { data: r, error } = await supabaseAdmin
       .from('forum_posts')
@@ -5031,8 +5128,12 @@ export const mockApi = {
     await delay(300);
 
     const user = mockDb.users.find(u => u.id === authorId);
-    if (user && user.schoolId) {
-      const school = mockDb.schools.find(s => s.id === user.schoolId);
+    const postObj = mockDb.forumPosts.find(p => p.id === postId);
+    const category = postObj ? mockDb.forumCategories.find(c => c.id === postObj.categoryId) : undefined;
+    const targetSchoolId = category?.schoolId || user?.schoolId || '';
+
+    if (targetSchoolId) {
+      const school = mockDb.schools.find(s => s.id === targetSchoolId);
       if (school) {
         const plan = subscriptionPlans[school.subscriptionPlan] || subscriptionPlans.freemium;
         if (!plan.features.communications) {
@@ -5041,7 +5142,7 @@ export const mockApi = {
       }
     }
 
-    const activeSessionId = await this.resolveActiveSessionId(user?.schoolId || '');
+    const activeSessionId = await this.resolveActiveSessionId(targetSchoolId);
 
     const { data: r, error } = await supabaseAdmin
       .from('forum_replies')

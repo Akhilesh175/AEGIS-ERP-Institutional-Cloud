@@ -4,6 +4,7 @@ import { mockApi } from '../services/mockApi';
 import { mockDb } from '../services/mockDb';
 import { Student, User, Quiz, QuizAttempt } from '../types';
 import { GlassCard } from '../components/GlassCard';
+import { supabase } from '../lib/supabase';
 import { 
   Eye, Award, DollarSign, Calendar, FileText, 
   User as UserIcon, ShieldAlert, CheckCircle, AlertCircle, UsersRound, Clock,
@@ -15,12 +16,16 @@ import { subscriptionPlans } from '../services/subscriptionConfig';
 export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const { session, syncSubscriptionPlan } = useStore();
   const parentId = session?.parentId;
-  const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
-  const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
-
+  
   // States
   const [assignedStudents, setAssignedStudents] = useState<(Student & { userDetails: User; className: string })[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
+  
+  // Dynamically resolve school subscription plan from selected student's school context
+  const studentObj = mockDb.students.find(s => s.id === selectedStudent);
+  const studentSchool = studentObj ? mockDb.schools.find(sch => sch.id === studentObj.schoolId) : null;
+  const currentPlanName = studentSchool?.subscriptionPlan || session?.schoolSubscriptionPlan || 'freemium';
+  const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
   const [academicRecord, setAcademicRecord] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -42,6 +47,15 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
     try {
       await syncSubscriptionPlan();
       setLoading(true);
+      
+      const parentUser = mockDb.users.find(u => u.id === session?.user?.id);
+      const parentSchoolId = mockDb.parents.find(p => p.id === parentId)?.schoolId || parentUser?.schoolId;
+      if (parentSchoolId) {
+        await mockApi.syncStudentsData(parentSchoolId);
+        await mockApi.syncParentsData(parentSchoolId);
+        await mockApi.syncParentStudentMappingsData(parentSchoolId);
+      }
+
       const data = await mockApi.parentGetStudents(parentId);
       setAssignedStudents(data);
       if (data.length > 0) {
@@ -80,6 +94,10 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       setMaterialsLoading(false);
 
       if (studentObj) {
+        await mockApi.syncStudentsData(studentObj.schoolId);
+        await mockApi.syncParentsData(studentObj.schoolId);
+        await mockApi.syncParentStudentMappingsData(studentObj.schoolId);
+
         await mockApi.syncForumCategoriesData(studentObj.schoolId);
         await mockApi.syncForumPostsData(studentObj.schoolId);
         await mockApi.syncForumRepliesData(studentObj.schoolId);
@@ -107,6 +125,50 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
     loadAssignedStudents();
   }, [parentId]);
 
+  // Real-time Supabase Postgres changes subscription
+  useEffect(() => {
+    if (activeTab !== 'forums' || !selectedStudent) return;
+
+    const studentObj = mockDb.students.find(s => s.id === selectedStudent);
+    if (!studentObj) return;
+
+    const handleForumsSync = () => {
+      mockApi.syncStudentsData(studentObj.schoolId).then(() => {
+        mockApi.syncParentsData(studentObj.schoolId).then(() => {
+          mockApi.syncParentStudentMappingsData(studentObj.schoolId).then(() => {
+            mockApi.syncForumCategoriesData(studentObj.schoolId).then(() => {
+              mockApi.syncForumPostsData(studentObj.schoolId).then(() => {
+                mockApi.syncForumRepliesData(studentObj.schoolId).then(() => {
+                  mockApi.getForumPosts().then(allPosts => {
+                    mockApi.getForumCategories(studentObj.schoolId).then(cats => {
+                      const allowedCats = cats.filter(c => c.classId === studentObj.classId || !c.classId);
+                      const allowedCatIds = allowedCats.map(c => c.id);
+                      setForumPosts(allPosts.filter(p => allowedCatIds.includes(p.categoryId)));
+                    });
+                  });
+                  if (selectedPost) {
+                    mockApi.getForumPostReplies(selectedPost.id).then(reps => setPostReplies(reps));
+                  }
+                });
+              });
+            });
+          });
+        });
+      });
+    };
+
+    const channel = supabase
+      .channel('parent-forums-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_categories' }, handleForumsSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_posts' }, handleForumsSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'forum_replies' }, handleForumsSync)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [activeTab, selectedStudent, selectedPost]);
+
   useEffect(() => {
     const interval = setInterval(() => {
       syncSubscriptionPlan();
@@ -114,19 +176,25 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       if (activeTab === 'forums' && selectedStudent) {
         const studentObj = mockDb.students.find(s => s.id === selectedStudent);
         if (studentObj) {
-          mockApi.syncForumCategoriesData(studentObj.schoolId).then(() => {
-            mockApi.syncForumPostsData(studentObj.schoolId).then(() => {
-              mockApi.syncForumRepliesData(studentObj.schoolId).then(() => {
-                mockApi.getForumPosts().then(allPosts => {
-                  mockApi.getForumCategories(studentObj.schoolId).then(cats => {
-                    const allowedCats = cats.filter(c => c.classId === studentObj.classId || !c.classId);
-                    const allowedCatIds = allowedCats.map(c => c.id);
-                    setForumPosts(allPosts.filter(p => allowedCatIds.includes(p.categoryId)));
+          mockApi.syncStudentsData(studentObj.schoolId).then(() => {
+            mockApi.syncParentsData(studentObj.schoolId).then(() => {
+              mockApi.syncParentStudentMappingsData(studentObj.schoolId).then(() => {
+                mockApi.syncForumCategoriesData(studentObj.schoolId).then(() => {
+                  mockApi.syncForumPostsData(studentObj.schoolId).then(() => {
+                    mockApi.syncForumRepliesData(studentObj.schoolId).then(() => {
+                      mockApi.getForumPosts().then(allPosts => {
+                        mockApi.getForumCategories(studentObj.schoolId).then(cats => {
+                          const allowedCats = cats.filter(c => c.classId === studentObj.classId || !c.classId);
+                          const allowedCatIds = allowedCats.map(c => c.id);
+                          setForumPosts(allPosts.filter(p => allowedCatIds.includes(p.categoryId)));
+                        });
+                      });
+                      if (selectedPost) {
+                        mockApi.getForumPostReplies(selectedPost.id).then(reps => setPostReplies(reps));
+                      }
+                    });
                   });
                 });
-                if (selectedPost) {
-                  mockApi.getForumPostReplies(selectedPost.id).then(reps => setPostReplies(reps));
-                }
               });
             });
           });
