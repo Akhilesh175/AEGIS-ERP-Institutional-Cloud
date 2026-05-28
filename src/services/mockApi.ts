@@ -2349,9 +2349,9 @@ export const mockApi = {
 
     // Fetch counts directly from Supabase for accuracy after DB deletions
     const [studentsRes, teachersRes, parentsRes] = await Promise.all([
-      supabase.from('users').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'STUDENT'),
-      supabase.from('users').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'TEACHER'),
-      supabase.from('users').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'PARENT'),
+      supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'STUDENT'),
+      supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'TEACHER'),
+      supabaseAdmin.from('users').select('id', { count: 'exact', head: true }).eq('school_id', schoolId).eq('role', 'PARENT'),
     ]);
 
     const totalStudents = studentsRes.count ?? 0;
@@ -2468,7 +2468,7 @@ export const mockApi = {
 
   async adminCreateStudent(adminId: string, email: string, firstName: string, lastName: string, classId: string, admissionNumber: string, rollNumber: number, gender: 'MALE' | 'FEMALE' | 'OTHER', dob: string, password: string): Promise<void> {
     await delay(600);
-    const { data: admin, error: adminErr } = await supabase.from('users').select('role, school_id').eq('id', adminId).single();
+    const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
     if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
 
     const schoolId = admin.school_id;
@@ -2495,12 +2495,12 @@ export const mockApi = {
     }
 
     // Check limits
-    const { data: school, error: schoolErr } = await supabase.from('schools').select('subscription_plan').eq('id', schoolId).single();
+    const { data: school, error: schoolErr } = await supabaseAdmin.from('schools').select('subscription_plan').eq('id', schoolId).single();
     if (schoolErr || !school) throw new Error('School not found.');
     
     // Check limits from Supabase directly
     const plan = subscriptionPlans[school.subscription_plan] || subscriptionPlans.freemium;
-    const { count: currentStudentsCount } = await supabase
+    const { count: currentStudentsCount } = await supabaseAdmin
       .from('users').select('id', { count: 'exact', head: true })
       .eq('school_id', schoolId).eq('role', 'STUDENT');
     if ((currentStudentsCount ?? 0) >= plan.limits.maxStudents) {
@@ -3099,7 +3099,7 @@ export const mockApi = {
 
   async adminCreateTeacher(adminId: string, email: string, firstName: string, lastName: string, employeeId: string, qualification: string, specialization: string, phone: string, password: string): Promise<void> {
     await delay(600);
-    const { data: admin, error: adminErr } = await supabase.from('users').select('role, school_id').eq('id', adminId).single();
+    const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
     if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
 
     const schoolId = admin.school_id;
@@ -3116,12 +3116,12 @@ export const mockApi = {
     }
 
     // Check limits
-    const { data: school, error: schoolErr } = await supabase.from('schools').select('subscription_plan').eq('id', schoolId).single();
+    const { data: school, error: schoolErr } = await supabaseAdmin.from('schools').select('subscription_plan').eq('id', schoolId).single();
     if (schoolErr || !school) throw new Error('School not found.');
     
     // Check limits from Supabase directly
     const plan = subscriptionPlans[school.subscription_plan] || subscriptionPlans.freemium;
-    const { count: currentTeachersCount } = await supabase
+    const { count: currentTeachersCount } = await supabaseAdmin
       .from('users').select('id', { count: 'exact', head: true })
       .eq('school_id', schoolId).eq('role', 'TEACHER');
     if ((currentTeachersCount ?? 0) >= plan.limits.maxTeachers) {
@@ -3202,7 +3202,7 @@ export const mockApi = {
     password?: string
   ): Promise<void> {
     await delay(600);
-    const { data: admin, error: adminErr } = await supabase.from('users').select('role, school_id').eq('id', adminId).single();
+    const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
     if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
 
     const schoolId = admin.school_id;
@@ -3269,7 +3269,7 @@ export const mockApi = {
       }
       // Also try to find student from Supabase if not in local cache
       if (!student) {
-        const { data: stRow } = await supabase.from('students').select('id, admission_number').eq('id', studentId).single();
+        const { data: stRow } = await supabaseAdmin.from('students').select('id, admission_number').eq('id', studentId).single();
         if (stRow && stRow.admission_number.toLowerCase().trim() !== admissionNumber.toLowerCase().trim()) {
           throw new Error('Verification failed: Admission number does not match selected student.');
         }
@@ -3279,7 +3279,7 @@ export const mockApi = {
     // Map parent to student in Supabase parent_student_mapping table
     if (resolvedStudentId && relationship) {
       // Find the real Supabase student record for mapping
-      const { data: stSupabase } = await supabase.from('students').select('id').eq('user_id',
+      const { data: stSupabase } = await supabaseAdmin.from('students').select('id').eq('user_id',
         mockDb.students.find(s => s.id === resolvedStudentId)?.userId || resolvedStudentId
       ).single();
       const realStudentId = stSupabase?.id || resolvedStudentId;
@@ -3532,11 +3532,11 @@ export const mockApi = {
     }
 
     // Check limits
-    const { data: school, error: schoolErr } = await supabase.from('schools').select('subscription_plan').eq('id', schoolId).single();
+    const { data: school, error: schoolErr } = await supabaseAdmin.from('schools').select('subscription_plan').eq('id', schoolId).single();
     if (schoolErr || !school) throw new Error('School not found.');
     
     const plan = subscriptionPlans[school.subscription_plan] || subscriptionPlans.freemium;
-    const { count: currentStudentsCount } = await supabase
+    const { count: currentStudentsCount } = await supabaseAdmin
       .from('users').select('id', { count: 'exact', head: true })
       .eq('school_id', schoolId).eq('role', 'STUDENT');
     if ((currentStudentsCount ?? 0) >= plan.limits.maxStudents) {
@@ -4238,7 +4238,7 @@ export const mockApi = {
 
   async adminResetPassword(adminId: string, targetUserId: string, newPasswordPlain: string): Promise<void> {
     await delay(500);
-    const { data: admin, error: adminErr } = await supabase.from('users').select('role, school_id').eq('id', adminId).single();
+    const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
     if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized operational context.');
 
     const target = mockDb.users.find(u => u.id === targetUserId);
