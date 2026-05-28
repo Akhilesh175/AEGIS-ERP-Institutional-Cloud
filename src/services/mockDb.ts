@@ -338,6 +338,7 @@ class MockDatabase {
     setStorage('forum_replies', this.forumReplies);
     setStorage('chat_messages', this.chatMessages);
     setStorage('audit_logs', this.auditLogs);
+    setStorage('academic_sessions', this.academicSessions);
   }
 
   // --- CRUD HELPERS ---

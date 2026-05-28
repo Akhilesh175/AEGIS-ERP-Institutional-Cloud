@@ -4047,8 +4047,88 @@ export const mockApi = {
   },
 
   async superAdminDeleteSchool(superAdminId: string, schoolId: string): Promise<void> {
+    // 1. Fetch all public users associated with the school
+    const { data: usersToDel, error: fetchErr } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('school_id', schoolId);
+
+    if (fetchErr) throw new Error('Failed to fetch school users for deletion: ' + fetchErr.message);
+
+    // 2. Delete each user cleanly from Supabase Auth
+    if (usersToDel && usersToDel.length > 0) {
+      for (const u of usersToDel) {
+        const { error: authDelErr } = await supabaseAdmin.auth.admin.deleteUser(u.id);
+        if (authDelErr) {
+          console.warn(`Could not delete auth user ${u.id}: ${authDelErr.message}`);
+        }
+      }
+    }
+
+    // 3. Delete the school itself (propagates via database CASCADE DELETE)
     const { error } = await supabaseAdmin.from('schools').delete().eq('id', schoolId);
     if (error) throw new Error('Failed to delete school: ' + error.message);
+
+    // 4. Sync local mockDb cache to keep UI perfectly synchronized
+    const deletedUserIds = mockDb.users.filter(u => u.schoolId === schoolId).map(u => u.id);
+    const deletedStudentIds = mockDb.students.filter(s => s.schoolId === schoolId).map(s => s.id);
+    const deletedTeacherIds = mockDb.teachers.filter(t => t.schoolId === schoolId).map(t => t.id);
+    const deletedParentIds = mockDb.parents.filter(p => p.schoolId === schoolId).map(p => p.id);
+    const deletedClassIds = mockDb.classes.filter(c => c.schoolId === schoolId).map(c => c.id);
+    const deletedSubjectIds = mockDb.subjects.filter(s => s.schoolId === schoolId).map(s => s.id);
+    const deletedQuizIds = mockDb.quizzes.filter(q => deletedSubjectIds.includes(q.subjectId)).map(q => q.id);
+    const deletedExamIds = mockDb.exams.filter(e => e.schoolId === schoolId).map(e => e.id);
+    const deletedForumCategoryIds = mockDb.forumCategories.filter(c => c.schoolId === schoolId).map(c => c.id);
+    const deletedFeeStructureIds = mockDb.feeStructures.filter(fs => fs.schoolId === schoolId).map(fs => fs.id);
+
+    mockDb.schools = mockDb.schools.filter(s => s.id !== schoolId);
+    mockDb.users = mockDb.users.filter(u => u.schoolId !== schoolId);
+    mockDb.teachers = mockDb.teachers.filter(t => t.schoolId !== schoolId);
+    mockDb.students = mockDb.students.filter(s => s.schoolId !== schoolId);
+    mockDb.parents = mockDb.parents.filter(p => p.schoolId !== schoolId);
+    mockDb.academicSessions = mockDb.academicSessions.filter(as => as.schoolId !== schoolId);
+    mockDb.classes = mockDb.classes.filter(c => c.schoolId !== schoolId);
+    mockDb.subjects = mockDb.subjects.filter(s => s.schoolId !== schoolId);
+    mockDb.assignments = mockDb.assignments.filter(a => !deletedClassIds.includes(a.classId));
+    mockDb.quizzes = mockDb.quizzes.filter(q => !deletedQuizIds.includes(q.id));
+    mockDb.exams = mockDb.exams.filter(e => e.schoolId !== schoolId);
+    mockDb.forumCategories = mockDb.forumCategories.filter(fc => fc.schoolId !== schoolId);
+    mockDb.feeStructures = mockDb.feeStructures.filter(fs => fs.schoolId !== schoolId);
+    mockDb.studyMaterials = mockDb.studyMaterials.filter(sm => !deletedSubjectIds.includes(sm.subjectId));
+    mockDb.announcements = mockDb.announcements.filter(a => a.schoolId !== schoolId);
+
+    mockDb.parentStudentMappings = mockDb.parentStudentMappings.filter(
+      m => !deletedParentIds.includes(m.parentId) && !deletedStudentIds.includes(m.studentId)
+    );
+    mockDb.teacherClassSubjectMappings = mockDb.teacherClassSubjectMappings.filter(
+      m => !deletedTeacherIds.includes(m.teacherId) && !deletedClassIds.includes(m.classId)
+    );
+    mockDb.timetables = mockDb.timetables.filter(t => !deletedClassIds.includes(t.classId));
+    mockDb.attendance = mockDb.attendance.filter(a => !deletedStudentIds.includes(a.studentId));
+    mockDb.assignmentSubmissions = mockDb.assignmentSubmissions.filter(sub => !deletedStudentIds.includes(sub.studentId));
+    mockDb.quizQuestions = mockDb.quizQuestions.filter(q => !deletedQuizIds.includes(q.quizId));
+    mockDb.quizAttempts = mockDb.quizAttempts.filter(qa => !deletedStudentIds.includes(qa.studentId));
+    
+    const deletedExamScheduleIds = mockDb.examSchedules.filter(es => deletedExamIds.includes(es.examId) || deletedClassIds.includes(es.classId)).map(es => es.id);
+    mockDb.examSchedules = mockDb.examSchedules.filter(es => !deletedExamScheduleIds.includes(es.id));
+    mockDb.examMarks = mockDb.examMarks.filter(em => !deletedStudentIds.includes(em.studentId) && !deletedExamScheduleIds.includes(em.examScheduleId));
+
+    mockDb.feePayments = mockDb.feePayments.filter(
+      fp => !deletedStudentIds.includes(fp.studentId) && !deletedFeeStructureIds.includes(fp.feeStructureId)
+    );
+
+    const deletedForumPostIds = mockDb.forumPosts.filter(p => deletedForumCategoryIds.includes(p.categoryId) || deletedUserIds.includes(p.authorId)).map(p => p.id);
+    mockDb.forumPosts = mockDb.forumPosts.filter(p => !deletedForumPostIds.includes(p.id));
+    mockDb.forumReplies = mockDb.forumReplies.filter(r => !deletedForumPostIds.includes(r.postId) && !deletedUserIds.includes(r.authorId));
+
+    mockDb.notifications = mockDb.notifications.filter(n => !deletedUserIds.includes(n.userId));
+    mockDb.chatMessages = mockDb.chatMessages.filter(
+      m => !deletedUserIds.includes(m.senderId) && !deletedUserIds.includes(m.receiverId)
+    );
+
+    mockDb.auditLogs = mockDb.auditLogs.filter(log => !log.userId || !deletedUserIds.includes(log.userId));
+
+    mockDb.saveAll();
   },
 
   async superAdminUpdateSchoolSubscription(superAdminId: string, schoolId: string, subscriptionPlan: string): Promise<void> {
