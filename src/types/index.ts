@@ -73,6 +73,17 @@ export interface Teacher {
   createdAt: string;
 }
 
+export interface SchoolAdmin {
+  id: string;
+  userId: string;
+  schoolId: string;
+  roleSettings: string;
+  permissions: Record<string, any>;
+  status: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Student {
   id: string;
   userId: string;

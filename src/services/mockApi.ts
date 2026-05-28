@@ -4103,7 +4103,14 @@ export const mockApi = {
     const { count: schoolCount } = await supabaseAdmin.from('schools').select('*', { count: 'exact', head: true });
     const { count: userCount } = await supabaseAdmin.from('users').select('*', { count: 'exact', head: true });
     const { data: schoolsData } = await supabaseAdmin.from('schools').select('*');
-    const { data: adminsData } = await supabaseAdmin.from('users').select('*').eq('role', 'ADMIN');
+    const { data: adminsData } = await supabaseAdmin
+      .from('school_admins')
+      .select(`
+        user_id,
+        school_id,
+        role_settings,
+        users!inner(email, first_name, last_name, phone, is_active)
+      `);
 
     const mappedSchools = (schoolsData || []).map(s => ({
       id: s.id,
@@ -4114,16 +4121,19 @@ export const mockApi = {
       createdAt: s.created_at
     }));
 
-    const mappedAdmins = (adminsData || []).map(a => ({
-      id: a.id,
-      email: a.email,
-      firstName: a.first_name,
-      lastName: a.last_name,
-      phone: a.phone,
-      schoolId: a.school_id,
-      role: a.role,
-      isActive: a.is_active
-    }));
+    const mappedAdmins = (adminsData || []).map((sa: any) => {
+      const u = sa.users;
+      return {
+        id: sa.user_id,
+        email: u.email,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        phone: u.phone || '',
+        schoolId: sa.school_id,
+        role: sa.role_settings || 'ADMIN',
+        isActive: u.is_active
+      };
+    });
 
     return {
       totalSchools: schoolCount || 0,
@@ -4219,6 +4229,22 @@ export const mockApi = {
       // Rollback: remove the auth user if the DB insert failed
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
       throw new Error('Failed to create admin user profile: ' + dbError.message);
+    }
+
+    // 3. Insert into school_admins table
+    const { error: adminTableError } = await supabaseAdmin.from('school_admins').insert({
+      user_id: authData.user.id,
+      school_id: schoolId,
+      role_settings: 'ADMIN',
+      permissions: { all: true },
+      status: 'ACTIVE'
+    });
+
+    if (adminTableError) {
+      // Rollback: remove public.users entry and auth user if the school admin specific insert failed
+      await supabaseAdmin.from('users').delete().eq('id', authData.user.id);
+      await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
+      throw new Error('Failed to create school admin record: ' + adminTableError.message);
     }
   },
 
@@ -4322,6 +4348,10 @@ export const mockApi = {
   async superAdminDeleteAdmin(superAdminId: string, adminUserId: string): Promise<void> {
     const { error } = await supabaseAdmin.auth.admin.deleteUser(adminUserId);
     if (error) throw new Error('Failed to delete admin: ' + error.message);
+    
+    // Sync local mockDb cache
+    mockDb.users = mockDb.users.filter(u => u.id !== adminUserId);
+    mockDb.saveAll();
   },
 
   async superAdminResetPassword(superAdminId: string, targetUserId: string, newPasswordPlain: string): Promise<void> {
