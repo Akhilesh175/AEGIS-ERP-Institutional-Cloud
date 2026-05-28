@@ -81,13 +81,17 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       await mockApi.syncForumRepliesData(session.user.schoolId || '');
       
       const cats = await mockApi.getForumCategories(session.user.schoolId);
-      setForumCategories(cats);
-      if (cats.length > 0 && !postCategoryId) {
-        setPostCategoryId(cats[0].id);
+      const studentObj = mockDb.students.find(s => s.id === studentId);
+      const allowedCats = cats.filter(c => c.classId === studentObj?.classId || !c.classId);
+      
+      setForumCategories(allowedCats);
+      if (allowedCats.length > 0 && !postCategoryId) {
+        setPostCategoryId(allowedCats[0].id);
       }
 
       const posts = await mockApi.getForumPosts();
-      setForumPosts(posts.filter(p => p.schoolId === session.user.schoolId || !p.schoolId));
+      const allowedCatIds = allowedCats.map(c => c.id);
+      setForumPosts(posts.filter(p => allowedCatIds.includes(p.categoryId)));
 
       const f = await mockApi.studentGetFees(studentId);
       setFees(f);
@@ -108,7 +112,12 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
           mockApi.syncForumPostsData(session?.user?.schoolId || '').then(() => {
             mockApi.syncForumRepliesData(session?.user?.schoolId || '').then(() => {
               mockApi.getForumPosts().then(posts => {
-                setForumPosts(posts.filter(p => p.schoolId === session?.user?.schoolId || !p.schoolId));
+                mockApi.getForumCategories(session?.user?.schoolId).then(cats => {
+                  const studentObj = mockDb.students.find(s => s.id === studentId);
+                  const allowedCats = cats.filter(c => c.classId === studentObj?.classId || !c.classId);
+                  const allowedCatIds = allowedCats.map(c => c.id);
+                  setForumPosts(posts.filter(p => allowedCatIds.includes(p.categoryId)));
+                });
               });
               if (selectedPost) {
                 mockApi.getForumPostReplies(selectedPost.id).then(reps => setPostReplies(reps));
@@ -119,7 +128,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       }
     }, 10000);
     return () => clearInterval(interval);
-  }, [syncSubscriptionPlan, activeTab, selectedPost, session?.user?.schoolId]);
+  }, [syncSubscriptionPlan, activeTab, selectedPost, session?.user?.schoolId, studentId]);
 
   // Quiz Timer
   useEffect(() => {

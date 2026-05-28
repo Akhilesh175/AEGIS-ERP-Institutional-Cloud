@@ -1066,14 +1066,53 @@ export const mockApi = {
     }
   },
 
+  async syncUsersData(schoolId: string): Promise<void> {
+    try {
+      const { data: dbUsers } = await supabaseAdmin
+        .from('users')
+        .select('*')
+        .eq('school_id', schoolId);
+      
+      if (dbUsers) {
+        dbUsers.forEach((r: any) => {
+          const user: User = {
+            id: r.id,
+            email: r.email,
+            role: r.role,
+            firstName: r.first_name,
+            lastName: r.last_name,
+            phone: r.phone || '',
+            avatarUrl: r.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+            isActive: r.is_active,
+            schoolId: r.school_id,
+            createdAt: r.created_at || new Date().toISOString(),
+            updatedAt: r.created_at || new Date().toISOString()
+          };
+          const idx = mockDb.users.findIndex(u => u.id === user.id);
+          if (idx === -1) mockDb.users.push(user);
+          else mockDb.users[idx] = user;
+        });
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync users:', e);
+    }
+  },
+
   async syncForumCategoriesData(schoolId: string): Promise<void> {
     try {
+      await this.syncUsersData(schoolId);
       const { data: dbCats } = await supabaseAdmin
         .from('forum_categories')
         .select('*')
         .eq('school_id', schoolId);
       
       if (dbCats) {
+        const dbCatIds = dbCats.map((r: any) => r.id);
+        mockDb.forumCategories = mockDb.forumCategories.filter(
+          c => c.schoolId !== schoolId || dbCatIds.includes(c.id)
+        );
+
         dbCats.forEach((r: any) => {
           const cat: ForumCategory = {
             id: r.id,
@@ -1099,7 +1138,11 @@ export const mockApi = {
     try {
       await this.syncForumCategoriesData(schoolId);
       const catIds = mockDb.forumCategories.filter(c => c.schoolId === schoolId).map(c => c.id);
-      if (catIds.length === 0) return;
+      if (catIds.length === 0) {
+        mockDb.forumPosts = [];
+        mockDb.saveAll();
+        return;
+      }
 
       const { data: dbPosts } = await supabaseAdmin
         .from('forum_posts')
@@ -1107,6 +1150,11 @@ export const mockApi = {
         .in('category_id', catIds);
       
       if (dbPosts) {
+        const dbPostIds = dbPosts.map((r: any) => r.id);
+        mockDb.forumPosts = mockDb.forumPosts.filter(
+          p => !catIds.includes(p.categoryId) || dbPostIds.includes(p.id)
+        );
+
         dbPosts.forEach((r: any) => {
           const post: ForumPost = {
             id: r.id,
@@ -1114,6 +1162,7 @@ export const mockApi = {
             authorId: r.author_id,
             title: r.title,
             content: r.content,
+            academicSessionId: r.academic_session_id || null,
             createdAt: r.created_at
           };
           const idx = mockDb.forumPosts.findIndex(p => p.id === post.id);
@@ -1131,7 +1180,11 @@ export const mockApi = {
     try {
       await this.syncForumPostsData(schoolId);
       const postIds = mockDb.forumPosts.map(p => p.id);
-      if (postIds.length === 0) return;
+      if (postIds.length === 0) {
+        mockDb.forumReplies = [];
+        mockDb.saveAll();
+        return;
+      }
 
       const { data: dbReps } = await supabaseAdmin
         .from('forum_replies')
@@ -1139,12 +1192,18 @@ export const mockApi = {
         .in('post_id', postIds);
       
       if (dbReps) {
+        const dbRepIds = dbReps.map((r: any) => r.id);
+        mockDb.forumReplies = mockDb.forumReplies.filter(
+          rp => !postIds.includes(rp.postId) || dbRepIds.includes(rp.id)
+        );
+
         dbReps.forEach((r: any) => {
           const rep: ForumReply = {
             id: r.id,
             postId: r.post_id,
             authorId: r.author_id,
             content: r.content,
+            academicSessionId: r.academic_session_id || null,
             createdAt: r.created_at
           };
           const idx = mockDb.forumReplies.findIndex(x => x.id === rep.id);
