@@ -2484,14 +2484,27 @@ export const mockApi = {
       throw new Error(`Registration failed: The admission number "${admissionNumber}" is already in use in the system.`);
     }
 
-    // Verify uniqueness of Roll Number in the system
-    const { data: existingRoll } = await supabaseAdmin
+    // Resolve active academic session
+    const activeSessionId = await this.resolveActiveSessionId(schoolId);
+
+    // Verify uniqueness of Roll Number within the same school, class, and academic session
+    const targetClassId = classId || null;
+    let rollQuery = supabaseAdmin
       .from('students')
       .select('id')
-      .eq('roll_number', rollNumber)
-      .maybeSingle();
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', activeSessionId)
+      .eq('roll_number', rollNumber);
+    
+    if (targetClassId === null) {
+      rollQuery = rollQuery.is('class_id', null);
+    } else {
+      rollQuery = rollQuery.eq('class_id', targetClassId);
+    }
+
+    const { data: existingRoll } = await rollQuery.maybeSingle();
     if (existingRoll) {
-      throw new Error(`Registration failed: The roll number "${rollNumber}" is already in use in the system.`);
+      throw new Error(`Registration failed: The roll number "${rollNumber}" is already in use in this class and academic session.`);
     }
 
     // Check limits
@@ -2533,8 +2546,6 @@ export const mockApi = {
       throw new Error('Failed to create student database profile: ' + dbError.message);
     }
 
-    // Resolve active academic session
-    const activeSessionId = await this.resolveActiveSessionId(schoolId);
 
     // Insert into students table
     const { data: studentRow, error: studentErr } = await supabaseAdmin.from('students').insert({
@@ -3521,14 +3532,27 @@ export const mockApi = {
       throw new Error(`Registration failed: The admission number "${admissionNumber}" is already in use in the system.`);
     }
 
-    // Verify uniqueness of Roll Number in the system
-    const { data: existingRoll } = await supabaseAdmin
+    // Resolve active academic session
+    const activeSessionId = await this.resolveActiveSessionId(schoolId);
+
+    // Verify uniqueness of Roll Number within the same school, class, and academic session
+    const targetClassId = classId || null;
+    let rollQuery = supabaseAdmin
       .from('students')
       .select('id')
-      .eq('roll_number', rollNumber)
-      .maybeSingle();
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', activeSessionId)
+      .eq('roll_number', rollNumber);
+    
+    if (targetClassId === null) {
+      rollQuery = rollQuery.is('class_id', null);
+    } else {
+      rollQuery = rollQuery.eq('class_id', targetClassId);
+    }
+
+    const { data: existingRoll } = await rollQuery.maybeSingle();
     if (existingRoll) {
-      throw new Error(`Registration failed: The roll number "${rollNumber}" is already in use in the system.`);
+      throw new Error(`Registration failed: The roll number "${rollNumber}" is already in use in this class and academic session.`);
     }
 
     // Check limits
@@ -3571,8 +3595,6 @@ export const mockApi = {
       throw new Error('Failed to create student database profile: ' + dbError.message);
     }
 
-    // Resolve active academic session
-    const activeSessionId = await this.resolveActiveSessionId(schoolId);
 
     // Insert into students table
     const { data: studentRow, error: studentErr } = await supabaseAdmin.from('students').insert({
