@@ -2523,7 +2523,8 @@ export const mockApi = {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true
+      email_confirm: true,
+      user_metadata: { school_id: schoolId, role: 'STUDENT' }
     });
     if (authError || !authData.user) throw new Error('Failed to create student auth user: ' + (authError?.message || 'Unknown error'));
     
@@ -3142,7 +3143,8 @@ export const mockApi = {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true
+      email_confirm: true,
+      user_metadata: { school_id: schoolId, role: 'TEACHER' }
     });
     if (authError || !authData.user) throw new Error('Failed to create teacher auth user: ' + (authError?.message || 'Unknown error'));
     
@@ -3233,7 +3235,8 @@ export const mockApi = {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password: pass,
-      email_confirm: true
+      email_confirm: true,
+      user_metadata: { school_id: schoolId, role: 'PARENT' }
     });
     if (authError || !authData.user) throw new Error('Failed to create parent auth user: ' + (authError?.message || 'Unknown error'));
     
@@ -3398,7 +3401,7 @@ export const mockApi = {
   async adminDeleteUserByEmail(adminId: string, email: string): Promise<{ deleted: boolean; role: string; message: string }> {
     await delay(300);
 
-    // Fetch the target user from Supabase by email
+    // Fetch target user
     const { data: targetUser, error: userErr } = await supabaseAdmin
       .from('users')
       .select('id, role, school_id')
@@ -3407,6 +3410,26 @@ export const mockApi = {
 
     if (userErr || !targetUser) {
       return { deleted: false, role: 'UNKNOWN', message: `No user found with email: ${email}` };
+    }
+
+    // Fetch calling admin profile and verify school_id matches targetUser school_id
+    const { data: admin, error: adminErr } = await supabaseAdmin
+      .from('users')
+      .select('role, school_id')
+      .eq('id', adminId)
+      .single();
+
+    if (adminErr || !admin || admin.role !== 'ADMIN') {
+      return { deleted: false, role: 'UNAUTHORIZED', message: 'Unauthorized' };
+    }
+
+    const adminSchoolId = admin.school_id;
+    if (!adminSchoolId) {
+      return { deleted: false, role: 'UNAUTHORIZED', message: 'Admin has no associated school' };
+    }
+
+    if (targetUser.school_id !== adminSchoolId) {
+      return { deleted: false, role: 'UNAUTHORIZED', message: 'Unauthorized: You cannot delete a user belonging to another school.' };
     }
 
     const authUserId = targetUser.id;
@@ -3464,6 +3487,22 @@ export const mockApi = {
   async adminPurgeOrphanAuthByEmail(adminId: string, emails: string[]): Promise<{ email: string; purged: boolean; message: string }[]> {
     const results: { email: string; purged: boolean; message: string }[] = [];
 
+    // Fetch calling admin profile and verify school_id
+    const { data: admin, error: adminErr } = await supabaseAdmin
+      .from('users')
+      .select('role, school_id')
+      .eq('id', adminId)
+      .single();
+
+    if (adminErr || !admin || admin.role !== 'ADMIN') {
+      throw new Error('Unauthorized');
+    }
+
+    const adminSchoolId = admin.school_id;
+    if (!adminSchoolId) {
+      throw new Error('Admin has no associated school');
+    }
+
     for (const email of emails) {
       const normalised = email.trim().toLowerCase();
       try {
@@ -3475,6 +3514,35 @@ export const mockApi = {
         if (!match) {
           results.push({ email: normalised, purged: false, message: 'No auth entry found — already clean.' });
           continue;
+        }
+
+        // Verify school isolation: check public.users, raw_user_meta_data, and mockDb
+        const { data: dbUser } = await supabaseAdmin
+          .from('users')
+          .select('school_id')
+          .eq('email', normalised)
+          .maybeSingle();
+
+        if (dbUser) {
+          if (dbUser.school_id !== adminSchoolId) {
+            results.push({ email: normalised, purged: false, message: 'Unauthorized: This user belongs to another school.' });
+            continue;
+          }
+        } else {
+          // If they don't exist in public.users, check if they exist in auth.users
+          // but have user_metadata.school_id of another school
+          if (match.user_metadata && match.user_metadata.school_id) {
+            if (match.user_metadata.school_id !== adminSchoolId) {
+              results.push({ email: normalised, purged: false, message: 'Unauthorized: This user belongs to another school.' });
+              continue;
+            }
+          }
+          // Also check mockDb.users for any cached record of this user
+          const cachedUser = mockDb.users.find(u => u.email.toLowerCase() === normalised);
+          if (cachedUser && cachedUser.schoolId !== adminSchoolId) {
+            results.push({ email: normalised, purged: false, message: 'Unauthorized: This user belongs to another school.' });
+            continue;
+          }
         }
 
         // Also clean up public.users if it somehow still exists
@@ -3572,7 +3640,8 @@ export const mockApi = {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password: pass,
-      email_confirm: true
+      email_confirm: true,
+      user_metadata: { school_id: schoolId, role: 'STUDENT' }
     });
     if (authError || !authData.user) throw new Error('Failed to create student auth user: ' + (authError?.message || 'Unknown error'));
     
@@ -3667,7 +3736,8 @@ export const mockApi = {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password: pass,
-      email_confirm: true
+      email_confirm: true,
+      user_metadata: { school_id: schoolId, role: 'PARENT' }
     });
     if (authError || !authData.user) throw new Error('Failed to create parent auth user: ' + (authError?.message || 'Unknown error'));
     
@@ -4127,7 +4197,8 @@ export const mockApi = {
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email,
       password,
-      email_confirm: true
+      email_confirm: true,
+      user_metadata: { school_id: schoolId, role: 'ADMIN' }
     });
 
     if (authError || !authData.user) throw new Error('Failed to create admin auth user: ' + (authError?.message || 'Unknown error'));

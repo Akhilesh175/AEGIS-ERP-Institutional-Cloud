@@ -103,7 +103,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [dangerEmail, setDangerEmail] = useState('');
   const [dangerLoading, setDangerLoading] = useState(false);
   const [dangerResults, setDangerResults] = useState<{ email: string; deleted: boolean; role: string; message: string }[]>([]);
-  const [bulkEmails, setBulkEmails] = useState('jp@gmail.com\nakash@gmail.com\nsk@gmail.com\nram@gmail.com\njk@gmail.com\nmanan2@gmail.com\nbasant1@gmail.com\nrajan@gmail.com\nmanan3@gmail.com\nvishal1@gmail.com\njj@gmail.com\nak@gmail.com\nmanan@gmail.com\nmanan1@gmail.com\nvishal@gmail.com\nbasant@gmail.com');
+  const [bulkEmails, setBulkEmails] = useState('');
   const [bulkLoading, setBulkLoading] = useState(false);
   const [purgeLoading, setPurgeLoading] = useState(false);
   const [purgeResults, setPurgeResults] = useState<{ email: string; purged: boolean; message: string }[]>([]);
@@ -370,6 +370,19 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       setSubjects(sub);
       setFeeStructures(fees);
       setFeePayments(pays);
+
+      // Dynamically load only this school's user emails if bulkEmails is currently empty or default
+      const emailsList = [
+        ...st.map(s => s.userDetails?.email),
+        ...tc.map(t => t.userDetails?.email),
+        ...pr.map(p => p.userDetails?.email)
+      ].filter(Boolean);
+      
+      setBulkEmails(prev => {
+        // If the user has already typed/modified the field, do not overwrite it
+        if (prev !== '') return prev;
+        return emailsList.join('\n');
+      });
     } catch (err) {
       console.error(err);
     }
