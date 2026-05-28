@@ -415,6 +415,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   };
 
   useEffect(() => {
+    let interval: ReturnType<typeof setInterval> | undefined;
     if (activeTab === 'assignments') {
       loadAssignmentsList();
     } else if (activeTab === 'materials') {
@@ -423,7 +424,14 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       loadQuizzesList();
     } else if (activeTab === 'forums') {
       loadForumsData();
+      
+      interval = setInterval(() => {
+        loadForumsData();
+      }, 5000);
     }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
   }, [activeTab, teacherId, refreshTrigger]);
 
   const handleDeleteAssignment = async (id: string) => {

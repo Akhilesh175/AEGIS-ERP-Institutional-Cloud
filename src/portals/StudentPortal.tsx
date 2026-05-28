@@ -49,6 +49,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   const [selectedCategory, setSelectedCategory] = useState<any | null>(null);
   const [postTitle, setPostTitle] = useState('');
   const [postContent, setPostContent] = useState('');
+  const [postCategoryId, setPostCategoryId] = useState('');
   const [selectedPost, setSelectedPost] = useState<any | null>(null);
   const [postReplies, setPostReplies] = useState<any[]>([]);
   const [replyText, setReplyText] = useState('');
@@ -78,6 +79,13 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       await mockApi.syncForumCategoriesData(session.user.schoolId || '');
       await mockApi.syncForumPostsData(session.user.schoolId || '');
       await mockApi.syncForumRepliesData(session.user.schoolId || '');
+      
+      const cats = await mockApi.getForumCategories(session.user.schoolId);
+      setForumCategories(cats);
+      if (cats.length > 0 && !postCategoryId) {
+        setPostCategoryId(cats[0].id);
+      }
+
       const posts = await mockApi.getForumPosts();
       setForumPosts(posts.filter(p => p.schoolId === session.user.schoolId || !p.schoolId));
 
@@ -95,9 +103,23 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   useEffect(() => {
     const interval = setInterval(() => {
       syncSubscriptionPlan();
+      if (activeTab === 'forums') {
+        mockApi.syncForumCategoriesData(session?.user?.schoolId || '').then(() => {
+          mockApi.syncForumPostsData(session?.user?.schoolId || '').then(() => {
+            mockApi.syncForumRepliesData(session?.user?.schoolId || '').then(() => {
+              mockApi.getForumPosts().then(posts => {
+                setForumPosts(posts.filter(p => p.schoolId === session?.user?.schoolId || !p.schoolId));
+              });
+              if (selectedPost) {
+                mockApi.getForumPostReplies(selectedPost.id).then(reps => setPostReplies(reps));
+              }
+            });
+          });
+        });
+      }
     }, 10000);
     return () => clearInterval(interval);
-  }, [syncSubscriptionPlan]);
+  }, [syncSubscriptionPlan, activeTab, selectedPost, session?.user?.schoolId]);
 
   // Quiz Timer
   useEffect(() => {
@@ -205,10 +227,10 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   // Add Discussion Thread
   const handleCreateForumPost = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session || !postTitle.trim() || !postContent.trim()) return;
+    if (!session || !postTitle.trim() || !postContent.trim() || !postCategoryId) return;
 
     try {
-      await mockApi.createForumPost(session.user.id, postTitle, postContent);
+      await mockApi.createForumPost(session.user.id, postTitle, postContent, postCategoryId);
       setPostTitle('');
       setPostContent('');
       loadData();
@@ -772,6 +794,19 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                       className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
                       required
                     />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Select Category</label>
+                    <select 
+                      value={postCategoryId}
+                      onChange={(e) => setPostCategoryId(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                      required
+                    >
+                      {forumCategories.map(cat => (
+                        <option key={cat.id} value={cat.id}>{cat.name}</option>
+                      ))}
+                    </select>
                   </div>
                   <div className="space-y-1">
                     <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Thread Context</label>

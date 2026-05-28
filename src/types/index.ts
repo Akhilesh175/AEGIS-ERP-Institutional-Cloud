@@ -259,6 +259,7 @@ export interface ForumPost {
   authorId: string;
   title: string;
   content: string;
+  academicSessionId?: string | null;
   createdAt: string;
 }
 
@@ -267,6 +268,7 @@ export interface ForumReply {
   postId: string;
   authorId: string;
   content: string;
+  academicSessionId?: string | null;
   createdAt: string;
 }
 

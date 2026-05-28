@@ -4488,6 +4488,14 @@ export const mockApi = {
     return mockDb.announcements.filter(a => a.targetRoles.includes(role));
   },
 
+  async getForumCategories(schoolId?: string): Promise<ForumCategory[]> {
+    await delay();
+    if (schoolId) {
+      return mockDb.forumCategories.filter(c => c.schoolId === schoolId);
+    }
+    return mockDb.forumCategories;
+  },
+
   async getForumPosts(): Promise<(ForumPost & { schoolId: string; authorName: string; categoryName: string; repliesCount: number })[]> {
     await delay();
     return mockDb.forumPosts.map(p => {
@@ -4528,13 +4536,15 @@ export const mockApi = {
     academicSessionId?: string | null
   ): Promise<ForumCategory> {
     await delay(300);
+    const activeSessionId = academicSessionId || await this.resolveActiveSessionId(schoolId);
+
     const { data: r, error } = await supabaseAdmin
       .from('forum_categories')
       .insert([{
         school_id: schoolId,
         class_id: classId || null,
         subject_id: subjectId || null,
-        academic_session_id: academicSessionId || null,
+        academic_session_id: activeSessionId,
         name,
         description
       }])
@@ -4622,8 +4632,12 @@ export const mockApi = {
     mockDb.saveAll();
   },
 
-  async createForumPost(authorId: string, title: string, content: string, categoryId: string = 'fc-1'): Promise<void> {
+  async createForumPost(authorId: string, title: string, content: string, categoryId: string): Promise<void> {
     await delay(300);
+
+    if (!categoryId) {
+      throw new Error('Please select a discussion category first.');
+    }
 
     const user = mockDb.users.find(u => u.id === authorId);
     if (user && user.schoolId) {
@@ -4636,13 +4650,16 @@ export const mockApi = {
       }
     }
 
+    const activeSessionId = await this.resolveActiveSessionId(user?.schoolId || '');
+
     const { data: r, error } = await supabaseAdmin
       .from('forum_posts')
       .insert([{
         category_id: categoryId,
         author_id: authorId,
         title,
-        content
+        content,
+        academic_session_id: activeSessionId
       }])
       .select()
       .single();
@@ -4657,6 +4674,7 @@ export const mockApi = {
       authorId: r.author_id,
       title: r.title,
       content: r.content,
+      academicSessionId: r.academic_session_id || activeSessionId,
       createdAt: r.created_at
     };
 
@@ -4678,12 +4696,15 @@ export const mockApi = {
       }
     }
 
+    const activeSessionId = await this.resolveActiveSessionId(user?.schoolId || '');
+
     const { data: r, error } = await supabaseAdmin
       .from('forum_replies')
       .insert([{
         post_id: postId,
         author_id: authorId,
-        content
+        content,
+        academic_session_id: activeSessionId
       }])
       .select()
       .single();
@@ -4697,6 +4718,7 @@ export const mockApi = {
       postId: r.post_id,
       authorId: r.author_id,
       content: r.content,
+      academicSessionId: r.academic_session_id || activeSessionId,
       createdAt: r.created_at
     };
 

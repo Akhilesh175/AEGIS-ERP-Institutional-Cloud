@@ -2,12 +2,12 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { mockDb } from '../services/mockDb';
-import { Student, User } from '../types';
+import { Student, User, Quiz, QuizAttempt } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Eye, Award, DollarSign, Calendar, FileText, 
   User as UserIcon, ShieldAlert, CheckCircle, AlertCircle, UsersRound, Clock,
-  BookOpen, Play, Download
+  BookOpen, Play, Download, MessageCircle
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -24,7 +24,13 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
   const [academicRecord, setAcademicRecord] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [quizzes, setQuizzes] = useState<{ quiz: any; attempt?: any }[]>([]);
+  const [quizzes, setQuizzes] = useState<{ quiz: Quiz; attempt?: QuizAttempt }[]>([]);
+  
+  // Discussion state
+  const [forumPosts, setForumPosts] = useState<any[]>([]);
+  const [selectedPost, setSelectedPost] = useState<any | null>(null);
+  const [postReplies, setPostReplies] = useState<any[]>([]);
+  const [replyText, setReplyText] = useState('');
   const [refreshTrigger, setRefreshTrigger] = useState(0);
   const [materials, setMaterials] = useState<any[]>([]);
   const [materialsLoading, setMaterialsLoading] = useState(false);
@@ -72,6 +78,20 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
         setMaterials([]);
       }
       setMaterialsLoading(false);
+
+      if (studentObj) {
+        await mockApi.syncForumCategoriesData(studentObj.schoolId);
+        await mockApi.syncForumPostsData(studentObj.schoolId);
+        await mockApi.syncForumRepliesData(studentObj.schoolId);
+        
+        const allPosts = await mockApi.getForumPosts();
+        const cats = await mockApi.getForumCategories(studentObj.schoolId);
+        const allowedCats = cats.filter(c => c.classId === studentObj.classId || !c.classId);
+        const allowedCatIds = allowedCats.map(c => c.id);
+        
+        setForumPosts(allPosts.filter(p => allowedCatIds.includes(p.categoryId)));
+      }
+
       setLoading(false);
     } catch (err: any) {
       setError(err.message || 'Access Denied: Isolation boundary violation');
@@ -90,9 +110,31 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
   useEffect(() => {
     const interval = setInterval(() => {
       syncSubscriptionPlan();
+      
+      if (activeTab === 'forums' && selectedStudent) {
+        const studentObj = mockDb.students.find(s => s.id === selectedStudent);
+        if (studentObj) {
+          mockApi.syncForumCategoriesData(studentObj.schoolId).then(() => {
+            mockApi.syncForumPostsData(studentObj.schoolId).then(() => {
+              mockApi.syncForumRepliesData(studentObj.schoolId).then(() => {
+                mockApi.getForumPosts().then(allPosts => {
+                  mockApi.getForumCategories(studentObj.schoolId).then(cats => {
+                    const allowedCats = cats.filter(c => c.classId === studentObj.classId || !c.classId);
+                    const allowedCatIds = allowedCats.map(c => c.id);
+                    setForumPosts(allPosts.filter(p => allowedCatIds.includes(p.categoryId)));
+                  });
+                });
+                if (selectedPost) {
+                  mockApi.getForumPostReplies(selectedPost.id).then(reps => setPostReplies(reps));
+                }
+              });
+            });
+          });
+        }
+      }
     }, 10000);
     return () => clearInterval(interval);
-  }, [syncSubscriptionPlan]);
+  }, [syncSubscriptionPlan, activeTab, selectedStudent, selectedPost]);
 
   useEffect(() => {
     if (selectedStudent) {
@@ -109,6 +151,31 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       total: attList.length,
       pct: Math.round((present / attList.length) * 100)
     };
+  };
+
+  const handleSelectPost = async (post: any) => {
+    setSelectedPost(post);
+    try {
+      const reps = await mockApi.getForumPostReplies(post.id);
+      setPostReplies(reps);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const handleForumReplySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session || !selectedPost || !replyText.trim()) return;
+
+    try {
+      await mockApi.replyToForumPost(session.user.id, selectedPost.id, replyText);
+      setReplyText('');
+      const reps = await mockApi.getForumPostReplies(selectedPost.id);
+      setPostReplies(reps);
+      loadAcademicRecord();
+    } catch (err) {
+      console.error(err);
+    }
   };
 
   const parentUser = mockDb.users.find(u => u.id === session?.user?.id);
@@ -447,12 +514,89 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                 requiredTier="Basic" 
                 featureName="Communications & Forums"
               >
-                <GlassCard className="space-y-4">
-                  <h3 className="font-bold text-slate-100">Discussion Boards</h3>
-                  <p className="text-xs text-slate-400">
-                    Discussion boards are currently in read-only mode for parents. To discuss academic performance or syllabus details, please open the direct secure Chat Messenger drawer and select your child's homeroom teacher.
-                  </p>
-                </GlassCard>
+                <div className="space-y-6">
+                  {selectedPost ? (
+                    <GlassCard className="space-y-4 animate-fade-in">
+                      <button 
+                        onClick={() => setSelectedPost(null)}
+                        className="text-xs text-brand-400 hover:text-brand-300 font-semibold"
+                      >
+                        &larr; Back to discussion catalog
+                      </button>
+                      
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl space-y-3">
+                        <h4 className="font-bold text-slate-100 text-base">{selectedPost.title}</h4>
+                        <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line">{selectedPost.content}</p>
+                        <p className="text-[10px] text-slate-500">Posted by: {selectedPost.authorName}</p>
+                      </div>
+
+                      <div className="space-y-4">
+                        <h5 className="font-semibold text-slate-200 text-xs">Activity replies</h5>
+                        <div className="space-y-3 max-h-72 overflow-y-auto">
+                          {postReplies.length === 0 ? (
+                            <div className="text-center py-6 text-slate-500 text-xs">No responses posted yet. Be the first to reply!</div>
+                          ) : (
+                            postReplies.map(r => (
+                              <div key={r.id} className="p-3 bg-slate-900/20 border border-slate-850 rounded-xl space-y-1">
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="font-semibold text-slate-200 text-xs">{r.authorName}</span>
+                                  <span className="text-[9px] uppercase tracking-wider text-slate-500">{r.authorRole}</span>
+                                </div>
+                                <p className="text-xs text-slate-300 leading-relaxed">{r.content}</p>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Forum response creator */}
+                      <form onSubmit={handleForumReplySubmit} className="space-y-3">
+                        <textarea 
+                          placeholder="Write a constructive response..."
+                          rows={3}
+                          value={replyText}
+                          onChange={(e) => setReplyText(e.target.value)}
+                          className="w-full bg-slate-900/50 border border-slate-800 text-xs text-slate-100 rounded-xl p-3 focus:outline-none focus:border-brand-500 transition-colors"
+                          required
+                        />
+                        <button type="submit" className="glass-btn-primary text-xs">
+                          Publish Reply
+                        </button>
+                      </form>
+                    </GlassCard>
+                  ) : (
+                    <GlassCard className="space-y-6">
+                      <h3 className="font-bold text-slate-100 pb-3 border-b border-slate-850">Homeroom Classroom Forums</h3>
+                      <div className="space-y-4 max-h-[500px] overflow-y-auto pr-1">
+                        {forumPosts.length === 0 ? (
+                          <div className="text-center py-12 text-slate-500 text-xs">No active discussions available for this class.</div>
+                        ) : (
+                          forumPosts.map(p => (
+                            <div 
+                              key={p.id}
+                              onClick={() => handleSelectPost(p)}
+                              className="p-4 bg-slate-900/30 border border-slate-850 hover:border-slate-800 rounded-2xl cursor-pointer transition-all"
+                            >
+                              <div className="flex items-center justify-between mb-1.5">
+                                <span className="text-[9px] font-bold text-brand-400 uppercase tracking-widest">{p.categoryName}</span>
+                                <span className="text-[10px] text-slate-500 flex items-center gap-1">
+                                  <MessageCircle size={10} />
+                                  {p.repliesCount} replies
+                                </span>
+                              </div>
+                              <h4 className="font-bold text-slate-200 text-sm truncate">{p.title}</h4>
+                              <p className="text-xs text-slate-400 mt-1 line-clamp-2 leading-relaxed">{p.content}</p>
+                              <div className="mt-3 flex items-center justify-between text-[10px] text-slate-500">
+                                <span>By: {p.authorName}</span>
+                                <span>{new Date(p.createdAt).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </GlassCard>
+                  )}
+                </div>
               </PremiumLock>
             )}
 
