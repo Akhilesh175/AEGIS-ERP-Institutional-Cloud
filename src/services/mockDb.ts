@@ -4,7 +4,7 @@ import {
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizQuestion, 
   QuizAttempt, Exam, ExamSchedule, ExamMark, FeeStructure, FeePayment, 
   ForumCategory, ForumPost, ForumReply, ChatMessage, AuditLog, 
-  StudyMaterial, Announcement, Notification, SystemTelemetry, PhoneNumber
+  StudyMaterial, Announcement, Notification, SystemTelemetry, PhoneNumber, EmailAddress
 } from '../types';
 
 // Storage keys
@@ -242,6 +242,18 @@ const SEED_PHONE_NUMBERS: PhoneNumber[] = [
   { id: 'pn-11', userId: 'u-parent2', schoolId: 'school-1', phoneType: 'EMERGENCY', countryCode: '+1', nationalNumber: '5559118888', fullNumber: '+15559118888', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
 ];
 
+const SEED_EMAIL_ADDRESSES: EmailAddress[] = [
+  { id: 'ea-1', userId: 'u-superadmin', emailType: 'LOGIN', email: 'superadmin@aegis.com', isPrimary: true, isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'ea-2', userId: 'u-admin1', schoolId: 'school-1', emailType: 'LOGIN', email: 'admin@aegis.com', isPrimary: true, isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'ea-3', userId: 'u-teacher1', schoolId: 'school-1', emailType: 'LOGIN', email: 'teacher1@aegis.com', isPrimary: true, isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'ea-4', userId: 'u-teacher2', schoolId: 'school-1', emailType: 'LOGIN', email: 'teacher2@aegis.com', isPrimary: true, isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'ea-5', userId: 'u-student1', schoolId: 'school-1', emailType: 'LOGIN', email: 'student1@aegis.com', isPrimary: true, isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'ea-6', userId: 'u-student2', schoolId: 'school-1', emailType: 'LOGIN', email: 'student2@aegis.com', isPrimary: true, isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'ea-7', userId: 'u-student3', schoolId: 'school-1', emailType: 'LOGIN', email: 'student3@aegis.com', isPrimary: true, isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'ea-8', userId: 'u-parent1', schoolId: 'school-1', emailType: 'LOGIN', email: 'parent1@aegis.com', isPrimary: true, isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'ea-9', userId: 'u-parent2', schoolId: 'school-1', emailType: 'LOGIN', email: 'parent2@aegis.com', isPrimary: true, isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+];
+
 // --- MOCK DATABASE CLASS ---
 
 class MockDatabase {
@@ -276,6 +288,7 @@ class MockDatabase {
   chatMessages: ChatMessage[];
   auditLogs: AuditLog[];
   phoneNumbers: PhoneNumber[];
+  emailAddresses: EmailAddress[];
 
   constructor() {
     this.users = getStorage<User[]>('users', SEED_USERS);
@@ -322,6 +335,7 @@ class MockDatabase {
     this.chatMessages = getStorage<ChatMessage[]>('chat_messages', SEED_CHAT_MESSAGES);
     this.auditLogs = getStorage<AuditLog[]>('audit_logs', SEED_AUDIT_LOGS);
     this.phoneNumbers = getStorage<PhoneNumber[]>('phone_numbers', SEED_PHONE_NUMBERS);
+    this.emailAddresses = getStorage<EmailAddress[]>('email_addresses', SEED_EMAIL_ADDRESSES);
   }
 
   saveAll() {
@@ -355,6 +369,7 @@ class MockDatabase {
     setStorage('chat_messages', this.chatMessages);
     setStorage('audit_logs', this.auditLogs);
     setStorage('phone_numbers', this.phoneNumbers);
+    setStorage('email_addresses', this.emailAddresses);
     setStorage('academic_sessions', this.academicSessions);
   }
 

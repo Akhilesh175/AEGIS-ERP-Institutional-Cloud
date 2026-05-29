@@ -4,7 +4,7 @@ import {
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizAttempt, 
   Exam, ExamMark, FeeStructure, FeePayment, PaymentStatus, ChatMessage, Announcement, 
   Notification, AuditLog, StudyMaterial, ExamSchedule, 
-  TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory, PhoneNumber
+  TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory, PhoneNumber, EmailAddress
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans } from './subscriptionConfig';
@@ -67,6 +67,22 @@ function parseAndValidatePhone(phoneStr: string): { countryCode: string; nationa
     nationalNumber,
     fullNumber: countryCode + nationalNumber
   };
+}
+
+// ── Email Address Validation & Lowercase Normalization ─────────────────────
+function validateAndNormalizeEmail(emailStr: string): string {
+  if (!emailStr || !emailStr.trim()) {
+    throw new Error('Email address cannot be empty.');
+  }
+  const normalized = emailStr.trim().toLowerCase();
+  
+  // Standard strict RFC 5322 regex validation
+  const emailRegex = /^[a-z0-9._%+-]+@[a-z0-9.-]+\.[a-z]{2,}$/;
+  if (!emailRegex.test(normalized)) {
+    throw new Error(`Invalid email address format: "${emailStr}". Please provide a valid email (e.g. user@domain.com).`);
+  }
+  
+  return normalized;
 }
 
 // Secure session key
@@ -2637,6 +2653,8 @@ export const mockApi = {
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
 
+    const normalizedEmail = validateAndNormalizeEmail(email);
+
     // Verify system-wide uniqueness of Admission Number
     const { data: existingAdm } = await supabaseAdmin
       .from('students')
@@ -2684,7 +2702,7 @@ export const mockApi = {
     }
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: normalizedEmail,
       password,
       email_confirm: true,
       user_metadata: { school_id: schoolId, role: 'STUDENT' }
@@ -2696,7 +2714,7 @@ export const mockApi = {
     // Insert into users table
     const { error: dbError } = await supabaseAdmin.from('users').insert({
       id: newUserId,
-      email,
+      email: normalizedEmail,
       role: 'STUDENT',
       first_name: firstName,
       last_name: lastName,
@@ -2709,6 +2727,16 @@ export const mockApi = {
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create student database profile: ' + dbError.message);
     }
+
+    // Insert login email into email_addresses table
+    await supabaseAdmin.from('email_addresses').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      email_type: 'LOGIN',
+      email: normalizedEmail,
+      is_primary: true,
+      is_verified: true
+    });
 
     // Insert phone number into phone_numbers table if provided
     const parsedStudentPhone = parseAndValidatePhone(phone || '');
@@ -2744,7 +2772,7 @@ export const mockApi = {
 
     // Sync to local mockDb cache
     const user: User = {
-      id: newUserId, email, role: 'STUDENT', firstName, lastName,
+      id: newUserId, email: normalizedEmail, role: 'STUDENT', firstName, lastName,
       phone: phone || '', avatarUrl: '', isActive: true, schoolId,
       password, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
@@ -2769,7 +2797,20 @@ export const mockApi = {
       };
       mockDb.phoneNumbers.push(pn);
     }
-    mockDb.addLog(adminId, 'CREATE_STUDENT', { studentName: `${firstName} ${lastName}`, email });
+    const ea: EmailAddress = {
+      id: 'ea-' + Math.random().toString(36).substr(2, 9),
+      userId: newUserId,
+      schoolId,
+      emailType: 'LOGIN',
+      email: normalizedEmail,
+      isPrimary: true,
+      isVerified: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    mockDb.emailAddresses.push(ea);
+
+    mockDb.addLog(adminId, 'CREATE_STUDENT', { studentName: `${firstName} ${lastName}`, email: normalizedEmail });
     mockDb.saveAll();
   },
 
@@ -3305,6 +3346,8 @@ export const mockApi = {
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
 
+    const normalizedEmail = validateAndNormalizeEmail(email);
+
     // Verify system-wide uniqueness of Employee ID
     const { data: existingEmp } = await supabaseAdmin
       .from('teachers')
@@ -3329,7 +3372,7 @@ export const mockApi = {
     }
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: normalizedEmail,
       password,
       email_confirm: true,
       user_metadata: { school_id: schoolId, role: 'TEACHER' }
@@ -3341,7 +3384,7 @@ export const mockApi = {
     // Insert into users table
     const { error: dbError } = await supabaseAdmin.from('users').insert({
       id: newUserId,
-      email,
+      email: normalizedEmail,
       role: 'TEACHER',
       first_name: firstName,
       last_name: lastName,
@@ -3354,6 +3397,16 @@ export const mockApi = {
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create teacher database profile: ' + dbError.message);
     }
+
+    // Insert login email into email_addresses table
+    await supabaseAdmin.from('email_addresses').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      email_type: 'LOGIN',
+      email: normalizedEmail,
+      is_primary: true,
+      is_verified: true
+    });
 
     // Insert phone number into phone_numbers table if provided
     const parsedTeacherPhone = parseAndValidatePhone(phone);
@@ -3387,7 +3440,7 @@ export const mockApi = {
 
     // Sync to local mockDb cache
     const user: User = {
-      id: newUserId, email, role: 'TEACHER', firstName, lastName,
+      id: newUserId, email: normalizedEmail, role: 'TEACHER', firstName, lastName,
       phone: phone || '', avatarUrl: '', isActive: true, schoolId,
       password, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
@@ -3411,7 +3464,20 @@ export const mockApi = {
       };
       mockDb.phoneNumbers.push(pn);
     }
-    mockDb.addLog(adminId, 'CREATE_TEACHER', { teacherName: `${firstName} ${lastName}`, email });
+    const ea: EmailAddress = {
+      id: 'ea-' + Math.random().toString(36).substr(2, 9),
+      userId: newUserId,
+      schoolId,
+      emailType: 'LOGIN',
+      email: normalizedEmail,
+      isPrimary: true,
+      isVerified: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    mockDb.emailAddresses.push(ea);
+
+    mockDb.addLog(adminId, 'CREATE_TEACHER', { teacherName: `${firstName} ${lastName}`, email: normalizedEmail });
     mockDb.saveAll();
   },
 
@@ -3436,6 +3502,8 @@ export const mockApi = {
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
 
+    const normalizedEmail = validateAndNormalizeEmail(email);
+
     if (studentId && admissionNumber) {
       const student = mockDb.students.find(s => s.id === studentId);
       if (!student) throw new Error('Selected student not found in registries.');
@@ -3448,7 +3516,7 @@ export const mockApi = {
 
     const pass = password || 'password';
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: normalizedEmail,
       password: pass,
       email_confirm: true,
       user_metadata: { school_id: schoolId, role: 'PARENT' }
@@ -3460,7 +3528,7 @@ export const mockApi = {
     // Insert into users table
     const { error: dbError } = await supabaseAdmin.from('users').insert({
       id: newUserId,
-      email,
+      email: normalizedEmail,
       role: 'PARENT',
       first_name: firstName,
       last_name: lastName,
@@ -3473,6 +3541,16 @@ export const mockApi = {
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create parent database profile: ' + dbError.message);
     }
+
+    // Insert login email into email_addresses table
+    await supabaseAdmin.from('email_addresses').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      email_type: 'LOGIN',
+      email: normalizedEmail,
+      is_primary: true,
+      is_verified: true
+    });
 
     // Insert phone number into phone_numbers table if provided
     const parsedParentPhone = parseAndValidatePhone(phone);
@@ -3548,7 +3626,7 @@ export const mockApi = {
 
     // Sync to local mockDb cache
     const user: User = {
-      id: newUserId, email, role: 'PARENT', firstName, lastName,
+      id: newUserId, email: normalizedEmail, role: 'PARENT', firstName, lastName,
       phone, avatarUrl: '', isActive: true, schoolId,
       password: pass, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
@@ -3584,10 +3662,23 @@ export const mockApi = {
       };
       mockDb.phoneNumbers.push(pn);
     }
+    const ea: EmailAddress = {
+      id: 'ea-' + Math.random().toString(36).substr(2, 9),
+      userId: newUserId,
+      schoolId,
+      emailType: 'LOGIN',
+      email: normalizedEmail,
+      isPrimary: true,
+      isVerified: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    mockDb.emailAddresses.push(ea);
+
     if (resolvedStudentId && relationship) {
       mockDb.parentStudentMappings.push({ parentId: parentRow.id, studentId: resolvedStudentId, relationship });
     }
-    mockDb.addLog(adminId, 'CREATE_PARENT', { parentName: `${firstName} ${lastName}`, email, studentId });
+    mockDb.addLog(adminId, 'CREATE_PARENT', { parentName: `${firstName} ${lastName}`, email: normalizedEmail, studentId });
     mockDb.saveAll();
   },
 
@@ -3858,6 +3949,8 @@ export const mockApi = {
 
     const schoolId = teacher.schoolId;
 
+    const normalizedEmail = validateAndNormalizeEmail(email);
+
     // Verify system-wide uniqueness of Admission Number
     const { data: existingAdm } = await supabaseAdmin
       .from('students')
@@ -3906,7 +3999,7 @@ export const mockApi = {
     const pass = password || 'password';
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: normalizedEmail,
       password: pass,
       email_confirm: true,
       user_metadata: { school_id: schoolId, role: 'STUDENT' }
@@ -3918,7 +4011,7 @@ export const mockApi = {
     // Insert into users table
     const { error: dbError } = await supabaseAdmin.from('users').insert({
       id: newUserId,
-      email,
+      email: normalizedEmail,
       role: 'STUDENT',
       first_name: firstName,
       last_name: lastName,
@@ -3931,6 +4024,16 @@ export const mockApi = {
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create student database profile: ' + dbError.message);
     }
+
+    // Insert login email into email_addresses table
+    await supabaseAdmin.from('email_addresses').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      email_type: 'LOGIN',
+      email: normalizedEmail,
+      is_primary: true,
+      is_verified: true
+    });
 
     // Insert phone number into phone_numbers table if provided
     const parsedStudentPhone = parseAndValidatePhone(phone || '');
@@ -3964,7 +4067,7 @@ export const mockApi = {
     }
 
     const user: User = {
-      id: newUserId, email, role: 'STUDENT', firstName, lastName,
+      id: newUserId, email: normalizedEmail, role: 'STUDENT', firstName, lastName,
       phone: phone || '', avatarUrl: '', isActive: true, schoolId,
       password: pass, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
@@ -3989,7 +4092,20 @@ export const mockApi = {
       };
       mockDb.phoneNumbers.push(pn);
     }
-    mockDb.addLog(teacher.userId, 'CLASS_TEACHER_CREATE_STUDENT', { studentName: `${firstName} ${lastName}`, email, classId });
+    const ea: EmailAddress = {
+      id: 'ea-' + Math.random().toString(36).substr(2, 9),
+      userId: newUserId,
+      schoolId,
+      emailType: 'LOGIN',
+      email: normalizedEmail,
+      isPrimary: true,
+      isVerified: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    mockDb.emailAddresses.push(ea);
+
+    mockDb.addLog(teacher.userId, 'CLASS_TEACHER_CREATE_STUDENT', { studentName: `${firstName} ${lastName}`, email: normalizedEmail, classId });
     mockDb.saveAll();
   },
 
@@ -4026,9 +4142,11 @@ export const mockApi = {
 
     const schoolId = teacher.schoolId;
 
+    const normalizedEmail = validateAndNormalizeEmail(email);
+
     const pass = password || 'password';
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: normalizedEmail,
       password: pass,
       email_confirm: true,
       user_metadata: { school_id: schoolId, role: 'PARENT' }
@@ -4040,7 +4158,7 @@ export const mockApi = {
     // Insert into users table
     const { error: dbError } = await supabaseAdmin.from('users').insert({
       id: newUserId,
-      email,
+      email: normalizedEmail,
       role: 'PARENT',
       first_name: firstName,
       last_name: lastName,
@@ -4053,6 +4171,16 @@ export const mockApi = {
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create parent database profile: ' + dbError.message);
     }
+
+    // Insert login email into email_addresses table
+    await supabaseAdmin.from('email_addresses').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      email_type: 'LOGIN',
+      email: normalizedEmail,
+      is_primary: true,
+      is_verified: true
+    });
 
     // Insert primary phone number into phone_numbers table if provided
     const parsedParentPhone = parseAndValidatePhone(phone);
@@ -4107,7 +4235,7 @@ export const mockApi = {
     });
 
     const user: User = {
-      id: newUserId, email, role: 'PARENT', firstName, lastName,
+      id: newUserId, email: normalizedEmail, role: 'PARENT', firstName, lastName,
       phone, avatarUrl: '', isActive: true, schoolId,
       password: pass, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
@@ -4149,8 +4277,20 @@ export const mockApi = {
       };
       mockDb.phoneNumbers.push(pn);
     }
+    const ea: EmailAddress = {
+      id: 'ea-' + Math.random().toString(36).substr(2, 9),
+      userId: newUserId,
+      schoolId,
+      emailType: 'LOGIN',
+      email: normalizedEmail,
+      isPrimary: true,
+      isVerified: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    mockDb.emailAddresses.push(ea);
 
-    mockDb.addLog(teacher.userId, 'CLASS_TEACHER_CREATE_PARENT', { parentName: `${firstName} ${lastName}`, email, studentId });
+    mockDb.addLog(teacher.userId, 'CLASS_TEACHER_CREATE_PARENT', { parentName: `${firstName} ${lastName}`, email: normalizedEmail, studentId });
     mockDb.saveAll();
   },
 
@@ -4581,6 +4721,8 @@ export const mockApi = {
   },
 
   async superAdminCreateAdmin(superAdminId: string, email: string, firstName: string, lastName: string, schoolId: string, phone: string, password: string): Promise<void> {
+    const normalizedEmail = validateAndNormalizeEmail(email);
+
     // 0. Validate that the school actually exists in Supabase before inserting
     const { data: schoolCheck, error: schoolCheckError } = await supabaseAdmin
       .from('schools')
@@ -4597,7 +4739,7 @@ export const mockApi = {
 
     // 1. Create auth user with the provided password
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
-      email,
+      email: normalizedEmail,
       password,
       email_confirm: true,
       user_metadata: { school_id: schoolId, role: 'ADMIN' }
@@ -4608,7 +4750,7 @@ export const mockApi = {
     // 2. Insert into users table
     const { error: dbError } = await supabaseAdmin.from('users').insert({
       id: authData.user.id,
-      email,
+      email: normalizedEmail,
       role: 'ADMIN',
       first_name: firstName,
       last_name: lastName,
@@ -4639,6 +4781,16 @@ export const mockApi = {
       throw new Error('Failed to create school admin record: ' + adminTableError.message);
     }
 
+    // Insert login email into email_addresses table
+    await supabaseAdmin.from('email_addresses').insert({
+      user_id: authData.user.id,
+      school_id: schoolId,
+      email_type: 'LOGIN',
+      email: normalizedEmail,
+      is_primary: true,
+      is_verified: true
+    });
+
     // 4. Insert phone number into phone_numbers table if provided
     const parsedPhone = parseAndValidatePhone(phone);
     if (parsedPhone.fullNumber) {
@@ -4667,7 +4819,7 @@ export const mockApi = {
     // Sync newly created school admin with local mockDb cache
     const user: User = {
       id: authData.user.id,
-      email,
+      email: normalizedEmail,
       role: 'ADMIN',
       firstName,
       lastName,
@@ -4679,6 +4831,19 @@ export const mockApi = {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString()
     };
+
+    const ea: EmailAddress = {
+      id: 'ea-' + Math.random().toString(36).substr(2, 9),
+      userId: authData.user.id,
+      schoolId,
+      emailType: 'LOGIN',
+      email: normalizedEmail,
+      isPrimary: true,
+      isVerified: true,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+    mockDb.emailAddresses.push(ea);
 
     const existingUserIdx = mockDb.users.findIndex(x => x.id === authData.user.id);
     if (existingUserIdx === -1) {

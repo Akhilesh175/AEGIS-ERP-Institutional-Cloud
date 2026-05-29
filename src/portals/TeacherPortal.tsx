@@ -1550,8 +1550,21 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                             <td className="py-3 px-4 font-mono text-slate-400">{s.admissionNumber}</td>
                             <td className="py-3 px-4">
                               <div className="font-semibold text-slate-100">{s.userDetails.firstName} {s.userDetails.lastName}</div>
-                              <div className="text-[10px] text-slate-500">{s.userDetails.email}</div>
-                              {s.userDetails.phone && <div className="text-[10px] text-slate-400 font-mono mt-0.5">{s.userDetails.phone}</div>}
+                              <div className="text-[10px] text-slate-500 font-semibold">{s.userDetails.email}</div>
+                              {s.userDetails.phone && <div className="text-[10px] text-slate-400 font-mono mt-0.5">Primary: {s.userDetails.phone}</div>}
+                              {(() => {
+                                const emails = mockDb.emailAddresses.filter(ea => ea.userId === s.userDetails.id);
+                                const contactEmails = emails.filter(ea => ea.emailType !== 'LOGIN');
+                                return contactEmails.length > 0 ? (
+                                  <div className="flex flex-col gap-0.5 mt-0.5 border-t border-slate-800/40 pt-0.5">
+                                    {contactEmails.map(ea => (
+                                      <span key={ea.id} className="text-[9px] text-slate-500 font-mono">
+                                        ✉️ {ea.emailType}: {ea.email} {ea.isVerified && <span className="text-[8px] text-green-500">✓</span>}
+                                      </span>
+                                    ))}
+                                  </div>
+                                ) : null;
+                              })()}
                             </td>
                             <td className="py-3 px-4 space-y-1">
                               <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-slate-800 border border-slate-700 text-slate-300">
@@ -1580,9 +1593,19 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                                       </div>
                                       {p.userId && (() => {
                                         const emergency = mockDb.phoneNumbers.find(pn => pn.userId === p.userId && pn.phoneType === 'EMERGENCY');
-                                        return emergency ? (
-                                          <div className="text-amber-500 font-mono text-[9px] mt-0.5">🆘 Emergency: {emergency.fullNumber}</div>
-                                        ) : null;
+                                        const parentEmails = mockDb.emailAddresses.filter(ea => ea.userId === p.userId && ea.emailType !== 'LOGIN');
+                                        return (
+                                          <>
+                                            {emergency && (
+                                              <div className="text-amber-500 font-mono text-[9px] mt-0.5">🆘 Emergency: {emergency.fullNumber}</div>
+                                            )}
+                                            {parentEmails.map(ea => (
+                                              <div key={ea.id} className="text-slate-500 font-mono text-[8px] mt-0.5">
+                                                ✉️ {ea.emailType}: {ea.email} {ea.isVerified && <span className="text-[8px] text-green-500">✓</span>}
+                                              </div>
+                                            ))}
+                                          </>
+                                        );
                                       })()}
                                     </div>
                                   </div>

@@ -925,8 +925,21 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     <td className="py-3 px-4 text-slate-400">{s.className}</td>
                     <td className="py-3 px-4 text-slate-400">{s.rollNumber}</td>
                     <td className="py-3 px-4 text-slate-450">
-                      <div>{s.userDetails.email}</div>
-                      {s.userDetails.phone && <div className="text-[10px] text-slate-500 font-mono mt-0.5">{s.userDetails.phone}</div>}
+                      <div className="font-semibold">{s.userDetails.email}</div>
+                      {s.userDetails.phone && <div className="text-[10px] text-slate-500 font-mono mt-0.5">Phone: {s.userDetails.phone}</div>}
+                      {(() => {
+                        const emails = mockDb.emailAddresses.filter(ea => ea.userId === s.userDetails.id);
+                        const contactEmails = emails.filter(ea => ea.emailType !== 'LOGIN');
+                        return contactEmails.length > 0 ? (
+                          <div className="flex flex-col gap-0.5 mt-1 border-t border-slate-800/40 pt-1">
+                            {contactEmails.map(ea => (
+                              <span key={ea.id} className="text-[10px] text-slate-500 font-mono">
+                                ✉️ {ea.emailType}: {ea.email} {ea.isVerified && <span className="text-[9px] text-green-500">✓</span>}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null;
+                      })()}
                     </td>
                     <td className="py-3 px-4 flex items-center gap-3">
                       <button 
@@ -1014,8 +1027,21 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     <td className="py-3 px-4 text-slate-400">{t.specialization}</td>
                     <td className="py-3 px-4 text-slate-400">{t.qualification}</td>
                     <td className="py-3 px-4 text-slate-450">
-                      <div>{t.userDetails.email}</div>
-                      {t.userDetails.phone && <div className="text-[10px] text-slate-500 font-mono mt-0.5">{t.userDetails.phone}</div>}
+                      <div className="font-semibold">{t.userDetails.email}</div>
+                      {t.userDetails.phone && <div className="text-[10px] text-slate-500 font-mono mt-0.5">Phone: {t.userDetails.phone}</div>}
+                      {(() => {
+                        const emails = mockDb.emailAddresses.filter(ea => ea.userId === t.userDetails.id);
+                        const contactEmails = emails.filter(ea => ea.emailType !== 'LOGIN');
+                        return contactEmails.length > 0 ? (
+                          <div className="flex flex-col gap-0.5 mt-1 border-t border-slate-800/40 pt-1">
+                            {contactEmails.map(ea => (
+                              <span key={ea.id} className="text-[10px] text-slate-500 font-mono">
+                                ✉️ {ea.emailType}: {ea.email} {ea.isVerified && <span className="text-[9px] text-green-500">✓</span>}
+                              </span>
+                            ))}
+                          </div>
+                        ) : null;
+                      })()}
                     </td>
                     <td className="py-3 px-4 flex items-center gap-3">
                       <button 
@@ -1102,13 +1128,28 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                       </div>
                     </td>
                     <td className="py-3 px-4 text-slate-450">
-                      <div>{p.userDetails.email}</div>
+                      <div className="font-semibold">{p.userDetails.email}</div>
                       {p.userDetails.phone && <div className="text-[10px] text-slate-500 font-mono mt-0.5">Primary: {p.userDetails.phone}</div>}
                       {(() => {
                         const emergency = mockDb.phoneNumbers.find(pn => pn.userId === p.userDetails.id && pn.phoneType === 'EMERGENCY');
-                        return emergency ? (
-                          <div className="text-[10px] text-amber-500 font-mono mt-0.5">Emergency: {emergency.fullNumber}</div>
-                        ) : null;
+                        const emails = mockDb.emailAddresses.filter(ea => ea.userId === p.userDetails.id);
+                        const contactEmails = emails.filter(ea => ea.emailType !== 'LOGIN');
+                        return (
+                          <>
+                            {emergency && (
+                              <div className="text-[10px] text-amber-500 font-mono mt-0.5">Emergency: {emergency.fullNumber}</div>
+                            )}
+                            {contactEmails.length > 0 && (
+                              <div className="flex flex-col gap-0.5 mt-1 border-t border-slate-800/40 pt-1">
+                                {contactEmails.map(ea => (
+                                  <span key={ea.id} className="text-[10px] text-slate-500 font-mono">
+                                    ✉️ {ea.emailType}: {ea.email} {ea.isVerified && <span className="text-[9px] text-green-500">✓</span>}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
+                          </>
+                        );
                       })()}
                     </td>
                     <td className="py-3 px-4 flex items-center gap-3">

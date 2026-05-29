@@ -98,6 +98,20 @@ export interface PhoneNumber {
   updatedAt: string;
 }
 
+export type EmailAddressType = 'LOGIN' | 'CONTACT' | 'PERSONAL' | 'WORK';
+
+export interface EmailAddress {
+  id: string;
+  userId: string;
+  schoolId?: string;
+  emailType: EmailAddressType;
+  email: string;
+  isPrimary: boolean;
+  isVerified: boolean;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Student {
   id: string;
   userId: string;
