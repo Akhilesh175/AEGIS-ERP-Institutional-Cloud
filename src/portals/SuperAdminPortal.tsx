@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
+import { supabase } from '../lib/supabase';
 import { AuditLog, School, User } from '../types';
 import { mockDb } from '../services/mockDb';
 import { GlassCard } from '../components/GlassCard';
@@ -92,6 +93,27 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
     }, 4000); // Telemetry refresh every 4s
     return () => clearInterval(interval);
   }, [superAdminId, activeTab]);
+
+  // Real-time Supabase Postgres changes subscription for platform directories
+  useEffect(() => {
+    if (!superAdminId) return;
+
+    const handleSuperAdminSync = () => {
+      console.log('Realtime telemetry or tenant update detected, refreshing super admin dashboard...');
+      loadData();
+    };
+
+    const channel = supabase
+      .channel('superadmin-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schools' }, handleSuperAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handleSuperAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, handleSuperAdminSync)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [superAdminId]);
 
   useEffect(() => {
     if (activeTab === 'audits' && superAdminId) {

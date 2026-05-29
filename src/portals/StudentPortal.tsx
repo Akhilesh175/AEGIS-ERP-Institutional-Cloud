@@ -10,10 +10,55 @@ import {
 import { GlassCard } from '../components/GlassCard';
 import { 
   Calendar, Clock, BookOpen, PenTool, Award, Download, 
-  ExternalLink, UploadCloud, MessageCircle, DollarSign, PlayCircle 
+  ExternalLink, UploadCloud, MessageCircle, DollarSign, PlayCircle,
+  Paperclip, Trash2, Loader2, CheckCircle, X, FileText, AlertCircle, Eye, ClipboardList
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
+
+const renderVideoPlayer = (url: string) => {
+  if (!url) return null;
+  
+  // Detect YouTube
+  const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+  if (ytMatch) {
+    const embedUrl = `https://www.youtube.com/embed/${ytMatch[1]}`;
+    return (
+      <iframe
+        src={embedUrl}
+        className="w-full aspect-video rounded-xl border border-slate-800 bg-black"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
+      />
+    );
+  }
+
+  // Detect Vimeo
+  const vimeoMatch = url.match(/vimeo\.com\/(?:video\/)?([0-9]+)/i);
+  if (vimeoMatch) {
+    const embedUrl = `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+    return (
+      <iframe
+        src={embedUrl}
+        className="w-full aspect-video rounded-xl border border-slate-800 bg-black"
+        allow="autoplay; fullscreen; picture-in-picture"
+        allowFullScreen
+      />
+    );
+  }
+
+  // Fallback to native video player
+  return (
+    <video
+      key={url}
+      src={url}
+      controls
+      className="w-full max-h-96 rounded-xl border border-slate-800 bg-black"
+      autoPlay
+      controlsList="nodownload"
+    />
+  );
+};
 
 export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const { session, syncSubscriptionPlan } = useStore();
@@ -35,6 +80,10 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
   const [submittingText, setSubmittingText] = useState('');
   const [submittingFile, setSubmittingFile] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadState, setUploadState] = useState<'idle' | 'uploading' | 'success' | 'error'>('idle');
+  const [uploadError, setUploadError] = useState<string>('');
   
   // Video player state
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
@@ -56,8 +105,17 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   const [replyText, setReplyText] = useState('');
 
   const loadData = async () => {
-    if (!studentId) return;
     try {
+      const schoolId = session?.user?.schoolId || '';
+      if (schoolId) {
+        // Sync student registry database state first to avoid empty/null profile lookup errors
+        await mockApi.syncStudentsData(schoolId);
+      }
+
+      if (!studentId) return;
+      const studentObj = mockDb.students.find(s => s.id === studentId);
+      const classId = studentObj?.classId || null;
+
       await syncSubscriptionPlan();
       const tt = await mockApi.studentGetTimetable(studentId);
       setTimetable(tt);
@@ -71,19 +129,18 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       const qz = await mockApi.studentGetQuizzes(studentId);
       setQuizzes(qz);
 
-      const mat = await mockApi.getStudyMaterials();
+      const mat = await mockApi.getStudyMaterials(schoolId, classId);
       setMaterials(mat);
 
       const ann = await mockApi.getAnnouncements('STUDENT');
       setAnnouncements(ann);
 
-      await mockApi.syncStudentsData(session?.user?.schoolId || '');
-      await mockApi.syncForumCategoriesData(session?.user?.schoolId || '');
-      await mockApi.syncForumPostsData(session?.user?.schoolId || '');
-      await mockApi.syncForumRepliesData(session?.user?.schoolId || '');
+      await mockApi.syncStudentsData(schoolId);
+      await mockApi.syncForumCategoriesData(schoolId);
+      await mockApi.syncForumPostsData(schoolId);
+      await mockApi.syncForumRepliesData(schoolId);
       
-      const cats = await mockApi.getForumCategories(session?.user?.schoolId);
-      const studentObj = mockDb.students.find(s => s.id === studentId);
+      const cats = await mockApi.getForumCategories(schoolId);
       const allowedCats = cats.filter(c => c.classId === studentObj?.classId || !c.classId);
       
       setForumCategories(allowedCats);
@@ -144,6 +201,31 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
     };
   }, [activeTab, selectedPost, session?.user?.schoolId, studentId]);
 
+  // Real-time Supabase Postgres changes subscription for academic data
+  useEffect(() => {
+    if (!studentId) return;
+
+    const handleAcademicSync = () => {
+      console.log('Realtime academic update detected, refreshing student portal...');
+      loadData();
+    };
+
+    const channel = supabase
+      .channel('student-academic-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homeworks' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homework_attachments' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homework_submissions' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quizzes' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'timetables' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'study_materials' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, handleAcademicSync)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [studentId]);
+
   useEffect(() => {
     const interval = setInterval(() => {
       syncSubscriptionPlan();
@@ -188,6 +270,97 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
     }
     return;
   }, [activeQuiz, quizDurationLeft]);
+
+  // File handling helpers
+  const handleFileChange = async (file: File) => {
+    if (!file) return;
+    if (!selectedAssignment || !studentId) return;
+
+    // Validate size (max 50MB)
+    const MAX_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setUploadState('error');
+      setUploadError('File size exceeds the 50MB limit.');
+      return;
+    }
+
+    // Validate MIME type
+    const whitelist = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'application/zip',
+      'application/x-zip-compressed',
+      'video/mp4'
+    ];
+    if (!whitelist.includes(file.type)) {
+      setUploadState('error');
+      setUploadError('Unsupported file type. Please upload PDF, DOC/DOCX, JPG/PNG, ZIP, or MP4.');
+      return;
+    }
+
+    // Prepare and upload
+    setUploadState('uploading');
+    setUploadProgress(10);
+    setUploadError('');
+    setSelectedFile(file);
+
+    try {
+      // Simulate progress ticks for beautiful UI animation
+      const interval = setInterval(() => {
+        setUploadProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(interval);
+            return 90;
+          }
+          return prev + 15;
+        });
+      }, 150);
+
+      // Call API upload
+      const student = mockDb.students.find(s => s.id === studentId)!;
+      const schoolId = student.schoolId;
+      
+      // Delete old file first if we are re-uploading
+      if (submittingFile) {
+        await mockApi.deleteHomeworkSubmissionFile(submittingFile);
+      }
+
+      const publicUrl = await mockApi.uploadHomeworkSubmissionFile(
+        schoolId,
+        selectedAssignment.id,
+        studentId,
+        file
+      );
+
+      clearInterval(interval);
+      setUploadProgress(100);
+      setSubmittingFile(publicUrl);
+      setUploadState('success');
+    } catch (err: any) {
+      setUploadState('error');
+      setUploadError(err.message || 'File upload failed.');
+    }
+  };
+
+  const handleRemoveFile = async () => {
+    if (submittingFile) {
+      setUploadState('uploading');
+      try {
+        await mockApi.deleteHomeworkSubmissionFile(submittingFile);
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    setSubmittingFile('');
+    setSelectedFile(null);
+    setUploadState('idle');
+    setUploadProgress(0);
+    setUploadError('');
+  };
 
   // Submit Homework / Assignment
   const handleAssignmentSubmit = async (e: React.FormEvent) => {
@@ -323,9 +496,22 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       {/* Portal Identity Context Bar */}
       <div className="bg-gradient-to-r from-brand-950 to-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-          <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center shrink-0">
-            <BookOpen className="text-brand-400" size={24} />
-          </div>
+          {studentUser?.avatarUrl ? (
+            <img 
+              src={studentUser.avatarUrl} 
+              alt="" 
+              className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md shrink-0 animate-fade-in"
+              onError={(e) => {
+                // If link fails or is broken, clear it visually
+                (e.target as HTMLImageElement).src = '';
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center shrink-0">
+              <BookOpen className="text-brand-400" size={24} />
+            </div>
+          )}
           <div>
             <h2 className="text-xl font-bold text-slate-100 font-sans leading-none">{studentName} <span className="text-xs text-slate-400 font-normal ml-1">(Student)</span></h2>
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-2">
@@ -376,13 +562,15 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                 </h3>
               </div>
               
-              <div className="space-y-3 max-h-72 overflow-y-auto">
-                {timetable.length === 0 ? (
-                  <div className="text-center py-8 text-slate-500 text-xs">No lecture schedules registered for today.</div>
+              <div className="space-y-3 max-h-72 overflow-y-auto pr-1">
+                {timetable.filter(t => mockDb.subjects.some(s => s.id === t.subjectId)).length === 0 ? (
+                  <div className="text-center py-10 bg-slate-900/10 border border-dashed border-slate-850 rounded-2xl p-4 flex flex-col items-center justify-center gap-2">
+                    <Calendar size={24} className="text-slate-650 animate-pulse-subtle" />
+                    <p className="text-xs text-slate-500 font-semibold">No Lectures Scheduled Today</p>
+                  </div>
                 ) : (
-                  timetable.map(t => {
-                    const subject = mockDb.subjects.find(s => s.id === t.subjectId);
-                    if (!subject) return null;
+                  timetable.filter(t => mockDb.subjects.some(s => s.id === t.subjectId)).map(t => {
+                    const subject = mockDb.subjects.find(s => s.id === t.subjectId)!;
                     return (
                       <div 
                         key={t.id}
@@ -442,23 +630,30 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
             <div className="space-y-4">
               <h4 className="font-semibold text-slate-200 text-xs">Weekly Timetable Schedule</h4>
               <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1">
-                {timetable.map(t => {
-                  const subject = mockDb.subjects.find(s => s.id === t.subjectId);
-                  if (!subject) return null;
-                  return (
-                    <div key={t.id} className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl flex items-center justify-between">
-                      <div className="flex items-center gap-3">
-                        <span className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center font-bold text-xs text-brand-400">
-                          {t.dayOfWeek === 1 ? 'M' : t.dayOfWeek === 2 ? 'T' : t.dayOfWeek === 3 ? 'W' : 'Th'}
-                        </span>
-                        <div>
-                          <p className="font-semibold text-xs text-slate-200">{subject.name}</p>
-                          <p className="text-[10px] text-slate-400 mt-0.5">{t.classroomNumber || 'Main hall'} | {t.startTime} - {t.endTime}</p>
+                {timetable.filter(t => mockDb.subjects.some(s => s.id === t.subjectId)).length === 0 ? (
+                  <div className="text-center py-12 bg-slate-900/10 border border-dashed border-slate-850 rounded-2xl p-4 flex flex-col items-center justify-center gap-2">
+                    <Calendar size={28} className="text-slate-600 animate-pulse-subtle" />
+                    <p className="text-xs text-slate-400 font-semibold">No Classes Scheduled</p>
+                    <p className="text-[10px] text-slate-500">There are no weekly class schedules mapped for your course profile yet.</p>
+                  </div>
+                ) : (
+                  timetable.filter(t => mockDb.subjects.some(s => s.id === t.subjectId)).map(t => {
+                    const subject = mockDb.subjects.find(s => s.id === t.subjectId)!;
+                    return (
+                      <div key={t.id} className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <span className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center font-bold text-xs text-brand-400">
+                            {t.dayOfWeek === 1 ? 'M' : t.dayOfWeek === 2 ? 'T' : t.dayOfWeek === 3 ? 'W' : 'Th'}
+                          </span>
+                          <div>
+                            <p className="font-semibold text-xs text-slate-200">{subject.name}</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{t.classroomNumber || 'Main hall'} | {t.startTime} - {t.endTime}</p>
+                          </div>
                         </div>
                       </div>
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
 
@@ -466,51 +661,162 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
             <div className="space-y-4">
               <h4 className="font-semibold text-slate-200 text-xs">Upcoming Homework & Project Deadlines</h4>
               <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
-                {assignments.map(({ assignment, submission }) => {
-                  const subject = mockDb.subjects.find(s => s.id === assignment.subjectId);
-                  if (!subject) return null;
-                  return (
-                    <div key={assignment.id} className="p-3.5 bg-slate-900/40 border border-slate-850 rounded-xl space-y-3">
-                      <div className="flex justify-between items-start">
-                        <div>
-                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
-                            assignment.isHomework ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'
-                          }`}>
-                            {assignment.isHomework ? 'Daily Homework' : 'Major Assignment'}
-                          </span>
-                          <h5 className="font-semibold text-slate-200 text-xs mt-1.5">{assignment.title}</h5>
-                          <p className="text-[10px] text-slate-400 mt-0.5">{subject.name} | Due: {new Date(assignment.dueDate).toLocaleDateString()}</p>
+                {assignments.filter(({ assignment }) => mockDb.subjects.some(s => s.id === assignment.subjectId)).length === 0 ? (
+                  <div className="text-center py-12 bg-slate-900/10 border border-dashed border-slate-850 rounded-2xl p-4 flex flex-col items-center justify-center gap-2">
+                    <ClipboardList size={28} className="text-slate-650 animate-pulse-subtle" />
+                    <p className="text-xs text-slate-400 font-semibold">No Active Assignments</p>
+                    <p className="text-[10px] text-slate-500">You are completely caught up! No homework or major projects are pending.</p>
+                  </div>
+                ) : (
+                  assignments.filter(({ assignment }) => mockDb.subjects.some(s => s.id === assignment.subjectId)).map(({ assignment, submission }) => {
+                    const subject = mockDb.subjects.find(s => s.id === assignment.subjectId)!;
+                    return (
+                      <div key={assignment.id} className="p-3.5 bg-slate-900/40 border border-slate-850 rounded-xl space-y-3">
+                        <div className="flex justify-between items-start">
+                          <div>
+                            <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${
+                              assignment.isHomework ? 'bg-amber-500/10 text-amber-400' : 'bg-red-500/10 text-red-400'
+                            }`}>
+                              {assignment.isHomework ? 'Daily Homework' : 'Major Assignment'}
+                            </span>
+                            <h5 className="font-semibold text-slate-200 text-xs mt-1.5">{assignment.title}</h5>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{subject.name} | Due: {new Date(assignment.dueDate).toLocaleDateString()}</p>
+                          </div>
+                          <div>
+                            <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg ${
+                              submission 
+                                ? submission.marksObtained !== undefined 
+                                  ? 'bg-green-500/10 text-green-400' 
+                                  : 'bg-blue-500/10 text-blue-400'
+                                : 'bg-slate-850 text-slate-400'
+                            }`}>
+                              {submission 
+                                ? submission.marksObtained !== undefined 
+                                  ? `Graded: ${submission.marksObtained}/${assignment.maxMarks}` 
+                                  : 'Submitted' 
+                                : 'Pending'}
+                            </span>
+                          </div>
                         </div>
-                        <div>
-                          <span className={`text-[10px] font-bold px-2.5 py-1 rounded-lg ${
-                            submission 
-                              ? submission.marksObtained !== undefined 
-                                ? 'bg-green-500/10 text-green-400' 
-                                : 'bg-blue-500/10 text-blue-400'
-                              : 'bg-slate-850 text-slate-400'
-                          }`}>
-                            {submission 
-                              ? submission.marksObtained !== undefined 
-                                ? `Graded: ${submission.marksObtained}/${assignment.maxMarks}` 
-                                : 'Submitted' 
-                              : 'Pending'}
-                          </span>
-                        </div>
+                        <p className="text-[10px] text-slate-400 leading-relaxed">{assignment.description}</p>
+                        
+                        {assignment.attachments && assignment.attachments.length > 0 && (
+                          <div className="mt-2.5 pt-2.5 border-t border-slate-850/40 space-y-2">
+                            <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-500">Teacher's Resources ({assignment.attachments.length})</span>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {assignment.attachments.map((att) => (
+                                <div 
+                                  key={att.id} 
+                                  className="flex items-center justify-between gap-3 p-2 bg-slate-950/40 hover:bg-slate-950/70 border border-slate-850 hover:border-slate-800 rounded-xl transition-all"
+                                >
+                                  <div className="flex items-center gap-2 truncate">
+                                    <Paperclip size={12} className="text-brand-400 shrink-0" />
+                                    <span className="text-[10.5px] text-slate-300 truncate" title={att.fileName}>
+                                      {att.fileName}
+                                    </span>
+                                  </div>
+                                  <div className="flex gap-1 shrink-0">
+                                    <a 
+                                      href={att.fileUrl} 
+                                      target="_blank" 
+                                      rel="noopener noreferrer" 
+                                      className="p-1 hover:bg-slate-850 text-slate-400 hover:text-slate-200 rounded-lg transition-colors flex items-center justify-center"
+                                      title="View File"
+                                    >
+                                      <Eye size={12} />
+                                    </a>
+                                    <a 
+                                      href={att.fileUrl} 
+                                      download={att.fileName}
+                                      className="p-1 hover:bg-slate-850 text-slate-400 hover:text-slate-200 rounded-lg transition-colors flex items-center justify-center"
+                                      title="Download"
+                                    >
+                                      <Download size={12} />
+                                    </a>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                            
+                            {/* Rich inline preview for PDFs/Images/Videos */}
+                            {assignment.attachments.some(att => /\.(jpg|jpeg|png|webp|gif|pdf|mp4)$/i.test(att.fileName || att.fileUrl)) && (
+                              <div className="mt-2.5 flex flex-col gap-2.5">
+                                {assignment.attachments
+                                  .filter(att => /\.(jpg|jpeg|png|webp|gif|pdf|mp4)$/i.test(att.fileName || att.fileUrl))
+                                  .map((att) => {
+                                    const isImg = /\.(jpg|jpeg|png|webp|gif)$/i.test(att.fileName || att.fileUrl);
+                                    const isVideo = /\.(mp4)$/i.test(att.fileName || att.fileUrl);
+                                    const isPdf = /\.(pdf)$/i.test(att.fileName || att.fileUrl);
+                                    
+                                    return (
+                                      <div key={att.id} className="border border-slate-850 rounded-xl overflow-hidden bg-slate-950/20 max-h-56 flex flex-col">
+                                        <div className="bg-slate-950/40 px-3 py-1.5 border-b border-slate-850 flex items-center justify-between text-[10px] text-slate-400 font-mono">
+                                          <span className="truncate max-w-[200px]">{att.fileName}</span>
+                                          <span className="uppercase text-[9px] px-1.5 py-0.5 rounded bg-slate-900 border border-slate-800 shrink-0 font-bold">
+                                            {isImg ? 'Image' : isVideo ? 'Video' : 'PDF'}
+                                          </span>
+                                        </div>
+                                        <div className="flex-1 flex items-center justify-center p-2.5 bg-slate-900/10">
+                                          {isImg && (
+                                            <img src={att.fileUrl} alt={att.fileName} className="max-h-40 max-w-full object-contain rounded-lg shadow-inner" />
+                                          )}
+                                          {isVideo && (
+                                            <video src={att.fileUrl} controls className="max-h-40 max-w-full rounded-lg" />
+                                          )}
+                                          {isPdf && (
+                                            <iframe src={`${att.fileUrl}#toolbar=0`} className="w-full h-40 rounded-lg border-0" />
+                                          )}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {submission ? (
+                          <div className="flex gap-2 w-full mt-2">
+                            <a 
+                              href={submission.fileUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="flex-1 bg-slate-900/80 border border-slate-880 hover:border-slate-700 text-slate-300 hover:text-slate-100 font-semibold text-xs py-2 rounded-lg text-center hover:bg-slate-850 transition-all flex items-center justify-center gap-1.5"
+                            >
+                              <Eye size={13} /> View File
+                            </a>
+                            <button 
+                              onClick={() => {
+                                setSelectedAssignment(assignment);
+                                setSubmittingText(submission.submissionText || '');
+                                setSubmittingFile(submission.fileUrl || '');
+                                setUploadState('success');
+                                setSelectedFile(null);
+                              }}
+                              className="flex-1 bg-brand-500/10 hover:bg-brand-500 border border-brand-500/20 hover:border-brand-500/30 text-brand-400 hover:text-white font-semibold text-xs py-2 rounded-lg transition-all flex items-center justify-center gap-1.5"
+                            >
+                              <UploadCloud size={13} /> Re-upload
+                            </button>
+                          </div>
+                        ) : (
+                          <button 
+                            onClick={() => {
+                              setSelectedAssignment(assignment);
+                              setSubmittingText('');
+                              setSubmittingFile('');
+                              setUploadState('idle');
+                              setSelectedFile(null);
+                            }}
+                            className="w-full bg-brand-600/10 hover:bg-brand-600 border border-brand-500/20 text-brand-400 hover:text-white font-medium text-xs py-2 rounded-lg transition-colors flex items-center justify-center gap-1"
+                          >
+                            <UploadCloud size={13} />
+                            Upload Submissions
+                          </button>
+                        )}
                       </div>
-                      <p className="text-[10px] text-slate-400 leading-relaxed">{assignment.description}</p>
-                      
-                      {!submission && (
-                        <button 
-                          onClick={() => setSelectedAssignment(assignment)}
-                          className="w-full bg-brand-600/10 hover:bg-brand-600 border border-brand-500/20 text-brand-400 hover:text-white font-medium text-xs py-2 rounded-lg transition-colors flex items-center justify-center gap-1"
-                        >
-                          <UploadCloud size={13} />
-                          Upload Submissions
-                        </button>
-                      )}
-                    </div>
-                  );
-                })}
+                    );
+                  })
+                )}
               </div>
             </div>
           </div>
@@ -537,47 +843,50 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                   Close Screen
                 </button>
               </div>
-              <video 
-                src={activeVideoUrl} 
-                controls 
-                className="w-full max-h-96 rounded-xl border border-slate-800 bg-black"
-                autoPlay
-              />
+              {renderVideoPlayer(activeVideoUrl)}
             </div>
           )}
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {materials.map(m => (
-              <div key={m.id} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-brand-500/20 rounded-2xl flex flex-col justify-between gap-4 transition-all">
-                <div className="space-y-2">
-                  <span className="text-[10px] font-bold text-brand-400 font-mono uppercase tracking-wider">{m.subjectName}</span>
-                  <h4 className="font-bold text-slate-200 text-sm mt-0.5">{m.title}</h4>
-                  <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">{m.description || 'No description provided.'}</p>
+          {materials.length === 0 ? (
+            <div className="text-center py-16 bg-slate-900/10 border border-dashed border-slate-850 rounded-3xl p-6 flex flex-col items-center justify-center gap-3">
+              <BookOpen size={36} className="text-slate-650 animate-pulse-subtle" />
+              <p className="text-sm text-slate-350 font-semibold">No Study Materials Found</p>
+              <p className="text-xs text-slate-500 max-w-sm">Your instructors haven't uploaded any study materials or references yet.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+              {materials.map(m => (
+                <div key={m.id} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-brand-500/20 rounded-2xl flex flex-col justify-between gap-4 transition-all">
+                  <div className="space-y-2">
+                    <span className="text-[10px] font-bold text-brand-400 font-mono uppercase tracking-wider">{m.subjectName}</span>
+                    <h4 className="font-bold text-slate-200 text-sm mt-0.5">{m.title}</h4>
+                    <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">{m.description || 'No description provided.'}</p>
+                  </div>
+                  <div className="pt-2 flex items-center justify-between border-t border-slate-850">
+                    <span className="text-[10px] text-slate-500 truncate">Faculty: {m.teacherName}</span>
+                    {m.isVideoStreamable ? (
+                      <button 
+                        onClick={() => setActiveVideoUrl(m.fileUrl)}
+                        className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
+                      >
+                        <PlayCircle size={14} />
+                        Stream Live
+                      </button>
+                    ) : (
+                      <a 
+                        href={m.fileUrl} 
+                        download 
+                        className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
+                      >
+                        <Download size={14} />
+                        Download Resource
+                      </a>
+                    )}
+                  </div>
                 </div>
-                <div className="pt-2 flex items-center justify-between border-t border-slate-850">
-                  <span className="text-[10px] text-slate-500 truncate">Faculty: {m.teacherName}</span>
-                  {m.isVideoStreamable ? (
-                    <button 
-                      onClick={() => setActiveVideoUrl(m.fileUrl)}
-                      className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
-                    >
-                      <PlayCircle size={14} />
-                      Stream Live
-                    </button>
-                  ) : (
-                    <a 
-                      href={m.fileUrl} 
-                      download 
-                      className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
-                    >
-                      <Download size={14} />
-                      Download Resource
-                    </a>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
+              ))}
+            </div>
+          )}
         </GlassCard>
       )}
 
@@ -653,39 +962,46 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                 Quizzes & Interactive Online Tests
               </h3>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {quizzes.map(({ quiz, attempt }) => {
-                  const subject = mockDb.subjects.find(s => s.id === quiz.subjectId);
-                  if (!subject) return null;
-                  return (
-                    <div key={quiz.id} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-slate-800 rounded-2xl flex flex-col justify-between gap-4 transition-all">
-                      <div className="space-y-2">
-                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{subject.name}</span>
-                        <h4 className="font-bold text-slate-200 text-sm mt-0.5">{quiz.title}</h4>
-                        <p className="text-xs text-slate-400">Duration: {quiz.durationMinutes} minutes | Marks: {quiz.totalMarks}</p>
+              {quizzes.filter(({ quiz }) => mockDb.subjects.some(s => s.id === quiz.subjectId)).length === 0 ? (
+                <div className="text-center py-16 bg-slate-900/10 border border-dashed border-slate-850 rounded-3xl p-6 flex flex-col items-center justify-center gap-3">
+                  <PenTool size={36} className="text-slate-650 animate-pulse-subtle" />
+                  <p className="text-sm text-slate-350 font-semibold">No Quizzes Published</p>
+                  <p className="text-xs text-slate-500 max-w-sm">There are no academic quizzes or online assessments scheduled for your sections.</p>
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {quizzes.filter(({ quiz }) => mockDb.subjects.some(s => s.id === quiz.subjectId)).map(({ quiz, attempt }) => {
+                    const subject = mockDb.subjects.find(s => s.id === quiz.subjectId)!;
+                    return (
+                      <div key={quiz.id} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-slate-800 rounded-2xl flex flex-col justify-between gap-4 transition-all">
+                        <div className="space-y-2">
+                          <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{subject.name}</span>
+                          <h4 className="font-bold text-slate-200 text-sm mt-0.5">{quiz.title}</h4>
+                          <p className="text-xs text-slate-400">Duration: {quiz.durationMinutes} minutes | Marks: {quiz.totalMarks}</p>
+                        </div>
+                        
+                        <div className="pt-3 border-t border-slate-850 flex items-center justify-between">
+                          {attempt ? (
+                            <span className="text-xs font-semibold text-green-400 bg-green-500/10 px-2.5 py-1 rounded-lg">
+                              Attempted: {attempt.score}/{quiz.totalMarks} score
+                            </span>
+                          ) : (
+                            <>
+                              <span className="text-[10px] text-slate-500">Available Test</span>
+                              <button 
+                                onClick={() => handleStartQuiz(quiz)}
+                                className="bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs px-4 py-1.5 rounded-lg transition-colors"
+                              >
+                                Launch Quiz
+                              </button>
+                            </>
+                          )}
+                        </div>
                       </div>
-                      
-                      <div className="pt-3 border-t border-slate-850 flex items-center justify-between">
-                        {attempt ? (
-                          <span className="text-xs font-semibold text-green-400 bg-green-500/10 px-2.5 py-1 rounded-lg">
-                            Attempted: {attempt.score}/{quiz.totalMarks} score
-                          </span>
-                        ) : (
-                          <>
-                            <span className="text-[10px] text-slate-500">Available Test</span>
-                            <button 
-                              onClick={() => handleStartQuiz(quiz)}
-                              className="bg-brand-600 hover:bg-brand-500 text-white font-semibold text-xs px-4 py-1.5 rounded-lg transition-colors"
-                            >
-                              Launch Quiz
-                            </button>
-                          </>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+                    );
+                  })}
+                </div>
+              )}
             </GlassCard>
           )}
         </div>
@@ -701,38 +1017,46 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
             </h3>
           </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-850 text-slate-400 font-bold">
-                  <th className="py-3 px-4">Subject</th>
-                  <th className="py-3 px-4">Assessment name</th>
-                  <th className="py-3 px-4">Marks Scored</th>
-                  <th className="py-3 px-4">Max Marks</th>
-                  <th className="py-3 px-4">Remarks & Feedbacks</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-850">
-                {grades.map(({ schedule, mark, subject, examName }) => (
-                  <tr key={schedule.id} className="hover:bg-slate-900/10 text-slate-200">
-                    <td className="py-3 px-4 font-semibold">{subject.name}</td>
-                    <td className="py-3 px-4 text-slate-400">{examName}</td>
-                    <td className="py-3 px-4">
-                      {mark ? (
-                        <span className={`font-bold text-sm ${mark.marksObtained >= 80 ? 'text-green-400' : 'text-slate-200'}`}>
-                          {mark.marksObtained}
-                        </span>
-                      ) : (
-                        <span className="text-slate-500">Grading Pending</span>
-                      )}
-                    </td>
-                    <td className="py-3 px-4 text-slate-400">{schedule.maxMarks}</td>
-                    <td className="py-3 px-4 text-slate-400 italic truncate max-w-xs">{mark ? mark.remarks : '-'}</td>
+          {grades.length === 0 ? (
+            <div className="text-center py-16 p-6 flex flex-col items-center justify-center gap-3">
+              <Award size={36} className="text-slate-650 animate-pulse-subtle" />
+              <p className="text-sm text-slate-350 font-semibold">No Term Reports Mapped</p>
+              <p className="text-xs text-slate-500 max-w-sm">No exam schedules or mid-term assessment marks have been published for this academic cycle yet.</p>
+            </div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-slate-400 font-bold">
+                    <th className="py-3 px-4">Subject</th>
+                    <th className="py-3 px-4">Assessment name</th>
+                    <th className="py-3 px-4">Marks Scored</th>
+                    <th className="py-3 px-4">Max Marks</th>
+                    <th className="py-3 px-4">Remarks & Feedbacks</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </thead>
+                <tbody className="divide-y divide-slate-850">
+                  {grades.map(({ schedule, mark, subject, examName }) => (
+                    <tr key={schedule.id} className="hover:bg-slate-900/10 text-slate-200">
+                      <td className="py-3 px-4 font-semibold">{subject.name}</td>
+                      <td className="py-3 px-4 text-slate-400">{examName}</td>
+                      <td className="py-3 px-4">
+                        {mark ? (
+                          <span className={`font-bold text-sm ${mark.marksObtained >= 80 ? 'text-green-400' : 'text-slate-200'}`}>
+                            {mark.marksObtained}
+                          </span>
+                        ) : (
+                          <span className="text-slate-500">Grading Pending</span>
+                        )}
+                      </td>
+                      <td className="py-3 px-4 text-slate-400">{schedule.maxMarks}</td>
+                      <td className="py-3 px-4 text-slate-400 italic truncate max-w-xs">{mark ? mark.remarks : '-'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </GlassCard>
       )}
 
@@ -909,16 +1233,107 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                 />
               </div>
 
-              <div className="space-y-1">
-                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">File Attachment Name (e.g. proof.pdf)</label>
-                <input 
-                  type="text"
-                  placeholder="homework_sub.pdf"
-                  value={submittingFile}
-                  onChange={(e) => setSubmittingFile(e.target.value)}
-                  className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
-                  required
-                />
+              <div className="space-y-2">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Attach Homework / Assignment Files</label>
+                
+                {uploadState === 'idle' && !submittingFile && (
+                  <div 
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                        handleFileChange(e.dataTransfer.files[0]);
+                      }
+                    }}
+                    onClick={() => document.getElementById('homework-file-picker')?.click()}
+                    className="border-2 border-dashed border-slate-800 hover:border-brand-500/50 hover:bg-brand-500/5 rounded-2xl p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all duration-300 group"
+                  >
+                    <input 
+                      type="file" 
+                      id="homework-file-picker" 
+                      className="hidden" 
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleFileChange(e.target.files[0]);
+                        }
+                      }}
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.zip,.mp4"
+                    />
+                    <UploadCloud size={32} className="text-slate-500 group-hover:text-brand-400 group-hover:scale-110 transition-all duration-300" />
+                    <p className="text-xs font-semibold text-slate-300">Drag & drop your file here, or <span className="text-brand-400 hover:underline">browse</span></p>
+                    <p className="text-[9px] text-slate-500 text-center font-medium">Supports PDF, DOCX, ZIP, JPG, PNG, MP4 up to 50MB</p>
+                  </div>
+                )}
+
+                {uploadState === 'uploading' && (
+                  <div className="border border-slate-800 bg-slate-950/40 rounded-2xl p-5 flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
+                      <Loader2 size={20} className="text-brand-400 animate-spin" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-300 truncate">Uploading attachment...</p>
+                        <p className="text-[9px] text-slate-500">Please wait while we secure your submission</p>
+                      </div>
+                      <span className="text-xs font-bold text-brand-400 font-mono">{uploadProgress}%</span>
+                    </div>
+                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-brand-500 h-full rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(59,130,246,0.5)]" 
+                        style={{ width: `${uploadProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {uploadState === 'success' && submittingFile && (
+                  <div className="border border-green-500/20 bg-green-500/5 rounded-2xl p-4 flex items-center justify-between gap-3 animate-fade-in">
+                    <div className="flex items-center gap-3 truncate">
+                      <div className="w-10 h-10 rounded-xl bg-green-500/10 border border-green-500/25 flex items-center justify-center shrink-0">
+                        <FileText size={18} className="text-green-400" />
+                      </div>
+                      <div className="truncate">
+                        <p className="text-xs font-bold text-slate-200 truncate">
+                          {selectedFile ? selectedFile.name : submittingFile.split('/').pop()?.split('_').slice(2).join('_') || 'homework_attachment'}
+                        </p>
+                        <p className="text-[9px] text-green-400 font-mono font-bold flex items-center gap-1">
+                          <CheckCircle size={10} className="text-green-400" /> Securely Attached
+                        </p>
+                      </div>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={handleRemoveFile}
+                      className="p-2 hover:bg-red-500/10 border border-transparent hover:border-red-500/20 text-slate-400 hover:text-red-400 rounded-xl transition-all duration-200"
+                      title="Remove attachment"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                )}
+
+                {uploadState === 'error' && (
+                  <div className="border border-red-500/20 bg-red-500/5 rounded-2xl p-4 flex flex-col gap-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-10 h-10 rounded-xl bg-red-500/10 border border-red-500/25 flex items-center justify-center shrink-0">
+                        <AlertCircle size={18} className="text-red-400" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-bold text-slate-200">Upload Failed</p>
+                        <p className="text-[9px] text-red-400 font-medium line-clamp-1">{uploadError}</p>
+                      </div>
+                      <button 
+                        type="button" 
+                        onClick={() => {
+                          setUploadState('idle');
+                          setSelectedFile(null);
+                          setSubmittingFile('');
+                        }}
+                        className="text-[10px] font-bold text-slate-400 hover:text-slate-200 uppercase tracking-widest font-mono"
+                      >
+                        Try Again
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex justify-end gap-2 pt-2">
@@ -931,9 +1346,14 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                 </button>
                 <button 
                   type="submit" 
-                  className="glass-btn-primary text-xs"
+                  disabled={!submittingFile || uploadState === 'uploading'}
+                  className={`glass-btn-primary text-xs flex items-center gap-1.5 ${(!submittingFile || uploadState === 'uploading') ? 'opacity-40 cursor-not-allowed' : ''}`}
                 >
-                  Submit File
+                  {uploadState === 'uploading' ? (
+                    <>
+                      <Loader2 size={13} className="animate-spin" /> Submitting...
+                    </>
+                  ) : 'Submit Homework'}
                 </button>
               </div>
             </form>

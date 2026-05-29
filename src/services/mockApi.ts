@@ -4,7 +4,7 @@ import {
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizAttempt, 
   Exam, ExamMark, FeeStructure, FeePayment, PaymentStatus, ChatMessage, Announcement, 
   Notification, AuditLog, StudyMaterial, ExamSchedule, 
-  TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory, PhoneNumber, EmailAddress
+  TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory, PhoneNumber, EmailAddress, Section, HomeworkAttachment
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans } from './subscriptionConfig';
@@ -283,6 +283,300 @@ export const mockApi = {
     }
   },
 
+  async uploadHomeworkSubmissionFile(schoolId: string, homeworkId: string, studentId: string, file: File): Promise<string> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(schoolId) || !isUUID(homeworkId) || !isUUID(studentId)) {
+      throw new Error('Invalid format for school, homework, or student ID. Must be UUID.');
+    }
+
+    // Validate size (max 50MB)
+    const MAX_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      throw new Error('File exceeds the maximum size limit of 50MB.');
+    }
+
+    // Validate MIME type
+    const whitelist = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'application/zip',
+      'application/x-zip-compressed',
+      'video/mp4'
+    ];
+    if (!whitelist.includes(file.type)) {
+      throw new Error(`File type "${file.type}" is not supported. Please upload PDF, DOC/DOCX, JPG/PNG, ZIP, or MP4.`);
+    }
+
+    // Sanitize filename
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const timestamp = Date.now();
+    const filePath = `${schoolId}/${homeworkId}/${studentId}_${timestamp}_${sanitizedName}`;
+
+    // Upload using admin client to guarantee permissions bypass
+    const { data, error } = await supabaseAdmin.storage
+      .from('homeworks')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true
+      });
+
+    if (error) {
+      throw new Error('Storage upload failed: ' + error.message);
+    }
+
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('homeworks')
+      .getPublicUrl(filePath);
+
+    return publicUrl;
+  },
+
+  async deleteHomeworkSubmissionFile(fileUrl: string): Promise<void> {
+    if (!fileUrl) return;
+    try {
+      const parts = fileUrl.split('/homeworks/');
+      if (parts.length > 1) {
+        const filePath = parts[1];
+        await supabaseAdmin.storage.from('homeworks').remove([filePath]);
+      }
+    } catch (err) {
+      console.error('Failed to remove submission file from storage:', err);
+    }
+  },
+
+  async uploadHomeworkFileOnly(schoolId: string, homeworkId: string, file: File): Promise<string> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(schoolId) || !isUUID(homeworkId)) {
+      throw new Error('Invalid format for school or homework ID. Must be UUID.');
+    }
+
+    // Validate size (max 50MB)
+    const MAX_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      throw new Error('File exceeds the maximum size limit of 50MB.');
+    }
+
+    // Validate MIME type
+    const whitelist = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/zip',
+      'application/x-zip-compressed',
+      'video/mp4'
+    ];
+    if (!whitelist.includes(file.type)) {
+      throw new Error(`File type "${file.type}" is not supported. Please upload PDF, DOC/DOCX, JPG/PNG/WEBP, ZIP, or MP4.`);
+    }
+
+    // Sanitize filename
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const timestamp = Date.now();
+    const filePath = `${schoolId}/${homeworkId}/teacher_${timestamp}_${sanitizedName}`;
+
+    // Upload to storage bucket
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('homeworks')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true
+      });
+
+    if (uploadError) {
+      throw new Error('Storage upload failed: ' + uploadError.message);
+    }
+
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('homeworks')
+      .getPublicUrl(filePath);
+
+    return publicUrl;
+  },
+
+  async teacherInsertHomeworkAttachmentMetadata(schoolId: string, homeworkId: string, teacherId: string, fileUrl: string, fileName: string, mimeType: string): Promise<HomeworkAttachment> {
+    const academicSessionId = await this.resolveActiveSessionId(schoolId);
+
+    const { data: dbAttachment, error: dbError } = await supabaseAdmin
+      .from('homework_attachments')
+      .insert({
+        homework_id: homeworkId,
+        file_url: fileUrl,
+        file_name: fileName,
+        file_type: mimeType.split('/')[1] || 'document',
+        mime_type: mimeType,
+        uploaded_by: mockDb.teachers.find(t => t.id === teacherId)?.userId || null,
+        school_id: schoolId,
+        academic_session_id: academicSessionId
+      })
+      .select()
+      .single();
+
+    if (dbError || !dbAttachment) {
+      throw new Error('Failed to save attachment metadata to database: ' + (dbError?.message || 'Unknown error'));
+    }
+
+    const att: HomeworkAttachment = {
+      id: dbAttachment.id,
+      homeworkId: dbAttachment.homework_id,
+      fileUrl: dbAttachment.file_url,
+      fileName: dbAttachment.file_name,
+      fileType: dbAttachment.file_type || null,
+      mimeType: dbAttachment.mime_type || null,
+      uploadedBy: dbAttachment.uploaded_by || null,
+      schoolId: dbAttachment.school_id,
+      academicSessionId: dbAttachment.academic_session_id || academicSessionId,
+      uploadedAt: dbAttachment.uploaded_at
+    };
+
+    mockDb.homeworkAttachments.push(att);
+    mockDb.saveAll();
+
+    return att;
+  },
+
+  async teacherUploadHomeworkAttachment(schoolId: string, homeworkId: string, teacherId: string, file: File): Promise<HomeworkAttachment> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(schoolId) || !isUUID(homeworkId) || !isUUID(teacherId)) {
+      throw new Error('Invalid format for IDs. Must be UUID.');
+    }
+
+    // Validate size (max 50MB)
+    const MAX_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      throw new Error('File exceeds the maximum size limit of 50MB.');
+    }
+
+    // Validate MIME type
+    const whitelist = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/zip',
+      'application/x-zip-compressed',
+      'video/mp4'
+    ];
+    if (!whitelist.includes(file.type)) {
+      throw new Error(`File type "${file.type}" is not supported. Please upload PDF, DOC/DOCX, JPG/PNG/WEBP, ZIP, or MP4.`);
+    }
+
+    // Sanitize filename
+    const sanitizedName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+    const timestamp = Date.now();
+    const filePath = `${schoolId}/${homeworkId}/teacher_${timestamp}_${sanitizedName}`;
+
+    // Upload to storage bucket
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('homeworks')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true
+      });
+
+    if (uploadError) {
+      throw new Error('Storage upload failed: ' + uploadError.message);
+    }
+
+    // Resolve public URL
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('homeworks')
+      .getPublicUrl(filePath);
+
+    // Resolve active academic session
+    const academicSessionId = await this.resolveActiveSessionId(schoolId);
+
+    // Insert metadata record into table
+    const { data: dbAttachment, error: dbError } = await supabaseAdmin
+      .from('homework_attachments')
+      .insert({
+        homework_id: homeworkId,
+        file_url: publicUrl,
+        file_name: file.name,
+        file_type: file.type.split('/')[1] || 'document',
+        mime_type: file.type,
+        uploaded_by: mockDb.teachers.find(t => t.id === teacherId)?.userId || null,
+        school_id: schoolId,
+        academic_session_id: academicSessionId
+      })
+      .select()
+      .single();
+
+    if (dbError || !dbAttachment) {
+      // Rollback file upload on metadata insertion failure
+      await supabaseAdmin.storage.from('homeworks').remove([filePath]);
+      throw new Error('Failed to save attachment metadata to database: ' + (dbError?.message || 'Unknown error'));
+    }
+
+    // Insert into mockDb local cache
+    const att: HomeworkAttachment = {
+      id: dbAttachment.id,
+      homeworkId: dbAttachment.homework_id,
+      fileUrl: dbAttachment.file_url,
+      fileName: dbAttachment.file_name,
+      fileType: dbAttachment.file_type || null,
+      mimeType: dbAttachment.mime_type || null,
+      uploadedBy: dbAttachment.uploaded_by || null,
+      schoolId: dbAttachment.school_id,
+      academicSessionId: dbAttachment.academic_session_id || academicSessionId,
+      uploadedAt: dbAttachment.uploaded_at
+    };
+
+    mockDb.homeworkAttachments.push(att);
+    mockDb.saveAll();
+
+    return att;
+  },
+
+  async teacherDeleteHomeworkAttachment(attachmentId: string): Promise<void> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(attachmentId)) {
+      // Local mockup cleanup
+      mockDb.homeworkAttachments = mockDb.homeworkAttachments.filter(att => att.id !== attachmentId);
+      mockDb.saveAll();
+      return;
+    }
+
+    // Fetch attachment metadata from database
+    const { data: dbAttachment } = await supabaseAdmin
+      .from('homework_attachments')
+      .select('*')
+      .eq('id', attachmentId)
+      .maybeSingle();
+
+    if (dbAttachment) {
+      try {
+        const parts = dbAttachment.file_url.split('/homeworks/');
+        if (parts.length > 1) {
+          const filePath = parts[1];
+          await supabaseAdmin.storage.from('homeworks').remove([filePath]);
+        }
+      } catch (err) {
+        console.error('Failed to remove attachment file from storage:', err);
+      }
+
+      // Delete database record
+      await supabaseAdmin
+        .from('homework_attachments')
+        .delete()
+        .eq('id', attachmentId);
+    }
+
+    mockDb.homeworkAttachments = mockDb.homeworkAttachments.filter(att => att.id !== attachmentId);
+    mockDb.saveAll();
+  },
+
+
   // ==========================================
   // 1. AUTHENTICATION & SESSION MANAGEMENT
   // ==========================================
@@ -508,7 +802,13 @@ export const mockApi = {
     await this.syncAssignmentsData(student.schoolId);
     await this.syncAssignmentSubmissionsData(student.schoolId);
 
-    const assignments = mockDb.assignments.filter(a => a.classId === student.classId);
+    // Apply strict boundaries: match class, section (if active), and academic session
+    const assignments = mockDb.assignments.filter(a => {
+      const classMatches = a.classId === student.classId;
+      const sectionMatches = !student.sectionId || !a.sectionId || a.sectionId === student.sectionId;
+      const sessionMatches = a.academicSessionId === student.academicSessionId;
+      return classMatches && sectionMatches && sessionMatches;
+    });
     
     return assignments.map(assignment => {
       const submission = mockDb.assignmentSubmissions.find(
@@ -525,24 +825,28 @@ export const mockApi = {
     const validStudentId = isUUID(studentId) ? studentId : null;
     const validAssignmentId = isUUID(assignmentId) ? assignmentId : null;
 
+    const student = mockDb.students.find(s => s.id === studentId);
+    const schoolId = student?.schoolId;
+    const academicSessionId = student?.academicSessionId;
+
     let subRow: any = null;
     
     // Check if submission already exists in database first
     if (validStudentId && validAssignmentId) {
       try {
         const { data: existingSub } = await supabaseAdmin
-          .from('assignment_submissions')
+          .from('homework_submissions')
           .select('id')
-          .eq('assignment_id', validAssignmentId)
+          .eq('homework_id', validAssignmentId)
           .eq('student_id', validStudentId)
           .maybeSingle();
 
         if (existingSub) {
           const { data: updatedSub, error: updateErr } = await supabaseAdmin
-            .from('assignment_submissions')
+            .from('homework_submissions')
             .update({
               submission_text: text,
-              file_url: fileUrl,
+              submitted_file_url: fileUrl,
               submitted_at: new Date().toISOString()
             })
             .eq('id', existingSub.id)
@@ -553,13 +857,15 @@ export const mockApi = {
           subRow = updatedSub;
         } else {
           const { data: insertedSub, error: insertErr } = await supabaseAdmin
-            .from('assignment_submissions')
+            .from('homework_submissions')
             .insert({
-              assignment_id: validAssignmentId,
+              homework_id: validAssignmentId,
               student_id: validStudentId,
               submission_text: text,
-              file_url: fileUrl,
-              submitted_at: new Date().toISOString()
+              submitted_file_url: fileUrl,
+              submitted_at: new Date().toISOString(),
+              school_id: schoolId || null,
+              academic_session_id: academicSessionId || null
             })
             .select()
             .single();
@@ -579,10 +885,12 @@ export const mockApi = {
       submissionText: text,
       fileUrl,
       submittedAt: subRow ? subRow.submitted_at : new Date().toISOString(),
-      marksObtained: subRow && subRow.marks_obtained !== null ? Number(subRow.marks_obtained) : undefined,
-      feedback: subRow ? subRow.feedback || undefined : undefined,
-      gradedBy: subRow ? subRow.graded_by || undefined : undefined,
-      gradedAt: subRow ? subRow.graded_at || undefined : undefined
+      marksObtained: subRow && subRow.marks !== null ? Number(subRow.marks) : undefined,
+      feedback: subRow ? subRow.remarks || undefined : undefined,
+      gradedBy: undefined,
+      gradedAt: subRow ? subRow.graded_at || undefined : undefined,
+      schoolId: subRow ? subRow.school_id : schoolId,
+      academicSessionId: subRow ? subRow.academic_session_id : academicSessionId
     };
 
     const existingIndex = mockDb.assignmentSubmissions.findIndex(
@@ -595,7 +903,6 @@ export const mockApi = {
       mockDb.assignmentSubmissions.push(submission);
     }
 
-    const student = mockDb.students.find(s => s.id === studentId);
     mockDb.addLog(student?.userId || null, 'SUBMIT_ASSIGNMENT', { assignmentId });
     mockDb.saveAll();
 
@@ -605,6 +912,7 @@ export const mockApi = {
 
     return submission;
   },
+
 
   async studentGetGrades(studentId: string): Promise<{ schedule: ExamSchedule; mark?: ExamMark; subject: Subject; examName: string }[]> {
     await delay();
@@ -636,10 +944,45 @@ export const mockApi = {
     });
   },
 
+  async syncHomeworkAttachmentsData(schoolId: string): Promise<void> {
+    try {
+      const { data: dbAttachments } = await supabaseAdmin
+        .from('homework_attachments')
+        .select('*')
+        .eq('school_id', schoolId);
+      
+      if (dbAttachments) {
+        // Clear local cache for this school first to prevent duplicates
+        mockDb.homeworkAttachments = mockDb.homeworkAttachments.filter(att => att.schoolId !== schoolId);
+
+        dbAttachments.forEach((r: any) => {
+          const att: HomeworkAttachment = {
+            id: r.id,
+            homeworkId: r.homework_id,
+            fileUrl: r.file_url,
+            fileName: r.file_name,
+            fileType: r.file_type || null,
+            mimeType: r.mime_type || null,
+            uploadedBy: r.uploaded_by || null,
+            schoolId: r.school_id,
+            academicSessionId: r.academic_session_id || 'session-1',
+            uploadedAt: r.uploaded_at
+          };
+          mockDb.homeworkAttachments.push(att);
+        });
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync homework attachments:', e);
+    }
+  },
+
   async syncAssignmentsData(schoolId: string): Promise<void> {
+    // Sync attachments first so they are ready to link
+    await this.syncHomeworkAttachmentsData(schoolId);
     try {
       const { data: dbAssignments } = await supabaseAdmin
-        .from('assignments')
+        .from('homeworks')
         .select('*')
         .eq('school_id', schoolId);
       
@@ -648,14 +991,16 @@ export const mockApi = {
           const ass: Assignment = {
             id: r.id,
             classId: r.class_id,
+            sectionId: r.section_id || undefined,
             subjectId: r.subject_id,
             teacherId: r.teacher_id,
             title: r.title,
             description: r.description,
             dueDate: r.due_date,
-            maxMarks: r.max_marks,
-            fileAttachmentUrl: r.file_attachment_url || undefined,
-            isHomework: r.is_homework,
+            maxMarks: 100,
+            fileAttachmentUrl: r.attachment_url || undefined,
+            attachments: mockDb.homeworkAttachments.filter(att => att.homeworkId === r.id),
+            isHomework: r.status !== 'DRAFT',
             academicSessionId: r.academic_session_id || 'session-1',
             createdAt: r.created_at
           };
@@ -667,6 +1012,33 @@ export const mockApi = {
       }
     } catch (e) {
       console.error('Failed to sync assignments:', e);
+    }
+  },
+
+  async syncSectionsData(schoolId: string): Promise<void> {
+    try {
+      const { data: dbSections } = await supabaseAdmin
+        .from('sections')
+        .select('*')
+        .eq('school_id', schoolId);
+      
+      if (dbSections) {
+        dbSections.forEach((r: any) => {
+          const sec: Section = {
+            id: r.id,
+            schoolId: r.school_id,
+            classId: r.class_id,
+            name: r.name,
+            createdAt: r.created_at
+          };
+          const idx = mockDb.sections.findIndex(s => s.id === sec.id);
+          if (idx === -1) mockDb.sections.push(sec);
+          else mockDb.sections[idx] = sec;
+        });
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync sections:', e);
     }
   },
 
@@ -685,22 +1057,22 @@ export const mockApi = {
       );
 
       const { data: dbSubmissions } = await supabaseAdmin
-        .from('assignment_submissions')
+        .from('homework_submissions')
         .select('*')
-        .in('assignment_id', assignmentIds);
+        .in('homework_id', assignmentIds);
 
       if (dbSubmissions) {
         dbSubmissions.forEach((r: any) => {
           const sub: AssignmentSubmission = {
             id: r.id,
-            assignmentId: r.assignment_id,
+            assignmentId: r.homework_id,
             studentId: r.student_id,
             submissionText: r.submission_text || undefined,
-            fileUrl: r.file_url || undefined,
+            fileUrl: r.submitted_file_url || undefined,
             submittedAt: r.submitted_at,
-            marksObtained: r.marks_obtained !== null ? Number(r.marks_obtained) : undefined,
-            feedback: r.feedback || undefined,
-            gradedBy: r.graded_by || undefined,
+            marksObtained: r.marks !== null ? Number(r.marks) : undefined,
+            feedback: r.remarks || undefined,
+            gradedBy: undefined,
             gradedAt: r.graded_at || undefined
           };
           const idx = mockDb.assignmentSubmissions.findIndex(s => s.id === sub.id);
@@ -722,15 +1094,24 @@ export const mockApi = {
         .eq('school_id', schoolId);
       
       if (dbMaterials) {
+        // Clear local cache for this school first to prevent duplicate/buffering artifacts
+        mockDb.studyMaterials = mockDb.studyMaterials.filter(m => m.schoolId !== schoolId);
+        
         dbMaterials.forEach((r: any) => {
           const sm: StudyMaterial = {
             id: r.id,
+            schoolId: r.school_id,
             subjectId: r.subject_id,
+            classId: r.class_id,
             teacherId: r.teacher_id,
+            uploadedBy: r.uploaded_by,
+            academicSessionId: r.academic_session_id,
             title: r.title,
             description: r.description || undefined,
             fileUrl: r.file_url,
+            thumbnailUrl: r.thumbnail_url || null,
             fileType: r.file_type as any,
+            mimeType: r.mime_type || null,
             isVideoStreamable: r.is_video_streamable,
             createdAt: r.created_at
           };
@@ -1304,6 +1685,7 @@ export const mockApi = {
             userId: r.user_id,
             schoolId: r.school_id,
             classId: r.class_id || '',
+            sectionId: r.section_id || null,
             academicSessionId: r.academic_session_id || 'session-1',
             admissionNumber: r.admission_number,
             rollNumber: r.roll_number,
@@ -1581,6 +1963,7 @@ export const mockApi = {
     await this.syncTimetablesData(student.schoolId);
     await this.syncAssignmentsData(student.schoolId);
     await this.syncAssignmentSubmissionsData(student.schoolId);
+    await this.syncHomeworkAttachmentsData(student.schoolId);
     await this.syncAttendanceData(student.schoolId);
     await this.syncFeeStructuresData(student.schoolId);
     await this.syncFeePaymentsData(student.schoolId);
@@ -1607,20 +1990,40 @@ export const mockApi = {
       };
     });
 
-    // Assignments Homework
-    const assignments = mockDb.assignments.filter(a => a.classId === student.classId);
+    // Assignments Homework with strict section boundaries
+    const assignments = mockDb.assignments.filter(a => {
+      const classMatches = a.classId === student.classId;
+      const sectionMatches = !student.sectionId || !a.sectionId || a.sectionId === student.sectionId;
+      const sessionMatches = a.academicSessionId === student.academicSessionId;
+      return classMatches && sectionMatches && sessionMatches;
+    });
     const assignmentSummaries = assignments.map(a => {
       const submission = mockDb.assignmentSubmissions.find(
         sub => sub.assignmentId === a.id && sub.studentId === studentId
       );
+      const subject = mockDb.subjects.find(sub => sub.id === a.subjectId);
+      const teacher = a.teacherId ? mockDb.teachers.find(t => t.id === a.teacherId) : null;
+      const teacherUser = teacher ? mockDb.users.find(u => u.id === teacher.userId) : null;
+      // Get attachments from mockDb.homeworkAttachments linked by homework/assignment id
+      const attachments = mockDb.homeworkAttachments.filter(att => att.homeworkId === a.id);
       return {
+        id: a.id,
         title: a.title,
+        description: a.description,
         dueDate: a.dueDate,
         isHomework: a.isHomework,
         submitted: !!submission,
         marksObtained: submission ? submission.marksObtained : null,
         maxMarks: a.maxMarks,
-        feedback: submission ? submission.feedback : ''
+        feedback: submission ? submission.feedback : '',
+        subjectName: subject ? subject.name : 'General',
+        subjectCode: subject ? subject.code : '',
+        teacherName: teacherUser ? `${teacherUser.firstName} ${teacherUser.lastName}` : 'Faculty',
+        attachments: attachments,
+        fileAttachmentUrl: a.fileAttachmentUrl || null,
+        submissionFileUrl: submission ? submission.fileUrl : null,
+        submittedAt: submission ? submission.submittedAt : null,
+        createdAt: a.createdAt
       };
     });
 
@@ -1992,11 +2395,11 @@ export const mockApi = {
     if (isUUID(submissionId)) {
       try {
         const { error } = await supabaseAdmin
-          .from('assignment_submissions')
+          .from('homework_submissions')
           .update({
-            marks_obtained: marks,
-            feedback,
-            graded_by: teacherId,
+            marks: marks,
+            remarks: feedback,
+            submission_status: 'GRADED',
             graded_at: new Date().toISOString()
           })
           .eq('id', submissionId);
@@ -2053,7 +2456,7 @@ export const mockApi = {
       });
   },
 
-  async teacherGetStudyMaterials(teacherId: string): Promise<(StudyMaterial & { subjectName: string })[]> {
+  async teacherGetStudyMaterials(teacherId: string): Promise<(StudyMaterial & { subjectName: string; className: string })[]> {
     await delay();
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) return [];
@@ -2064,9 +2467,11 @@ export const mockApi = {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
       .map(sm => {
         const sub = mockDb.subjects.find(s => s.id === sm.subjectId);
+        const cls = sm.classId ? mockDb.classes.find(c => c.id === sm.classId) : null;
         return {
           ...sm,
-          subjectName: sub ? sub.name : 'Subject'
+          subjectName: sub ? sub.name : 'Subject',
+          className: cls ? cls.name : 'School-wide'
         };
       });
   },
@@ -2082,7 +2487,7 @@ export const mockApi = {
       .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
-  async teacherCreateAssignment(teacherId: string, classId: string, subjectId: string, title: string, description: string, dueDate: string, isHomework: boolean): Promise<Assignment> {
+  async teacherCreateAssignment(teacherId: string, classId: string, subjectId: string, title: string, description: string, dueDate: string, isHomework: boolean, sectionId?: string | null, customId?: string | null): Promise<Assignment> {
     await delay(500);
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId)!;
@@ -2091,16 +2496,19 @@ export const mockApi = {
     const academicSessionId = await this.resolveActiveSessionId(schoolId);
 
     const { data: dbAssign, error } = await supabaseAdmin
-      .from('assignments')
+      .from('homeworks')
       .insert({
+        id: customId || undefined,
         school_id: schoolId,
         class_id: classId,
+        section_id: sectionId || null,
         subject_id: subjectId,
         teacher_id: teacherId,
         title,
         description,
+        instructions: description,
         due_date: dueDate,
-        is_homework: isHomework,
+        status: 'PUBLISHED',
         academic_session_id: academicSessionId
       })
       .select()
@@ -2113,22 +2521,24 @@ export const mockApi = {
     const assign: Assignment = {
       id: dbAssign.id,
       classId: dbAssign.class_id,
+      sectionId: dbAssign.section_id || undefined,
       subjectId: dbAssign.subject_id,
       teacherId: dbAssign.teacher_id,
       title: dbAssign.title,
       description: dbAssign.description,
       dueDate: dbAssign.due_date,
-      maxMarks: dbAssign.max_marks,
-      fileAttachmentUrl: dbAssign.file_attachment_url || undefined,
-      isHomework: dbAssign.is_homework,
+      maxMarks: 100,
+      fileAttachmentUrl: dbAssign.attachment_url || undefined,
+      attachments: mockDb.homeworkAttachments.filter(att => att.homeworkId === dbAssign.id),
+      isHomework: dbAssign.status !== 'DRAFT',
       academicSessionId: dbAssign.academic_session_id || academicSessionId,
       createdAt: dbAssign.created_at
     };
 
     mockDb.assignments.unshift(assign);
 
-    // Notify all students in class
-    const studentsInClass = mockDb.students.filter(s => s.classId === classId);
+    // Notify all students in class (filtered by section if section boundary is active)
+    const studentsInClass = mockDb.students.filter(s => s.classId === classId && (!sectionId || s.sectionId === sectionId));
     studentsInClass.forEach(st => {
       mockDb.addNotification(
         st.userId,
@@ -2142,18 +2552,19 @@ export const mockApi = {
     return assign;
   },
 
-  async teacherEditAssignment(assignmentId: string, classId: string, subjectId: string, title: string, description: string, dueDate: string, isHomework: boolean): Promise<Assignment> {
+  async teacherEditAssignment(assignmentId: string, classId: string, subjectId: string, title: string, description: string, dueDate: string, isHomework: boolean, sectionId?: string | null): Promise<Assignment> {
     await delay(500);
 
     const { data: dbAssign, error } = await supabaseAdmin
-      .from('assignments')
+      .from('homeworks')
       .update({
         class_id: classId,
+        section_id: sectionId || null,
         subject_id: subjectId,
         title,
         description,
-        due_date: dueDate,
-        is_homework: isHomework
+        instructions: description,
+        due_date: dueDate
       })
       .eq('id', assignmentId)
       .select()
@@ -2166,14 +2577,16 @@ export const mockApi = {
     const assign: Assignment = {
       id: dbAssign.id,
       classId: dbAssign.class_id,
+      sectionId: dbAssign.section_id || undefined,
       subjectId: dbAssign.subject_id,
       teacherId: dbAssign.teacher_id,
       title: dbAssign.title,
       description: dbAssign.description,
       dueDate: dbAssign.due_date,
-      maxMarks: dbAssign.max_marks,
-      fileAttachmentUrl: dbAssign.file_attachment_url || undefined,
-      isHomework: dbAssign.is_homework,
+      maxMarks: 100,
+      fileAttachmentUrl: dbAssign.attachment_url || undefined,
+      attachments: mockDb.homeworkAttachments.filter(att => att.homeworkId === dbAssign.id),
+      isHomework: dbAssign.status !== 'DRAFT',
       academicSessionId: dbAssign.academic_session_id || 'session-1',
       createdAt: dbAssign.created_at
     };
@@ -2189,11 +2602,12 @@ export const mockApi = {
     return assign;
   },
 
+
   async teacherDeleteAssignment(assignmentId: string): Promise<void> {
     await delay(500);
 
     const { error } = await supabaseAdmin
-      .from('assignments')
+      .from('homeworks')
       .delete()
       .eq('id', assignmentId);
 
@@ -2751,11 +3165,26 @@ export const mockApi = {
       });
     }
 
+    // Resolve sectionId
+    let resolvedSectionId: string | null = null;
+    if (classId) {
+      const { data: secRow } = await supabaseAdmin
+        .from('sections')
+        .select('id')
+        .eq('class_id', classId)
+        .limit(1)
+        .maybeSingle();
+      if (secRow) {
+        resolvedSectionId = secRow.id;
+      }
+    }
+
     // Insert into students table
     const { data: studentRow, error: studentErr } = await supabaseAdmin.from('students').insert({
       user_id: newUserId,
       school_id: schoolId,
       class_id: classId || null,
+      section_id: resolvedSectionId,
       academic_session_id: activeSessionId,
       admission_number: admissionNumber,
       roll_number: rollNumber,
@@ -2778,6 +3207,7 @@ export const mockApi = {
     };
     const student: Student = {
       id: studentRow.id, userId: newUserId, schoolId, classId,
+      sectionId: resolvedSectionId,
       academicSessionId: activeSessionId,
       admissionNumber, rollNumber, dateOfBirth: dob, gender,
       createdAt: new Date().toISOString()
@@ -3060,6 +3490,28 @@ export const mockApi = {
     }).select('id, school_id, name, academic_session_id, created_at').single();
 
     if (error || !classRow) throw new Error('Failed to create class: ' + (error?.message || 'Unknown error'));
+
+    // Auto-create section for this class if name is like "Grade 10-A"
+    const parts = className.split('-');
+    const sectionName = parts.length > 1 ? parts[1].trim() : 'A';
+    try {
+      const { data: secRow } = await supabaseAdmin.from('sections').insert({
+        school_id: schoolId,
+        class_id: classRow.id,
+        name: sectionName
+      }).select('id').single();
+      if (secRow) {
+        mockDb.sections.push({
+          id: secRow.id,
+          schoolId,
+          classId: classRow.id,
+          name: sectionName,
+          createdAt: new Date().toISOString()
+        });
+      }
+    } catch (e) {
+      console.error('Failed to auto-create section in database:', e);
+    }
 
     const cls: Class = {
       id: classRow.id, schoolId: classRow.school_id, name: classRow.name,
@@ -4048,11 +4500,26 @@ export const mockApi = {
       });
     }
 
+    // Resolve sectionId
+    let resolvedSectionId: string | null = null;
+    if (classId) {
+      const { data: secRow } = await supabaseAdmin
+        .from('sections')
+        .select('id')
+        .eq('class_id', classId)
+        .limit(1)
+        .maybeSingle();
+      if (secRow) {
+        resolvedSectionId = secRow.id;
+      }
+    }
+
     // Insert into students table
     const { data: studentRow, error: studentErr } = await supabaseAdmin.from('students').insert({
       user_id: newUserId,
       school_id: schoolId,
       class_id: classId || null,
+      section_id: resolvedSectionId,
       academic_session_id: activeSessionId,
       admission_number: admissionNumber,
       roll_number: rollNumber,
@@ -4073,6 +4540,7 @@ export const mockApi = {
     };
     const student: Student = {
       id: studentRow.id, userId: newUserId, schoolId, classId,
+      sectionId: resolvedSectionId,
       academicSessionId: activeSessionId,
       admissionNumber, rollNumber, dateOfBirth: dob, gender,
       createdAt: new Date().toISOString()
@@ -5837,42 +6305,45 @@ export const mockApi = {
     return chat;
   },
 
-  async getStudyMaterials(): Promise<(StudyMaterial & { subjectName: string; teacherName: string })[]> {
-    await delay();
-    let schoolId = 'school-1';
-    try {
-      const sessionRaw = localStorage.getItem('aegis_session');
-      if (sessionRaw) {
-        const session = JSON.parse(sessionRaw);
-        if (session?.user?.schoolId) {
-          schoolId = session.user.schoolId;
-        }
-      }
-    } catch (e) {
-      console.error(e);
-    }
-
+  async getStudyMaterials(schoolId: string, classId?: string | null): Promise<(StudyMaterial & { subjectName: string; teacherName: string; className: string })[]> {
     await this.syncStudyMaterialsData(schoolId);
-
-    return mockDb.studyMaterials.map(sm => {
+    let list = mockDb.studyMaterials.filter(m => m.schoolId === schoolId);
+    if (classId) {
+      list = list.filter(m => m.classId === classId || m.classId === null);
+    }
+    return list.map(sm => {
       const s = mockDb.subjects.find(sub => sub.id === sm.subjectId);
       const t = sm.teacherId ? mockDb.teachers.find(tch => tch.id === sm.teacherId) : null;
       const tu = t ? mockDb.users.find(usr => usr.id === t.userId) : null;
+      const c = sm.classId ? mockDb.classes.find(cls => cls.id === sm.classId) : null;
       return {
         ...sm,
         subjectName: s ? s.name : 'Subject',
-        teacherName: tu ? `${tu.firstName} ${tu.lastName}` : 'Guest Faculty'
+        teacherName: tu ? `${tu.firstName} ${tu.lastName}` : 'Guest Faculty',
+        className: c ? c.name : 'School-wide'
       };
     });
   },
 
-  async teacherUploadStudyMaterial(teacherId: string, subjectId: string, title: string, desc: string, fileUrl: string, type: 'pdf' | 'docx' | 'mp4', isStreamable: boolean): Promise<StudyMaterial> {
-    await delay(500);
+  async teacherUploadStudyMaterial(
+    teacherId: string, 
+    subjectId: string, 
+    classId: string,
+    title: string, 
+    desc: string, 
+    fileUrl: string, 
+    type: 'pdf' | 'docx' | 'mp4' | 'stream', 
+    isStreamable: boolean,
+    file?: File
+  ): Promise<StudyMaterial> {
+    await delay(600);
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId)!;
     if (!teacher) throw new Error('Teacher not found.');
     const schoolId = teacher.schoolId;
     if (!schoolId) throw new Error('Teacher has no school association.');
+
+    // Plan check
     const { data: dbSchool } = await supabaseAdmin
       .from('schools')
       .select('subscription_plan')
@@ -5883,33 +6354,103 @@ export const mockApi = {
       throw new Error('Study Materials upload features are only available in the Enterprise subscription plan.');
     }
 
+    let finalFileUrl = fileUrl;
+    let mimeType = 'url/stream';
+
+    // File Upload Handler
+    if (file && type !== 'stream') {
+      // Validate file size limit: 100MB
+      const sizeLimitBytes = 100 * 1024 * 1024;
+      if (file.size > sizeLimitBytes) {
+        throw new Error('File size exceeds the 100 MB limit. Please optimize or compress your file.');
+      }
+
+      // Validate MIME type
+      const extension = file.name.split('.').pop()?.toLowerCase() || '';
+      mimeType = file.type;
+      if (type === 'pdf' && extension !== 'pdf') {
+        throw new Error('Selected format is PDF but the uploaded file extension is not .pdf.');
+      }
+      if (type === 'docx' && extension !== 'docx') {
+        throw new Error('Selected format is Word Document but the uploaded file extension is not .docx.');
+      }
+      if (type === 'mp4' && !['mp4', 'mov', 'webm', 'ogg', 'avi'].includes(extension)) {
+        throw new Error('Selected format is Video Lecture but the uploaded file extension is not a supported video format.');
+      }
+
+      const timestamp = Date.now();
+      const cleanFileName = file.name.replace(/[^a-zA-Z0-9.]/g, '_');
+      const filePath = `${schoolId}/teacher_${teacherId}/${timestamp}_${cleanFileName}`;
+
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from('materials')
+        .upload(filePath, file, {
+          cacheControl: '3600',
+          upsert: true
+        });
+
+      if (uploadError) {
+        throw new Error('Failed to upload file to Supabase storage: ' + uploadError.message);
+      }
+
+      // Resolve public URL
+      const { data: { publicUrl } } = supabaseAdmin.storage
+        .from('materials')
+        .getPublicUrl(filePath);
+
+      finalFileUrl = publicUrl;
+    } else if (type === 'stream') {
+      // Stream live link validation
+      if (!/^https?:\/\//i.test(finalFileUrl)) {
+        throw new Error('Please enter a valid URL (starting with http:// or https://) for the live stream link.');
+      }
+    } else {
+      if (!finalFileUrl) {
+        throw new Error('Please upload an actual file or enter a valid resource URL.');
+      }
+    }
+
+    // Resolve active academic session
+    const academicSessionId = await this.resolveActiveSessionId(schoolId);
+
     const { data: dbMaterial, error } = await supabaseAdmin
       .from('study_materials')
       .insert({
         school_id: schoolId,
         subject_id: subjectId,
+        class_id: classId || null,
         teacher_id: teacherId,
+        uploaded_by: teacher.userId,
+        academic_session_id: academicSessionId,
         title,
         description: desc,
-        file_url: fileUrl,
+        file_url: finalFileUrl,
         file_type: type,
-        is_video_streamable: isStreamable
+        mime_type: mimeType,
+        is_video_streamable: isStreamable,
+        thumbnail_url: null
       })
       .select()
       .single();
 
     if (error || !dbMaterial) {
-      throw new Error(error?.message || 'Failed to upload study material to Supabase.');
+      throw new Error(error?.message || 'Failed to upload study material metadata to Supabase.');
     }
 
     const sm: StudyMaterial = {
       id: dbMaterial.id,
+      schoolId: dbMaterial.school_id,
       subjectId: dbMaterial.subject_id,
+      classId: dbMaterial.class_id,
       teacherId: dbMaterial.teacher_id,
+      uploadedBy: dbMaterial.uploaded_by,
+      academicSessionId: dbMaterial.academic_session_id,
       title: dbMaterial.title,
       description: dbMaterial.description || undefined,
       fileUrl: dbMaterial.file_url,
+      thumbnailUrl: dbMaterial.thumbnail_url || null,
       fileType: dbMaterial.file_type as any,
+      mimeType: dbMaterial.mime_type || null,
       isVideoStreamable: dbMaterial.is_video_streamable,
       createdAt: dbMaterial.created_at
     };
@@ -5920,13 +6461,23 @@ export const mockApi = {
     return sm;
   },
 
-  async teacherEditStudyMaterial(materialId: string, subjectId: string, title: string, desc: string, fileUrl: string, type: 'pdf' | 'docx' | 'mp4', isStreamable: boolean): Promise<StudyMaterial> {
+  async teacherEditStudyMaterial(
+    materialId: string, 
+    subjectId: string, 
+    classId: string,
+    title: string, 
+    desc: string, 
+    fileUrl: string, 
+    type: 'pdf' | 'docx' | 'mp4' | 'stream', 
+    isStreamable: boolean
+  ): Promise<StudyMaterial> {
     await delay(500);
 
     const { data: dbMaterial, error } = await supabaseAdmin
       .from('study_materials')
       .update({
         subject_id: subjectId,
+        class_id: classId || null,
         title,
         description: desc,
         file_url: fileUrl,
@@ -5943,12 +6494,18 @@ export const mockApi = {
 
     const sm: StudyMaterial = {
       id: dbMaterial.id,
+      schoolId: dbMaterial.school_id,
       subjectId: dbMaterial.subject_id,
+      classId: dbMaterial.class_id,
       teacherId: dbMaterial.teacher_id,
+      uploadedBy: dbMaterial.uploaded_by,
+      academicSessionId: dbMaterial.academic_session_id,
       title: dbMaterial.title,
       description: dbMaterial.description || undefined,
       fileUrl: dbMaterial.file_url,
+      thumbnailUrl: dbMaterial.thumbnail_url || null,
       fileType: dbMaterial.file_type as any,
+      mimeType: dbMaterial.mime_type || null,
       isVideoStreamable: dbMaterial.is_video_streamable,
       createdAt: dbMaterial.created_at
     };

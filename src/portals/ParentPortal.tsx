@@ -8,10 +8,55 @@ import { supabase } from '../lib/supabase';
 import { 
   Eye, Award, DollarSign, Calendar, FileText, 
   User as UserIcon, ShieldAlert, CheckCircle, AlertCircle, UsersRound, Clock,
-  BookOpen, Play, Download, MessageCircle
+  BookOpen, Play, Download, MessageCircle, Paperclip,
+  Filter, Search, ChevronDown, ChevronRight, ExternalLink
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
+
+const renderVideoPlayer = (url: string) => {
+  if (!url) return null;
+  
+  // Detect YouTube
+  const ytMatch = url.match(/(?:youtube\.com\/(?:[^\/]+\/.+\/|(?:v|e(?:mbed)?)\/|.*[?&]v=)|youtu\.be\/)([^"&?\/\s]{11})/i);
+  if (ytMatch) {
+    const embedUrl = `https://www.youtube.com/embed/${ytMatch[1]}`;
+    return (
+      <iframe
+        src={embedUrl}
+        className="w-full aspect-video rounded-xl border border-slate-800 bg-black"
+        allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+        allowFullScreen
+      />
+    );
+  }
+
+  // Detect Vimeo
+  const vimeoMatch = url.match(/vimeo\.com\/(?:video\/)?([0-9]+)/i);
+  if (vimeoMatch) {
+    const embedUrl = `https://player.vimeo.com/video/${vimeoMatch[1]}`;
+    return (
+      <iframe
+        src={embedUrl}
+        className="w-full aspect-video rounded-xl border border-slate-800 bg-black"
+        allow="autoplay; fullscreen; picture-in-picture"
+        allowFullScreen
+      />
+    );
+  }
+
+  // Fallback to native video player
+  return (
+    <video
+      key={url}
+      src={url}
+      controls
+      className="w-full max-h-96 rounded-xl border border-slate-800 bg-black"
+      autoPlay
+      controlsList="nodownload"
+    />
+  );
+};
 
 export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const { session, syncSubscriptionPlan } = useStore();
@@ -40,6 +85,12 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
   const [materials, setMaterials] = useState<any[]>([]);
   const [materialsLoading, setMaterialsLoading] = useState(false);
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+
+  // Homework tab state
+  const [hwSubjectFilter, setHwSubjectFilter] = useState<string>('all');
+  const [hwSearchQuery, setHwSearchQuery] = useState('');
+  const [hwStatusFilter, setHwStatusFilter] = useState<string>('all');
+  const [expandedHomeworkId, setExpandedHomeworkId] = useState<string | null>(null);
 
   // Load parent's students
   const loadAssignedStudents = async () => {
@@ -80,14 +131,10 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       const qz = await mockApi.studentGetQuizzes(selectedStudent);
       setQuizzes(qz);
       
-      const mat = await mockApi.getStudyMaterials();
       const studentObj = mockDb.students.find(s => s.id === selectedStudent);
       if (studentObj) {
-        const classSubjectIds = mockDb.teacherClassSubjectMappings
-          .filter(m => m.classId === studentObj.classId)
-          .map(m => m.subjectId);
-        const filteredMat = mat.filter(m => classSubjectIds.includes(m.subjectId));
-        setMaterials(filteredMat);
+        const mat = await mockApi.getStudyMaterials(studentObj.schoolId, studentObj.classId);
+        setMaterials(mat);
       } else {
         setMaterials([]);
       }
@@ -168,6 +215,31 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       supabase.removeChannel(channel);
     };
   }, [activeTab, selectedStudent, selectedPost]);
+
+  // Real-time Supabase Postgres changes subscription for child academic data
+  useEffect(() => {
+    if (!parentId || !selectedStudent) return;
+
+    const handleAcademicSync = () => {
+      console.log('Realtime academic update detected, refreshing parent portal...');
+      loadAcademicRecord();
+    };
+
+    const channel = supabase
+      .channel('parent-academic-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homeworks' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homework_attachments' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homework_submissions' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quizzes' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'timetables' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'study_materials' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, handleAcademicSync)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [parentId, selectedStudent]);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -269,9 +341,22 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       {/* Portal Identity Context Bar */}
       <div className="bg-gradient-to-r from-brand-950 to-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-          <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center shrink-0">
-            <UsersRound className="text-brand-400" size={24} />
-          </div>
+          {parentUser?.avatarUrl ? (
+            <img 
+              src={parentUser.avatarUrl} 
+              alt="" 
+              className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md shrink-0 animate-fade-in"
+              onError={(e) => {
+                // If link fails or is broken, clear it visually
+                (e.target as HTMLImageElement).src = '';
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center shrink-0">
+              <UsersRound className="text-brand-400" size={24} />
+            </div>
+          )}
           <div>
             <h2 className="text-xl font-bold text-slate-100 font-sans leading-none">{parentName} <span className="text-xs text-slate-400 font-normal ml-1">(Parent/Guardian)</span></h2>
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-2">
@@ -363,18 +448,49 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                         <div className="text-center py-6 text-slate-500 text-xs">No active assignments on log.</div>
                       ) : (
                         academicRecord.assignments.map((a: any, idx: number) => (
-                          <div key={idx} className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl flex items-center justify-between">
-                            <div>
-                              <p className="font-semibold text-xs text-slate-200">{a.title}</p>
-                              <span className="text-[9px] text-slate-500">Due: {new Date(a.dueDate).toLocaleDateString()}</span>
-                            </div>
-                            <div>
-                              <span className={`text-[9px] font-bold px-2 py-0.5 rounded-lg ${
-                                a.submitted ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                          <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col gap-2">
+                            <div className="flex items-center justify-between gap-3">
+                              <div>
+                                <h4 className="font-bold text-xs text-slate-200">{a.title}</h4>
+                                <p className="text-[9px] text-slate-550 mt-0.5">Due: {new Date(a.dueDate).toLocaleDateString()}</p>
+                              </div>
+                              <span className={`text-[9.5px] font-bold px-2.5 py-0.5 rounded-lg ${
+                                a.submitted ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'
                               }`}>
                                 {a.submitted ? 'Submitted' : 'Pending'}
                               </span>
                             </div>
+                            <p className="text-[10px] text-slate-400 leading-relaxed mt-0.5">{a.description}</p>
+                            
+                            {a.attachments && a.attachments.length > 0 && (
+                              <div className="mt-2 pt-2 border-t border-slate-850/40 space-y-1.5">
+                                <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-500">Classroom Resources ({a.attachments.length})</span>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                  {a.attachments.map((att: any) => (
+                                    <div 
+                                      key={att.id} 
+                                      className="flex items-center justify-between gap-2 p-2 bg-slate-950/40 border border-slate-850 rounded-xl"
+                                    >
+                                      <div className="flex items-center gap-2 truncate">
+                                        <Paperclip size={11} className="text-brand-400 shrink-0" />
+                                        <span className="text-[10px] text-slate-350 truncate" title={att.fileName}>
+                                          {att.fileName}
+                                        </span>
+                                      </div>
+                                      <a 
+                                        href={att.fileUrl} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="p-1 hover:bg-slate-850 text-slate-450 hover:text-slate-200 rounded-lg transition-colors flex items-center justify-center shrink-0"
+                                        title="View File"
+                                      >
+                                        <Eye size={12} />
+                                      </a>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
                           </div>
                         ))
                       )}
@@ -485,6 +601,320 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                   })}
                 </div>
               </GlassCard>
+            )}
+
+            {activeTab === 'homework' && (
+              <div className="space-y-6 animate-fade-in">
+                {/* Homework Header */}
+                <GlassCard className="space-y-4">
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-slate-100 text-lg flex items-center gap-2">
+                        <FileText className="text-brand-500" size={20} />
+                        Homework & Assignments
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-1">
+                        View all homework assigned to {academicRecord?.studentProfile?.fullName || 'your child'} with due dates, attachments, and submission status.
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-[10px] font-bold bg-brand-500/10 text-brand-400 border border-brand-500/20 px-3 py-1 rounded-full">
+                        {academicRecord?.assignments?.length || 0} Total
+                      </span>
+                      <span className="text-[10px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 px-3 py-1 rounded-full">
+                        {academicRecord?.assignments?.filter((a: any) => a.submitted).length || 0} Submitted
+                      </span>
+                      <span className="text-[10px] font-bold bg-red-500/10 text-red-400 border border-red-500/20 px-3 py-1 rounded-full">
+                        {academicRecord?.assignments?.filter((a: any) => !a.submitted && new Date(a.dueDate) < new Date()).length || 0} Overdue
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Filters Row */}
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 pt-2 border-t border-slate-850">
+                    {/* Search */}
+                    <div className="relative flex-1 min-w-0">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" />
+                      <input
+                        type="text"
+                        placeholder="Search homework..."
+                        value={hwSearchQuery}
+                        onChange={(e) => setHwSearchQuery(e.target.value)}
+                        className="w-full bg-slate-900/50 border border-slate-800 text-xs text-slate-200 rounded-xl pl-9 pr-3 py-2.5 focus:outline-none focus:border-brand-500 transition-colors"
+                      />
+                    </div>
+                    {/* Subject Filter */}
+                    <div className="flex items-center gap-2">
+                      <Filter size={14} className="text-slate-500 shrink-0" />
+                      <select
+                        value={hwSubjectFilter}
+                        onChange={(e) => setHwSubjectFilter(e.target.value)}
+                        className="bg-slate-900/50 border border-slate-800 text-xs text-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-500 transition-colors"
+                      >
+                        <option value="all">All Subjects</option>
+                        {Array.from(new Set(academicRecord?.assignments?.map((a: any) => a.subjectName) || [])).map((subj: any) => (
+                          <option key={subj} value={subj}>{subj}</option>
+                        ))}
+                      </select>
+                    </div>
+                    {/* Status Filter */}
+                    <select
+                      value={hwStatusFilter}
+                      onChange={(e) => setHwStatusFilter(e.target.value)}
+                      className="bg-slate-900/50 border border-slate-800 text-xs text-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:border-brand-500 transition-colors"
+                    >
+                      <option value="all">All Status</option>
+                      <option value="submitted">Submitted</option>
+                      <option value="pending">Pending</option>
+                      <option value="overdue">Overdue</option>
+                    </select>
+                  </div>
+                </GlassCard>
+
+                {/* Homework List */}
+                <div className="space-y-3">
+                  {(() => {
+                    const allAssignments = academicRecord?.assignments || [];
+                    const filtered = allAssignments.filter((a: any) => {
+                      const matchesSearch = !hwSearchQuery || a.title?.toLowerCase().includes(hwSearchQuery.toLowerCase()) || a.description?.toLowerCase().includes(hwSearchQuery.toLowerCase());
+                      const matchesSubject = hwSubjectFilter === 'all' || a.subjectName === hwSubjectFilter;
+                      const isOverdue = !a.submitted && new Date(a.dueDate) < new Date();
+                      const matchesStatus = hwStatusFilter === 'all' 
+                        || (hwStatusFilter === 'submitted' && a.submitted) 
+                        || (hwStatusFilter === 'pending' && !a.submitted && !isOverdue)
+                        || (hwStatusFilter === 'overdue' && isOverdue);
+                      return matchesSearch && matchesSubject && matchesStatus;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <GlassCard>
+                          <div className="text-center py-12 space-y-3">
+                            <FileText size={40} className="mx-auto text-slate-600" />
+                            <p className="text-sm text-slate-400">No homework found matching your filters.</p>
+                            <button
+                              onClick={() => { setHwSearchQuery(''); setHwSubjectFilter('all'); setHwStatusFilter('all'); }}
+                              className="text-xs text-brand-400 hover:text-brand-300 font-semibold"
+                            >
+                              Clear all filters
+                            </button>
+                          </div>
+                        </GlassCard>
+                      );
+                    }
+
+                    return filtered.map((a: any) => {
+                      const isExpanded = expandedHomeworkId === a.id;
+                      const dueDate = new Date(a.dueDate);
+                      const now = new Date();
+                      const isOverdue = !a.submitted && dueDate < now;
+                      const isDueSoon = !a.submitted && !isOverdue && (dueDate.getTime() - now.getTime()) < 2 * 24 * 60 * 60 * 1000;
+                      const hasAttachments = a.attachments && a.attachments.length > 0;
+
+                      return (
+                        <GlassCard key={a.id} className="overflow-hidden">
+                          {/* Clickable header */}
+                          <button
+                            onClick={() => setExpandedHomeworkId(isExpanded ? null : a.id)}
+                            className="w-full flex items-start gap-4 text-left group"
+                          >
+                            <div className="mt-0.5 shrink-0">
+                              {isExpanded 
+                                ? <ChevronDown size={16} className="text-brand-400" /> 
+                                : <ChevronRight size={16} className="text-slate-500 group-hover:text-slate-300 transition-colors" />
+                              }
+                            </div>
+                            <div className="flex-1 min-w-0 space-y-1.5">
+                              <div className="flex items-center gap-2 flex-wrap">
+                                <span className="text-[9px] font-bold text-brand-400 bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                                  {a.subjectName}
+                                </span>
+                                {a.isHomework && (
+                                  <span className="text-[9px] font-bold text-purple-400 bg-purple-500/10 border border-purple-500/20 px-2 py-0.5 rounded-full uppercase tracking-widest">
+                                    Homework
+                                  </span>
+                                )}
+                                {hasAttachments && (
+                                  <span className="text-[9px] text-slate-400 flex items-center gap-1">
+                                    <Paperclip size={10} /> {a.attachments.length} file{a.attachments.length > 1 ? 's' : ''}
+                                  </span>
+                                )}
+                              </div>
+                              <h4 className="font-bold text-sm text-slate-200 group-hover:text-slate-100 transition-colors">{a.title}</h4>
+                              <div className="flex items-center gap-4 text-[10px] text-slate-500">
+                                <span className="flex items-center gap-1">
+                                  <Calendar size={11} /> Due: {dueDate.toLocaleDateString()}
+                                </span>
+                                <span className="flex items-center gap-1">
+                                  <UserIcon size={11} /> {a.teacherName}
+                                </span>
+                              </div>
+                            </div>
+                            <div className="shrink-0 flex flex-col items-end gap-1.5">
+                              {/* Status badge */}
+                              <span className={`text-[9.5px] font-bold px-2.5 py-0.5 rounded-lg whitespace-nowrap ${
+                                a.submitted 
+                                  ? 'bg-green-500/10 text-green-400 border border-green-500/20' 
+                                  : isOverdue 
+                                    ? 'bg-red-500/10 text-red-400 border border-red-500/20' 
+                                    : isDueSoon
+                                      ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                      : 'bg-slate-700/30 text-slate-400 border border-slate-700'
+                              }`}>
+                                {a.submitted ? '✓ Submitted' : isOverdue ? '⚠ Overdue' : isDueSoon ? '⏰ Due Soon' : 'Pending'}
+                              </span>
+                              {a.submitted && a.marksObtained !== null && (
+                                <span className="text-[10px] font-bold text-slate-300">
+                                  {a.marksObtained}/{a.maxMarks} marks
+                                </span>
+                              )}
+                            </div>
+                          </button>
+
+                          {/* Expanded details */}
+                          {isExpanded && (
+                            <div className="mt-4 pt-4 border-t border-slate-850 space-y-4 animate-fade-in">
+                              {/* Description */}
+                              {a.description && (
+                                <div className="space-y-1">
+                                  <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-500">Instructions</span>
+                                  <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-line bg-slate-900/40 border border-slate-850 rounded-xl p-3">
+                                    {a.description}
+                                  </p>
+                                </div>
+                              )}
+
+                              {/* Attachments */}
+                              {hasAttachments && (
+                                <div className="space-y-2">
+                                  <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-500">Teacher Attachments ({a.attachments.length})</span>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                                    {a.attachments.map((att: any) => {
+                                      const ext = att.fileName?.split('.').pop()?.toLowerCase() || '';
+                                      const isImage = ['jpg', 'jpeg', 'png', 'webp', 'gif'].includes(ext);
+                                      const isPdf = ext === 'pdf';
+                                      const isDoc = ['doc', 'docx'].includes(ext);
+                                      return (
+                                        <div 
+                                          key={att.id} 
+                                          className="flex items-center justify-between gap-2 p-3 bg-slate-950/50 border border-slate-850 rounded-xl hover:border-brand-500/20 transition-all group/att"
+                                        >
+                                          <div className="flex items-center gap-2.5 truncate">
+                                            <div className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 ${
+                                              isImage ? 'bg-emerald-500/10 border border-emerald-500/20' :
+                                              isPdf ? 'bg-red-500/10 border border-red-500/20' :
+                                              isDoc ? 'bg-blue-500/10 border border-blue-500/20' :
+                                              'bg-slate-800 border border-slate-700'
+                                            }`}>
+                                              <Paperclip size={13} className={`${
+                                                isImage ? 'text-emerald-400' :
+                                                isPdf ? 'text-red-400' :
+                                                isDoc ? 'text-blue-400' :
+                                                'text-slate-400'
+                                              }`} />
+                                            </div>
+                                            <div className="truncate">
+                                              <span className="text-[11px] text-slate-300 truncate block font-medium" title={att.fileName}>
+                                                {att.fileName}
+                                              </span>
+                                              <span className="text-[9px] text-slate-500 uppercase">{ext}</span>
+                                            </div>
+                                          </div>
+                                          <div className="flex items-center gap-1 shrink-0">
+                                            <a 
+                                              href={att.fileUrl} 
+                                              target="_blank" 
+                                              rel="noopener noreferrer" 
+                                              className="p-1.5 hover:bg-slate-800 text-slate-450 hover:text-slate-200 rounded-lg transition-colors" 
+                                              title="View File"
+                                            >
+                                              <Eye size={13} />
+                                            </a>
+                                            <a 
+                                              href={att.fileUrl} 
+                                              download 
+                                              className="p-1.5 hover:bg-slate-800 text-slate-450 hover:text-slate-200 rounded-lg transition-colors" 
+                                              title="Download File"
+                                            >
+                                              <Download size={13} />
+                                            </a>
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              )}
+
+                              {/* Submission Info */}
+                              <div className="space-y-2">
+                                <span className="block text-[9px] font-bold uppercase tracking-wider text-slate-500">Submission Status</span>
+                                {a.submitted ? (
+                                  <div className="p-3 bg-green-500/5 border border-green-500/15 rounded-xl space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <CheckCircle size={14} className="text-green-400" />
+                                      <span className="text-xs font-semibold text-green-400">Submitted</span>
+                                      {a.submittedAt && (
+                                        <span className="text-[10px] text-slate-400 ml-auto">on {new Date(a.submittedAt).toLocaleString()}</span>
+                                      )}
+                                    </div>
+                                    {a.submissionFileUrl && (
+                                      <a 
+                                        href={a.submissionFileUrl} 
+                                        target="_blank" 
+                                        rel="noopener noreferrer" 
+                                        className="inline-flex items-center gap-1.5 text-[10px] text-brand-400 hover:text-brand-300 font-semibold transition-colors"
+                                      >
+                                        <ExternalLink size={11} /> View Submitted Work
+                                      </a>
+                                    )}
+                                    {a.marksObtained !== null && a.marksObtained !== undefined && (
+                                      <div className="flex items-center justify-between text-xs pt-1 border-t border-green-500/10">
+                                        <span className="text-slate-400">Marks Awarded:</span>
+                                        <span className={`font-bold text-sm ${
+                                          a.marksObtained >= (a.maxMarks * 0.8) ? 'text-green-400' : 
+                                          a.marksObtained >= (a.maxMarks * 0.5) ? 'text-amber-400' : 'text-red-400'
+                                        }`}>
+                                          {a.marksObtained} / {a.maxMarks}
+                                        </span>
+                                      </div>
+                                    )}
+                                    {a.feedback && (
+                                      <div className="pt-1 border-t border-green-500/10">
+                                        <span className="text-[9px] text-slate-500 font-bold uppercase">Teacher Feedback:</span>
+                                        <p className="text-xs text-slate-300 mt-1 italic">{a.feedback}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className={`p-3 rounded-xl space-y-1 ${
+                                    isOverdue 
+                                      ? 'bg-red-500/5 border border-red-500/15' 
+                                      : 'bg-slate-900/40 border border-slate-850'
+                                  }`}>
+                                    <div className="flex items-center gap-2">
+                                      <AlertCircle size={14} className={isOverdue ? 'text-red-400' : 'text-amber-400'} />
+                                      <span className={`text-xs font-semibold ${isOverdue ? 'text-red-400' : 'text-amber-400'}`}>
+                                        {isOverdue ? 'Not submitted — overdue' : 'Awaiting submission'}
+                                      </span>
+                                    </div>
+                                    <p className="text-[10px] text-slate-500">
+                                      {isOverdue 
+                                        ? `This assignment was due on ${dueDate.toLocaleDateString()}. Please follow up with your child's teacher.`
+                                        : `Due on ${dueDate.toLocaleDateString()} — ${Math.ceil((dueDate.getTime() - now.getTime()) / (1000 * 60 * 60 * 24))} day(s) remaining.`
+                                      }
+                                    </p>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </GlassCard>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
             )}
 
             {activeTab === 'grades' && (
@@ -688,12 +1118,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                         Close Screen
                       </button>
                     </div>
-                    <video 
-                      src={activeVideoUrl} 
-                      controls 
-                      className="w-full max-h-96 rounded-xl border border-slate-800 bg-black"
-                      autoPlay
-                    />
+                    {renderVideoPlayer(activeVideoUrl)}
                   </div>
                 )}
 

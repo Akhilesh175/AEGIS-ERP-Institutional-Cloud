@@ -38,6 +38,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       case 'PARENT':
         return [
           { id: 'dashboard', label: 'Child Tracker', icon: Eye },
+          { id: 'homework', label: 'Homework', icon: BookMarked },
           { id: 'timetable', label: 'Class Schedule', icon: Calendar },
           { id: 'materials', label: 'Materials', icon: BookOpen },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },

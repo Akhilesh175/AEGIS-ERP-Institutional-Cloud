@@ -5,13 +5,13 @@ import { mockDb } from '../services/mockDb';
 import { supabase } from '../lib/supabase';
 import { 
   TeacherClassSubjectMapping, Student, AssignmentSubmission, 
-  Class, Subject, Assignment, User, Timetable, Exam, StudyMaterial, Quiz
+  Class, Subject, Assignment, User, Timetable, Exam, StudyMaterial, Quiz, Section, HomeworkAttachment
 } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Clipboard, UserCheck, Edit3, Award, PlusCircle, PenTool,
   UploadCloud, FileText, CheckCircle, AlertCircle, Save, Calendar, Clock, MapPin, Layers, Users,
-  Trash2, Eye, X, Video, File, MessageSquare, MessageCircle, BookOpen
+  Trash2, Eye, X, Video, File, MessageSquare, MessageCircle, BookOpen, Paperclip, Loader2
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -42,6 +42,15 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [assignDesc, setAssignDesc] = useState('');
   const [assignDueDate, setAssignDueDate] = useState('');
   const [assignIsHomework, setAssignIsHomework] = useState(false);
+  const [assignSectionId, setAssignSectionId] = useState('');
+  const [editAssignSectionId, setEditAssignSectionId] = useState('');
+  const [availableSections, setAvailableSections] = useState<Section[]>([]);
+  const [createdHomeworkId, setCreatedHomeworkId] = useState(() => 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); }));
+  const [attachmentsList, setAttachmentsList] = useState<HomeworkAttachment[]>([]);
+  const [attachmentUploading, setAttachmentUploading] = useState(false);
+  const [attachmentProgress, setAttachmentProgress] = useState(0);
+  const [attachmentError, setAttachmentError] = useState('');
+
 
   const [quizTitle, setQuizTitle] = useState('');
   const [quizDuration, setQuizDuration] = useState(15);
@@ -60,8 +69,10 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [materialTitle, setMaterialTitle] = useState('');
   const [materialDesc, setMaterialDesc] = useState('');
   const [materialUrl, setMaterialUrl] = useState('');
-  const [materialType, setMaterialType] = useState<'pdf' | 'docx' | 'mp4'>('pdf');
+  const [materialType, setMaterialType] = useState<'pdf' | 'docx' | 'mp4' | 'stream'>('pdf');
   const [materialStreamable, setMaterialStreamable] = useState(false);
+  const [materialFile, setMaterialFile] = useState<File | null>(null);
+  const [materialUploading, setMaterialUploading] = useState(false);
 
   // Managed class timetables (Class Teacher Hub)
   const [managedClasses, setManagedClasses] = useState<Class[]>([]);
@@ -137,7 +148,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [editMatTitle, setEditMatTitle] = useState('');
   const [editMatDesc, setEditMatDesc] = useState('');
   const [editMatUrl, setEditMatUrl] = useState('');
-  const [editMatType, setEditMatType] = useState<'pdf' | 'docx' | 'mp4'>('pdf');
+  const [editMatType, setEditMatType] = useState<'pdf' | 'docx' | 'mp4' | 'stream'>('pdf');
   const [editMatStreamable, setEditMatStreamable] = useState(false);
 
   // Edit Quiz modal
@@ -337,6 +348,17 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       // Load Submissions
       const subData = await mockApi.teacherGetSubmissions(teacherId, mapping.classId);
       setSubmissions(subData);
+
+      // Load Class Sections dynamically
+      const schoolId = mockDb.teachers.find(t => t.id === teacherId)?.schoolId || 'school-1';
+      await mockApi.syncSectionsData(schoolId);
+      const filteredSections = mockDb.sections.filter(sec => sec.classId === mapping.classId);
+      setAvailableSections(filteredSections);
+      if (filteredSections.length > 0) {
+        setAssignSectionId(filteredSections[0].id);
+      } else {
+        setAssignSectionId('');
+      }
     } catch (err) {
       console.error(err);
     }
@@ -437,6 +459,34 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     };
   }, [activeTab, selectedCategory, selectedPost]);
 
+  // Real-time Supabase Postgres changes subscription for academic and class data
+  useEffect(() => {
+    if (!teacherId) return;
+
+    const handleAcademicSync = () => {
+      console.log('Realtime academic update detected, refreshing teacher portal lists...');
+      setRefreshTrigger(prev => prev + 1);
+    };
+
+    const channel = supabase
+      .channel('teacher-academic-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homeworks' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homework_attachments' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homework_submissions' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quizzes' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'timetables' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'study_materials' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_marks' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_schedules' }, handleAcademicSync)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [teacherId]);
+
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;
     if (activeTab === 'assignments') {
@@ -480,7 +530,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
         editAssignTitle,
         editAssignDesc,
         new Date(editAssignDueDate).toISOString(),
-        editAssignIsHomework
+        editAssignIsHomework,
+        editAssignSectionId || null
       );
       alert('Assignment updated successfully!');
       setEditingAssignment(null);
@@ -509,6 +560,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       await mockApi.teacherEditStudyMaterial(
         editingMaterial.id,
         mapping.subjectId,
+        mapping.classId,
         editMatTitle,
         editMatDesc,
         editMatUrl,
@@ -807,6 +859,109 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     }
   };
 
+  const handleAttachmentUpload = async (file: File, homeworkId: string) => {
+    if (!file || !homeworkId || !teacherId) return;
+
+    // Validate size (max 50MB)
+    const MAX_SIZE = 50 * 1024 * 1024;
+    if (file.size > MAX_SIZE) {
+      setAttachmentError('File size exceeds the maximum limit of 50MB.');
+      return;
+    }
+
+    // Validate MIME type
+    const whitelist = [
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'image/jpeg',
+      'image/jpg',
+      'image/png',
+      'image/webp',
+      'application/zip',
+      'application/x-zip-compressed',
+      'video/mp4'
+    ];
+    if (!whitelist.includes(file.type)) {
+      setAttachmentError('Unsupported file type. Supports PDF, DOC/DOCX, ZIP, MP4, JPG, PNG, WEBP.');
+      return;
+    }
+
+    setAttachmentUploading(true);
+    setAttachmentProgress(10);
+    setAttachmentError('');
+
+    try {
+      // Simulate visual upload progress ticks
+      const interval = setInterval(() => {
+        setAttachmentProgress(prev => {
+          if (prev >= 90) {
+            clearInterval(interval);
+            return 90;
+          }
+          return prev + 15;
+        });
+      }, 120);
+
+      const schoolId = mockDb.teachers.find(t => t.id === teacherId)?.schoolId || 'school-1';
+      
+      if (homeworkId === createdHomeworkId) {
+        // Creation Mode: Upload file to storage bucket only (avoid metadata insertion to bypass FK constraint)
+        const publicUrl = await mockApi.uploadHomeworkFileOnly(schoolId, homeworkId, file);
+        clearInterval(interval);
+        setAttachmentProgress(100);
+
+        const mockAtt: HomeworkAttachment = {
+          id: 'local_' + Math.random().toString(36).substr(2, 9),
+          homeworkId,
+          fileUrl: publicUrl,
+          fileName: file.name,
+          fileType: file.type.split('/')[1] || 'document',
+          mimeType: file.type,
+          uploadedAt: new Date().toISOString()
+        };
+
+        setAttachmentsList(prev => [...prev, mockAtt]);
+        setAttachmentUploading(false);
+      } else {
+        // Edit Mode: Homework already exists in DB, so we can insert metadata directly
+        const att = await mockApi.teacherUploadHomeworkAttachment(
+          schoolId,
+          homeworkId,
+          teacherId,
+          file
+        );
+        clearInterval(interval);
+        setAttachmentProgress(100);
+        setAttachmentsList(prev => [...prev, att]);
+        setAttachmentUploading(false);
+      }
+    } catch (err: any) {
+      setAttachmentUploading(false);
+      setAttachmentError(err.message || 'File upload failed.');
+    }
+  };
+
+  const handleAttachmentDelete = async (attachmentId: string) => {
+    if (!window.confirm('Are you sure you want to delete this resource file?')) return;
+    try {
+      if (attachmentId.startsWith('local_')) {
+        // Local/Creation Mode: Remove file from storage bucket and local lists
+        const attObj = attachmentsList.find(att => att.id === attachmentId);
+        if (attObj) {
+          await mockApi.deleteHomeworkSubmissionFile(attObj.fileUrl);
+        }
+        setAttachmentsList(prev => prev.filter(att => att.id !== attachmentId));
+      } else {
+        // Edit Mode: Delete from database and Storage bucket
+        await mockApi.teacherDeleteHomeworkAttachment(attachmentId);
+        setAttachmentsList(prev => prev.filter(att => att.id !== attachmentId));
+      }
+    } catch (err: any) {
+      alert(err.message || 'Error deleting attachment');
+    }
+  };
+
   const handleCreateAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!teacherId || !selectedMapping || !assignTitle.trim()) return;
@@ -814,6 +969,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     if (!mapping) return;
 
     try {
+      // 1. Create the parent homework record first in Supabase
       await mockApi.teacherCreateAssignment(
         teacherId,
         mapping.classId,
@@ -821,16 +977,37 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
         assignTitle,
         assignDesc,
         new Date(assignDueDate).toISOString(),
-        assignIsHomework
+        assignIsHomework,
+        assignSectionId || null,
+        createdHomeworkId
       );
+
+      // 2. Insert metadata for each buffered local attachment (FK is now active & satisfied!)
+      const schoolId = mockDb.teachers.find(t => t.id === teacherId)?.schoolId || 'school-1';
+      for (const att of attachmentsList) {
+        await mockApi.teacherInsertHomeworkAttachmentMetadata(
+          schoolId,
+          createdHomeworkId,
+          teacherId,
+          att.fileUrl,
+          att.fileName,
+          att.mimeType || 'application/octet-stream'
+        );
+      }
+
       setAssignTitle('');
       setAssignDesc('');
       setAssignDueDate('');
       setAssignIsHomework(false);
-      alert('Assignment released to classroom feeds!');
+      setAttachmentsList([]);
+      setCreatedHomeworkId('xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => { const r = Math.random() * 16 | 0; return (c === 'x' ? r : (r & 0x3 | 0x8)).toString(16); }));
+      setAttachmentError('');
+      setAttachmentProgress(0);
+      setAttachmentUploading(false);
+      alert('Assignment released with secure attachments to classroom feeds!');
       setRefreshTrigger(prev => prev + 1);
     } catch (err: any) {
-      alert(err.message || 'Error creating assignment');
+      alert(err.message || 'Error releasing assignment');
     }
   };
 
@@ -884,29 +1061,70 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
   const handleUploadMaterial = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!teacherId || !selectedMapping || !materialTitle.trim() || !materialUrl.trim()) return;
+    if (!teacherId || !selectedMapping || !materialTitle.trim()) return;
     const mapping = classMappings.find(m => m.id === selectedMapping);
     if (!mapping) return;
 
+    if (materialType === 'stream') {
+      if (!materialUrl.trim()) {
+        alert('Please provide the live stream or external video URL.');
+        return;
+      }
+      if (!/^https?:\/\//i.test(materialUrl)) {
+        alert('Please enter a valid URL starting with http:// or https://');
+        return;
+      }
+    } else {
+      if (!materialFile) {
+        alert('Please select a file to upload.');
+        return;
+      }
+      // Validate file size (100MB)
+      if (materialFile.size > 100 * 1024 * 1024) {
+        alert('File size exceeds the 100 MB limit. Please optimize or compress your file.');
+        return;
+      }
+      // Validate format
+      const extension = materialFile.name.split('.').pop()?.toLowerCase() || '';
+      if (materialType === 'pdf' && extension !== 'pdf') {
+        alert('Selected format is PDF but the uploaded file extension is not .pdf.');
+        return;
+      }
+      if (materialType === 'docx' && extension !== 'docx') {
+        alert('Selected format is Word Document but the uploaded file extension is not .docx.');
+        return;
+      }
+      if (materialType === 'mp4' && !['mp4', 'mov', 'webm', 'ogg', 'avi'].includes(extension)) {
+        alert('Selected format is Video Lecture but the uploaded file extension is not a supported video format.');
+        return;
+      }
+    }
+
     try {
+      setMaterialUploading(true);
       await mockApi.teacherUploadStudyMaterial(
         teacherId,
         mapping.subjectId,
+        mapping.classId,
         materialTitle,
         materialDesc,
         materialUrl,
         materialType,
-        materialStreamable
+        materialStreamable,
+        materialFile || undefined
       );
       setMaterialTitle('');
       setMaterialDesc('');
       setMaterialUrl('');
+      setMaterialFile(null);
       setMaterialType('pdf');
       setMaterialStreamable(false);
       alert('Study resource added to catalog!');
       setRefreshTrigger(prev => prev + 1);
     } catch (err: any) {
       alert(err.message || 'Error uploading material');
+    } finally {
+      setMaterialUploading(false);
     }
   };
 
@@ -943,9 +1161,22 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       {/* Portal Identity Context Bar */}
       <div className="bg-gradient-to-r from-brand-950 to-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col md:flex-row items-center justify-between gap-4">
         <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-          <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center shrink-0">
-            <Clipboard className="text-brand-400" size={24} />
-          </div>
+          {teacherUser?.avatarUrl ? (
+            <img 
+              src={teacherUser.avatarUrl} 
+              alt="" 
+              className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md shrink-0 animate-fade-in"
+              onError={(e) => {
+                // If link fails or is broken, clear it visually
+                (e.target as HTMLImageElement).src = '';
+                (e.target as HTMLImageElement).style.display = 'none';
+              }}
+            />
+          ) : (
+            <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center shrink-0">
+              <Clipboard className="text-brand-400" size={24} />
+            </div>
+          )}
           <div>
             <h2 className="text-xl font-bold text-slate-100 font-sans leading-none">{teacherName} <span className="text-xs text-slate-400 font-normal ml-1">(Faculty/Teacher)</span></h2>
             <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-2">
@@ -1745,10 +1976,22 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   <div className="mb-4 pt-1">
                     <p className="text-[10px] text-brand-500 font-bold uppercase tracking-widest">{sub.assignmentTitle}</p>
                     <h4 className="text-lg font-bold text-slate-100 mt-1">{sub.studentName}</h4>
-                    <p className="text-[11px] text-slate-400 mt-1.5 flex items-center gap-1.5 font-mono bg-slate-900/50 inline-flex px-2 py-1 rounded-md border border-slate-800">
-                      <FileText size={12} className="text-slate-500" />
-                      {sub.fileUrl || 'No attachment provided'}
-                    </p>
+                    {sub.fileUrl ? (
+                      <a 
+                        href={sub.fileUrl} 
+                        target="_blank" 
+                        rel="noopener noreferrer" 
+                        className="text-[11px] text-brand-400 hover:text-brand-300 mt-1.5 flex items-center gap-1.5 font-mono bg-brand-500/5 hover:bg-brand-500/10 px-2 py-1 rounded-md border border-brand-500/20 w-fit transition-colors"
+                      >
+                        <Paperclip size={12} className="text-brand-400" />
+                        {sub.fileUrl.split('/').pop()?.split('_').slice(2).join('_') || 'Download Attachment'}
+                      </a>
+                    ) : (
+                      <p className="text-[11px] text-slate-500 mt-1.5 flex items-center gap-1.5 font-mono bg-slate-900/50 inline-flex px-2 py-1 rounded-md border border-slate-800">
+                        <FileText size={12} className="text-slate-600" />
+                        No attachment provided
+                      </p>
+                    )}
                   </div>
                   
                   <div className="flex-1 mt-2">
@@ -1950,7 +2193,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   required
                 />
               </div>
-              <div className="space-y-1">
+               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Due Date</label>
                 <input 
                   type="datetime-local"
@@ -1960,6 +2203,128 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   required
                 />
               </div>
+              {availableSections.length > 0 && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Target Section</label>
+                  <select 
+                    value={assignSectionId}
+                    onChange={(e) => setAssignSectionId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                    required
+                  >
+                    {availableSections.map(sec => (
+                      <option key={sec.id} value={sec.id}>Section {sec.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Premium Attachment Uploader Section */}
+              <div className="space-y-2.5 pt-2 border-t border-slate-850">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Homework Resource Attachments</label>
+                
+                {/* Drag and Drop Zone */}
+                {!attachmentUploading ? (
+                  <div 
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                        handleAttachmentUpload(e.dataTransfer.files[0], createdHomeworkId);
+                      }
+                    }}
+                    onClick={() => document.getElementById(`teacher-file-picker-${createdHomeworkId}`)?.click()}
+                    className="border-2 border-dashed border-slate-850 hover:border-brand-500/50 hover:bg-brand-500/5 rounded-xl p-5 flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all duration-300 group"
+                  >
+                    <input 
+                      type="file" 
+                      id={`teacher-file-picker-${createdHomeworkId}`} 
+                      className="hidden" 
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleAttachmentUpload(e.target.files[0], createdHomeworkId);
+                        }
+                      }}
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.zip,.mp4"
+                    />
+                    <UploadCloud size={24} className="text-slate-500 group-hover:text-brand-400 group-hover:scale-110 transition-all duration-300 shrink-0" />
+                    <p className="text-xs font-semibold text-slate-300">Drag & drop resource here, or <span className="text-brand-400 hover:underline">browse</span></p>
+                    <p className="text-[9px] text-slate-500 font-medium">Supports PDF, DOCX, ZIP, JPG, PNG, MP4 up to 50MB</p>
+                  </div>
+                ) : (
+                  /* Uploading Indicator */
+                  <div className="border border-slate-800 bg-slate-950/40 rounded-xl p-4 flex flex-col gap-2.5">
+                    <div className="flex items-center gap-3">
+                      <Loader2 size={18} className="text-brand-400 animate-spin shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-300 truncate">Uploading attachment...</p>
+                        <p className="text-[9px] text-slate-500">Securing resource file in Supabase CDN</p>
+                      </div>
+                      <span className="text-xs font-bold text-brand-400 font-mono shrink-0">{attachmentProgress}%</span>
+                    </div>
+                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-brand-500 h-full rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(59,130,246,0.5)]" 
+                        style={{ width: `${attachmentProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Alert */}
+                {attachmentError && (
+                  <div className="p-3 bg-red-500/5 border border-red-500/15 rounded-lg flex items-start gap-2 animate-fade-in">
+                    <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wide">Upload Failed</p>
+                      <p className="text-[9.5px] text-red-400 mt-0.5">{attachmentError}</p>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => setAttachmentError('')}
+                      className="text-[9px] font-bold text-slate-500 hover:text-slate-300 uppercase font-mono tracking-widest"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+
+                {/* Uploaded Attachments Grid/List */}
+                {attachmentsList.length > 0 && (
+                  <div className="grid grid-cols-1 gap-2 mt-2">
+                    {attachmentsList.map((att) => (
+                      <div key={att.id} className="border border-slate-850 bg-slate-950/40 hover:bg-slate-950/65 rounded-xl p-3 flex items-center justify-between gap-3 transition-colors animate-fade-in group/item">
+                        <div className="flex items-center gap-2 truncate">
+                          <Paperclip size={14} className="text-brand-400 shrink-0" />
+                          <span className="text-xs text-slate-300 truncate" title={att.fileName}>
+                            {att.fileName}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <a 
+                            href={att.fileUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition-colors"
+                            title="View File"
+                          >
+                            <Eye size={13} />
+                          </a>
+                          <button 
+                            type="button" 
+                            onClick={() => handleAttachmentDelete(att.id)}
+                            className="p-1.5 hover:bg-red-500/10 text-slate-400 hover:text-red-400 rounded-lg transition-colors"
+                            title="Delete Resource File"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox"
@@ -1998,11 +2363,27 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                         </span>
                       </div>
                       <p className="text-xs text-slate-400 line-clamp-2 mb-3">{a.description}</p>
-                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-500 mb-4">
+                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-500 mb-3">
                         <span className="flex items-center gap-1"><Calendar size={12} /> Due: {new Date(a.dueDate).toLocaleDateString()}</span>
                         <span className="flex items-center gap-1"><Layers size={12} /> {a.className}</span>
                         <span className="flex items-center gap-1"><FileText size={12} /> {a.subjectName}</span>
                       </div>
+                      {a.attachments && a.attachments.length > 0 && (
+                        <div className="flex flex-wrap gap-1.5 mb-4 pt-2 border-t border-slate-850/40">
+                          {a.attachments.map((att) => (
+                            <a 
+                              key={att.id}
+                              href={att.fileUrl} 
+                              target="_blank" 
+                              rel="noopener noreferrer" 
+                              className="text-[9.5px] text-slate-400 hover:text-brand-400 font-mono bg-slate-900/50 hover:bg-brand-500/5 px-2 py-0.5 rounded border border-slate-850 hover:border-brand-500/20 transition-all flex items-center gap-1 shrink-0"
+                            >
+                              <Paperclip size={10} className="shrink-0 text-slate-500" />
+                              <span className="truncate max-w-[120px]">{att.fileName}</span>
+                            </a>
+                          ))}
+                        </div>
+                      )}
                     </div>
                     
                     <div className="flex gap-2 border-t border-slate-850 pt-3">
@@ -2013,6 +2394,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                           setEditAssignDesc(a.description);
                           setEditAssignDueDate(new Date(a.dueDate).toISOString().slice(0, 16));
                           setEditAssignIsHomework(a.isHomework);
+                          setEditAssignSectionId(a.sectionId || '');
+                          setAttachmentsList(a.attachments || []);
                         }}
                         className="flex-1 glass-btn-secondary text-xs flex items-center justify-center gap-1"
                       >
@@ -2278,6 +2661,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   onChange={(e) => setMaterialTitle(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
                   required
+                  disabled={materialUploading}
                 />
               </div>
               <div className="space-y-1">
@@ -2288,32 +2672,65 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   value={materialDesc}
                   onChange={(e) => setMaterialDesc(e.target.value)}
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  disabled={materialUploading}
                 />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource File Link</label>
-                  <input 
-                    type="text"
-                    placeholder="https://example.com/lecture.mp4"
-                    value={materialUrl}
-                    onChange={(e) => setMaterialUrl(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
-                    required
-                  />
-                </div>
-                <div className="space-y-1">
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Format</label>
                   <select 
                     value={materialType}
-                    onChange={(e) => setMaterialType(e.target.value as any)}
+                    onChange={(e) => {
+                      const val = e.target.value as any;
+                      setMaterialType(val);
+                      if (val === 'stream' || val === 'mp4') {
+                        setMaterialStreamable(true);
+                      } else {
+                        setMaterialStreamable(false);
+                      }
+                    }}
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
+                    disabled={materialUploading}
                   >
                     <option value="pdf">PDF Handbook</option>
                     <option value="docx">Word Docx</option>
                     <option value="mp4">MP4 Video Clip</option>
+                    <option value="stream">Live Stream / External Video</option>
                   </select>
                 </div>
+                {materialType === 'stream' ? (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Resource Live Link</label>
+                    <input 
+                      type="text"
+                      placeholder="https://youtube.com/..."
+                      value={materialUrl}
+                      onChange={(e) => setMaterialUrl(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                      required
+                      disabled={materialUploading}
+                    />
+                  </div>
+                ) : (
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Select File (Max 100MB)</label>
+                    <input 
+                      type="file"
+                      accept={
+                        materialType === 'pdf' ? '.pdf' :
+                        materialType === 'docx' ? '.docx' :
+                        'video/*'
+                      }
+                      onChange={(e) => {
+                        const file = e.target.files?.[0] || null;
+                        setMaterialFile(file);
+                      }}
+                      className="w-full text-slate-300 text-xs bg-slate-900 border border-slate-800 rounded-lg p-1.5 focus:outline-none file:mr-2 file:py-1 file:px-2 file:rounded-md file:border-0 file:text-[10px] file:font-semibold file:bg-brand-500/10 file:text-brand-400 file:cursor-pointer"
+                      required
+                      disabled={materialUploading}
+                    />
+                  </div>
+                )}
               </div>
               <div className="flex items-center gap-2">
                 <input 
@@ -2322,11 +2739,26 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   checked={materialStreamable}
                   onChange={(e) => setMaterialStreamable(e.target.checked)}
                   className="bg-slate-900 border border-slate-800 rounded h-4 w-4 text-brand-500 focus:ring-brand-500"
+                  disabled={materialUploading || materialType === 'stream' || materialType === 'mp4'}
                 />
                 <label htmlFor="isStreamCheck" className="text-xs text-slate-300">Mark as streamable in-browser lecture video</label>
               </div>
-              <button type="submit" className="w-full glass-btn-primary text-xs">
-                Upload study files
+              <button 
+                type="submit" 
+                className="w-full glass-btn-primary text-xs flex items-center justify-center gap-2"
+                disabled={materialUploading}
+              >
+                {materialUploading ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-3 h-4 w-4 text-white" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Uploading & encrypting to storage node...
+                  </>
+                ) : (
+                  'Upload study files'
+                )}
               </button>
             </form>
           </GlassCard>
@@ -2749,6 +3181,37 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             </div>
 
             <form onSubmit={handleGradingSubmit} className="space-y-4">
+              {gradingSubmission.fileUrl && (
+                <div className="space-y-1.5 p-3.5 bg-slate-950/60 border border-slate-850 rounded-xl">
+                  <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Student's File Attachment</span>
+                  <div className="flex items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 truncate">
+                      <Paperclip size={14} className="text-brand-400 shrink-0" />
+                      <span className="text-xs text-slate-300 truncate" title={gradingSubmission.fileUrl}>
+                        {gradingSubmission.fileUrl.split('/').pop()?.split('_').slice(2).join('_') || 'attachment'}
+                      </span>
+                    </div>
+                    <a 
+                      href={gradingSubmission.fileUrl} 
+                      target="_blank" 
+                      rel="noopener noreferrer" 
+                      className="glass-btn-primary py-1 px-3 text-[10px] inline-flex items-center gap-1 shrink-0"
+                    >
+                      <Eye size={12} /> View / Download
+                    </a>
+                  </div>
+                  {/\.(jpg|jpeg|png)$/i.test(gradingSubmission.fileUrl) && (
+                    <div className="mt-2.5 border border-slate-800 rounded-lg overflow-hidden max-h-48 flex items-center justify-center bg-slate-900/50">
+                      <img 
+                        src={gradingSubmission.fileUrl} 
+                        alt="Submission Preview" 
+                        className="max-h-48 object-contain" 
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-1">
                 <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Marks Scored (Max {gradingSubmission.maxMarks})</label>
                 <input 
@@ -2962,7 +3425,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 <h4 className="font-bold text-slate-100">Edit Assignment</h4>
                 <p className="text-[10px] text-slate-400 mt-0.5">Task: {editingAssignment.title}</p>
               </div>
-              <button onClick={() => setEditingAssignment(null)} className="text-xs text-slate-400 hover:text-slate-200">
+              <button onClick={() => { setEditingAssignment(null); setAttachmentsList([]); }} className="text-xs text-slate-400 hover:text-slate-200">
                 <X size={16} />
               </button>
             </div>
@@ -2998,6 +3461,128 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   required
                 />
               </div>
+              {availableSections.length > 0 && (
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Target Section</label>
+                  <select 
+                    value={editAssignSectionId}
+                    onChange={(e) => setEditAssignSectionId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                    required
+                  >
+                    {availableSections.map(sec => (
+                      <option key={sec.id} value={sec.id}>Section {sec.name}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
+              {/* Premium Attachment Uploader Section */}
+              <div className="space-y-2.5 pt-2 border-t border-slate-850">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Homework Resource Attachments</label>
+                
+                {/* Drag and Drop Zone */}
+                {!attachmentUploading ? (
+                  <div 
+                    onDragOver={(e) => e.preventDefault()}
+                    onDrop={(e) => {
+                      e.preventDefault();
+                      if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+                        handleAttachmentUpload(e.dataTransfer.files[0], editingAssignment.id);
+                      }
+                    }}
+                    onClick={() => document.getElementById(`teacher-file-picker-${editingAssignment.id}`)?.click()}
+                    className="border-2 border-dashed border-slate-850 hover:border-brand-500/50 hover:bg-brand-500/5 rounded-xl p-5 flex flex-col items-center justify-center gap-1.5 cursor-pointer transition-all duration-300 group"
+                  >
+                    <input 
+                      type="file" 
+                      id={`teacher-file-picker-${editingAssignment.id}`} 
+                      className="hidden" 
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handleAttachmentUpload(e.target.files[0], editingAssignment.id);
+                        }
+                      }}
+                      accept=".pdf,.doc,.docx,.jpg,.jpeg,.png,.webp,.zip,.mp4"
+                    />
+                    <UploadCloud size={24} className="text-slate-500 group-hover:text-brand-400 group-hover:scale-110 transition-all duration-300 shrink-0" />
+                    <p className="text-xs font-semibold text-slate-300">Drag & drop resource here, or <span className="text-brand-400 hover:underline">browse</span></p>
+                    <p className="text-[9px] text-slate-500 font-medium">Supports PDF, DOCX, ZIP, JPG, PNG, MP4 up to 50MB</p>
+                  </div>
+                ) : (
+                  /* Uploading Indicator */
+                  <div className="border border-slate-800 bg-slate-950/40 rounded-xl p-4 flex flex-col gap-2.5">
+                    <div className="flex items-center gap-3">
+                      <Loader2 size={18} className="text-brand-400 animate-spin shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-xs font-semibold text-slate-300 truncate">Uploading attachment...</p>
+                        <p className="text-[9px] text-slate-500">Securing resource file in Supabase CDN</p>
+                      </div>
+                      <span className="text-xs font-bold text-brand-400 font-mono shrink-0">{attachmentProgress}%</span>
+                    </div>
+                    <div className="w-full bg-slate-900 h-1.5 rounded-full overflow-hidden">
+                      <div 
+                        className="bg-brand-500 h-full rounded-full transition-all duration-300 shadow-[0_0_10px_rgba(59,130,246,0.5)]" 
+                        style={{ width: `${attachmentProgress}%` }}
+                      />
+                    </div>
+                  </div>
+                )}
+
+                {/* Error Alert */}
+                {attachmentError && (
+                  <div className="p-3 bg-red-500/5 border border-red-500/15 rounded-lg flex items-start gap-2 animate-fade-in">
+                    <AlertCircle size={14} className="text-red-400 shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wide">Upload Failed</p>
+                      <p className="text-[9.5px] text-red-400 mt-0.5">{attachmentError}</p>
+                    </div>
+                    <button 
+                      type="button" 
+                      onClick={() => setAttachmentError('')}
+                      className="text-[9px] font-bold text-slate-500 hover:text-slate-300 uppercase font-mono tracking-widest"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                )}
+
+                {/* Uploaded Attachments Grid/List */}
+                {attachmentsList.length > 0 && (
+                  <div className="grid grid-cols-1 gap-2 mt-2">
+                    {attachmentsList.map((att) => (
+                      <div key={att.id} className="border border-slate-850 bg-slate-950/40 hover:bg-slate-950/65 rounded-xl p-3 flex items-center justify-between gap-3 transition-colors animate-fade-in group/item">
+                        <div className="flex items-center gap-2 truncate">
+                          <Paperclip size={14} className="text-brand-400 shrink-0" />
+                          <span className="text-xs text-slate-300 truncate" title={att.fileName}>
+                            {att.fileName}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <a 
+                            href={att.fileUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer" 
+                            className="p-1.5 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded-lg transition-colors"
+                            title="View File"
+                          >
+                            <Eye size={13} />
+                          </a>
+                          <button 
+                            type="button" 
+                            onClick={() => handleAttachmentDelete(att.id)}
+                            className="p-1.5 hover:bg-red-500/10 text-slate-400 hover:text-red-400 rounded-lg transition-colors"
+                            title="Delete Resource File"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
               <div className="flex items-center gap-2">
                 <input 
                   type="checkbox"
@@ -3009,7 +3594,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 <label htmlFor="editIsHomeworkCheck" className="text-xs text-slate-300">Mark as daily read/write homework</label>
               </div>
               <div className="flex gap-2 pt-2">
-                <button type="button" onClick={() => setEditingAssignment(null)} className="flex-1 glass-btn-secondary text-xs">Cancel</button>
+                <button type="button" onClick={() => { setEditingAssignment(null); setAttachmentsList([]); }} className="flex-1 glass-btn-secondary text-xs">Cancel</button>
                 <button type="submit" className="flex-1 glass-btn-primary text-xs">Save Changes</button>
               </div>
             </form>
@@ -3066,12 +3651,21 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Format</label>
                   <select 
                     value={editMatType}
-                    onChange={(e) => setEditMatType(e.target.value as any)}
+                    onChange={(e) => {
+                      const val = e.target.value as any;
+                      setEditMatType(val);
+                      if (val === 'stream' || val === 'mp4') {
+                        setEditMatStreamable(true);
+                      } else {
+                        setEditMatStreamable(false);
+                      }
+                    }}
                     className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
                   >
                     <option value="pdf">PDF Handbook</option>
                     <option value="docx">Word Docx</option>
                     <option value="mp4">MP4 Video Clip</option>
+                    <option value="stream">Live Stream / External Video</option>
                   </select>
                 </div>
               </div>
@@ -3082,6 +3676,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   checked={editMatStreamable}
                   onChange={(e) => setEditMatStreamable(e.target.checked)}
                   className="bg-slate-900 border border-slate-800 rounded h-4 w-4 text-brand-500 focus:ring-brand-500"
+                  disabled={editMatType === 'stream' || editMatType === 'mp4'}
                 />
                 <label htmlFor="editIsStreamCheck" className="text-xs text-slate-300">Mark as streamable in-browser lecture video</label>
               </div>

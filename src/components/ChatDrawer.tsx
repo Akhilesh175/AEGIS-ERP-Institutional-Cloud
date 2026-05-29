@@ -82,25 +82,6 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
       const newMsg = await mockApi.sendChatMessage(session.user.id, activeContact.id, originalMsg);
       setMessages(prev => [...prev, newMsg]);
       loadContacts();
-
-      // MOCK AUTOMATED CHAT BACKPLAY
-      // If a student or parent chats, simulate teacher/admin response after 3 seconds for stunning interactive depth
-      setTimeout(async () => {
-        if (activeContact.role === 'TEACHER' || activeContact.role === 'ADMIN') {
-          const autoReplies = [
-            "Thank you for contacting me. I have noted this down and will review the reports shortly.",
-            "That sounds great! Please ensure all files are uploaded through the submission portal.",
-            "Hello! I am currently in a lecture session. I will get back to you with the details by this evening.",
-            "I checked the system, and everything seems fully updated. Let me know if you face further hurdles!"
-          ];
-          const chosenReply = autoReplies[Math.floor(Math.random() * autoReplies.length)];
-          await mockApi.sendChatMessage(activeContact.id, session.user.id, chosenReply);
-          if (activeContact) {
-            loadMessages(activeContact.id);
-          }
-        }
-      }, 3000);
-
     } catch (err) {
       console.error(err);
     }

@@ -4,7 +4,8 @@ import {
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizQuestion, 
   QuizAttempt, Exam, ExamSchedule, ExamMark, FeeStructure, FeePayment, 
   ForumCategory, ForumPost, ForumReply, ChatMessage, AuditLog, 
-  StudyMaterial, Announcement, Notification, SystemTelemetry, PhoneNumber, EmailAddress
+  StudyMaterial, Announcement, Notification, SystemTelemetry, PhoneNumber, EmailAddress,
+  Section, HomeworkAttachment
 } from '../types';
 
 // Storage keys
@@ -47,23 +48,26 @@ const SEED_USERS: User[] = [
   { id: 'u-superadmin', email: 'superadmin@aegis.com', role: 'SUPER_ADMIN', firstName: 'Sarah', lastName: 'Vance', phone: '+1 (555) 999-0000', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   // Admins
   { id: 'u-admin1', email: 'admin@aegis.com', role: 'ADMIN', firstName: 'Richard', lastName: 'Hendricks', phone: '+1 (555) 888-1111', avatarUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150', isActive: true, schoolId: 'school-1', password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-
   // Teachers
-  { id: 'u-teacher1', email: 'teacher1@aegis.com', role: 'TEACHER', firstName: 'Marcus', lastName: 'Aurelius', phone: '+1 (555) 777-2222', avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'u-teacher2', email: 'teacher2@aegis.com', role: 'TEACHER', firstName: 'Ada', lastName: 'Lovelace', phone: '+1 (555) 777-3333', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'u-teacher1', email: 'teacher1@aegis.com', role: 'TEACHER', firstName: 'Marcus', lastName: 'Aurelius', phone: '+1 (555) 777-2222', avatarUrl: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'u-teacher2', email: 'teacher2@aegis.com', role: 'TEACHER', firstName: 'Hypatia', lastName: 'of Alexandria', phone: '+1 (555) 777-3333', avatarUrl: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   // Students
-  { id: 'u-student1', email: 'student1@aegis.com', role: 'STUDENT', firstName: 'Leo', lastName: 'DaVinci', phone: '+1 (555) 666-4444', avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'u-student2', email: 'student2@aegis.com', role: 'STUDENT', firstName: 'Albert', lastName: 'Einstein', phone: '+1 (555) 666-5555', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'u-student3', email: 'student3@aegis.com', role: 'STUDENT', firstName: 'Marie', lastName: 'Curie', phone: '+1 (555) 666-6666', avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'u-student1', email: 'student1@aegis.com', role: 'STUDENT', firstName: 'Leo', lastName: 'da Vinci', phone: '+1 (555) 444-1111', avatarUrl: 'https://images.unsplash.com/photo-1539571696357-5a69c17a67c6?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'u-student2', email: 'student2@aegis.com', role: 'STUDENT', firstName: 'Albert', lastName: 'Einstein', phone: '+1 (555) 444-2222', avatarUrl: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'u-student3', email: 'student3@aegis.com', role: 'STUDENT', firstName: 'Marie', lastName: 'Curie', phone: '+1 (555) 444-3333', avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   // Parents
-  { id: 'u-parent1', email: 'parent1@aegis.com', role: 'PARENT', firstName: 'Robert', lastName: 'DaVinci', phone: '+1 (555) 555-7777', avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'u-parent1', email: 'parent1@aegis.com', role: 'PARENT', firstName: 'Robert', lastName: 'da Vinci', phone: '+1 (555) 555-9999', avatarUrl: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   { id: 'u-parent2', email: 'parent2@aegis.com', role: 'PARENT', firstName: 'Pierre', lastName: 'Curie', phone: '+1 (555) 555-8888', avatarUrl: 'https://images.unsplash.com/photo-1489980508314-941910ded1f4?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
 ];
-
 
 const SEED_CLASSES: Class[] = [
   { id: 'c-10a', schoolId: 'school-1', name: 'Grade 10-A', academicSessionId: 'session-1', classTeacherId: 't-1', createdAt: new Date().toISOString() },
   { id: 'c-11b', schoolId: 'school-1', name: 'Grade 11-B', academicSessionId: 'session-1', classTeacherId: 't-2', createdAt: new Date().toISOString() }
+];
+
+const SEED_SECTIONS: Section[] = [
+  { id: 'sec-10a', schoolId: 'school-1', classId: 'c-10a', name: 'A', createdAt: new Date().toISOString() },
+  { id: 'sec-11b', schoolId: 'school-1', classId: 'c-11b', name: 'B', createdAt: new Date().toISOString() }
 ];
 
 const SEED_SUBJECTS: Subject[] = [
@@ -78,9 +82,9 @@ const SEED_TEACHERS: Teacher[] = [
 ];
 
 const SEED_STUDENTS: Student[] = [
-  { id: 'st-1', userId: 'u-student1', schoolId: 'school-1', classId: 'c-10a', academicSessionId: 'session-1', admissionNumber: 'ADM2025001', rollNumber: 10, dateOfBirth: '2010-04-12', gender: 'MALE', createdAt: new Date().toISOString() },
-  { id: 'st-2', userId: 'u-student2', schoolId: 'school-1', classId: 'c-10a', academicSessionId: 'session-1', admissionNumber: 'ADM2025002', rollNumber: 11, dateOfBirth: '2010-06-25', gender: 'MALE', createdAt: new Date().toISOString() },
-  { id: 'st-3', userId: 'u-student3', schoolId: 'school-1', classId: 'c-11b', academicSessionId: 'session-1', admissionNumber: 'ADM2025003', rollNumber: 1, dateOfBirth: '2009-11-07', gender: 'FEMALE', createdAt: new Date().toISOString() }
+  { id: 'st-1', userId: 'u-student1', schoolId: 'school-1', classId: 'c-10a', sectionId: 'sec-10a', academicSessionId: 'session-1', admissionNumber: 'ADM2025001', rollNumber: 10, dateOfBirth: '2010-04-12', gender: 'MALE', createdAt: new Date().toISOString() },
+  { id: 'st-2', userId: 'u-student2', schoolId: 'school-1', classId: 'c-10a', sectionId: 'sec-10a', academicSessionId: 'session-1', admissionNumber: 'ADM2025002', rollNumber: 11, dateOfBirth: '2010-06-25', gender: 'MALE', createdAt: new Date().toISOString() },
+  { id: 'st-3', userId: 'u-student3', schoolId: 'school-1', classId: 'c-11b', sectionId: 'sec-11b', academicSessionId: 'session-1', admissionNumber: 'ADM2025003', rollNumber: 1, dateOfBirth: '2009-11-07', gender: 'FEMALE', createdAt: new Date().toISOString() }
 ];
 
 const SEED_PARENTS: Parent[] = [
@@ -190,9 +194,9 @@ const SEED_FEE_PAYMENTS: FeePayment[] = [
 ];
 
 const SEED_STUDY_MATERIALS: StudyMaterial[] = [
-  { id: 'sm-1', subjectId: 's-math', teacherId: 't-1', title: 'Infinite Series Convergence Theorems Cheatsheet', description: 'Comprehensive formulas for Ratio, Root, and Integral convergence tests with solved examples.', fileUrl: 'convergence_cheatsheet.pdf', fileType: 'pdf', isVideoStreamable: false, createdAt: new Date('2026-05-18').toISOString() },
-  { id: 'sm-2', subjectId: 's-phys', teacherId: 't-1', title: 'Video Lecture: Spacetime Geodesics Intro', description: 'An introductory overview of how light and matter curve along spacetime geodesics.', fileUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', fileType: 'mp4', isVideoStreamable: true, createdAt: new Date('2026-05-20').toISOString() },
-  { id: 'sm-3', subjectId: 's-comp', teacherId: 't-2', title: 'TypeScript Advanced Types and Mapped Types Handbook', description: 'Deep-dive manual explaining Generics, Index signatures, Mapped Types, and Utility operations.', fileUrl: 'ts_generics_handbook.pdf', fileType: 'pdf', isVideoStreamable: false, createdAt: new Date('2026-05-23').toISOString() }
+  { id: 'sm-1', schoolId: 'school-1', subjectId: 's-math', classId: 'c-10a', teacherId: 't-1', uploadedBy: 'u-teacher1', academicSessionId: 'session-1', title: 'Infinite Series Convergence Theorems Cheatsheet', description: 'Comprehensive formulas for Ratio, Root, and Integral convergence tests with solved examples.', fileUrl: 'convergence_cheatsheet.pdf', thumbnailUrl: null, fileType: 'pdf', mimeType: 'application/pdf', isVideoStreamable: false, createdAt: new Date('2026-05-18').toISOString() },
+  { id: 'sm-2', schoolId: 'school-1', subjectId: 's-phys', classId: 'c-10a', teacherId: 't-1', uploadedBy: 'u-teacher1', academicSessionId: 'session-1', title: 'Video Lecture: Spacetime Geodesics Intro', description: 'An introductory overview of how light and matter curve along spacetime geodesics.', fileUrl: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4', thumbnailUrl: null, fileType: 'mp4', mimeType: 'video/mp4', isVideoStreamable: true, createdAt: new Date('2026-05-20').toISOString() },
+  { id: 'sm-3', schoolId: 'school-1', subjectId: 's-comp', classId: 'c-10a', teacherId: 't-2', uploadedBy: 'u-teacher2', academicSessionId: 'session-1', title: 'TypeScript Advanced Types and Mapped Types Handbook', description: 'Deep-dive manual explaining Generics, Index signatures, Mapped Types, and Utility operations.', fileUrl: 'ts_generics_handbook.pdf', thumbnailUrl: null, fileType: 'pdf', mimeType: 'application/pdf', isVideoStreamable: false, createdAt: new Date('2026-05-23').toISOString() }
 ];
 
 const SEED_ANNOUNCEMENTS: Announcement[] = [
@@ -261,6 +265,7 @@ class MockDatabase {
   schools: School[];
   academicSessions: typeof SEED_ACADEMIC_SESSIONS;
   classes: Class[];
+  sections: Section[];
   subjects: Subject[];
   teachers: Teacher[];
   students: Student[];
@@ -289,12 +294,14 @@ class MockDatabase {
   auditLogs: AuditLog[];
   phoneNumbers: PhoneNumber[];
   emailAddresses: EmailAddress[];
+  homeworkAttachments: HomeworkAttachment[];
 
   constructor() {
     this.users = getStorage<User[]>('users', SEED_USERS);
     this.schools = getStorage<School[]>('schools', [SEED_SCHOOL]);
     this.academicSessions = getStorage<typeof SEED_ACADEMIC_SESSIONS>('academic_sessions', SEED_ACADEMIC_SESSIONS);
     this.classes = getStorage<Class[]>('classes', SEED_CLASSES);
+    this.sections = getStorage<Section[]>('sections', SEED_SECTIONS);
 
     // Self-healing class migration
     let migrated = false;
@@ -336,12 +343,14 @@ class MockDatabase {
     this.auditLogs = getStorage<AuditLog[]>('audit_logs', SEED_AUDIT_LOGS);
     this.phoneNumbers = getStorage<PhoneNumber[]>('phone_numbers', SEED_PHONE_NUMBERS);
     this.emailAddresses = getStorage<EmailAddress[]>('email_addresses', SEED_EMAIL_ADDRESSES);
+    this.homeworkAttachments = getStorage<HomeworkAttachment[]>('homework_attachments', []);
   }
 
   saveAll() {
     setStorage('users', this.users);
     setStorage('schools', this.schools);
     setStorage('classes', this.classes);
+    setStorage('sections', this.sections);
     setStorage('subjects', this.subjects);
     setStorage('teachers', this.teachers);
     setStorage('students', this.students);
@@ -371,6 +380,7 @@ class MockDatabase {
     setStorage('phone_numbers', this.phoneNumbers);
     setStorage('email_addresses', this.emailAddresses);
     setStorage('academic_sessions', this.academicSessions);
+    setStorage('homework_attachments', this.homeworkAttachments);
   }
 
   // --- CRUD HELPERS ---

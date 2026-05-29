@@ -112,11 +112,20 @@ export interface EmailAddress {
   updatedAt: string;
 }
 
+export interface Section {
+  id: string;
+  schoolId: string;
+  classId: string;
+  name: string;
+  createdAt: string;
+}
+
 export interface Student {
   id: string;
   userId: string;
   schoolId: string;
   classId: string | null;
+  sectionId?: string | null;
   academicSessionId: string;
   admissionNumber: string;
   rollNumber: number;
@@ -171,16 +180,31 @@ export interface Attendance {
   markedBy: string;
 }
 
+export interface HomeworkAttachment {
+  id: string;
+  homeworkId: string;
+  fileUrl: string;
+  fileName: string;
+  fileType?: string | null;
+  mimeType?: string | null;
+  uploadedBy?: string | null;
+  schoolId?: string;
+  academicSessionId?: string;
+  uploadedAt: string;
+}
+
 export interface Assignment {
   id: string;
   classId: string;
+  sectionId?: string | null;
   subjectId: string;
   teacherId: string | null;
   title: string;
   description: string;
   dueDate: string;
   maxMarks: number;
-  fileAttachmentUrl?: string;
+  fileAttachmentUrl?: string; // Backwards compatibility for single main link
+  attachments?: HomeworkAttachment[];
   isHomework: boolean;
   academicSessionId: string;
   createdAt: string;
@@ -197,6 +221,8 @@ export interface AssignmentSubmission {
   feedback?: string;
   gradedBy?: string;
   gradedAt?: string;
+  schoolId?: string;
+  academicSessionId?: string;
 }
 
 export interface Quiz {
@@ -331,12 +357,18 @@ export interface AuditLog {
 
 export interface StudyMaterial {
   id: string;
+  schoolId: string;
   subjectId: string;
+  classId?: string | null;
   teacherId: string | null;
+  uploadedBy: string;
+  academicSessionId: string;
   title: string;
   description?: string;
   fileUrl: string;
-  fileType: 'pdf' | 'docx' | 'mp4';
+  thumbnailUrl?: string | null;
+  fileType: 'pdf' | 'docx' | 'mp4' | 'stream';
+  mimeType?: string | null;
   isVideoStreamable: boolean;
   createdAt: string;
 }

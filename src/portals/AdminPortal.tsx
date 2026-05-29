@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
+import { supabase } from '../lib/supabase';
 import { mockDb } from '../services/mockDb';
 import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePayment } from '../types';
 import { GlassCard } from '../components/GlassCard';
@@ -399,6 +400,35 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     const pollInterval = setInterval(loadData, 30000);
     return () => clearInterval(pollInterval);
   }, [activeTab]);
+
+  // Real-time Supabase Postgres changes subscription for administration data
+  useEffect(() => {
+    if (!adminId) return;
+
+    const handleAdminSync = () => {
+      console.log('Realtime administration update detected, refreshing admin portal directories...');
+      loadData();
+      loadAcademicSessions();
+    };
+
+    const channel = supabase
+      .channel('admin-academic-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'parents' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'classes' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subjects' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'timetables' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'academic_sessions' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_structures' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handleAdminSync)
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [adminId]);
 
   // CRUD Submissions
   const handleCreateTeacher = async (e: React.FormEvent) => {
