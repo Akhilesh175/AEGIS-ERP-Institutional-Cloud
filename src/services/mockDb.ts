@@ -4,7 +4,7 @@ import {
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizQuestion, 
   QuizAttempt, Exam, ExamSchedule, ExamMark, FeeStructure, FeePayment, 
   ForumCategory, ForumPost, ForumReply, ChatMessage, AuditLog, 
-  StudyMaterial, Announcement, Notification, SystemTelemetry
+  StudyMaterial, Announcement, Notification, SystemTelemetry, PhoneNumber
 } from '../types';
 
 // Storage keys
@@ -228,6 +228,20 @@ const SEED_AUDIT_LOGS: AuditLog[] = [
   { id: 'al-2', userId: 'u-teacher1', ipAddress: '192.168.1.12', action: 'GRADE_ASSIGNMENT', details: { studentId: 'st-1', score: 95 }, createdAt: new Date('2026-05-24T18:00:00Z').toISOString() }
 ];
 
+const SEED_PHONE_NUMBERS: PhoneNumber[] = [
+  { id: 'pn-1', userId: 'u-superadmin', phoneType: 'PRIMARY', countryCode: '+1', nationalNumber: '5559990000', fullNumber: '+15559990000', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'pn-2', userId: 'u-admin1', schoolId: 'school-1', phoneType: 'PRIMARY', countryCode: '+1', nationalNumber: '5558881111', fullNumber: '+15558881111', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'pn-3', userId: 'u-teacher1', schoolId: 'school-1', phoneType: 'PRIMARY', countryCode: '+1', nationalNumber: '5557772222', fullNumber: '+15557772222', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'pn-4', userId: 'u-teacher2', schoolId: 'school-1', phoneType: 'PRIMARY', countryCode: '+1', nationalNumber: '5557773333', fullNumber: '+15557773333', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'pn-5', userId: 'u-student1', schoolId: 'school-1', phoneType: 'PRIMARY', countryCode: '+1', nationalNumber: '5556664444', fullNumber: '+15556664444', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'pn-6', userId: 'u-student2', schoolId: 'school-1', phoneType: 'PRIMARY', countryCode: '+1', nationalNumber: '5556665555', fullNumber: '+15556665555', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'pn-7', userId: 'u-student3', schoolId: 'school-1', phoneType: 'PRIMARY', countryCode: '+1', nationalNumber: '5556666666', fullNumber: '+15556666666', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'pn-8', userId: 'u-parent1', schoolId: 'school-1', phoneType: 'PRIMARY', countryCode: '+1', nationalNumber: '5555557777', fullNumber: '+15555557777', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'pn-9', userId: 'u-parent1', schoolId: 'school-1', phoneType: 'EMERGENCY', countryCode: '+1', nationalNumber: '5559119999', fullNumber: '+15559119999', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'pn-10', userId: 'u-parent2', schoolId: 'school-1', phoneType: 'PRIMARY', countryCode: '+1', nationalNumber: '5555558888', fullNumber: '+15555558888', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'pn-11', userId: 'u-parent2', schoolId: 'school-1', phoneType: 'EMERGENCY', countryCode: '+1', nationalNumber: '5559118888', fullNumber: '+15559118888', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+];
+
 // --- MOCK DATABASE CLASS ---
 
 class MockDatabase {
@@ -261,6 +275,7 @@ class MockDatabase {
   forumReplies: ForumReply[];
   chatMessages: ChatMessage[];
   auditLogs: AuditLog[];
+  phoneNumbers: PhoneNumber[];
 
   constructor() {
     this.users = getStorage<User[]>('users', SEED_USERS);
@@ -306,6 +321,7 @@ class MockDatabase {
     this.forumReplies = getStorage<ForumReply[]>('forum_replies', SEED_FORUM_REPLIES);
     this.chatMessages = getStorage<ChatMessage[]>('chat_messages', SEED_CHAT_MESSAGES);
     this.auditLogs = getStorage<AuditLog[]>('audit_logs', SEED_AUDIT_LOGS);
+    this.phoneNumbers = getStorage<PhoneNumber[]>('phone_numbers', SEED_PHONE_NUMBERS);
   }
 
   saveAll() {
@@ -338,6 +354,7 @@ class MockDatabase {
     setStorage('forum_replies', this.forumReplies);
     setStorage('chat_messages', this.chatMessages);
     setStorage('audit_logs', this.auditLogs);
+    setStorage('phone_numbers', this.phoneNumbers);
     setStorage('academic_sessions', this.academicSessions);
   }
 

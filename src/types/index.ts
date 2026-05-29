@@ -84,6 +84,20 @@ export interface SchoolAdmin {
   updatedAt: string;
 }
 
+export type PhoneNumberType = 'PRIMARY' | 'EMERGENCY' | 'HOME' | 'WORK';
+
+export interface PhoneNumber {
+  id: string;
+  userId: string;
+  schoolId?: string;
+  phoneType: PhoneNumberType;
+  countryCode: string;
+  nationalNumber: string;
+  fullNumber: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface Student {
   id: string;
   userId: string;

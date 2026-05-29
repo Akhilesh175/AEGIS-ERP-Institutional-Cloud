@@ -49,6 +49,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [prOccup, setPrOccup] = useState('');
   const [prAddr, setPrAddr] = useState('');
   const [prPhone, setPrPhone] = useState('');
+  const [prEmergencyPhone, setPrEmergencyPhone] = useState('');
   const [prStudentId, setPrStudentId] = useState('');
   const [prAdmissionNum, setPrAdmissionNum] = useState('');
   const [prRelation, setPrRelation] = useState('Father');
@@ -66,6 +67,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [stDob, setStDob] = useState('2010-01-01');
   const [stPassword, setStPassword] = useState('');
   const [showStPassword, setShowStPassword] = useState(false);
+  const [stPhone, setStPhone] = useState('');
 
   const [showAddClass, setShowAddClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
@@ -437,7 +439,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     try {
       await mockApi.adminCreateParent(
         adminId, prEmail, prFirst, prLast, prOccup, prAddr, prPhone,
-        prStudentId, prAdmissionNum, prRelation, prPassword
+        prStudentId, prAdmissionNum, prRelation, prPassword, prEmergencyPhone
       );
       setShowAddParent(false);
       setPrEmail('');
@@ -446,6 +448,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       setPrOccup('');
       setPrAddr('');
       setPrPhone('');
+      setPrEmergencyPhone('');
       setPrStudentId('');
       setPrAdmissionNum('');
       setPrRelation('Father');
@@ -468,7 +471,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
     try {
       await mockApi.adminCreateStudent(
-        adminId, stEmail, stFirst, stLast, stClass, stAdmission, stRoll, stGender, stDob, stPassword
+        adminId, stEmail, stFirst, stLast, stClass, stAdmission, stRoll, stGender, stDob, stPassword, stPhone
       );
       setShowAddStudent(false);
       setStEmail('');
@@ -478,6 +481,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       setStAdmission('');
       setStPassword('');
       setShowStPassword(false);
+      setStPhone('');
       loadData();
       alert('Student registered in classroom listings!');
     } catch (err: any) {
@@ -920,7 +924,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     <td className="py-3 px-4 font-semibold">{s.userDetails.firstName} {s.userDetails.lastName}</td>
                     <td className="py-3 px-4 text-slate-400">{s.className}</td>
                     <td className="py-3 px-4 text-slate-400">{s.rollNumber}</td>
-                    <td className="py-3 px-4 text-slate-450">{s.userDetails.email}</td>
+                    <td className="py-3 px-4 text-slate-450">
+                      <div>{s.userDetails.email}</div>
+                      {s.userDetails.phone && <div className="text-[10px] text-slate-500 font-mono mt-0.5">{s.userDetails.phone}</div>}
+                    </td>
                     <td className="py-3 px-4 flex items-center gap-3">
                       <button 
                         onClick={() => handleImpersonateUser(s.userDetails.email)}
@@ -1006,7 +1013,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     <td className="py-3 px-4 font-semibold">{t.userDetails.firstName} {t.userDetails.lastName}</td>
                     <td className="py-3 px-4 text-slate-400">{t.specialization}</td>
                     <td className="py-3 px-4 text-slate-400">{t.qualification}</td>
-                    <td className="py-3 px-4 text-slate-450">{t.userDetails.email}</td>
+                    <td className="py-3 px-4 text-slate-450">
+                      <div>{t.userDetails.email}</div>
+                      {t.userDetails.phone && <div className="text-[10px] text-slate-500 font-mono mt-0.5">{t.userDetails.phone}</div>}
+                    </td>
                     <td className="py-3 px-4 flex items-center gap-3">
                       <button 
                         onClick={() => handleImpersonateUser(t.userDetails.email)}
@@ -1091,7 +1101,16 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                         )}
                       </div>
                     </td>
-                    <td className="py-3 px-4 text-slate-450">{p.userDetails.email}</td>
+                    <td className="py-3 px-4 text-slate-450">
+                      <div>{p.userDetails.email}</div>
+                      {p.userDetails.phone && <div className="text-[10px] text-slate-500 font-mono mt-0.5">Primary: {p.userDetails.phone}</div>}
+                      {(() => {
+                        const emergency = mockDb.phoneNumbers.find(pn => pn.userId === p.userDetails.id && pn.phoneType === 'EMERGENCY');
+                        return emergency ? (
+                          <div className="text-[10px] text-amber-500 font-mono mt-0.5">Emergency: {emergency.fullNumber}</div>
+                        ) : null;
+                      })()}
+                    </td>
                     <td className="py-3 px-4 flex items-center gap-3">
                       <button 
                         onClick={() => handleImpersonateUser(p.userDetails.email)}
@@ -2035,6 +2054,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Date of Birth</label>
                 <input type="date" value={stDob} onChange={(e) => setStDob(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
               </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Phone</label>
+                <input type="text" placeholder="+1 (555) 000-0000" value={stPhone} onChange={(e) => setStPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
+              </div>
 
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Student Portal Password</label>
@@ -2373,6 +2396,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Phone</label>
                 <input type="text" placeholder="+1 (555) 000-0000" value={prPhone} onChange={(e) => setPrPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
+                <label className="text-[9px] font-bold uppercase tracking-wider text-amber-500 mt-2">Emergency Contact Phone</label>
+                <input type="text" placeholder="+91 98765 43210" value={prEmergencyPhone} onChange={(e) => setPrEmergencyPhone(e.target.value)} className="w-full bg-slate-900 border border-amber-900/40 text-xs rounded-lg p-2 focus:outline-none focus:border-amber-500/60" />
               </div>
 
               {/* Secure Student Link verification panel */}

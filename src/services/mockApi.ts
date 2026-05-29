@@ -4,13 +4,70 @@ import {
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizAttempt, 
   Exam, ExamMark, FeeStructure, FeePayment, PaymentStatus, ChatMessage, Announcement, 
   Notification, AuditLog, StudyMaterial, ExamSchedule, 
-  TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory
+  TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory, PhoneNumber
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans } from './subscriptionConfig';
 
 // Helper to simulate network latency
 const delay = (ms = 400) => new Promise(resolve => setTimeout(resolve, ms));
+
+// ── Phone Number Validation (ITU-T E.164) ──────────────────────────────────
+function parseAndValidatePhone(phoneStr: string): { countryCode: string; nationalNumber: string; fullNumber: string } {
+  if (!phoneStr || !phoneStr.trim()) {
+    return { countryCode: '', nationalNumber: '', fullNumber: '' };
+  }
+  // Strip all non-digit and non-plus characters
+  const cleaned = phoneStr.replace(/[^0-9+]/g, '');
+  
+  // Must start with '+'
+  if (!cleaned.startsWith('+')) {
+    throw new Error('Phone number must start with a country code (e.g. +91, +1). Example: +919876543210');
+  }
+  
+  // Extract country code and national number
+  let countryCode = '';
+  let nationalNumber = '';
+  
+  // Common country codes: +1 (US/CA), +91 (IN), +44 (UK), +61 (AU), etc.
+  if (cleaned.startsWith('+91')) {
+    countryCode = '+91';
+    nationalNumber = cleaned.substring(3);
+  } else if (cleaned.startsWith('+1')) {
+    countryCode = '+1';
+    nationalNumber = cleaned.substring(2);
+  } else if (cleaned.startsWith('+44')) {
+    countryCode = '+44';
+    nationalNumber = cleaned.substring(3);
+  } else if (cleaned.startsWith('+61')) {
+    countryCode = '+61';
+    nationalNumber = cleaned.substring(3);
+  } else {
+    // Generic: take first 2-4 chars as country code
+    const match = cleaned.match(/^(\+\d{1,4})(\d+)$/);
+    if (!match) {
+      throw new Error('Invalid phone number format. Please use international format: +[country code][number]');
+    }
+    countryCode = match[1];
+    nationalNumber = match[2];
+  }
+  
+  // Validate country code format: + followed by 1-4 digits
+  if (!/^\+[0-9]{1,4}$/.test(countryCode)) {
+    throw new Error('Invalid country code. Must be + followed by 1-4 digits (e.g. +1, +91, +44).');
+  }
+  
+  // Validate national number: 6-15 digits
+  if (!/^[0-9]{6,15}$/.test(nationalNumber)) {
+    throw new Error(`Invalid phone number length: ${nationalNumber.length} digits. National number must be 6-15 digits long.`);
+  }
+  
+  return {
+    countryCode,
+    nationalNumber,
+    fullNumber: countryCode + nationalNumber
+  };
+}
 
 // Secure session key
 const SESSION_KEY = 'aegis_session';
@@ -2560,7 +2617,19 @@ export const mockApi = {
   },
 
 
-  async adminCreateStudent(adminId: string, email: string, firstName: string, lastName: string, classId: string, admissionNumber: string, rollNumber: number, gender: 'MALE' | 'FEMALE' | 'OTHER', dob: string, password: string): Promise<void> {
+  async adminCreateStudent(
+    adminId: string, 
+    email: string, 
+    firstName: string, 
+    lastName: string, 
+    classId: string, 
+    admissionNumber: string, 
+    rollNumber: number, 
+    gender: 'MALE' | 'FEMALE' | 'OTHER', 
+    dob: string, 
+    password: string,
+    phone?: string
+  ): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
     if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
@@ -2631,7 +2700,7 @@ export const mockApi = {
       role: 'STUDENT',
       first_name: firstName,
       last_name: lastName,
-      phone: '',
+      phone: phone || '',
       school_id: schoolId,
       is_active: true
     });
@@ -2641,6 +2710,18 @@ export const mockApi = {
       throw new Error('Failed to create student database profile: ' + dbError.message);
     }
 
+    // Insert phone number into phone_numbers table if provided
+    const parsedStudentPhone = parseAndValidatePhone(phone || '');
+    if (parsedStudentPhone.fullNumber) {
+      await supabaseAdmin.from('phone_numbers').insert({
+        user_id: newUserId,
+        school_id: schoolId,
+        phone_type: 'PRIMARY',
+        country_code: parsedStudentPhone.countryCode,
+        national_number: parsedStudentPhone.nationalNumber,
+        full_number: parsedStudentPhone.fullNumber
+      });
+    }
 
     // Insert into students table
     const { data: studentRow, error: studentErr } = await supabaseAdmin.from('students').insert({
@@ -2664,7 +2745,7 @@ export const mockApi = {
     // Sync to local mockDb cache
     const user: User = {
       id: newUserId, email, role: 'STUDENT', firstName, lastName,
-      phone: '', avatarUrl: '', isActive: true, schoolId,
+      phone: phone || '', avatarUrl: '', isActive: true, schoolId,
       password, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
     const student: Student = {
@@ -2675,6 +2756,19 @@ export const mockApi = {
     };
     mockDb.users.push(user);
     mockDb.students.push(student);
+    if (parsedStudentPhone.fullNumber) {
+      const pn: PhoneNumber = {
+        id: 'pn-' + Math.random().toString(36).substr(2, 9),
+        userId: newUserId, schoolId,
+        phoneType: 'PRIMARY',
+        countryCode: parsedStudentPhone.countryCode,
+        nationalNumber: parsedStudentPhone.nationalNumber,
+        fullNumber: parsedStudentPhone.fullNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      mockDb.phoneNumbers.push(pn);
+    }
     mockDb.addLog(adminId, 'CREATE_STUDENT', { studentName: `${firstName} ${lastName}`, email });
     mockDb.saveAll();
   },
@@ -3261,6 +3355,19 @@ export const mockApi = {
       throw new Error('Failed to create teacher database profile: ' + dbError.message);
     }
 
+    // Insert phone number into phone_numbers table if provided
+    const parsedTeacherPhone = parseAndValidatePhone(phone);
+    if (parsedTeacherPhone.fullNumber) {
+      await supabaseAdmin.from('phone_numbers').insert({
+        user_id: newUserId,
+        school_id: schoolId,
+        phone_type: 'PRIMARY',
+        country_code: parsedTeacherPhone.countryCode,
+        national_number: parsedTeacherPhone.nationalNumber,
+        full_number: parsedTeacherPhone.fullNumber
+      });
+    }
+
     // Insert into teachers table
     const { data: teacherRow, error: teacherErr } = await supabaseAdmin.from('teachers').insert({
       user_id: newUserId,
@@ -3291,6 +3398,19 @@ export const mockApi = {
     };
     mockDb.users.push(user);
     mockDb.teachers.push(teacher);
+    if (parsedTeacherPhone.fullNumber) {
+      const pn: PhoneNumber = {
+        id: 'pn-' + Math.random().toString(36).substr(2, 9),
+        userId: newUserId, schoolId,
+        phoneType: 'PRIMARY',
+        countryCode: parsedTeacherPhone.countryCode,
+        nationalNumber: parsedTeacherPhone.nationalNumber,
+        fullNumber: parsedTeacherPhone.fullNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      mockDb.phoneNumbers.push(pn);
+    }
     mockDb.addLog(adminId, 'CREATE_TEACHER', { teacherName: `${firstName} ${lastName}`, email });
     mockDb.saveAll();
   },
@@ -3306,7 +3426,8 @@ export const mockApi = {
     studentId?: string,
     admissionNumber?: string,
     relationship?: string,
-    password?: string
+    password?: string,
+    emergencyPhone?: string
   ): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
@@ -3351,6 +3472,32 @@ export const mockApi = {
     if (dbError) {
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create parent database profile: ' + dbError.message);
+    }
+
+    // Insert phone number into phone_numbers table if provided
+    const parsedParentPhone = parseAndValidatePhone(phone);
+    if (parsedParentPhone.fullNumber) {
+      await supabaseAdmin.from('phone_numbers').insert({
+        user_id: newUserId,
+        school_id: schoolId,
+        phone_type: 'PRIMARY',
+        country_code: parsedParentPhone.countryCode,
+        national_number: parsedParentPhone.nationalNumber,
+        full_number: parsedParentPhone.fullNumber
+      });
+    }
+
+    // Insert parent emergency phone number into phone_numbers table if provided
+    const parsedParentEmergencyPhone = parseAndValidatePhone(emergencyPhone || '');
+    if (parsedParentEmergencyPhone.fullNumber) {
+      await supabaseAdmin.from('phone_numbers').insert({
+        user_id: newUserId,
+        school_id: schoolId,
+        phone_type: 'EMERGENCY',
+        country_code: parsedParentEmergencyPhone.countryCode,
+        national_number: parsedParentEmergencyPhone.nationalNumber,
+        full_number: parsedParentEmergencyPhone.fullNumber
+      });
     }
 
     // Insert into parents table
@@ -3411,6 +3558,32 @@ export const mockApi = {
     };
     mockDb.users.push(user);
     mockDb.parents.push(parent);
+    if (parsedParentPhone.fullNumber) {
+      const pn: PhoneNumber = {
+        id: 'pn-' + Math.random().toString(36).substr(2, 9),
+        userId: newUserId, schoolId,
+        phoneType: 'PRIMARY',
+        countryCode: parsedParentPhone.countryCode,
+        nationalNumber: parsedParentPhone.nationalNumber,
+        fullNumber: parsedParentPhone.fullNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      mockDb.phoneNumbers.push(pn);
+    }
+    if (parsedParentEmergencyPhone.fullNumber) {
+      const pn: PhoneNumber = {
+        id: 'pn-' + Math.random().toString(36).substr(2, 9),
+        userId: newUserId, schoolId,
+        phoneType: 'EMERGENCY',
+        countryCode: parsedParentEmergencyPhone.countryCode,
+        nationalNumber: parsedParentEmergencyPhone.nationalNumber,
+        fullNumber: parsedParentEmergencyPhone.fullNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      mockDb.phoneNumbers.push(pn);
+    }
     if (resolvedStudentId && relationship) {
       mockDb.parentStudentMappings.push({ parentId: parentRow.id, studentId: resolvedStudentId, relationship });
     }
@@ -3669,8 +3842,9 @@ export const mockApi = {
     admissionNumber: string, 
     rollNumber: number, 
     gender: 'MALE' | 'FEMALE' | 'OTHER', 
-    dob: string,
-    password?: string
+    dob: string, 
+    password?: string,
+    phone?: string
   ): Promise<void> {
     await delay(600);
     await this.verifyClassTeacherHubSubscription(teacherId);
@@ -3748,7 +3922,7 @@ export const mockApi = {
       role: 'STUDENT',
       first_name: firstName,
       last_name: lastName,
-      phone: '',
+      phone: phone || '',
       school_id: schoolId,
       is_active: true
     });
@@ -3758,6 +3932,18 @@ export const mockApi = {
       throw new Error('Failed to create student database profile: ' + dbError.message);
     }
 
+    // Insert phone number into phone_numbers table if provided
+    const parsedStudentPhone = parseAndValidatePhone(phone || '');
+    if (parsedStudentPhone.fullNumber) {
+      await supabaseAdmin.from('phone_numbers').insert({
+        user_id: newUserId,
+        school_id: schoolId,
+        phone_type: 'PRIMARY',
+        country_code: parsedStudentPhone.countryCode,
+        national_number: parsedStudentPhone.nationalNumber,
+        full_number: parsedStudentPhone.fullNumber
+      });
+    }
 
     // Insert into students table
     const { data: studentRow, error: studentErr } = await supabaseAdmin.from('students').insert({
@@ -3779,7 +3965,7 @@ export const mockApi = {
 
     const user: User = {
       id: newUserId, email, role: 'STUDENT', firstName, lastName,
-      phone: '', avatarUrl: '', isActive: true, schoolId,
+      phone: phone || '', avatarUrl: '', isActive: true, schoolId,
       password: pass, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
     const student: Student = {
@@ -3790,6 +3976,19 @@ export const mockApi = {
     };
     mockDb.users.push(user);
     mockDb.students.push(student);
+    if (parsedStudentPhone.fullNumber) {
+      const pn: PhoneNumber = {
+        id: 'pn-' + Math.random().toString(36).substr(2, 9),
+        userId: newUserId, schoolId,
+        phoneType: 'PRIMARY',
+        countryCode: parsedStudentPhone.countryCode,
+        nationalNumber: parsedStudentPhone.nationalNumber,
+        fullNumber: parsedStudentPhone.fullNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      mockDb.phoneNumbers.push(pn);
+    }
     mockDb.addLog(teacher.userId, 'CLASS_TEACHER_CREATE_STUDENT', { studentName: `${firstName} ${lastName}`, email, classId });
     mockDb.saveAll();
   },
@@ -3805,7 +4004,8 @@ export const mockApi = {
     studentId: string,
     admissionNumber: string,
     relationship: string,
-    password?: string
+    password?: string,
+    emergencyPhone?: string
   ): Promise<void> {
     await delay(600);
     await this.verifyClassTeacherHubSubscription(teacherId);
@@ -3854,6 +4054,32 @@ export const mockApi = {
       throw new Error('Failed to create parent database profile: ' + dbError.message);
     }
 
+    // Insert primary phone number into phone_numbers table if provided
+    const parsedParentPhone = parseAndValidatePhone(phone);
+    if (parsedParentPhone.fullNumber) {
+      await supabaseAdmin.from('phone_numbers').insert({
+        user_id: newUserId,
+        school_id: schoolId,
+        phone_type: 'PRIMARY',
+        country_code: parsedParentPhone.countryCode,
+        national_number: parsedParentPhone.nationalNumber,
+        full_number: parsedParentPhone.fullNumber
+      });
+    }
+
+    // Insert emergency phone number into phone_numbers table if provided
+    const parsedParentEmergencyPhone = parseAndValidatePhone(emergencyPhone || '');
+    if (parsedParentEmergencyPhone.fullNumber) {
+      await supabaseAdmin.from('phone_numbers').insert({
+        user_id: newUserId,
+        school_id: schoolId,
+        phone_type: 'EMERGENCY',
+        country_code: parsedParentEmergencyPhone.countryCode,
+        national_number: parsedParentEmergencyPhone.nationalNumber,
+        full_number: parsedParentEmergencyPhone.fullNumber
+      });
+    }
+
     // Insert into parents table
     const { data: parentRow, error: parentErr } = await supabaseAdmin.from('parents').insert({
       user_id: newUserId,
@@ -3897,6 +4123,32 @@ export const mockApi = {
       studentId,
       relationship: relationship || 'Father'
     });
+    if (parsedParentPhone.fullNumber) {
+      const pn: PhoneNumber = {
+        id: 'pn-' + Math.random().toString(36).substr(2, 9),
+        userId: newUserId, schoolId,
+        phoneType: 'PRIMARY',
+        countryCode: parsedParentPhone.countryCode,
+        nationalNumber: parsedParentPhone.nationalNumber,
+        fullNumber: parsedParentPhone.fullNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      mockDb.phoneNumbers.push(pn);
+    }
+    if (parsedParentEmergencyPhone.fullNumber) {
+      const pn: PhoneNumber = {
+        id: 'pn-' + Math.random().toString(36).substr(2, 9),
+        userId: newUserId, schoolId,
+        phoneType: 'EMERGENCY',
+        countryCode: parsedParentEmergencyPhone.countryCode,
+        nationalNumber: parsedParentEmergencyPhone.nationalNumber,
+        fullNumber: parsedParentEmergencyPhone.fullNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      mockDb.phoneNumbers.push(pn);
+    }
 
     mockDb.addLog(teacher.userId, 'CLASS_TEACHER_CREATE_PARENT', { parentName: `${firstName} ${lastName}`, email, studentId });
     mockDb.saveAll();
@@ -4385,6 +4637,31 @@ export const mockApi = {
       await supabaseAdmin.from('users').delete().eq('id', authData.user.id);
       await supabaseAdmin.auth.admin.deleteUser(authData.user.id);
       throw new Error('Failed to create school admin record: ' + adminTableError.message);
+    }
+
+    // 4. Insert phone number into phone_numbers table if provided
+    const parsedPhone = parseAndValidatePhone(phone);
+    if (parsedPhone.fullNumber) {
+      await supabaseAdmin.from('phone_numbers').insert({
+        user_id: authData.user.id,
+        school_id: schoolId,
+        phone_type: 'PRIMARY',
+        country_code: parsedPhone.countryCode,
+        national_number: parsedPhone.nationalNumber,
+        full_number: parsedPhone.fullNumber
+      });
+      // Sync to local cache
+      const pn: PhoneNumber = {
+        id: 'pn-' + Math.random().toString(36).substr(2, 9),
+        userId: authData.user.id, schoolId,
+        phoneType: 'PRIMARY',
+        countryCode: parsedPhone.countryCode,
+        nationalNumber: parsedPhone.nationalNumber,
+        fullNumber: parsedPhone.fullNumber,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      mockDb.phoneNumbers.push(pn);
     }
 
     // Sync newly created school admin with local mockDb cache

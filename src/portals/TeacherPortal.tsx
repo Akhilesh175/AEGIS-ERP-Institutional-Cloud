@@ -101,6 +101,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [ctStGender, setCtStGender] = useState<'MALE' | 'FEMALE' | 'OTHER'>('MALE');
   const [ctStDob, setCtStDob] = useState('2010-01-01');
   const [ctStPassword, setCtStPassword] = useState('password');
+  const [ctStPhone, setCtStPhone] = useState('');
 
   const [showCTAddParent, setShowCTAddParent] = useState(false);
   const [ctPrEmail, setCtPrEmail] = useState('');
@@ -109,6 +110,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [ctPrOccup, setCtPrOccup] = useState('');
   const [ctPrAddr, setCtPrAddr] = useState('');
   const [ctPrPhone, setCtPrPhone] = useState('');
+  const [ctPrEmergencyPhone, setCtPrEmergencyPhone] = useState('');
   const [ctPrStudentId, setCtPrStudentId] = useState('');
   const [ctPrAdmissionNum, setCtPrAdmissionNum] = useState('');
   const [ctPrRelation, setCtPrRelation] = useState('Father');
@@ -678,7 +680,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
         ctStRoll,
         ctStGender,
         ctStDob,
-        ctStPassword
+        ctStPassword,
+        ctStPhone
       );
       setShowCTAddStudent(false);
       setCtStEmail('');
@@ -689,6 +692,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setCtStGender('MALE');
       setCtStDob('2010-01-01');
       setCtStPassword('password');
+      setCtStPhone('');
       setRefreshTrigger(prev => prev + 1);
       loadSelectionDetails();
       alert('Student successfully registered and assigned to your class!');
@@ -713,7 +717,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
         ctPrStudentId,
         ctPrAdmissionNum,
         ctPrRelation,
-        ctPrPassword
+        ctPrPassword,
+        ctPrEmergencyPhone
       );
       setShowCTAddParent(false);
       setCtPrEmail('');
@@ -722,6 +727,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setCtPrOccup('');
       setCtPrAddr('');
       setCtPrPhone('');
+      setCtPrEmergencyPhone('');
       setCtPrStudentId('');
       setCtPrAdmissionNum('');
       setCtPrRelation('Father');
@@ -1524,7 +1530,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-850">
-                      {students.map(s => {
+                       {students.map(s => {
                         const parentMappings = mockDb.parentStudentMappings.filter(m => m.studentId === s.id);
                         const parentsList = parentMappings.map(m => {
                           const p = mockDb.parents.find(pDb => pDb.id === m.parentId);
@@ -1533,7 +1539,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                             relationship: m.relationship || 'Guardian',
                             name: u ? `${u.firstName} ${u.lastName}` : 'N/A',
                             phone: u ? u.phone || 'N/A' : 'N/A',
-                            email: u ? u.email : 'N/A'
+                            email: u ? u.email : 'N/A',
+                            userId: u ? u.id : null
                           };
                         });
 
@@ -1544,6 +1551,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                             <td className="py-3 px-4">
                               <div className="font-semibold text-slate-100">{s.userDetails.firstName} {s.userDetails.lastName}</div>
                               <div className="text-[10px] text-slate-500">{s.userDetails.email}</div>
+                              {s.userDetails.phone && <div className="text-[10px] text-slate-400 font-mono mt-0.5">{s.userDetails.phone}</div>}
                             </td>
                             <td className="py-3 px-4 space-y-1">
                               <span className="inline-block px-2 py-0.5 rounded-full text-[9px] font-bold uppercase bg-slate-800 border border-slate-700 text-slate-300">
@@ -1565,9 +1573,17 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                                         {p.relationship}
                                       </span>
                                     </div>
-                                    <div className="text-[9px] text-slate-400 flex flex-wrap gap-x-3">
-                                      <span>📞 {p.phone}</span>
-                                      <span>✉️ {p.email}</span>
+                                    <div className="text-[9px] text-slate-400 flex flex-col space-y-0.5">
+                                      <div className="flex flex-wrap gap-x-3 mt-0.5">
+                                        <span>📞 {p.phone}</span>
+                                        <span>✉️ {p.email}</span>
+                                      </div>
+                                      {p.userId && (() => {
+                                        const emergency = mockDb.phoneNumbers.find(pn => pn.userId === p.userId && pn.phoneType === 'EMERGENCY');
+                                        return emergency ? (
+                                          <div className="text-amber-500 font-mono text-[9px] mt-0.5">🆘 Emergency: {emergency.fullNumber}</div>
+                                        ) : null;
+                                      })()}
                                     </div>
                                   </div>
                                 ))
@@ -2799,6 +2815,10 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Date of Birth</label>
                 <input type="date" value={ctStDob} onChange={(e) => setCtStDob(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 text-slate-100 focus:outline-none" required />
               </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Phone</label>
+                <input type="text" placeholder="+1 (555) 000-0000" value={ctStPhone} onChange={(e) => setCtStPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-100" />
+              </div>
 
               <div className="sm:col-span-2 flex justify-end gap-2 pt-2 border-t border-slate-850">
                 <button type="button" onClick={() => setShowCTAddStudent(false)} className="glass-btn-secondary text-xs">Cancel</button>
@@ -2846,6 +2866,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Phone</label>
                 <input type="text" placeholder="+1 (555) 000-0000" value={ctPrPhone} onChange={(e) => setCtPrPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
+                <label className="text-[9px] font-bold uppercase tracking-wider text-amber-500 mt-2">Emergency Contact Phone</label>
+                <input type="text" placeholder="+91 98765 43210" value={ctPrEmergencyPhone} onChange={(e) => setCtPrEmergencyPhone(e.target.value)} className="w-full bg-slate-900 border border-amber-900/40 text-xs rounded-lg p-2 focus:outline-none focus:border-amber-500/60 text-slate-100" />
               </div>
 
               {/* Secure Student Link verification panel */}
