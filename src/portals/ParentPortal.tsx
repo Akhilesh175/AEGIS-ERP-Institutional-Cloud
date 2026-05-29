@@ -102,6 +102,12 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       const parentUser = mockDb.users.find(u => u.id === session?.user?.id);
       const parentSchoolId = mockDb.parents.find(p => p.id === parentId)?.schoolId || parentUser?.schoolId;
       if (parentSchoolId) {
+        await mockApi.syncSchoolsData(parentSchoolId);
+        await mockApi.syncClassesData(parentSchoolId);
+        await mockApi.syncTeachersData(parentSchoolId);
+        await mockApi.syncSubjectsData(parentSchoolId);
+        await mockApi.syncTeacherClassSubjectMappingsData(parentSchoolId);
+        await mockApi.syncAcademicSessionsData(parentSchoolId);
         await mockApi.syncStudentsData(parentSchoolId);
         await mockApi.syncParentsData(parentSchoolId);
         await mockApi.syncParentStudentMappingsData(parentSchoolId);
@@ -141,6 +147,12 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       setMaterialsLoading(false);
 
       if (studentObj) {
+        await mockApi.syncSchoolsData(studentObj.schoolId);
+        await mockApi.syncClassesData(studentObj.schoolId);
+        await mockApi.syncTeachersData(studentObj.schoolId);
+        await mockApi.syncSubjectsData(studentObj.schoolId);
+        await mockApi.syncTeacherClassSubjectMappingsData(studentObj.schoolId);
+        await mockApi.syncAcademicSessionsData(studentObj.schoolId);
         await mockApi.syncStudentsData(studentObj.schoolId);
         await mockApi.syncParentsData(studentObj.schoolId);
         await mockApi.syncParentStudentMappingsData(studentObj.schoolId);

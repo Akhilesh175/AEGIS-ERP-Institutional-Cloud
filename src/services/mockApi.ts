@@ -1766,6 +1766,124 @@ export const mockApi = {
     }
   },
 
+  async syncSchoolsData(schoolId: string): Promise<void> {
+    try {
+      const { data: dbSchool } = await supabaseAdmin
+        .from('schools')
+        .select('*')
+        .eq('id', schoolId)
+        .maybeSingle();
+
+      if (dbSchool) {
+        const schoolMapped = {
+          id: dbSchool.id,
+          name: dbSchool.name,
+          address: dbSchool.address || '',
+          phone: dbSchool.phone || '',
+          subscriptionPlan: (dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium') as any,
+          createdAt: dbSchool.created_at
+        };
+        const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
+        if (idx === -1) mockDb.schools.push(schoolMapped);
+        else mockDb.schools[idx] = schoolMapped;
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync schools:', e);
+    }
+  },
+
+  async syncClassesData(schoolId: string): Promise<void> {
+    try {
+      const { data: dbClasses } = await supabaseAdmin
+        .from('classes')
+        .select('*')
+        .eq('school_id', schoolId);
+
+      if (dbClasses) {
+        dbClasses.forEach((r: any) => {
+          const cls = {
+            id: r.id,
+            schoolId: r.school_id,
+            name: r.name,
+            academicSessionId: r.academic_session_id || 'session-1',
+            classTeacherId: r.class_teacher_id || undefined,
+            createdAt: r.created_at
+          };
+          const idx = mockDb.classes.findIndex(c => c.id === cls.id);
+          if (idx === -1) mockDb.classes.push(cls);
+          else mockDb.classes[idx] = cls;
+        });
+        const classIds = new Set(dbClasses.map(c => c.id));
+        mockDb.classes = mockDb.classes.filter(c => c.schoolId !== schoolId || classIds.has(c.id));
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync classes:', e);
+    }
+  },
+
+  async syncTeachersData(schoolId: string): Promise<void> {
+    try {
+      const { data: dbTeachers } = await supabaseAdmin
+        .from('teachers')
+        .select('*')
+        .eq('school_id', schoolId);
+
+      if (dbTeachers) {
+        dbTeachers.forEach((r: any) => {
+          const tc = {
+            id: r.id,
+            userId: r.user_id,
+            schoolId: r.school_id,
+            employeeId: r.employee_id,
+            qualification: r.qualification || '',
+            joiningDate: r.joining_date || '',
+            specialization: r.specialization || '',
+            createdAt: r.created_at
+          };
+          const idx = mockDb.teachers.findIndex(t => t.id === tc.id);
+          if (idx === -1) mockDb.teachers.push(tc);
+          else mockDb.teachers[idx] = tc;
+        });
+        const teacherIds = new Set(dbTeachers.map(t => t.id));
+        mockDb.teachers = mockDb.teachers.filter(t => t.schoolId !== schoolId || teacherIds.has(t.id));
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync teachers:', e);
+    }
+  },
+
+  async syncSubjectsData(schoolId: string): Promise<void> {
+    try {
+      const { data: dbSubjects } = await supabaseAdmin
+        .from('subjects')
+        .select('*')
+        .eq('school_id', schoolId);
+
+      if (dbSubjects) {
+        dbSubjects.forEach((r: any) => {
+          const sub = {
+            id: r.id,
+            schoolId: r.school_id,
+            name: r.name,
+            code: r.code,
+            description: r.description || ''
+          };
+          const idx = mockDb.subjects.findIndex(s => s.id === sub.id);
+          if (idx === -1) mockDb.subjects.push(sub);
+          else mockDb.subjects[idx] = sub;
+        });
+        const subjectIds = new Set(dbSubjects.map(s => s.id));
+        mockDb.subjects = mockDb.subjects.filter(s => s.schoolId !== schoolId || subjectIds.has(s.id));
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync subjects:', e);
+    }
+  },
+
   async syncChatMessagesData(userId: string): Promise<void> {
     try {
       const { data: dbChats } = await supabaseAdmin
@@ -1957,6 +2075,11 @@ export const mockApi = {
     if (!student) throw new Error('Student profile not found.');
 
     // Sync from database first
+    await this.syncSchoolsData(student.schoolId);
+    await this.syncClassesData(student.schoolId);
+    await this.syncTeachersData(student.schoolId);
+    await this.syncSubjectsData(student.schoolId);
+    await this.syncTeacherClassSubjectMappingsData(student.schoolId);
     await this.syncExamsData(student.schoolId);
     await this.syncExamSchedulesData(student.schoolId);
     await this.syncExamMarksData(student.schoolId);

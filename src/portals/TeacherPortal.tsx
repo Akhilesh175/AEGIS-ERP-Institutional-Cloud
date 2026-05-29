@@ -365,13 +365,29 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   };
 
   useEffect(() => {
-    syncSubscriptionPlan();
-    loadMappings();
-    loadManagedClasses();
-    if (session?.user.schoolId) {
-      mockApi.classTeacherGetExams(session.user.schoolId).then(setHmExams);
-      mockApi.syncQuizzesData(session.user.schoolId).catch(console.error);
-    }
+    const runCoreSyncs = async () => {
+      const schoolId = session?.user.schoolId;
+      if (schoolId) {
+        try {
+          await mockApi.syncSchoolsData(schoolId);
+          await mockApi.syncClassesData(schoolId);
+          await mockApi.syncTeachersData(schoolId);
+          await mockApi.syncSubjectsData(schoolId);
+          await mockApi.syncTeacherClassSubjectMappingsData(schoolId);
+          await mockApi.syncAcademicSessionsData(schoolId);
+          await mockApi.syncStudentsData(schoolId);
+          
+          mockApi.classTeacherGetExams(schoolId).then(setHmExams);
+          mockApi.syncQuizzesData(schoolId).catch(console.error);
+        } catch (e) {
+          console.error('Core sync failed in teacher portal:', e);
+        }
+      }
+      await syncSubscriptionPlan();
+      await loadMappings();
+      await loadManagedClasses();
+    };
+    runCoreSyncs();
   }, [teacherId, session, refreshTrigger]);
 
   useEffect(() => {

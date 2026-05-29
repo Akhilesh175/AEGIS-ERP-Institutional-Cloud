@@ -108,7 +108,13 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
     try {
       const schoolId = session?.user?.schoolId || '';
       if (schoolId) {
-        // Sync student registry database state first to avoid empty/null profile lookup errors
+        // Sync core database state first to avoid empty/null profile lookup errors
+        await mockApi.syncSchoolsData(schoolId);
+        await mockApi.syncClassesData(schoolId);
+        await mockApi.syncTeachersData(schoolId);
+        await mockApi.syncSubjectsData(schoolId);
+        await mockApi.syncTeacherClassSubjectMappingsData(schoolId);
+        await mockApi.syncAcademicSessionsData(schoolId);
         await mockApi.syncStudentsData(schoolId);
       }
 
