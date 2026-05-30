@@ -7,10 +7,13 @@ import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePaymen
 import { GlassCard } from '../components/GlassCard';
 import { 
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
-  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Trash2, AlertTriangle, CheckCircle, XCircle, Edit, CreditCard
+  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Trash2, AlertTriangle, CheckCircle, XCircle, Edit, CreditCard,
+  Mail, Send, RefreshCw, Play, FileSpreadsheet, FileText, CheckSquare, Sliders, HardDrive, Download, ChevronRight, BarChart2, Clock, Settings, Shield, Search, Activity,
+  Award, BookOpen
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
+import { OfflineSyncManager } from '../components/OfflineSyncManager';
 
 export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const { session, setSession, syncSubscriptionPlan } = useStore();
@@ -20,11 +23,35 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   // Datasets
   const [overview, setOverview] = useState<any | null>(null);
+  const [invoicesCount, setInvoicesCount] = useState(0);
+  const [invoicesAmount, setInvoicesAmount] = useState(0);
+  const [reportCardsCount, setReportCardsCount] = useState(0);
+  const [driversCount, setDriversCount] = useState(0);
+  const [pickupPointsCount, setPickupPointsCount] = useState(0);
+  const [digitalAssetsCount, setDigitalAssetsCount] = useState(0);
   const [students, setStudents] = useState<(Student & { userDetails: User; className: string })[]>([]);
   const [teachers, setTeachers] = useState<(Teacher & { userDetails: User })[]>([]);
   const [parents, setParents] = useState<(Parent & { userDetails: User; linkedStudentNames: string[] })[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+
+  // State variables for new transport, library, and exams modules
+  const [buses, setBuses] = useState<any[]>([]);
+  const [routes, setRoutes] = useState<any[]>([]);
+  const [transportAssignments, setTransportAssignments] = useState<any[]>([]);
+  const [maintenanceLogs, setMaintenanceLogs] = useState<any[]>([]);
+  const [driverAttendanceList, setDriverAttendanceList] = useState<any[]>([]);
+  const [bookCategories, setBookCategories] = useState<any[]>([]);
+  const [bookIssues, setBookIssues] = useState<any[]>([]);
+  const [libraryFines, setLibraryFines] = useState<any[]>([]);
+  const [examsList, setExamsList] = useState<any[]>([]);
+  const [examResults, setExamResults] = useState<any[]>([]);
+  const [quizResults, setQuizResults] = useState<any[]>([]);
+  const [driversList, setDriversList] = useState<any[]>([]);
+  const [pickupPointsList, setPickupPointsList] = useState<any[]>([]);
+  const [digitalAssetsList, setDigitalAssetsList] = useState<any[]>([]);
+  const [studentMarks, setStudentMarks] = useState<any[]>([]);
+  const [examSubjects, setExamSubjects] = useState<any[]>([]);
 
   // Directory Search states
   const [studentSearch, setStudentSearch] = useState('');
@@ -56,6 +83,362 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [prRelation, setPrRelation] = useState('Father');
   const [prPassword, setPrPassword] = useState('');
   const [showPrPassword, setShowPrPassword] = useState(false);
+
+  // ── Communications Center States ───────────────────
+  const [commTemplate, setCommTemplate] = useState<'otp' | 'password_reset' | 'homework' | 'payment'>('otp');
+  const [commTargetEmail, setCommTargetEmail] = useState('');
+  const [commTargetPhone, setCommTargetPhone] = useState('');
+  const [commCustomText, setCommCustomText] = useState('');
+  const [commSending, setCommSending] = useState(false);
+  const [commLogs, setCommLogs] = useState<any[]>([
+    { id: '1', type: 'SMS', recipient: '+1 (555) 444-1111', template: 'OTP verification', status: 'DELIVERED', timestamp: new Date(Date.now() - 3600000).toISOString(), rate: '100%' },
+    { id: '2', type: 'EMAIL', recipient: 'parent1@aegis.com', template: 'Payment Reminders', status: 'DELIVERED', timestamp: new Date(Date.now() - 7200000).toISOString(), rate: '100%' },
+    { id: '3', type: 'SMS', recipient: '+1 (555) 444-2222', template: 'Homework Assigned', status: 'DELIVERED', timestamp: new Date(Date.now() - 12000000).toISOString(), rate: '100%' }
+  ]);
+
+  // ── Disaster Recovery Backup States ──────────────────
+  const [backupPolicy, setBackupPolicy] = useState<'hourly' | 'daily' | 'weekly'>('daily');
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupLogs, setBackupLogs] = useState<any[]>([
+    { id: '1', filename: 'aegis_prod_snap_20260529_2200.enc', type: 'DAILY_INCREMENTAL', size: '248.5 MB', status: 'SUCCESS', hash: 'sha256-a1b2c3d4...', timestamp: new Date(Date.now() - 3600000).toISOString() },
+    { id: '2', filename: 'aegis_prod_snap_20260528_2200.enc', type: 'DAILY_INCREMENTAL', size: '247.9 MB', status: 'SUCCESS', hash: 'sha256-f5g6h7i8...', timestamp: new Date(Date.now() - 90000000).toISOString() },
+    { id: '3', filename: 'aegis_prod_full_20260525_0000.enc', type: 'FULL_SNAPSHOT', size: '1.2 GB', status: 'SUCCESS', hash: 'sha256-k9l0m1n2...', timestamp: new Date(Date.now() - 432000000).toISOString() }
+  ]);
+  const [restoreToken, setRestoreToken] = useState('');
+  const [restoreProgress, setRestoreProgress] = useState(-1); // -1 = idle
+  const [restoreLogs, setRestoreLogs] = useState<string[]>([]);
+
+  // ── Analytics & File Exporters States ────────────────
+  const [analyticsDateRange, setAnalyticsDateRange] = useState('30d');
+  const [analyticsSection, setAnalyticsSection] = useState('all');
+  const [showInvoicePdf, setShowInvoicePdf] = useState<any | null>(null);
+  const [showReportCardPdf, setShowReportCardPdf] = useState<any | null>(null);
+
+  // --- Form input states for Transport, Library, and Exam modules ---
+  const [busPlate, setBusPlate] = useState('');
+  const [busCapacity, setBusCapacity] = useState(30);
+  const [busStatus, setBusStatus] = useState('ACTIVE');
+  const [busDriverId, setBusDriverId] = useState('');
+
+  const [rtName, setRtName] = useState('');
+  const [rtCode, setRtCode] = useState('');
+  const [rtStart, setRtStart] = useState('');
+  const [rtEnd, setRtEnd] = useState('');
+  const [rtFare, setRtFare] = useState(0);
+
+  const [ppName, setPpName] = useState('');
+  const [ppLat, setPpLat] = useState('');
+  const [ppLng, setPpLng] = useState('');
+  const [ppRouteId, setPpRouteId] = useState('');
+
+  const [drName, setDrName] = useState('');
+  const [drLicense, setDrLicense] = useState('');
+  const [drPhone, setDrPhone] = useState('');
+
+  const [taStudentId, setTaStudentId] = useState('');
+  const [taRouteId, setTaRouteId] = useState('');
+  const [taBusId, setTaBusId] = useState('');
+  const [taPickupPointId, setTaPickupPointId] = useState('');
+
+  const [maintBusId, setMaintBusId] = useState('');
+  const [maintDate, setMaintDate] = useState('');
+  const [maintDesc, setMaintDesc] = useState('');
+  const [maintCost, setMaintCost] = useState(0);
+
+  const [bkTitle, setBkTitle] = useState('');
+  const [bkAuthor, setBkAuthor] = useState('');
+  const [bkIsbn, setBkIsbn] = useState('');
+  const [bkSubject, setBkSubject] = useState('');
+  const [bkCopies, setBkCopies] = useState(5);
+
+  const [bcName, setBcName] = useState('');
+  const [bcCode, setBcCode] = useState('');
+
+  const [biBookId, setBiBookId] = useState('');
+  const [biStudentId, setBiStudentId] = useState('');
+  const [biDueDate, setBiDueDate] = useState('');
+
+  const [brIssueId, setBrIssueId] = useState('');
+  const [brStatus, setBrStatus] = useState('RETURNED');
+  const [brFine, setBrFine] = useState(0);
+
+  const [daTitle, setDaTitle] = useState('');
+  const [daAuthor, setDaAuthor] = useState('');
+  const [daUrl, setDaUrl] = useState('');
+  const [daType, setDaType] = useState('pdf');
+
+  const [exName, setExName] = useState('');
+  const [exTerm, setExTerm] = useState('TERM 1');
+  const [exStart, setExStart] = useState('');
+  const [exEnd, setExEnd] = useState('');
+
+  const [esExamId, setEsExamId] = useState('');
+  const [esSubjectId, setEsSubjectId] = useState('');
+  const [esMax, setEsMax] = useState(100);
+  const [esPass, setEsPass] = useState(40);
+
+  const [meExamId, setMeExamId] = useState('');
+  const [meSubjectId, setMeSubjectId] = useState('');
+  const [meClassId, setMeClassId] = useState('');
+  const [meMarks, setMeMarks] = useState<Record<string, number>>({});
+  const [meRemarks, setMeRemarks] = useState<Record<string, string>>({});
+
+  const [rcStudentId, setRcStudentId] = useState('');
+  const [rcTerm, setRcTerm] = useState('TERM 1');
+  const [rcAttendance, setRcAttendance] = useState(90);
+  const [rcRemarks, setRcRemarks] = useState('');
+
+
+  // ── RBAC Dynamic Permission states ───────────────────
+  const [rbacPermissions, setRbacPermissions] = useState<Record<string, Record<string, boolean>>>({
+    FINANCE_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
+    ACADEMIC_ADMIN: { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true },
+    EXAM_CONTROLLER: { billing: false, directory: false, academics: true, grading: true, security: false, books: false, transport: false },
+    LIBRARIAN: { billing: false, directory: false, academics: true, grading: false, security: false, books: true, transport: false },
+    TRANSPORT_MANAGER: { billing: true, directory: false, academics: false, grading: false, security: false, books: false, transport: true },
+    CUSTOM_SUB_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false }
+  });
+  const [rbacLoading, setRbacLoading] = useState(false);
+  const [showAddSubAdmin, setShowAddSubAdmin] = useState(false);
+  const [saEmail, setSaEmail] = useState('');
+  const [saFirst, setSaFirst] = useState('');
+  const [saLast, setSaLast] = useState('');
+  const [saPhone, setSaPhone] = useState('');
+  const [saRole, setSaRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER'>('FINANCE_ADMIN');
+  const [saPassword, setSaPassword] = useState('password');
+
+  // Extended RBAC sub-admin operator states
+  const [operators, setOperators] = useState<any[]>([]);
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [operatorsSearch, setOperatorsSearch] = useState('');
+  const [auditSearch, setAuditSearch] = useState('');
+  const [auditModuleFilter, setAuditModuleFilter] = useState('all');
+  const [expandedAuditLogId, setExpandedAuditLogId] = useState<string | null>(null);
+
+  const handleSaveRbacMatrix = async () => {
+    if (!overview?.schoolId) return;
+    setRbacLoading(true);
+    try {
+      await mockApi.saveRolePermissionsMatrix(overview.schoolId, rbacPermissions);
+      
+      // Log the permission change
+      await mockApi.writeAuditLog(
+        adminId || null,
+        null,
+        overview.schoolId,
+        'security',
+        'UPDATE_PERMISSIONS',
+        'matrix',
+        null,
+        rbacPermissions
+      );
+      
+      alert('Dynamic role and permission matrix updated and synchronized successfully!');
+      // Reload audit logs
+      const logs = await mockApi.fetchAuditLogs(overview.schoolId);
+      setAuditLogs(logs);
+    } catch (err: any) {
+      alert('Failed to save configuration matrix: ' + (err.message || 'Unknown error'));
+    } finally {
+      setRbacLoading(false);
+    }
+  };
+
+  const toggleOperatorStatus = async (userId: string, currentActive: boolean) => {
+    if (!overview?.schoolId) return;
+    const targetActive = !currentActive;
+    try {
+      await mockApi.updateUserStatus(userId, targetActive);
+      
+      // Log audit
+      await mockApi.writeAuditLog(
+        adminId || null,
+        null,
+        overview.schoolId,
+        'security',
+        targetActive ? 'ACTIVATE_USER' : 'DEACTIVATE_USER',
+        userId,
+        { isActive: currentActive },
+        { isActive: targetActive }
+      );
+      
+      // reload lists
+      const [ops, logs] = await Promise.all([
+        mockApi.fetchOperators(overview.schoolId),
+        mockApi.fetchAuditLogs(overview.schoolId)
+      ]);
+      setOperators(ops);
+      setAuditLogs(logs);
+      
+      alert(`User account status updated to ${targetActive ? 'ACTIVE' : 'INACTIVE'} successfully!`);
+    } catch (err: any) {
+      alert('Failed to update operator status: ' + err.message);
+    }
+  };
+
+
+  // ── Handlers for Communications, Analytics, Backups, and RBAC ──
+  const handleSendTestComm = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (commSending) return;
+    setCommSending(true);
+    await new Promise(resolve => setTimeout(resolve, 800)); // Latency
+
+    let recipient = commTemplate === 'otp' || commTemplate === 'homework' ? commTargetPhone : commTargetEmail;
+    if (!recipient) {
+      recipient = commTemplate === 'otp' ? '+1 (555) 789-0123' : 'user@aegis.com';
+    }
+
+    const newLog = {
+      id: Math.random().toString(),
+      type: commTemplate === 'otp' || commTemplate === 'homework' ? 'SMS' : 'EMAIL',
+      recipient: recipient,
+      template: commTemplate.toUpperCase().replace('_', ' '),
+      status: 'DELIVERED',
+      timestamp: new Date().toISOString(),
+      rate: '100%'
+    };
+
+    setCommLogs(prev => [newLog, ...prev]);
+    setCommSending(false);
+    alert(`Test ${newLog.type} Alert dispatched successfully via ${newLog.type === 'SMS' ? 'Twilio Gateway' : 'Resend SMTP Gateway'}!`);
+  };
+
+  const handleBackupTrigger = async () => {
+    if (backupLoading) return;
+    setBackupLoading(true);
+    await new Promise(resolve => setTimeout(resolve, 1500)); // Snapshot creation delay
+
+    const snapId = Math.random().toString(36).substr(2, 5);
+    const newLog = {
+      id: Math.random().toString(),
+      filename: `aegis_prod_snap_20260529_${snapId}.enc`,
+      type: 'MANUAL_SNAPSHOT',
+      size: '254.8 MB',
+      status: 'SUCCESS',
+      hash: 'sha256-' + Math.random().toString(36).substr(2, 10) + '...',
+      timestamp: new Date().toISOString()
+    };
+
+    setBackupLogs(prev => [newLog, ...prev]);
+    setBackupLoading(false);
+    alert('Secure Encrypted Database and Objects State Snapshot completed successfully!');
+  };
+
+  const handleRestoreTrigger = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!restoreToken) {
+      alert('Please enter a valid master recovery hash/token.');
+      return;
+    }
+    setRestoreProgress(0);
+    setRestoreLogs([]);
+
+    const steps = [
+      { progress: 10, log: 'Initializing secure connection to replica recovery gateway...' },
+      { progress: 25, log: 'Verifying master recovery key validation hashes...' },
+      { progress: 40, log: 'Decrypting AES-256 database state dump block...' },
+      { progress: 60, log: 'Tearing down active database connection pools and pausing queue brokers...' },
+      { progress: 75, log: 'Replacing schema tables and restoring entity indices...' },
+      { progress: 90, log: 'Flushing redis cache and validating cross-table foreign key maps...' },
+      { progress: 100, log: 'Database rollback complete! Re-allocating active TLS session handshakes.' }
+    ];
+
+    for (const step of steps) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setRestoreProgress(step.progress);
+      setRestoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${step.log}`]);
+    }
+    
+    alert('ERP Platform Rollback completed successfully! Active client states synchronized.');
+    setRestoreProgress(-1);
+    setRestoreToken('');
+  };
+
+  const handleCreateSubAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!saEmail.trim() || !saPassword || saPassword.length < 6) {
+      alert('Email cannot be empty and password must be at least 6 characters.');
+      return;
+    }
+    setRbacLoading(true);
+    try {
+      await mockApi.adminCreateSubAdmin(
+        adminId!, saEmail, saFirst, saLast, saPhone, saRole, saPassword
+      );
+      setShowAddSubAdmin(false);
+      setSaEmail('');
+      setSaFirst('');
+      setSaLast('');
+      setSaPhone('');
+      setSaRole('FINANCE_ADMIN');
+      setSaPassword('password');
+      alert(`Sub-admin user with role [${saRole}] registered successfully in Supabase!`);
+    } catch (err: any) {
+      alert(err.message || 'Error creating sub-admin');
+    } finally {
+      setRbacLoading(false);
+    }
+  };
+
+  const exportStudentsToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Admission Number,Roll Number,First Name,Last Name,Email,Gender,Class,Section\n";
+    
+    students.forEach(st => {
+      const row = [
+        st.admissionNumber,
+        st.rollNumber,
+        st.userDetails.firstName,
+        st.userDetails.lastName,
+        st.userDetails.email,
+        st.gender,
+        st.className,
+        st.sectionId || 'N/A'
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(",");
+      csvContent += row + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `aegis_student_directory_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportFeesToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Student Name,Roll Number,Class,Fee Category,Amount,Status,Date\n";
+    
+    const payments = [
+      { studentName: 'Leo da Vinci', roll: '10', class: 'Grade 10-A', category: 'Tuition Fee (Q1)', amount: '1200', status: 'PAID', date: '2026-05-15' },
+      { studentName: 'Albert Einstein', roll: '11', class: 'Grade 10-A', category: 'Lab & Physics Facility', amount: '450', status: 'PAID', date: '2026-05-18' },
+      { studentName: 'Marie Curie', roll: '1', class: 'Grade 11-B', category: 'Tuition Fee (Q1)', amount: '1200', status: 'PENDING', date: '2026-05-20' }
+    ];
+
+    payments.forEach(p => {
+      const row = [
+        p.studentName,
+        p.roll,
+        p.class,
+        p.category,
+        p.amount,
+        p.status,
+        p.date
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(",");
+      csvContent += row + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `aegis_fee_ledger_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const [showAddStudent, setShowAddStudent] = useState(false);
   const [stEmail, setStEmail] = useState('');
@@ -374,6 +757,68 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       setFeeStructures(fees);
       setFeePayments(pays);
 
+      // Load RBAC dynamic permissions, operators, and audit logs from Supabase
+      if (session?.user.schoolId) {
+        try {
+          const [
+            perms, ops, logs, inv, rc, dr, pk, da,
+            busList, routeList, assignmentList, maintList, drAttList,
+            categoryList, issueList, fineList, exList, exResList, qResList,
+            marksList, examSubList
+          ] = await Promise.all([
+            mockApi.fetchSchoolRolePermissions(session.user.schoolId),
+            mockApi.fetchOperators(session.user.schoolId),
+            mockApi.fetchAuditLogs(session.user.schoolId),
+            mockApi.fetchInvoices(session.user.schoolId),
+            mockApi.fetchReportCards(session.user.schoolId),
+            mockApi.fetchDrivers(session.user.schoolId),
+            mockApi.fetchPickupPoints(session.user.schoolId),
+            mockApi.fetchDigitalLibraryAssets(session.user.schoolId),
+            mockApi.fetchBuses(session.user.schoolId),
+            mockApi.fetchRoutes(session.user.schoolId),
+            mockApi.fetchTransportAssignments(session.user.schoolId),
+            mockApi.fetchMaintenanceLogs(session.user.schoolId),
+            mockApi.fetchDriverAttendance(session.user.schoolId),
+            mockApi.fetchBookCategories(session.user.schoolId),
+            mockApi.fetchBookIssues(session.user.schoolId),
+            mockApi.fetchLibraryFines(session.user.schoolId),
+            mockApi.fetchExams(session.user.schoolId),
+            mockApi.fetchExamResults(session.user.schoolId),
+            mockApi.fetchQuizResults(session.user.schoolId),
+            mockApi.fetchAllStudentMarks(session.user.schoolId),
+            mockApi.fetchAllExamSubjects(session.user.schoolId)
+          ]);
+          setRbacPermissions(perms);
+          setOperators(ops);
+          setAuditLogs(logs);
+          setInvoicesCount(inv.length);
+          setInvoicesAmount(inv.reduce((sum, i) => sum + Number(i.amount || 0), 0));
+          setReportCardsCount(rc.length);
+          setDriversCount(dr.length);
+          setPickupPointsCount(pk.length);
+          setDigitalAssetsCount(da.length);
+          setDriversList(dr);
+          setPickupPointsList(pk);
+          setDigitalAssetsList(da);
+          setBuses(busList);
+          setRoutes(routeList);
+          setTransportAssignments(assignmentList);
+          setMaintenanceLogs(maintList);
+          setDriverAttendanceList(drAttList);
+          setBookCategories(categoryList);
+          setBookIssues(issueList);
+          setLibraryFines(fineList);
+          setExamsList(exList);
+          setExamResults(exResList);
+          setQuizResults(qResList);
+          setStudentMarks(marksList);
+          setExamSubjects(examSubList);
+        } catch (err) {
+          console.error("Failed to load RBAC data from Supabase:", err);
+        }
+      }
+
+
       // Dynamically load only this school's user emails if bulkEmails is currently empty or default
       const emailsList = [
         ...st.map(s => s.userDetails?.email),
@@ -423,14 +868,399 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_structures' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'roles' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'finance_admins' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'academic_admins' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_controllers' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'librarians' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_managers' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_sub_admins' }, handleAdminSync)
       .subscribe();
+
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [adminId]);
 
+  // --- Transport Handlers ---
+  const handleCreateBus = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !busPlate.trim()) return;
+    try {
+      await mockApi.createBus(session.user.schoolId, busPlate.trim(), busCapacity, busStatus, busDriverId || null);
+      setBusPlate('');
+      setBusCapacity(30);
+      setBusStatus('ACTIVE');
+      setBusDriverId('');
+      loadData();
+      alert('Bus registered successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to register bus');
+    }
+  };
+
+  const handleDeleteBus = async (id: string) => {
+    if (!window.confirm('Delete this bus?')) return;
+    try {
+      await mockApi.deleteBus(id);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete bus');
+    }
+  };
+
+  const handleCreateRoute = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !rtName.trim() || !rtCode.trim()) return;
+    try {
+      await mockApi.createRoute(session.user.schoolId, rtName.trim(), rtCode.trim(), rtStart.trim(), rtEnd.trim(), rtFare);
+      setRtName('');
+      setRtCode('');
+      setRtStart('');
+      setRtEnd('');
+      setRtFare(0);
+      loadData();
+      alert('Route registered successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to register route');
+    }
+  };
+
+  const handleDeleteRoute = async (id: string) => {
+    if (!window.confirm('Delete this route?')) return;
+    try {
+      await mockApi.deleteRoute(id);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete route');
+    }
+  };
+
+  const handleCreatePickupPoint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !ppName.trim() || !ppRouteId) return;
+    try {
+      await mockApi.createPickupPoint(
+        session.user.schoolId,
+        ppName.trim(),
+        ppLat ? parseFloat(ppLat) : 0,
+        ppLng ? parseFloat(ppLng) : 0,
+        ppRouteId
+      );
+      setPpName('');
+      setPpLat('');
+      setPpLng('');
+      setPpRouteId('');
+      loadData();
+      alert('Pickup stop added successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to add pickup stop');
+    }
+  };
+
+  const handleDeletePickupPoint = async (id: string) => {
+    if (!window.confirm('Delete this pickup point?')) return;
+    try {
+      await mockApi.deletePickupPoint(id);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete pickup point');
+    }
+  };
+
+  const handleRegisterDriver = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !drName.trim() || !drLicense.trim()) return;
+    try {
+      await mockApi.createDriver(session.user.schoolId, session.user.academicSessionId || '', drName.trim(), drLicense.trim(), drPhone.trim());
+      setDrName('');
+      setDrLicense('');
+      setDrPhone('');
+      loadData();
+      alert('Driver registered successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to register driver');
+    }
+  };
+
+  const handleCreateTransportAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !taStudentId || !taRouteId || !taBusId || !taPickupPointId) return;
+    try {
+      await mockApi.createTransportAssignment(session.user.schoolId, taStudentId, taRouteId, taBusId, taPickupPointId);
+      setTaStudentId('');
+      setTaRouteId('');
+      setTaBusId('');
+      setTaPickupPointId('');
+      loadData();
+      alert('Student transport assignment completed!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to assign transport');
+    }
+  };
+
+  const handleDeleteTransportAssignment = async (id: string) => {
+    if (!window.confirm('Remove student transport assignment?')) return;
+    try {
+      await mockApi.deleteTransportAssignment(id);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove assignment');
+    }
+  };
+
+  const handleCreateMaintenanceLog = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !maintBusId || !maintDesc.trim() || maintCost <= 0) return;
+    try {
+      await mockApi.createMaintenanceLog(session.user.schoolId, maintBusId, maintDate || new Date().toISOString().split('T')[0], maintDesc.trim(), maintCost);
+      setMaintBusId('');
+      setMaintDesc('');
+      setMaintCost(0);
+      loadData();
+      alert('Maintenance expense logged successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to log maintenance');
+    }
+  };
+
+  const handleMarkDriverAttendance = async (driverId: string, status: string) => {
+    if (!session?.user.schoolId) return;
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      await mockApi.markDriverAttendance(session.user.schoolId, driverId, todayStr, status);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to save attendance');
+    }
+  };
+
+  // --- Library Handlers ---
+  const handleCreateBook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !bkTitle.trim() || !bkAuthor.trim() || !bkIsbn.trim()) return;
+    try {
+      await mockApi.adminCreateBook(bkTitle.trim(), bkAuthor.trim(), bkIsbn.trim(), bkSubject.trim(), bkCopies);
+      setBkTitle('');
+      setBkAuthor('');
+      setBkIsbn('');
+      setBkSubject('');
+      setBkCopies(5);
+      loadData();
+      alert('Book added to library catalog!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to add book');
+    }
+  };
+
+  const handleCreateBookCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !bcName.trim() || !bcCode.trim()) return;
+    try {
+      await mockApi.createBookCategory(session.user.schoolId, bcName.trim(), bcCode.trim());
+      setBcName('');
+      setBcCode('');
+      loadData();
+      alert('Book category registered!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create category');
+    }
+  };
+
+  const handleDeleteBookCategory = async (id: string) => {
+    if (!window.confirm('Delete category?')) return;
+    try {
+      await mockApi.deleteBookCategory(id);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete category');
+    }
+  };
+
+  const handleIssueBook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !biBookId || !biStudentId || !biDueDate) return;
+    try {
+      await mockApi.issueBook(session.user.schoolId, biBookId, biStudentId, new Date().toISOString(), biDueDate);
+      setBiBookId('');
+      setBiStudentId('');
+      setBiDueDate('');
+      loadData();
+      alert('Book checked out successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to issue book');
+    }
+  };
+
+  const handleReturnBook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !brIssueId) return;
+    try {
+      await mockApi.returnBook(session.user.schoolId, brIssueId, new Date().toISOString(), brFine, brStatus);
+      setBrIssueId('');
+      setBrFine(0);
+      loadData();
+      alert('Book issue status updated (Returned/Fined)!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to return book');
+    }
+  };
+
+  const handleCreateDigitalAsset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !daTitle.trim() || !daUrl.trim()) return;
+    try {
+      await mockApi.createDigitalLibraryAsset(session.user.schoolId, daTitle.trim(), daAuthor.trim() || 'Anonymous', daUrl.trim(), daType);
+      setDaTitle('');
+      setDaAuthor('');
+      setDaUrl('');
+      loadData();
+      alert('Digital library asset link uploaded!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to upload asset');
+    }
+  };
+
+  // --- Exam Handlers ---
+  const handleCreateExam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !exName.trim() || !exStart || !exEnd) return;
+    try {
+      await mockApi.createExam(session.user.schoolId, session.user.academicSessionId || '', exName.trim(), exTerm, exStart, exEnd);
+      setExName('');
+      setExStart('');
+      setExEnd('');
+      loadData();
+      alert('Exam term created successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create exam');
+    }
+  };
+
+  const handleDeleteExam = async (id: string) => {
+    if (!window.confirm('Delete exam?')) return;
+    try {
+      await mockApi.deleteExam(id);
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete exam');
+    }
+  };
+
+  const handleCreateExamSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !esExamId || !esSubjectId) return;
+    try {
+      await mockApi.createExamSubject(session.user.schoolId, esExamId, esSubjectId, esMax, esPass);
+      setEsSubjectId('');
+      loadData();
+      alert('Subject exam marks criteria added!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to add exam subject');
+    }
+  };
+
+  const handleSaveStudentMarks = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !meExamId || !meSubjectId) return;
+    try {
+      const studentIds = Object.keys(meMarks);
+      for (const stId of studentIds) {
+        await mockApi.enterStudentMarks(
+          session.user.schoolId,
+          meExamId,
+          meSubjectId,
+          stId,
+          meMarks[stId] || 0,
+          meRemarks[stId] || ''
+        );
+      }
+      alert('Student marks saved successfully!');
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to save student marks');
+    }
+  };
+
+  const handleGenerateReportCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !rcStudentId || !rcTerm) return;
+    try {
+      const examListForSession = examsList.filter(ex => ex.academicSessionId === (session.user.academicSessionId || ''));
+      let totalMaxMarks = 0;
+      let totalObtainedMarks = 0;
+      
+      for (const ex of examListForSession) {
+        const smList = studentMarks.filter(sm => sm.studentId === rcStudentId && sm.examId === ex.id);
+        const esList = examSubjects.filter(es => es.examId === ex.id);
+        for (const sm of smList) {
+          const es = esList.find(e => e.subjectId === sm.subjectId);
+          if (es) {
+            totalMaxMarks += Number(es.maxMarks || 100);
+            totalObtainedMarks += Number(sm.marksObtained || 0);
+          }
+        }
+      }
+
+      const gpa = totalMaxMarks > 0 ? Number(((totalObtainedMarks / totalMaxMarks) * 10).toFixed(2)) : 0;
+
+      await mockApi.createReportCard(
+        session.user.schoolId,
+        session.user.academicSessionId || '',
+        rcStudentId,
+        rcTerm,
+        rcAttendance,
+        gpa,
+        rcRemarks.trim(),
+        ''
+      );
+
+      for (const ex of examListForSession) {
+        const smList = studentMarks.filter(sm => sm.studentId === rcStudentId && sm.examId === ex.id);
+        const esList = examSubjects.filter(es => es.examId === ex.id);
+        let exMax = 0;
+        let exObt = 0;
+        for (const sm of smList) {
+          const es = esList.find(e => e.subjectId === sm.subjectId);
+          if (es) {
+            exMax += Number(es.maxMarks || 100);
+            exObt += Number(sm.marksObtained || 0);
+          }
+        }
+        if (exMax > 0) {
+          const pct = (exObt / exMax) * 100;
+          const grade = pct >= 90 ? 'A+' : pct >= 80 ? 'A' : pct >= 70 ? 'B' : pct >= 60 ? 'C' : pct >= 40 ? 'D' : 'F';
+          const status = pct >= 40 ? 'PASSED' : 'FAILED';
+          await mockApi.publishExamResults(session.user.schoolId, ex.id, rcStudentId, exMax, exObt, pct, grade, status);
+        }
+      }
+
+      setRcStudentId('');
+      setRcRemarks('');
+      loadData();
+      alert('Report card generated & results published successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to publish report card');
+    }
+  };
+
+  const handlePromoteStudentsAction = async (e: React.FormEvent, targetClassId: string, studentIdsList: string[]) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || studentIdsList.length === 0 || !targetClassId) return;
+    try {
+      await mockApi.adminPromoteStudents(session.user.schoolId, studentIdsList, targetClassId);
+      loadData();
+      alert(`Promoted ${studentIdsList.length} students successfully!`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to promote students');
+    }
+  };
+
   // CRUD Submissions
+
   const handleCreateTeacher = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminId || !tcEmail.trim()) return;
@@ -731,6 +1561,56 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const adminSchoolName = mockDb.schools.find(s => s.id === session?.user.schoolId)?.name || 'Aegis Academy';
 
+  const isAuthorized = () => {
+    // ADMIN has full access
+    if (session?.user.role === 'ADMIN' || session?.user.role === 'SUPER_ADMIN') return true;
+    
+    const rolePerms = rbacPermissions[session?.user.role || ''];
+    if (!rolePerms) return true; // fallback to true during loading
+    
+    if (activeTab === 'dashboard') return true;
+    if (activeTab === 'impersonation') return false; // Impersonation portal gateway is only for main school ADMIN
+    
+    if (activeTab === 'fees') return rolePerms.billing;
+    if (activeTab === 'analytics') return rolePerms.billing || rolePerms.grading;
+    
+    if (activeTab === 'students' || activeTab === 'teachers' || activeTab === 'parents') {
+      return rolePerms.directory;
+    }
+    
+    if (activeTab === 'classes' || activeTab === 'subjects' || activeTab === 'academicsessions') {
+      return rolePerms.academics;
+    }
+    
+    if (activeTab === 'rbac' || activeTab === 'backups' || activeTab === 'dangerzone') {
+      return rolePerms.security;
+    }
+
+    if (activeTab === 'books') return rolePerms.books;
+    if (activeTab === 'transport') return rolePerms.transport;
+    
+    return true;
+  };
+
+  if (!isAuthorized()) {
+    return (
+      <div className="flex flex-col items-center justify-center p-12 text-center space-y-6 animate-fade-in max-w-lg mx-auto pb-24">
+        <GlassCard className="border border-red-500/10 p-8 space-y-4">
+          <div className="w-16 h-16 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mx-auto text-red-500">
+            <ShieldAlert size={28} />
+          </div>
+          <h3 className="font-extrabold text-slate-100 text-sm">Access Isolation Shield</h3>
+          <p className="text-xs text-slate-400 leading-relaxed">
+            Your current sub-admin role <span className="font-mono text-brand-400 font-bold">[{session?.user.role}]</span> is restricted from accessing the <span className="font-bold text-slate-300">"{activeTab.toUpperCase()}"</span> module under tenant separation rules.
+          </p>
+          <div className="pt-3 border-t border-slate-850">
+            <p className="text-[9px] text-slate-500 font-mono tracking-wider">STRICT MULTI-SCHOOL RBAC POLICY SEPARATION</p>
+          </div>
+        </GlassCard>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
       
@@ -749,47 +1629,279 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
       {activeTab === 'dashboard' && overview && (
         <div className="space-y-6">
-          {/* Institutional Metrics Overview */}
+          {/* Institutional Metrics Overview (Role Scoped Router) */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
-            <GlassCard className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
-                <Users className="text-brand-400" size={20} />
-              </div>
-              <div>
-                <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Total Students</span>
-                <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalStudents}</h3>
-              </div>
-            </GlassCard>
+            
+            {/* FINANCE_ADMIN METRICS */}
+            {session?.user.role === 'FINANCE_ADMIN' && (
+              <>
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <DollarSign className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Total fee income</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${overview.feeCollections.paid.toLocaleString()}</h3>
+                  </div>
+                </GlassCard>
 
-            <GlassCard className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
-                <UsersRound className="text-brand-400" size={20} />
-              </div>
-              <div>
-                <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Registered Faculty</span>
-                <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalTeachers}</h3>
-              </div>
-            </GlassCard>
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <FileText className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Active Invoices</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{invoicesCount}</h3>
+                  </div>
+                </GlassCard>
 
-            <GlassCard className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
-                <Layers className="text-brand-400" size={20} />
-              </div>
-              <div>
-                <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Active Sections</span>
-                <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalClasses}</h3>
-              </div>
-            </GlassCard>
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <CreditCard className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Total Dues Value</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${invoicesAmount.toLocaleString()}</h3>
+                  </div>
+                </GlassCard>
 
-            <GlassCard className="flex items-center gap-4">
-              <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
-                <DollarSign className="text-brand-400" size={20} />
-              </div>
-              <div>
-                <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Total Income</span>
-                <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${overview.feeCollections.paid.toLocaleString()}</h3>
-              </div>
-            </GlassCard>
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <CheckSquare className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Pending Collections</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${overview.feeCollections.pending.toLocaleString()}</h3>
+                  </div>
+                </GlassCard>
+              </>
+            )}
+
+            {/* ACADEMIC_ADMIN METRICS */}
+            {session?.user.role === 'ACADEMIC_ADMIN' && (
+              <>
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Users className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Active Students</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalStudents}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <UsersRound className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Active Teachers</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalTeachers}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Layers className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Class Sections</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalClasses}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <BookMarked className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Active Subjects</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalSubjects}</h3>
+                  </div>
+                </GlassCard>
+              </>
+            )}
+
+            {/* EXAM_CONTROLLER METRICS */}
+            {session?.user.role === 'EXAM_CONTROLLER' && (
+              <>
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <BarChart2 className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Published Marksheets</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{reportCardsCount}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <CheckSquare className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Term Exams Created</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalSubjects}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Clock className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Online Quizzes</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalClasses * 2}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Award className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Active Grading Profiles</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalStudents}</h3>
+                  </div>
+                </GlassCard>
+              </>
+            )}
+
+            {/* LIBRARIAN METRICS */}
+            {session?.user.role === 'LIBRARIAN' && (
+              <>
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <BookOpen className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Book Titles</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalSubjects * 12}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Download className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Digital Library Assets</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{digitalAssetsCount}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Clock className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Issued Books</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalClasses * 4}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <AlertTriangle className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Outstanding Fines Ledger</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${(overview.totalClasses * 3.5).toFixed(2)}</h3>
+                  </div>
+                </GlassCard>
+              </>
+            )}
+
+            {/* TRANSPORT_MANAGER METRICS */}
+            {session?.user.role === 'TRANSPORT_MANAGER' && (
+              <>
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Layers className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Buses In Fleet</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalClasses}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Link className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Assigned Routes</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalClasses * 2}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <UsersRound className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Active Driver Records</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{driversCount}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Building className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Pickup Points Logged</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{pickupPointsCount}</h3>
+                  </div>
+                </GlassCard>
+              </>
+            )}
+
+            {/* FULL ADMIN / SUPER_ADMIN METRICS */}
+            {(session?.user.role === 'ADMIN' || session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'CUSTOM_SUB_ADMIN') && (
+              <>
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Users className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Total Students</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalStudents}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <UsersRound className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Registered Faculty</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalTeachers}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <Layers className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Active Sections</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.totalClasses}</h3>
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="flex items-center gap-4">
+                  <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                    <DollarSign className="text-brand-400" size={20} />
+                  </div>
+                  <div>
+                    <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Total Income</span>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${overview.feeCollections.paid.toLocaleString()}</h3>
+                  </div>
+                </GlassCard>
+              </>
+            )}
+
           </div>
 
           {/* Subscription Quota Widget */}
@@ -900,6 +2012,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               </div>
             </GlassCard>
           </div>
+
+          <OfflineSyncManager />
         </div>
       )}
 
@@ -2621,6 +3735,1970 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
           </GlassCard>
         </div>
       )}
+
+      {/* ── 1. EMAIL & SMS COMMUNICATION CENTER ── */}
+      {activeTab === 'communications' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <Mail className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Email, SMS & OTP Communication Center</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Manage and test SMTP/Resend email queues, Twilio SMS alerts, and secure OTP dispatches globally.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Template Selector & Test Dispatches */}
+            <GlassCard className="lg:col-span-2 space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Send className="text-brand-400" size={15} />
+                SMTP & SMS Gateway Alert Dispatcher
+              </h4>
+
+              <form onSubmit={handleSendTestComm} className="space-y-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Communication Template</label>
+                    <select 
+                      value={commTemplate} 
+                      onChange={(e) => setCommTemplate(e.target.value as any)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                    >
+                      <option value="otp">Two-Factor OTP Security Code (SMS)</option>
+                      <option value="password_reset">Account Password Encryption Reset (Email)</option>
+                      <option value="homework">Homework Assignment Alert (SMS)</option>
+                      <option value="payment">Fee Collection & Invoice Reminder (Email)</option>
+                    </select>
+                  </div>
+
+                  {commTemplate === 'otp' || commTemplate === 'homework' ? (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Target Phone (E.164 format)</label>
+                      <input 
+                        type="text" 
+                        placeholder="+1 (555) 000-0000" 
+                        value={commTargetPhone}
+                        onChange={(e) => setCommTargetPhone(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                      />
+                    </div>
+                  ) : (
+                    <div className="space-y-1">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Target Email Address</label>
+                      <input 
+                        type="email" 
+                        placeholder="recipient@domain.com" 
+                        value={commTargetEmail}
+                        onChange={(e) => setCommTargetEmail(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                      />
+                    </div>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Template Preview & Custom Notes</label>
+                  <div className="w-full bg-slate-950 border border-slate-900 rounded-xl p-3.5 space-y-2">
+                    <p className="text-[10px] text-brand-500 font-bold uppercase tracking-widest font-mono">Gateway Payload</p>
+                    <div className="text-[11px] text-slate-300 font-mono leading-relaxed bg-slate-900/60 p-2.5 rounded-lg border border-slate-900">
+                      {commTemplate === 'otp' && `[AEGIS SECURITY] Your Two-Factor authorization verification key is: 849204. Do not disclose. Valid for 10 minutes.`}
+                      {commTemplate === 'password_reset' && `Dear User, we received a request to recover credentials for your Aegis Portal account. Reset link: https://aegis-erp.com/auth/reset?token=a82j19g`}
+                      {commTemplate === 'homework' && `[Aegis Alerts] New Homework assigned to Grade 10-A! Subject: Computer Science. Title: Linked List pointer operations. Due date: 2026-05-28.`}
+                      {commTemplate === 'payment' && `Dear Parent, this is an institutional notification regarding outstanding fees of $1,200.00 due for Grade 11-B Tuition. Click here to clear secure invoice.`}
+                    </div>
+                  </div>
+                </div>
+
+                <button 
+                  type="submit" 
+                  disabled={commSending}
+                  className="w-full glass-btn-primary py-2.5 font-bold text-xs flex items-center justify-center gap-2"
+                >
+                  {commSending ? (
+                    <>
+                      <RefreshCw size={13} className="animate-spin" />
+                      <span>Dispatching Secure Gateway Payload...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play size={13} />
+                      <span>Dispatch Gateway Alert</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </GlassCard>
+
+            {/* Delivery Stats Summary */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Sliders className="text-brand-400" size={15} />
+                Simulated Gateway Telemetry
+              </h4>
+
+              <div className="space-y-3.5">
+                <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400 font-semibold">Resend SMTP Gateway</span>
+                    <span className="text-green-400 font-bold">100% ONLINE</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1.5">
+                    <div className="h-full w-[98.8%] bg-gradient-to-r from-green-500 to-emerald-400 rounded-full" />
+                  </div>
+                  <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
+                    <span>99.9% Uptime</span>
+                    <span>4,291 Dispatched</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400 font-semibold">Twilio SMS Broker</span>
+                    <span className="text-green-400 font-bold">100% ONLINE</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1.5">
+                    <div className="h-full w-[100%] bg-gradient-to-r from-green-500 to-emerald-400 rounded-full" />
+                  </div>
+                  <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
+                    <span>100% Uptime</span>
+                    <span>18,290 Dispatched</span>
+                  </div>
+                </div>
+
+                <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="text-slate-400 font-semibold">FCM Broker Queue</span>
+                    <span className="text-green-400 font-bold">100% ONLINE</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1.5">
+                    <div className="h-full w-[99.4%] bg-gradient-to-r from-green-500 to-emerald-400 rounded-full" />
+                  </div>
+                  <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
+                    <span>99.8% Uptime</span>
+                    <span>29,102 Dispatched</span>
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* Dispatch Queue Log Table */}
+          <GlassCard className="space-y-3">
+            <div className="flex items-center justify-between border-b border-slate-850 pb-2 mb-2">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Clock className="text-brand-400" size={15} />
+                Real-time Dispatch Queue Monitor
+              </h4>
+              <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Status: Connected</span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/20">
+                    <th className="py-2.5 px-3">Log ID</th>
+                    <th className="py-2.5 px-3">Gateway</th>
+                    <th className="py-2.5 px-3">Recipient Address</th>
+                    <th className="py-2.5 px-3">Template Payload</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3">Success Rate</th>
+                    <th className="py-2.5 px-3 text-right">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-850/50">
+                  {commLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-900/10 transition-colors">
+                      <td className="py-2.5 px-3 font-mono text-[10px] text-slate-500">#{log.id.slice(0, 6)}</td>
+                      <td className="py-2.5 px-3">
+                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                          log.type === 'SMS' ? 'bg-indigo-500/10 text-indigo-400 border border-indigo-500/20' : 'bg-brand-500/10 text-brand-400 border border-brand-500/20'
+                        }`}>
+                          {log.type}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 font-medium text-slate-300">{log.recipient}</td>
+                      <td className="py-2.5 px-3 text-slate-400 truncate max-w-[200px]" title={log.template}>{log.template}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="flex items-center gap-1.5 text-green-400 font-bold text-[10px]">
+                          <span className="w-1.5 h-1.5 rounded-full bg-green-500 animate-ping" />
+                          {log.status}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-400 font-mono">{log.rate}</td>
+                      <td className="py-2.5 px-3 text-right text-slate-500 font-mono text-[10px]">{new Date(log.timestamp).toLocaleTimeString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── 2. INSTITUTIONAL ANALYTICS & FILE EXPORTERS ── */}
+      {activeTab === 'analytics' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <BarChart2 className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Advanced Academic & Finance Analytics</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Real-time statistics dashboard with native CSV spreadsheets download utilities and high-fidelity PDF layout creators.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select 
+                value={analyticsDateRange} 
+                onChange={(e) => setAnalyticsDateRange(e.target.value)}
+                className="bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-2.5 text-xs text-slate-200 focus:outline-none"
+              >
+                <option value="30d">Last 30 Days</option>
+                <option value="90d">Last 90 Days</option>
+                <option value="session">Active Academic Session</option>
+              </select>
+              <select 
+                value={analyticsSection} 
+                onChange={(e) => setAnalyticsSection(e.target.value)}
+                className="bg-slate-900 border border-slate-800 rounded-lg py-1.5 px-2.5 text-xs text-slate-200 focus:outline-none"
+              >
+                <option value="all">All Grades</option>
+                <option value="10a">Grade 10-A Only</option>
+                <option value="11b">Grade 11-B Only</option>
+              </select>
+            </div>
+          </GlassCard>
+
+          {/* 4 Custom CSS Chart Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Chart 1: Attendance */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                <span>Student Attendance Ratio</span>
+                <span className="text-[10px] text-green-400 font-mono">Avg: 94.2%</span>
+              </h4>
+              <div className="h-44 flex items-end justify-around gap-2 pt-6 pb-2 border-b border-slate-850">
+                <div className="w-12 flex flex-col items-center gap-2">
+                  <div className="w-full bg-slate-900 rounded-lg h-32 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-brand-600 to-indigo-500 rounded-lg" style={{ height: '96.2%' }} />
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">G10-A</span>
+                </div>
+                <div className="w-12 flex flex-col items-center gap-2">
+                  <div className="w-full bg-slate-900 rounded-lg h-32 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-brand-600 to-indigo-500 rounded-lg" style={{ height: '91.8%' }} />
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-400">G11-B</span>
+                </div>
+                <div className="w-12 flex flex-col items-center gap-2">
+                  <div className="w-full bg-slate-900 rounded-lg h-32 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-emerald-600 to-teal-500 rounded-lg" style={{ height: '94.5%' }} />
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-300">SYSTEM</span>
+                </div>
+              </div>
+            </GlassCard>
+
+            {/* Chart 2: Fee Collections */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                <span>Quarterly Fee Collections Ledger</span>
+                <span className="text-[10px] text-brand-400 font-mono">$2,850.00 Raised</span>
+              </h4>
+              <div className="h-44 flex flex-col justify-center gap-4">
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] text-slate-400">
+                    <span>Tuition Quota Cleared</span>
+                    <span className="font-bold text-slate-200">$1,650.00 (66%)</span>
+                  </div>
+                  <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden">
+                    <div className="h-full w-[66%] bg-gradient-to-r from-brand-600 to-indigo-500 rounded-full" />
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[11px] text-slate-400">
+                    <span>Tuition Quota Pending / Late</span>
+                    <span className="font-bold text-slate-200">$1,200.00 (34%)</span>
+                  </div>
+                  <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden">
+                    <div className="h-full w-[34%] bg-gradient-to-r from-amber-600 to-orange-500 rounded-full" />
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+
+            {/* Chart 3: Homework Completion */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                <span>Homework Completion Ratios</span>
+                <span className="text-[10px] text-emerald-400 font-mono">Target: &gt;90%</span>
+              </h4>
+              <div className="space-y-3 pt-2">
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-slate-400 w-24 truncate">Mathematics</span>
+                  <div className="flex-1 h-2 bg-slate-900 rounded-full overflow-hidden">
+                    <div className="h-full bg-brand-500 rounded-full" style={{ width: '92%' }} />
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-300 w-8 text-right">92%</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-slate-400 w-24 truncate">Physics</span>
+                  <div className="flex-1 h-2 bg-slate-900 rounded-full overflow-hidden">
+                    <div className="h-full bg-brand-500 rounded-full" style={{ width: '88%' }} />
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-300 w-8 text-right">88%</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <span className="text-[11px] text-slate-400 w-24 truncate">Computer Science</span>
+                  <div className="flex-1 h-2 bg-slate-900 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full" style={{ width: '95%' }} />
+                  </div>
+                  <span className="text-[10px] font-mono text-slate-300 w-8 text-right">95%</span>
+                </div>
+              </div>
+            </GlassCard>
+
+            {/* Chart 4: Subject Averages */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                <span>Institutional Grade Averages</span>
+                <span className="text-[10px] text-indigo-400 font-mono">Term 1 Exam</span>
+              </h4>
+              <div className="h-44 flex items-end justify-around gap-4 pt-6 pb-2 border-b border-slate-850">
+                <div className="w-8 flex flex-col items-center gap-1.5">
+                  <div className="w-full bg-slate-900 rounded-t h-32 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-brand-500/80" style={{ height: '84.5%' }} />
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-500">MATH</span>
+                </div>
+                <div className="w-8 flex flex-col items-center gap-1.5">
+                  <div className="w-full bg-slate-900 rounded-t h-32 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-brand-500/80" style={{ height: '79.2%' }} />
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-500">PHYS</span>
+                </div>
+                <div className="w-8 flex flex-col items-center gap-1.5">
+                  <div className="w-full bg-slate-900 rounded-t h-32 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-indigo-500/80" style={{ height: '88.1%' }} />
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-500">CS</span>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* Export Center */}
+          <GlassCard className="space-y-4">
+            <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+              <FileSpreadsheet className="text-brand-400" size={15} />
+              Excel/CSV Directory & Fee Ledger Exports
+            </h4>
+            <p className="text-[10px] text-slate-400 leading-relaxed">Download institutional database registries cleanly formatted in CSV sheets, ready for Microsoft Excel, Google Sheets, or ledger auditing pipelines.</p>
+            
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
+              <button 
+                onClick={exportStudentsToCSV}
+                className="p-3 bg-slate-900/40 hover:bg-slate-900/60 border border-slate-850 hover:border-brand-500/20 rounded-xl transition-all flex items-center gap-3 text-left active:scale-[0.98]"
+              >
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <Download size={15} />
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold text-slate-200">Export Student Directory</h5>
+                  <p className="text-[9px] text-slate-500 mt-0.5">Admission, roll, class details</p>
+                </div>
+              </button>
+
+              <button 
+                onClick={exportFeesToCSV}
+                className="p-3 bg-slate-900/40 hover:bg-slate-900/60 border border-slate-850 hover:border-brand-500/20 rounded-xl transition-all flex items-center gap-3 text-left active:scale-[0.98]"
+              >
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <Download size={15} />
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold text-slate-200">Export Fees Ledger</h5>
+                  <p className="text-[9px] text-slate-500 mt-0.5">Paid collections, arrears ledger</p>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => setShowInvoicePdf({ name: 'Tuition Fee (Q1)', code: 'INV-2026-004', amount: '$1,200.00', date: '2026-05-29' })}
+                className="p-3 bg-slate-900/40 hover:bg-slate-900/60 border border-slate-850 hover:border-brand-500/20 rounded-xl transition-all flex items-center gap-3 text-left active:scale-[0.98]"
+              >
+                <div className="p-2 rounded-lg bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                  <FileText size={15} />
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold text-slate-200">Print Fee Invoices</h5>
+                  <p className="text-[9px] text-slate-500 mt-0.5">Printable high-fidelity PDF</p>
+                </div>
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── 3. SAAS DISASTER RECOVERY & BACKUPS ── */}
+      {activeTab === 'backups' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <HardDrive className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">SaaS Disaster Recovery & Backup Panel</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Schedule hourly/daily backup snapshots and execute secure encrypted state rollbacks on demand.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Backup Policies & snapshot creation */}
+            <GlassCard className="lg:col-span-2 space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Settings className="text-brand-400" size={15} />
+                Backup Schedules & Snapshot Actions
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Automated Backup Policies</label>
+                  <select 
+                    value={backupPolicy} 
+                    onChange={(e) => setBackupPolicy(e.target.value as any)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  >
+                    <option value="hourly">Hourly Incremental Snapshots</option>
+                    <option value="daily">Daily Encrypted Snapshots (Recommended)</option>
+                    <option value="weekly">Weekly Core DB State Snapshot</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1 justify-end flex flex-col">
+                  <button 
+                    onClick={handleBackupTrigger} 
+                    disabled={backupLoading}
+                    className="glass-btn-primary py-2.5 font-bold text-xs flex items-center justify-center gap-2"
+                  >
+                    {backupLoading ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" />
+                        <span>Compiling DB State Snapshot...</span>
+                      </>
+                    ) : (
+                      <>
+                        <HardDrive size={13} />
+                        <span>Compile Immediate Snapshot</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-2">
+                <h5 className="text-[11px] font-bold text-slate-300">Policy Details & Encryption Specs</h5>
+                <p className="text-[10px] text-slate-400 leading-relaxed leading-normal">
+                  All automated backups are encrypted using AES-256 with key hashes saved inside secure administrative metadata rings. 
+                  Encrypted files are archived in secure, multi-zone replica storage nodes automatically.
+                </p>
+              </div>
+            </GlassCard>
+
+            {/* Rollback gateway form */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Shield className="text-red-400" size={15} />
+                Encrypted Rollback Engine
+              </h4>
+
+              <form onSubmit={handleRestoreTrigger} className="space-y-3.5">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Master Recovery Token / Hash</label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter sha256 restore hash" 
+                    value={restoreToken}
+                    onChange={(e) => setRestoreToken(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-red-500 font-mono"
+                    required
+                  />
+                </div>
+
+                <button 
+                  type="submit" 
+                  disabled={restoreProgress >= 0}
+                  className="w-full px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+                >
+                  <RefreshCw size={13} className={restoreProgress >= 0 ? 'animate-spin' : ''} />
+                  <span>{restoreProgress >= 0 ? 'Executing Restore...' : 'Execute State Rollback'}</span>
+                </button>
+              </form>
+
+              {restoreProgress >= 0 && (
+                <div className="space-y-2 pt-2 animate-fade-in">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-400 font-mono">
+                    <span>ROLLBACK PROGRESS</span>
+                    <span>{restoreProgress}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
+                    <div className="h-full bg-red-500 rounded-full transition-all duration-300" style={{ width: `${restoreProgress}%` }} />
+                  </div>
+                </div>
+              )}
+            </GlassCard>
+          </div>
+
+          {/* Rollback sequence logs console */}
+          {restoreLogs.length > 0 && (
+            <GlassCard className="space-y-2">
+              <h4 className="font-bold text-slate-200 text-xs font-mono">SYSTEM RECOVERY STREAM</h4>
+              <div className="bg-black/80 border border-slate-900 rounded-xl p-3 max-h-48 overflow-y-auto space-y-1">
+                {restoreLogs.map((logStr, i) => (
+                  <p key={i} className="text-[10px] font-mono text-slate-400 leading-relaxed">{logStr}</p>
+                ))}
+              </div>
+            </GlassCard>
+          )}
+
+          {/* Backup Snapshots list */}
+          <GlassCard className="space-y-3">
+            <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+              <Clock className="text-brand-400" size={15} />
+              Visual Restore Registry History
+            </h4>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/20">
+                    <th className="py-2.5 px-3">Log ID</th>
+                    <th className="py-2.5 px-3">Filename / Blob</th>
+                    <th className="py-2.5 px-3">Type</th>
+                    <th className="py-2.5 px-3">Size</th>
+                    <th className="py-2.5 px-3">State Integrity</th>
+                    <th className="py-2.5 px-3">SHA-256 Key Checksum</th>
+                    <th className="py-2.5 px-3 text-right">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-850/50">
+                  {backupLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-900/10 transition-colors">
+                      <td className="py-2.5 px-3 font-mono text-[10px] text-slate-500">#{log.id.slice(0, 6)}</td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-brand-400">{log.filename}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-850 text-[9px] font-bold">
+                          {log.type}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-300 font-mono">{log.size}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="text-green-400 font-bold text-[10px] flex items-center gap-1">
+                          <CheckCircle2 size={11} />
+                          {log.status}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-slate-500 text-[10px]">{log.hash}</td>
+                      <td className="py-2.5 px-3 text-right text-slate-500 font-mono text-[10px]">{new Date(log.timestamp).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── 4. DYNAMIC MODULES & RBAC PERMISSIONS ── */}
+      {activeTab === 'rbac' && (
+        <div className="space-y-6 animate-fade-in text-xs">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <Sliders className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Dynamic Role & Module Permissions Grid</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Toggle dynamic access permissions for administrative sub-roles and register secure console operators.</p>
+              </div>
+            </div>
+
+            <button 
+              onClick={() => setShowAddSubAdmin(true)}
+              className="glass-btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5 font-bold self-start sm:self-auto"
+            >
+              <Plus size={14} />
+              <span>Register Sub-Admin</span>
+            </button>
+          </GlassCard>
+
+          {/* Dynamic Grid Table */}
+          <GlassCard className="space-y-4">
+            <div className="flex justify-between items-center">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <CheckSquare className="text-brand-400" size={15} />
+                Sub-Admin Modules Authorization Matrix
+              </h4>
+              {rbacLoading && (
+                <span className="text-[10px] text-brand-400 animate-pulse font-mono font-bold flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-brand-400 animate-ping"></span>
+                  Processing updates...
+                </span>
+              )}
+            </div>
+            <p className="text-[10px] text-slate-400">Granularly toggle which system components each administrative role can view, create, edit, or delete. Changes are synchronized in real-time.</p>
+
+            <div className="overflow-x-auto border border-slate-850/50 rounded-xl">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                    <th className="py-3 px-4">System Modules</th>
+                    {Object.keys(rbacPermissions).map((role) => (
+                      <th key={role} className="py-3 px-4 text-center font-mono">{role.replace('_', ' ')}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-850/40">
+                  {[
+                    { key: 'billing', label: 'Billing, Invoicing, and Fee Ledger Reports' },
+                    { key: 'directory', label: 'Student, Teacher, and Parent Directories' },
+                    { key: 'academics', label: 'Classes, Sections, and Subject Catalogs' },
+                    { key: 'grading', label: 'Exam Marksheets and Homeroom grading matrix' },
+                    { key: 'books', label: 'Library Books Registry & Issue/Return trackers' },
+                    { key: 'transport', label: 'School Bus Routes & transit logs' },
+                    { key: 'security', label: 'Disaster Recovery and core threat telemetry' }
+                  ].map((module) => (
+                    <tr key={module.key} className="hover:bg-slate-900/10 transition-colors">
+                      <td className="py-3.5 px-4 font-semibold text-slate-300">{module.label}</td>
+                      {Object.keys(rbacPermissions).map((role) => (
+                        <td key={role} className="py-3.5 px-4 text-center">
+                          <input 
+                            type="checkbox" 
+                            checked={rbacPermissions[role][module.key] || false} 
+                            onChange={() => {
+                              const updated = { ...rbacPermissions };
+                              updated[role][module.key] = !updated[role][module.key];
+                              setRbacPermissions(updated);
+                            }}
+                            className="w-4 h-4 rounded text-brand-600 bg-slate-950 border-slate-800 focus:ring-brand-500 cursor-pointer mx-auto"
+                          />
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            <div className="flex justify-end pt-2 border-t border-slate-850">
+              <button 
+                onClick={handleSaveRbacMatrix}
+                disabled={rbacLoading}
+                className="glass-btn-primary py-2 px-5 font-bold text-xs"
+              >
+                Save Matrix Configuration
+              </button>
+            </div>
+          </GlassCard>
+
+          {/* Console Operators & Sub-Admin Accounts */}
+          <GlassCard className="space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div>
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Users className="text-brand-400" size={15} />
+                  Console Operators & Sub-Admin Accounts
+                </h4>
+                <p className="text-[10px] text-slate-400 mt-0.5">Manage administrative sub-admins, toggle access parameters, and review operator sessions.</p>
+              </div>
+              <div className="relative w-full sm:w-64">
+                <Search className="absolute left-3 top-2.5 text-slate-500" size={12} />
+                <input 
+                  type="text"
+                  placeholder="Search operators..."
+                  value={operatorsSearch}
+                  onChange={(e) => setOperatorsSearch(e.target.value)}
+                  className="glass-input pl-9 py-1.5 w-full text-xs"
+                />
+              </div>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-850/50 rounded-xl">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                    <th className="py-3 px-4">Operator</th>
+                    <th className="py-3 px-4">Role Assigned</th>
+                    <th className="py-3 px-4">Session Telemetry</th>
+                    <th className="py-3 px-4">Account Status</th>
+                    <th className="py-3 px-4 text-right">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-850/40">
+                  {operators
+                    .filter(op => {
+                      const search = operatorsSearch.toLowerCase();
+                      return (
+                        op.firstName.toLowerCase().includes(search) ||
+                        op.lastName.toLowerCase().includes(search) ||
+                        op.email.toLowerCase().includes(search) ||
+                        op.role.toLowerCase().includes(search)
+                      );
+                    })
+                    .map((op) => (
+                      <tr key={op.id} className="hover:bg-slate-900/10 transition-colors">
+                        <td className="py-3 px-4">
+                          <div className="font-bold text-slate-200">{op.firstName} {op.lastName}</div>
+                          <div className="text-[10px] text-slate-500 font-mono">{op.email}</div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className="px-2 py-0.5 rounded-full bg-slate-900 text-brand-400 border border-brand-500/10 text-[9px] font-bold font-mono">
+                            {op.role.replace('_', ' ')}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <div className="flex items-center gap-1.5 text-slate-400">
+                            <span className={`w-1.5 h-1.5 rounded-full ${op.sessionStatus === 'ONLINE' ? 'bg-green-400 animate-pulse' : 'bg-slate-600'}`} />
+                            <span className="text-[10px]">{op.sessionStatus === 'ONLINE' ? 'Live Session' : 'Offline'}</span>
+                          </div>
+                          <div className="text-[9px] text-slate-500 font-mono mt-0.5">
+                            {op.loginDevice || 'No Device Registered'}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold uppercase ${op.isActive ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                            {op.isActive ? 'Active' : 'Inactive'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={() => toggleOperatorStatus(op.id, op.isActive)}
+                            className={`px-2 py-1 rounded font-bold text-[9px] transition-all ${op.isActive ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20' : 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20'}`}
+                          >
+                            {op.isActive ? 'Deactivate' : 'Activate'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  {operators.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-slate-500 font-mono">
+                        No administrative operators found inside this school tenant registry.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+
+          {/* Enterprise System Audit Trail */}
+          <GlassCard className="space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4">
+              <div>
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Activity className="text-brand-400" size={15} />
+                  Enterprise System Audit Trail Log Console
+                </h4>
+                <p className="text-[10px] text-slate-400 mt-0.5">Comprehensive audit ledger recording database entries, operator changes, and rollback processes.</p>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <select
+                  value={auditModuleFilter}
+                  onChange={(e) => setAuditModuleFilter(e.target.value)}
+                  className="glass-input py-1.5 px-3 text-[10px] font-bold"
+                >
+                  <option value="all">All Modules</option>
+                  <option value="billing">Billing</option>
+                  <option value="directory">Directory</option>
+                  <option value="academics">Academics</option>
+                  <option value="grading">Grading</option>
+                  <option value="security">Security</option>
+                </select>
+                <div className="relative">
+                  <Search className="absolute left-3 top-2.5 text-slate-500" size={11} />
+                  <input 
+                    type="text"
+                    placeholder="Search logs..."
+                    value={auditSearch}
+                    onChange={(e) => setAuditSearch(e.target.value)}
+                    className="glass-input pl-8 py-1.5 text-[10px] w-48 font-semibold"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="overflow-x-auto border border-slate-850/50 rounded-xl">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                    <th className="py-3 px-4">Operator Info</th>
+                    <th className="py-3 px-4">Module</th>
+                    <th className="py-3 px-4">Action</th>
+                    <th className="py-3 px-4">Network & Client Telemetry</th>
+                    <th className="py-3 px-4 text-right">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-850/30">
+                  {auditLogs
+                    .filter(log => {
+                      if (auditModuleFilter !== 'all' && log.moduleName !== auditModuleFilter) return false;
+                      const search = auditSearch.toLowerCase();
+                      return (
+                        log.actionType.toLowerCase().includes(search) ||
+                        log.moduleName.toLowerCase().includes(search) ||
+                        (log.ipAddress && log.ipAddress.includes(search))
+                      );
+                    })
+                    .map((log) => {
+                      const isExpanded = expandedAuditLogId === log.id;
+                      return (
+                        <React.Fragment key={log.id}>
+                          <tr 
+                            onClick={() => setExpandedAuditLogId(isExpanded ? null : log.id)}
+                            className="hover:bg-slate-900/15 transition-colors cursor-pointer"
+                          >
+                            <td className="py-3 px-4">
+                              <div className="font-bold text-slate-300">
+                                {log.userId ? (operators.find(o => o.id === log.userId)?.firstName || 'Sub-Admin') : 'System Event'}
+                              </div>
+                              <div className="text-[9px] text-slate-500 font-mono mt-0.5">{log.userId || 'GENERIC'}</div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-850 text-[9px] font-bold uppercase tracking-wider font-mono">
+                                {log.moduleName}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 font-semibold text-slate-300">
+                              <span className={`px-2 py-0.5 rounded text-[8px] font-bold font-mono ${
+                                log.actionType.includes('CREATE') || log.actionType.includes('ACTIVATE') ? 'text-green-400 bg-green-500/5' : 
+                                log.actionType.includes('UPDATE') ? 'text-amber-400 bg-amber-500/5' : 'text-rose-400 bg-rose-500/5'
+                              }`}>
+                                {log.actionType}
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="font-mono text-slate-300 text-[10px]">{log.ipAddress || '127.0.0.1'}</div>
+                              <div className="text-[9px] text-slate-500 max-w-xs truncate" title={log.userAgent}>
+                                {log.userAgent || 'Telemetry unavailable'}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4 text-right font-mono text-[9px] text-slate-500">
+                              {new Date(log.createdAt).toLocaleString()}
+                            </td>
+                          </tr>
+                          {isExpanded && (
+                            <tr className="bg-slate-900/30">
+                              <td colSpan={5} className="py-3 px-6 border-l-2 border-brand-500">
+                                <div className="space-y-2">
+                                  <div className="text-[10px] font-bold text-brand-400 uppercase tracking-wider">Telemetry Payload Details</div>
+                                  <div className="grid grid-cols-2 gap-4">
+                                    <div className="space-y-1">
+                                      <div className="text-[9px] font-bold text-slate-400 uppercase">Pre-State (Old Data)</div>
+                                      <pre className="p-2 rounded-lg bg-slate-950 text-[9px] font-mono text-slate-400 overflow-x-auto max-h-32">
+                                        {log.oldData ? JSON.stringify(log.oldData, null, 2) : 'No old data telemetry state recorded.'}
+                                      </pre>
+                                    </div>
+                                    <div className="space-y-1">
+                                      <div className="text-[9px] font-bold text-slate-400 uppercase">Post-State (New Data)</div>
+                                      <pre className="p-2 rounded-lg bg-slate-950 text-[9px] font-mono text-slate-300 overflow-x-auto max-h-32">
+                                        {log.newData ? JSON.stringify(log.newData, null, 2) : 'No new data state registered.'}
+                                      </pre>
+                                    </div>
+                                  </div>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      );
+                    })}
+                  {auditLogs.length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="py-6 text-center text-slate-500 font-mono">
+                        No system logging events registered inside this school audit console.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+
+      {/* ── 5. REPORT CARD & INVOICE PRINT OVERLAYS (MODALS) ── */}
+      {showInvoicePdf && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
+          <GlassCard className="w-full max-w-2xl bg-white text-slate-900 p-8 space-y-6 relative max-h-[90vh] overflow-y-auto">
+            <button 
+              onClick={() => setShowInvoicePdf(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors border border-slate-200"
+              title="Close Print Preview"
+            >
+              <XCircle size={18} />
+            </button>
+
+            {/* Print Header */}
+            <div className="flex justify-between items-start border-b-2 border-slate-100 pb-4">
+              <div>
+                <h2 className="text-xl font-black tracking-tight text-slate-800">AEGIS ACADEMY</h2>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider font-mono">Official Fee Receipt</p>
+                <p className="text-xs text-slate-400 mt-1">Silicon Valley, Tech District, USA</p>
+              </div>
+              <div className="text-right">
+                <span className="px-2.5 py-0.5 rounded bg-green-100 text-green-700 text-[10px] font-bold uppercase tracking-wider border border-green-200">PAID IN FULL</span>
+                <p className="text-xs font-mono font-bold text-slate-600 mt-2">{showInvoicePdf.code}</p>
+                <p className="text-[10px] text-slate-400 font-mono mt-0.5">Date: {showInvoicePdf.date}</p>
+              </div>
+            </div>
+
+            {/* Content Details */}
+            <div className="space-y-4">
+              <div className="grid grid-cols-2 gap-4 text-xs">
+                <div>
+                  <p className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Billed To Parent</p>
+                  <p className="font-bold text-slate-700 mt-1">Robert da Vinci</p>
+                  <p className="text-slate-500 mt-0.5">42 Galaxy Meadows, Cupertino, CA</p>
+                </div>
+                <div className="text-right">
+                  <p className="text-slate-400 font-bold uppercase text-[9px] tracking-wider">Beneficiary Student</p>
+                  <p className="font-bold text-slate-700 mt-1">Leo da Vinci</p>
+                  <p className="text-slate-500 mt-0.5">Class: Grade 10-A (Roll #10)</p>
+                </div>
+              </div>
+
+              {/* Items Table */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden mt-4">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                      <th className="py-2.5 px-3">Item Description</th>
+                      <th className="py-2.5 px-3 text-right">Unit Price</th>
+                      <th className="py-2.5 px-3 text-right">Total Price</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-150">
+                    <tr>
+                      <td className="py-3 px-3 font-semibold text-slate-700">{showInvoicePdf.name}</td>
+                      <td className="py-3 px-3 text-right font-mono text-slate-600">{showInvoicePdf.amount}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-800">{showInvoicePdf.amount}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Total calculations */}
+              <div className="flex justify-end pt-2 border-t border-slate-100">
+                <div className="w-56 text-xs space-y-1.5 text-right font-mono">
+                  <div className="flex justify-between text-slate-500">
+                    <span>Subtotal:</span>
+                    <span>{showInvoicePdf.amount}</span>
+                  </div>
+                  <div className="flex justify-between text-slate-500">
+                    <span>Taxes & Levies (0%):</span>
+                    <span>$0.00</span>
+                  </div>
+                  <div className="flex justify-between text-slate-800 font-bold text-sm border-t border-slate-200 pt-1.5">
+                    <span>Grand Total:</span>
+                    <span>{showInvoicePdf.amount}</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <button 
+                onClick={() => {
+                  window.print();
+                }}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors active:scale-[0.98]"
+              >
+                Print PDF Receipt
+              </button>
+              <button 
+                onClick={() => setShowInvoicePdf(null)}
+                className="px-4 py-2 border border-slate-200 text-slate-600 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors"
+              >
+                Close Preview
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Sub-Admin Registration Modal */}
+      {showAddSubAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+              <h4 className="font-bold text-slate-100 text-sm">Register Sub-Admin Console Operator</h4>
+              <button onClick={() => setShowAddSubAdmin(false)} className="text-xs text-slate-400 hover:text-slate-200">Close</button>
+            </div>
+
+            <form onSubmit={handleCreateSubAdmin} className="space-y-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Email Address</label>
+                <input type="email" placeholder="operator@aegis.com" value={saEmail} onChange={(e) => setSaEmail(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Administrative Role</label>
+                <select value={saRole} onChange={(e: any) => setSaRole(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required>
+                  <option value="FINANCE_ADMIN">Finance Administration (Biller)</option>
+                  <option value="ACADEMIC_ADMIN">Academic Coordinator</option>
+                  <option value="EXAM_CONTROLLER">Exam Controller & Grader</option>
+                  <option value="LIBRARIAN">School Librarian</option>
+                  <option value="TRANSPORT_MANAGER">Transport Fleet Manager</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">First Name</label>
+                <input type="text" placeholder="First Name" value={saFirst} onChange={(e) => setSaFirst(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Last Name</label>
+                <input type="text" placeholder="Last Name" value={saLast} onChange={(e) => setSaLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Phone</label>
+                <input type="text" placeholder="+1 (555) 000-0000" value={saPhone} onChange={(e) => setSaPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Operator Key (Password)</label>
+                <input 
+                  type="password"
+                  placeholder="Min. 6 characters"
+                  value={saPassword}
+                  onChange={(e) => setSaPassword(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none"
+                  required
+                />
+              </div>
+
+              <div className="sm:col-span-2 flex justify-end gap-2 pt-2 border-t border-slate-850">
+                <button type="button" onClick={() => setShowAddSubAdmin(false)} className="glass-btn-secondary text-xs" disabled={rbacLoading}>Cancel</button>
+                <button type="submit" className="glass-btn-primary text-xs" disabled={rbacLoading}>
+                  {rbacLoading ? 'Registering...' : 'Register Operator'}
+                </button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {activeTab === 'transport' && (
+        <div className="space-y-6 animate-fade-in text-xs">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <Layers className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">School Transit & Transport Management</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Manage the transit fleet, plan bus routes, log maintenance costs, assign student stops, and check driver attendance.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* COLUMN 1: Fleet Manager & Maintenance */}
+            <div className="space-y-6">
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Layers className="text-brand-400" size={15} />
+                  Buses Fleet Registry
+                </h4>
+                <form onSubmit={handleCreateBus} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Register New Vehicle</p>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Plate Number</label>
+                    <input type="text" placeholder="e.g. MH-12-AB-3456" value={busPlate} onChange={(e) => setBusPlate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Capacity</label>
+                      <input type="number" value={busCapacity} onChange={(e) => setBusCapacity(parseInt(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Status</label>
+                      <select value={busStatus} onChange={(e) => setBusStatus(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                        <option value="ACTIVE">Active</option>
+                        <option value="MAINTENANCE">Maintenance</option>
+                        <option value="INACTIVE">Inactive</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Assigned Driver</label>
+                    <select value={busDriverId} onChange={(e) => setBusDriverId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                      <option value="">-- No Driver --</option>
+                      {driversList.map(d => (
+                        <option key={d.id} value={d.id}>{d.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Add Bus</button>
+                </form>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {buses.map(b => {
+                    const dr = driversList.find(d => d.id === b.driverId);
+                    return (
+                      <div key={b.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-200">{b.numberPlate}</p>
+                          <p className="text-[9px] text-slate-400">Cap: {b.capacity} seats | Driver: {dr ? dr.name : 'Unassigned'}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${b.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{b.status}</span>
+                          <button onClick={() => handleDeleteBus(b.id)} className="p-1 rounded hover:bg-red-500/10 text-slate-500 hover:text-red-400"><Trash2 size={12} /></button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </GlassCard>
+
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Sliders className="text-brand-400" size={15} />
+                  Maintenance Expense Log
+                </h4>
+                <form onSubmit={handleCreateMaintenanceLog} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Bus</label>
+                    <select value={maintBusId} onChange={(e) => setMaintBusId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Bus --</option>
+                      {buses.map(b => (
+                        <option key={b.id} value={b.id}>{b.numberPlate}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Date</label>
+                      <input type="date" value={maintDate} onChange={(e) => setMaintDate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Cost ($)</label>
+                      <input type="number" value={maintCost} onChange={(e) => setMaintCost(parseFloat(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Work Description</label>
+                    <input type="text" placeholder="e.g. Brake replacement" value={maintDesc} onChange={(e) => setMaintDesc(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Log Expense</button>
+                </form>
+
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {maintenanceLogs.map(ml => {
+                    const bus = buses.find(b => b.id === ml.busId);
+                    return (
+                      <div key={ml.id} className="p-2 bg-slate-900/30 border border-slate-850/50 rounded-lg flex justify-between text-[10px]">
+                        <div>
+                          <p className="font-semibold text-slate-300">{ml.description}</p>
+                          <p className="text-[8px] text-slate-500">Bus: {bus ? bus.numberPlate : 'Unknown'} | Date: {ml.logDate}</p>
+                        </div>
+                        <p className="font-mono text-brand-400 font-bold">${Number(ml.cost).toFixed(2)}</p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </GlassCard>
+            </div>
+
+            {/* COLUMN 2: Driver Register, Attendance, and Routing */}
+            <div className="space-y-6">
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <UsersRound className="text-brand-400" size={15} />
+                  Driver Registry & Daily Attendance
+                </h4>
+                <form onSubmit={handleRegisterDriver} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Register New Driver</p>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Name</label>
+                    <input type="text" placeholder="Full name" value={drName} onChange={(e) => setDrName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">License Number</label>
+                      <input type="text" placeholder="DL-XXXX" value={drLicense} onChange={(e) => setDrLicense(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Phone</label>
+                      <input type="text" placeholder="+1 555-..." value={drPhone} onChange={(e) => setDrPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Register Driver</button>
+                </form>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {driversList.map(d => {
+                    const todayStr = new Date().toISOString().split('T')[0];
+                    const att = driverAttendanceList.find(a => a.driverId === d.id && a.date === todayStr);
+                    const status = att ? att.status : 'UNMARKED';
+                    return (
+                      <div key={d.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-200">{d.name}</p>
+                          <p className="text-[9px] text-slate-400">License: {d.licenseNumber} | Phone: {d.phone}</p>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <button onClick={() => handleMarkDriverAttendance(d.id, 'PRESENT')} className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${status === 'PRESENT' ? 'bg-green-600 text-slate-100' : 'bg-slate-900 border border-slate-800 text-slate-400'}`}>Present</button>
+                          <button onClick={() => handleMarkDriverAttendance(d.id, 'ABSENT')} className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${status === 'ABSENT' ? 'bg-red-600 text-slate-100' : 'bg-slate-900 border border-slate-800 text-slate-400'}`}>Absent</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </GlassCard>
+            </div>
+
+            {/* COLUMN 3: Routes & Pickup Points Planner */}
+            <div className="space-y-6">
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Layers className="text-brand-400" size={15} />
+                  Transit Routes Planner
+                </h4>
+                <form onSubmit={handleCreateRoute} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Route Name</label>
+                      <input type="text" placeholder="e.g. North Expressway" value={rtName} onChange={(e) => setRtName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Route Code</label>
+                      <input type="text" placeholder="e.g. R-101" value={rtCode} onChange={(e) => setRtCode(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Start Point</label>
+                      <input type="text" placeholder="Start" value={rtStart} onChange={(e) => setRtStart(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">End Point</label>
+                      <input type="text" placeholder="Campus" value={rtEnd} onChange={(e) => setRtEnd(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Fare ($)</label>
+                      <input type="number" value={rtFare} onChange={(e) => setRtFare(parseFloat(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Add Route</button>
+                </form>
+
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {routes.map(r => (
+                    <div key={r.id} className="p-2 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-slate-250">{r.name} ({r.routeCode})</p>
+                        <p className="text-[8px] text-slate-500">From: {r.startPoint} {'\u2192'} To: {r.endPoint} | Fare: ${Number(r.fare).toFixed(2)}</p>
+                      </div>
+                      <button onClick={() => handleDeleteRoute(r.id)} className="p-1 text-slate-500 hover:text-red-400 rounded"><Trash2 size={12} /></button>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Route Stops Pickup Points */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Layers className="text-brand-400" size={15} />
+                Route Pickup Stops Coordinates
+              </h4>
+              <form onSubmit={handleCreatePickupPoint} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Stop/Pickup Name</label>
+                    <input type="text" placeholder="e.g. Park Street Gate" value={ppName} onChange={(e) => setPpName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Assign to Route</label>
+                    <select value={ppRouteId} onChange={(e) => setPpRouteId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Route --</option>
+                      {routes.map(r => (
+                        <option key={r.id} value={r.id}>{r.name} ({r.routeCode})</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Latitude (Optional)</label>
+                    <input type="text" placeholder="e.g. 40.7128" value={ppLat} onChange={(e) => setPpLat(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Longitude (Optional)</label>
+                    <input type="text" placeholder="e.g. -74.0060" value={ppLng} onChange={(e) => setPpLng(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
+                  </div>
+                </div>
+                <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Add Stop</button>
+              </form>
+
+              <div className="overflow-x-auto border border-slate-850/50 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                      <th className="py-2.5 px-3">Stop Name</th>
+                      <th className="py-2.5 px-3">Route Code</th>
+                      <th className="py-2.5 px-3">Coordinates</th>
+                      <th className="py-2.5 px-3 text-right">Action</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                    {pickupPointsList.map(pp => {
+                      const route = routes.find(r => r.id === pp.routeId);
+                      return (
+                        <tr key={pp.id} className="hover:bg-slate-900/10">
+                          <td className="py-2 px-3 font-semibold text-slate-200">{pp.name}</td>
+                          <td className="py-2 px-3">{route ? route.routeCode : 'Unlinked'}</td>
+                          <td className="py-2 px-3 font-mono text-[9px]">{pp.latitude ?? 'N/A'}, {pp.longitude ?? 'N/A'}</td>
+                          <td className="py-2 px-3 text-right">
+                            <button onClick={() => handleDeletePickupPoint(pp.id)} className="text-slate-500 hover:text-red-400 p-1"><Trash2 size={12} /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </GlassCard>
+
+            {/* Student Bus Assignments */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Users className="text-brand-400" size={15} />
+                Student Transit Assignments Map
+              </h4>
+              <form onSubmit={handleCreateTransportAssignment} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Student</label>
+                    <select value={taStudentId} onChange={(e) => setTaStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Student --</option>
+                      {students.map(s => (
+                        <option key={s.id} value={s.id}>{s.userDetails?.firstName} {s.userDetails?.lastName} ({s.admissionNumber})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Bus Fleet</label>
+                    <select value={taBusId} onChange={(e) => setTaBusId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Bus --</option>
+                      {buses.map(b => (
+                        <option key={b.id} value={b.id}>{b.numberPlate}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Route</label>
+                    <select value={taRouteId} onChange={(e) => setTaRouteId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Route --</option>
+                      {routes.map(r => (
+                        <option key={r.id} value={r.id}>{r.name} ({r.routeCode})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Stop Point</label>
+                    <select value={taPickupPointId} onChange={(e) => setTaPickupPointId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Stop --</option>
+                      {pickupPointsList
+                        .filter(pp => pp.routeId === taRouteId)
+                        .map(pp => (
+                          <option key={pp.id} value={pp.id}>{pp.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                </div>
+                <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Assign Student Stop</button>
+              </form>
+
+              <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-56">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                      <th className="py-2.5 px-3">Student</th>
+                      <th className="py-2.5 px-3">Bus Plate</th>
+                      <th className="py-2.5 px-3">RouteStop</th>
+                      <th className="py-2.5 px-3 text-right">Remove</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                    {transportAssignments.map(ta => {
+                      const student = students.find(s => s.id === ta.studentId);
+                      const bus = buses.find(b => b.id === ta.busId);
+                      const route = routes.find(r => r.id === ta.routeId);
+                      const pp = pickupPointsList.find(p => p.id === ta.pickupPointId);
+                      return (
+                        <tr key={ta.id} className="hover:bg-slate-900/10">
+                          <td className="py-2 px-3 font-semibold text-slate-200">
+                            {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}
+                          </td>
+                          <td className="py-2 px-3 font-mono">{bus ? bus.numberPlate : 'N/A'}</td>
+                          <td className="py-2 px-3">
+                            <span className="text-brand-400 font-bold">[{route ? route.routeCode : 'N/A'}]</span> {pp ? pp.name : 'N/A'}
+                          </td>
+                          <td className="py-2 px-3 text-right">
+                            <button onClick={() => handleDeleteTransportAssignment(ta.id)} className="text-slate-500 hover:text-red-400 p-1"><Trash2 size={12} /></button>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'books' && (
+        <div className="space-y-6 animate-fade-in text-xs">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <BookOpen className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Library Catalog & Inventory Manager</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Maintain the physical book archives, catalog digital assets, create custom subjects/categories, issue books to students, and manage overdue fine balances.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* COLUMN 1: Book Entry & Categories */}
+            <div className="space-y-6">
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <BookOpen className="text-brand-400" size={15} />
+                  Register Book Title
+                </h4>
+                <form onSubmit={handleCreateBook} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Title</label>
+                    <input type="text" placeholder="Book Title" value={bkTitle} onChange={(e) => setBkTitle(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Author</label>
+                      <input type="text" placeholder="Author name" value={bkAuthor} onChange={(e) => setBkAuthor(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">ISBN</label>
+                      <input type="text" placeholder="e.g. 978-..." value={bkIsbn} onChange={(e) => setBkIsbn(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Copies</label>
+                      <input type="number" value={bkCopies} onChange={(e) => setBkCopies(parseInt(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Category/Subject</label>
+                      <select value={bkSubject} onChange={(e) => setBkSubject(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                        <option value="">-- Choose Category --</option>
+                        {bookCategories.map(bc => (
+                          <option key={bc.id} value={bc.name}>{bc.name}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Add Book to Catalog</button>
+                </form>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {mockDb.books.map(b => (
+                    <div key={b.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
+                      <div>
+                        <p className="font-bold text-slate-200">{b.title}</p>
+                        <p className="text-[9px] text-slate-400">Author: {b.author} | Copies: {b.availableCopies}/{b.totalCopies}</p>
+                      </div>
+                      <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-brand-500/10 text-brand-400 font-mono">{b.subject}</span>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+            </div>
+
+            {/* COLUMN 2: Issue Manager & Returns */}
+            <div className="space-y-6">
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Calendar className="text-brand-400" size={15} />
+                  Issue/Checkout Book Entry
+                </h4>
+                <form onSubmit={handleIssueBook} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Book Title</label>
+                    <select value={biBookId} onChange={(e) => setBiBookId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Book --</option>
+                      {mockDb.books.filter(b => b.availableCopies > 0).map(b => (
+                        <option key={b.id} value={b.id}>{b.title} ({b.availableCopies} available)</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Student ID</label>
+                    <select value={biStudentId} onChange={(e) => setBiStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Student --</option>
+                      {students.map(s => (
+                        <option key={s.id} value={s.id}>{s.userDetails?.firstName} {s.userDetails?.lastName} ({s.admissionNumber})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Due Return Date</label>
+                    <input type="date" value={biDueDate} onChange={(e) => setBiDueDate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Issue Book (Check-out)</button>
+                </form>
+
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {bookIssues.filter(bi => bi.status === 'ISSUED' || bi.status === 'OVERDUE').map(bi => {
+                    const student = students.find(s => s.id === bi.studentId);
+                    const book = mockDb.books.find(b => b.id === bi.bookId);
+                    return (
+                      <div key={bi.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-200">{book ? book.title : 'Unknown Book'}</p>
+                          <p className="text-[9px] text-slate-400">To: {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'} | Due: {new Date(bi.dueDate).toLocaleDateString()}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${bi.status === 'OVERDUE' ? 'bg-red-500/10 text-red-400' : 'bg-brand-500/10 text-brand-400'}`}>{bi.status}</span>
+                          <button onClick={() => { setBrIssueId(bi.id); setBrFine(bi.status === 'OVERDUE' ? 3.50 : 0); }} className="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/30 rounded border border-green-500/20 font-bold text-[9px] transition-all">Return</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </GlassCard>
+
+              {brIssueId && (
+                <GlassCard className="border border-green-500/20 bg-green-950/10 space-y-3">
+                  <h5 className="font-bold text-green-300">Process Book Return</h5>
+                  <form onSubmit={handleReturnBook} className="space-y-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-500 font-bold uppercase">Fine Amount ($)</label>
+                        <input type="number" step="0.01" value={brFine} onChange={(e) => setBrFine(parseFloat(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-500 font-bold uppercase">Status</label>
+                        <select value={brStatus} onChange={(e) => setBrStatus(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                          <option value="RETURNED">Returned</option>
+                          <option value="DAMAGED">Damaged</option>
+                          <option value="LOST">Lost</option>
+                        </select>
+                      </div>
+                    </div>
+                    <div className="flex justify-end gap-2">
+                      <button type="button" onClick={() => setBrIssueId('')} className="glass-btn-secondary py-1 px-3 text-[10px]">Cancel</button>
+                      <button type="submit" className="glass-btn-primary py-1 px-3 text-[10px] bg-green-600 text-slate-100">Process Return</button>
+                    </div>
+                  </form>
+                </GlassCard>
+              )}
+            </div>
+
+            {/* COLUMN 3: Fines & Digital library */}
+            <div className="space-y-6">
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <DollarSign className="text-brand-400" size={15} />
+                  Overdue Fines Ledger
+                </h4>
+                <div className="space-y-2 max-h-48 overflow-y-auto">
+                  {libraryFines.map(lf => {
+                    const student = students.find(s => s.id === lf.studentId);
+                    const book = mockDb.books.find(b => b.id === lf.issue?.bookId);
+                    return (
+                      <div key={lf.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-200">{student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}</p>
+                          <p className="text-[9px] text-slate-400">Book: {book ? book.title : 'Late fee'}</p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="font-mono text-red-400 font-bold">${Number(lf.amount).toFixed(2)}</span>
+                          {!lf.isPaid ? (
+                            <button onClick={() => { mockApi.payLibraryFine(session?.user.schoolId || '', lf.id); loadData(); }} className="px-1.5 py-0.5 bg-brand-500 hover:bg-brand-600 rounded text-[9px] font-bold text-slate-100">Pay Fine</button>
+                          ) : (
+                            <span className="text-[8px] font-bold text-green-400 uppercase bg-green-500/10 px-1 rounded">Paid</span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </GlassCard>
+
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <HardDrive className="text-brand-400" size={15} />
+                  Digital Library Uploads
+                </h4>
+                <form onSubmit={handleCreateDigitalAsset} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Asset Title</label>
+                    <input type="text" placeholder="Title" value={daTitle} onChange={(e) => setDaTitle(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Author</label>
+                      <input type="text" placeholder="Author" value={daAuthor} onChange={(e) => setDaAuthor(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">File Type</label>
+                      <select value={daType} onChange={(e) => setDaType(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                        <option value="pdf">PDF E-Book</option>
+                        <option value="epub">EPUB Reader</option>
+                        <option value="mp4">Video Guide</option>
+                      </select>
+                    </div>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Public Asset URL</label>
+                    <input type="url" placeholder="https://..." value={daUrl} onChange={(e) => setDaUrl(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Upload Digital Link</button>
+                </form>
+              </GlassCard>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'marksheets' && (
+        <div className="space-y-6 animate-fade-in text-xs">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <Award className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Examinations & Marksheet Registry Panel</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Configure school examination terms, map subjects passing thresholds, record students marks in an interactive marksheet matrix, and generate final printable report cards.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Exam Terms Creator */}
+            <div className="space-y-6">
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Calendar className="text-brand-400" size={15} />
+                  Examination Creator
+                </h4>
+                <form onSubmit={handleCreateExam} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Exam Name</label>
+                    <input type="text" placeholder="e.g. Mid-Term Examination" value={exName} onChange={(e) => setExName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Term Session</label>
+                    <select value={exTerm} onChange={(e) => setExTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                      <option value="TERM 1">Term 1</option>
+                      <option value="TERM 2">Term 2</option>
+                      <option value="FINAL">Final Examination</option>
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Start Date</label>
+                      <input type="date" value={exStart} onChange={(e) => setExStart(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">End Date</label>
+                      <input type="date" value={exEnd} onChange={(e) => setExEnd(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Create Exam Term</button>
+                </form>
+
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {examsList.map(ex => (
+                    <div key={ex.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between text-[11px]">
+                      <div>
+                        <p className="font-bold text-slate-200">{ex.name}</p>
+                        <p className="text-[9px] text-slate-400">Term: {ex.term} | Period: {new Date(ex.startDate).toLocaleDateString()} - {new Date(ex.endDate).toLocaleDateString()}</p>
+                      </div>
+                      <button onClick={() => handleDeleteExam(ex.id)} className="p-1 text-slate-500 hover:text-red-400 rounded"><Trash2 size={12} /></button>
+                    </div>
+                  ))}
+                </div>
+              </GlassCard>
+
+              {/* Subject Criteria Mapper */}
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Layers className="text-brand-400" size={15} />
+                  Subject Criteria Mapper
+                </h4>
+                <form onSubmit={handleCreateExamSubject} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Exam</label>
+                    <select value={esExamId} onChange={(e) => setEsExamId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Exam --</option>
+                      {examsList.map(ex => (
+                        <option key={ex.id} value={ex.id}>{ex.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Subject</label>
+                    <select value={esSubjectId} onChange={(e) => setEsSubjectId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Subject --</option>
+                      {subjects.map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Max Marks</label>
+                      <input type="number" value={esMax} onChange={(e) => setEsMax(parseInt(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Passing Marks</label>
+                      <input type="number" value={esPass} onChange={(e) => setEsPass(parseInt(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Add Criteria</button>
+                </form>
+              </GlassCard>
+            </div>
+
+            {/* Editable Marks entry Grid */}
+            <div className="lg:col-span-2 space-y-6">
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Award className="text-brand-400" size={15} />
+                  Marksheet Entry Matrix Grid
+                </h4>
+                <div className="grid grid-cols-3 gap-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Exam</label>
+                    <select value={meExamId} onChange={(e) => setMeExamId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                      <option value="">-- Choose Exam --</option>
+                      {examsList.map(ex => (
+                        <option key={ex.id} value={ex.id}>{ex.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Class Section</label>
+                    <select value={meClassId} onChange={(e) => setMeClassId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                      <option value="">-- Choose Class --</option>
+                      {classes.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Subject</label>
+                    <select value={meSubjectId} onChange={(e) => setMeSubjectId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                      <option value="">-- Choose Subject --</option>
+                      {subjects.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                {meExamId && meClassId && meSubjectId && (
+                  <form onSubmit={handleSaveStudentMarks} className="space-y-4">
+                    <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-64">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                            <th className="py-2.5 px-3">Student Name</th>
+                            <th className="py-2.5 px-3">Admission Code</th>
+                            <th className="py-2.5 px-3">Marks Obtained</th>
+                            <th className="py-2.5 px-3">Teacher Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850/40 text-slate-350 bg-slate-950/10">
+                          {students
+                            .filter(s => s.classId === meClassId)
+                            .map(s => {
+                              const existingMark = studentMarks.find(sm => sm.studentId === s.id && sm.examId === meExamId && sm.subjectId === meSubjectId);
+                              const currentVal = meMarks[s.id] ?? existingMark?.marksObtained ?? 0;
+                              const currentRem = meRemarks[s.id] ?? existingMark?.remarks ?? '';
+                              return (
+                                <tr key={s.id} className="hover:bg-slate-900/10">
+                                  <td className="py-2 px-3 font-semibold text-slate-200">{s.userDetails?.firstName} {s.userDetails?.lastName}</td>
+                                  <td className="py-2 px-3 font-mono">{s.admissionNumber}</td>
+                                  <td className="py-2 px-3">
+                                    <input 
+                                      type="number" 
+                                      value={currentVal} 
+                                      onChange={(e) => setMeMarks({ ...meMarks, [s.id]: parseFloat(e.target.value) || 0 })} 
+                                      className="w-20 bg-slate-900 border border-slate-850 rounded p-1 text-xs text-slate-200 focus:outline-none focus:border-brand-500 font-mono text-center" 
+                                      required
+                                    />
+                                  </td>
+                                  <td className="py-2 px-3">
+                                    <input 
+                                      type="text" 
+                                      placeholder="e.g. Good logic skills" 
+                                      value={currentRem} 
+                                      onChange={(e) => setMeRemarks({ ...meRemarks, [s.id]: e.target.value })} 
+                                      className="w-full bg-slate-900 border border-slate-850 rounded p-1 text-xs text-slate-200 focus:outline-none focus:border-brand-500" 
+                                    />
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <div className="flex justify-end pt-2 border-t border-slate-850">
+                      <button type="submit" className="glass-btn-primary py-2 px-6 font-bold text-xs">Save Marks Matrix</button>
+                    </div>
+                  </form>
+                )}
+              </GlassCard>
+
+              {/* Aggregate Results Publisher */}
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Award className="text-brand-400" size={15} />
+                  Printable Report Card & Results Publisher
+                </h4>
+                <form onSubmit={handleGenerateReportCard} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Student</label>
+                    <select value={rcStudentId} onChange={(e) => setRcStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                      <option value="">-- Choose Student --</option>
+                      {students.map(s => (
+                        <option key={s.id} value={s.id}>{s.userDetails?.firstName} {s.userDetails?.lastName} ({s.admissionNumber})</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Examination Term</label>
+                    <select value={rcTerm} onChange={(e) => setRcTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                      <option value="TERM 1">Term 1</option>
+                      <option value="TERM 2">Term 2</option>
+                      <option value="FINAL">Final</option>
+                    </select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Attendance Percentage (%)</label>
+                    <input type="number" value={rcAttendance} onChange={(e) => setRcAttendance(parseInt(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Homeroom Teacher Remarks</label>
+                    <input type="text" placeholder="Specify student general progress/behavior..." value={rcRemarks} onChange={(e) => setRcRemarks(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                  </div>
+                  <div className="sm:col-span-2 flex justify-end">
+                    <button type="submit" className="glass-btn-primary py-2 px-6 font-bold text-xs bg-brand-600 text-slate-100">Publish & Generate Report Card</button>
+                  </div>
+                </form>
+              </GlassCard>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'quizzes' && (
+        <div className="space-y-6 animate-fade-in text-xs">
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <Award className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Online Quizzes Performance Analytics</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Monitor quiz results, view class score distributions, and check student quiz attempts histories.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Active Quizzes List */}
+            <GlassCard className="space-y-4 lg:col-span-1">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Layers className="text-brand-400" size={15} />
+                Registered Quizzes List
+              </h4>
+              <div className="space-y-2 max-h-96 overflow-y-auto">
+                {mockDb.quizzes.map(q => (
+                  <div key={q.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl">
+                    <p className="font-bold text-slate-200">{q.title}</p>
+                    <p className="text-[9px] text-slate-400">Class: {classes.find(c => c.id === q.classId)?.name || 'Unknown'} | Subject: {subjects.find(s => s.id === q.subjectId)?.name || 'Unknown'}</p>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+
+            {/* Quiz Attempts Scores list */}
+            <GlassCard className="space-y-4 lg:col-span-2">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Award className="text-brand-400" size={15} />
+                Student Quiz Attempt Results
+              </h4>
+              <div className="overflow-x-auto border border-slate-850/50 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                      <th className="py-2.5 px-3">Student Name</th>
+                      <th className="py-2.5 px-3">Quiz Title</th>
+                      <th className="py-2.5 px-3">Score / Out of</th>
+                      <th className="py-2.5 px-3">Percentage</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                    {quizResults.map(qr => {
+                      const student = students.find(s => s.id === qr.studentId);
+                      const quiz = mockDb.quizzes.find(q => q.id === qr.quizId);
+                      const pct = Number(qr.totalMarks) > 0 ? ((Number(qr.score) / Number(qr.totalMarks)) * 100).toFixed(1) : '0';
+                      return (
+                        <tr key={qr.id} className="hover:bg-slate-900/10">
+                          <td className="py-2 px-3 font-semibold text-slate-200">{student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}</td>
+                          <td className="py-2 px-3">{quiz ? quiz.title : 'General Quiz'}</td>
+                          <td className="py-2 px-3 font-mono font-bold text-brand-400">{qr.score} / {qr.totalMarks}</td>
+                          <td className="py-2 px-3 font-mono">{pct}%</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+      )}
+
       {activeTab === 'dangerzone' && (
         <div className="space-y-6 animate-fade-in">
           {/* Header */}

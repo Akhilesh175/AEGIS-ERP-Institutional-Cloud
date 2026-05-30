@@ -1,6 +1,6 @@
 // --- CORE ENUMS ---
 
-export type UserRole = 'STUDENT' | 'PARENT' | 'TEACHER' | 'ADMIN' | 'SUPER_ADMIN';
+export type UserRole = 'STUDENT' | 'PARENT' | 'TEACHER' | 'ADMIN' | 'SUPER_ADMIN' | 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN';
 
 export type GenderType = 'MALE' | 'FEMALE' | 'OTHER';
 
@@ -20,10 +20,40 @@ export interface User {
   avatarUrl?: string;
   isActive: boolean;
   schoolId?: string;
+  academicSessionId?: string;
   password?: string;
   createdAt: string;
   updatedAt: string;
+  roleId?: string;
+  lastLoginAt?: string;
+  loginDevice?: string;
+  sessionStatus?: string;
 }
+
+export interface Role {
+  id: string;
+  roleName: string;
+  roleCode: string;
+  description?: string;
+  schoolId: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface RolePermission {
+  id: string;
+  roleId: string;
+  moduleName: string;
+  canView: boolean;
+  canCreate: boolean;
+  canEdit: boolean;
+  canDelete: boolean;
+  canExport: boolean;
+  canApprove: boolean;
+  createdAt: string;
+}
+
+
 
 
 
@@ -228,6 +258,7 @@ export interface AssignmentSubmission {
 export interface Quiz {
   id: string;
   subjectId: string;
+  classId?: string;
   teacherId: string | null;
   title: string;
   durationMinutes: number;
@@ -350,9 +381,17 @@ export interface AuditLog {
   id: string;
   userId: string | null;
   ipAddress?: string;
-  action: string;
+  action?: string;
   details?: Record<string, any>;
   createdAt: string;
+  roleId?: string | null;
+  moduleName?: string;
+  actionType?: string;
+  targetId?: string | null;
+  oldData?: any;
+  newData?: any;
+  userAgent?: string;
+  schoolId?: string;
 }
 
 export interface StudyMaterial {
@@ -392,6 +431,20 @@ export interface Notification {
   createdAt: string;
 }
 
+// --- LIBRARY ---
+
+export interface Book {
+  id: string;
+  schoolId: string;
+  title: string;
+  author: string;
+  isbn: string;
+  subject: string;
+  totalCopies: number;
+  availableCopies: number;
+  createdAt: string;
+}
+
 // --- TELEMETRY ---
 
 export interface SystemTelemetry {
@@ -402,3 +455,217 @@ export interface SystemTelemetry {
   apiRequestsCount: number;
   dbLatencyMs: number;
 }
+
+// --- DEDICATED EXTRA MODULES ---
+
+export interface Driver {
+  id: string;
+  schoolId: string;
+  academicSessionId?: string | null;
+  name: string;
+  licenseNumber: string;
+  phone: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt: string;
+}
+
+export interface Bus {
+  id: string;
+  schoolId: string;
+  numberPlate: string;
+  capacity: number;
+  status: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE';
+  driverId?: string | null;
+  createdAt: string;
+}
+
+export interface Route {
+  id: string;
+  schoolId: string;
+  name: string;
+  routeCode: string;
+  startPoint: string;
+  endPoint: string;
+  fare: number;
+  createdAt: string;
+}
+
+export interface PickupPoint {
+  id: string;
+  schoolId: string;
+  name: string;
+  latitude?: number | null;
+  longitude?: number | null;
+  routeId?: string | null;
+  createdAt: string;
+}
+
+export interface TransportAssignment {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  routeId: string;
+  busId: string;
+  pickupPointId: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt: string;
+}
+
+export interface TransportFeeRecord {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  studentId: string;
+  routeId: string;
+  amount: number;
+  status: 'UNPAID' | 'PAID';
+  createdAt: string;
+}
+
+export interface VehicleLog {
+  id: string;
+  schoolId: string;
+  busId: string;
+  logType: 'MAINTENANCE' | 'TRIP_START' | 'TRIP_END' | 'FUEL';
+  description?: string;
+  amount?: number;
+  createdAt: string;
+}
+
+export interface MaintenanceLog {
+  id: string;
+  schoolId: string;
+  busId: string;
+  logDate: string;
+  description: string;
+  cost: number;
+  createdAt: string;
+}
+
+export interface DriverAttendance {
+  id: string;
+  schoolId: string;
+  driverId: string;
+  date: string;
+  status: 'PRESENT' | 'ABSENT' | 'LEAVE';
+  createdAt: string;
+}
+
+export interface BookCategory {
+  id: string;
+  schoolId: string;
+  name: string;
+  code: string;
+  createdAt: string;
+}
+
+export interface BookIssue {
+  id: string;
+  schoolId: string;
+  bookId: string;
+  studentId: string;
+  issueDate: string;
+  dueDate: string;
+  returnDate?: string | null;
+  fineAmount: number;
+  status: 'ISSUED' | 'RETURNED' | 'OVERDUE';
+  createdAt: string;
+}
+
+export interface BookReturn {
+  id: string;
+  schoolId: string;
+  issueId: string;
+  returnDate: string;
+  fineAmount: number;
+  status: 'RETURNED' | 'DAMAGED' | 'LOST';
+  createdAt: string;
+}
+
+export interface LibraryFine {
+  id: string;
+  schoolId: string;
+  issueId: string;
+  studentId: string;
+  amount: number;
+  isPaid: boolean;
+  createdAt: string;
+}
+
+export interface LibraryInvoice {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  amount: number;
+  status: 'UNPAID' | 'PAID';
+  createdAt: string;
+}
+
+export interface DigitalLibraryAsset {
+  id: string;
+  schoolId: string;
+  title: string;
+  author?: string;
+  fileUrl: string;
+  fileType: string;
+  createdAt: string;
+}
+
+export interface ExamSubject {
+  id: string;
+  schoolId: string;
+  examId: string;
+  subjectId: string;
+  maxMarks: number;
+  passingMarks: number;
+  createdAt: string;
+}
+
+export interface StudentMark {
+  id: string;
+  schoolId: string;
+  examId: string;
+  subjectId: string;
+  studentId: string;
+  marksObtained: number;
+  remarks?: string;
+  createdAt: string;
+}
+
+export interface ReportCard {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  studentId: string;
+  term: string;
+  attendancePercentage?: number;
+  gradePointAverage?: number;
+  remarks?: string;
+  fileUrl?: string;
+  createdAt: string;
+  studentName?: string;
+}
+
+export interface ExamResult {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  examId: string;
+  totalMarks: number;
+  marksObtained: number;
+  percentage: number;
+  grade: string;
+  status: 'PASSED' | 'FAILED';
+  createdAt: string;
+}
+
+export interface QuizResult {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  quizId: string;
+  score: number;
+  totalMarks: number;
+  createdAt: string;
+}
+

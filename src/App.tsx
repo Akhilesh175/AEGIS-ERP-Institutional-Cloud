@@ -244,7 +244,7 @@ export const App: React.FC = () => {
           {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
           {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
           {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={setActiveTab} />}
-          {session.user.role === 'ADMIN' && <AdminPortal activeTab={activeTab} />}
+          {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
           {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
 
         </main>

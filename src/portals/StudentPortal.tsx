@@ -11,7 +11,8 @@ import { GlassCard } from '../components/GlassCard';
 import { 
   Calendar, Clock, BookOpen, PenTool, Award, Download, 
   ExternalLink, UploadCloud, MessageCircle, DollarSign, PlayCircle,
-  Paperclip, Trash2, Loader2, CheckCircle, X, FileText, AlertCircle, Eye, ClipboardList
+  Paperclip, Trash2, Loader2, CheckCircle, X, FileText, AlertCircle, Eye, ClipboardList,
+  BookMarked, Layers
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -225,6 +226,13 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       .on('postgres_changes', { event: '*', schema: 'public', table: 'timetables' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'study_materials' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'report_cards' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_results' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'book_inventory' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'digital_library_assets' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pickup_points' }, handleAcademicSync)
       .subscribe();
 
     return () => {
@@ -1063,6 +1071,67 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
               </table>
             </div>
           )}
+        </GlassCard>
+      )}
+
+      {activeTab === 'library' && (
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+          <div className="lg:col-span-2 space-y-6">
+            <GlassCard className="space-y-4">
+              <h3 className="font-bold text-slate-100 flex items-center gap-2 pb-2 border-b border-slate-850">
+                <BookMarked className="text-brand-500" size={18} />
+                School Library Catalog
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
+                {mockDb.books.map(b => (
+                  <div key={b.id} className="p-3.5 bg-slate-900/30 border border-slate-850 rounded-xl space-y-2">
+                    <h4 className="font-bold text-slate-200 text-xs">{b.title}</h4>
+                    <p className="text-[10px] text-slate-400">Author: {b.author} | ISBN: {b.isbn}</p>
+                    <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded bg-brand-500/10 text-brand-400">
+                      Genre: {b.subject}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </GlassCard>
+          </div>
+          <div className="space-y-6">
+            <GlassCard className="space-y-4">
+              <h3 className="font-bold text-slate-200 text-xs pb-2 border-b border-slate-850">My Issued Books</h3>
+              <div className="space-y-3">
+                <div className="p-3 bg-brand-500/5 border border-brand-500/10 rounded-xl">
+                  <h4 className="font-bold text-slate-200 text-xs">Introduction to Quantum Mechanics</h4>
+                  <p className="text-[10px] text-slate-400 mt-1">Due Date: 2026-06-15</p>
+                  <p className="text-[9px] text-green-400 font-bold mt-1">Status: Checked Out</p>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'transit' && (
+        <GlassCard className="space-y-6 animate-fade-in">
+          <div className="border-b border-slate-850 pb-3">
+            <h3 className="font-bold text-slate-100 flex items-center gap-2">
+              <Layers className="text-brand-500" size={18} />
+              My School Transit Details
+            </h3>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-3">
+              <h4 className="font-bold text-slate-200 text-xs">Assigned Route & Stop</h4>
+              <p className="text-xs text-slate-350">Route Code: <span className="font-semibold text-brand-400">R-102</span> (Downtown Expressway)</p>
+              <p className="text-xs text-slate-350">Pickup Stop: <span className="font-semibold text-slate-200">Main Square Crossing</span></p>
+              <p className="text-xs text-slate-350">Pickup Time: <span className="font-semibold text-slate-200">07:15 AM</span></p>
+            </div>
+            <div className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-3">
+              <h4 className="font-bold text-slate-200 text-xs">Vehicle & Driver Details</h4>
+              <p className="text-xs text-slate-350">Bus Number Plate: <span className="font-semibold text-slate-200">MH-12-AB-3456</span> (Bus #4)</p>
+              <p className="text-xs text-slate-350">Driver Name: <span className="font-semibold text-slate-200">Robert Peterson</span></p>
+              <p className="text-xs text-slate-350">Contact: <span className="font-semibold text-slate-200">+1 555-0199</span></p>
+            </div>
+          </div>
         </GlassCard>
       )}
 

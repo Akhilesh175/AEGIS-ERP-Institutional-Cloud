@@ -182,6 +182,71 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [newPostTitle, setNewPostTitle] = useState('');
   const [newPostContent, setNewPostContent] = useState('');
 
+  // ── Class Analytics states ──
+  const [analyticsDateRange, setAnalyticsDateRange] = useState('30d');
+  const [analyticsClass, setAnalyticsClass] = useState('all');
+  const [showReportCardPdf, setShowReportCardPdf] = useState<any | null>(null);
+
+  const exportClassRosterToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Admission Number,Roll Number,First Name,Last Name,Email,Gender,Class\n";
+    
+    students.forEach(st => {
+      const row = [
+        st.admissionNumber,
+        st.rollNumber,
+        st.userDetails.firstName,
+        st.userDetails.lastName,
+        st.userDetails.email,
+        st.gender,
+        selectedMapping ? (() => { 
+          const m = mockDb.teacherClassSubjectMappings.find(x => x.id === selectedMapping); 
+          return m ? mockDb.classes.find(c => c.id === m.classId)?.name || 'N/A' : 'N/A'; 
+        })() : 'N/A'
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(",");
+      csvContent += row + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `aegis_teacher_class_roster_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const exportClassGradesToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Student Name,Roll Number,Subject,Max Marks,Marks Obtained,Remarks\n";
+    
+    const grades = [
+      { name: 'Leo da Vinci', roll: '10', subject: 'Mathematics', max: '100', obtained: '95', remarks: 'Excellent performance' },
+      { name: 'Albert Einstein', roll: '11', subject: 'Physics', max: '100', obtained: '98', remarks: 'Flawless calculations' },
+      { name: 'Marie Curie', roll: '1', subject: 'Chemistry', max: '100', obtained: '99', remarks: 'Superb dedication' }
+    ];
+
+    grades.forEach(g => {
+      const row = [
+        g.name,
+        g.roll,
+        g.subject,
+        g.max,
+        g.obtained,
+        g.remarks
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(",");
+      csvContent += row + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `aegis_teacher_grades_report_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const loadForumsData = async () => {
     if (!session?.user.schoolId) return;
     try {
@@ -3875,6 +3940,272 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 </button>
               </div>
             </form>
+          </GlassCard>
+        </div>
+      )}
+      {activeTab === 'analytics' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <Layers className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Class Academic Analytics</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5 font-sans">Access daily attendance averages, homework submission graphs, and export grade report sheets locally.</p>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <select 
+                value={analyticsDateRange} 
+                onChange={(e) => setAnalyticsDateRange(e.target.value)}
+                className="bg-slate-905 border border-slate-800 rounded-lg py-1.5 px-2.5 text-xs text-slate-200 focus:outline-none"
+              >
+                <option value="30d">Last 30 Days</option>
+                <option value="90d">Last 90 Days</option>
+                <option value="session">Current Term</option>
+              </select>
+            </div>
+          </GlassCard>
+
+          {/* 3 Custom CSS Charts */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            {/* Attendance Chart */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                <span>Class Attendance Ratios</span>
+                <span className="text-[10px] text-green-450 font-mono">Avg: 95.8%</span>
+              </h4>
+              <div className="h-40 flex items-end justify-around gap-2 pt-4 pb-2 border-b border-slate-850">
+                <div className="w-10 flex flex-col items-center gap-1.5">
+                  <div className="w-full bg-slate-900 rounded h-28 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-brand-600/80 rounded" style={{ height: '98%' }} />
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-500">MON</span>
+                </div>
+                <div className="w-10 flex flex-col items-center gap-1.5">
+                  <div className="w-full bg-slate-900 rounded h-28 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-brand-600/80 rounded" style={{ height: '94%' }} />
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-500">TUE</span>
+                </div>
+                <div className="w-10 flex flex-col items-center gap-1.5">
+                  <div className="w-full bg-slate-900 rounded h-28 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-brand-600 to-indigo-500 rounded" style={{ height: '96%' }} />
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-400">WED</span>
+                </div>
+                <div className="w-10 flex flex-col items-center gap-1.5">
+                  <div className="w-full bg-slate-900 rounded h-28 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-brand-600/80 rounded" style={{ height: '95%' }} />
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-500">THU</span>
+                </div>
+              </div>
+            </GlassCard>
+
+            {/* Homework Submissions Chart */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                <span>Homework Completion rates</span>
+                <span className="text-[10px] text-brand-400 font-mono">3 Assignments</span>
+              </h4>
+              <div className="h-40 flex flex-col justify-center gap-3">
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] text-slate-450">
+                    <span>Doubly Linked Lists Reversed</span>
+                    <span className="font-bold text-slate-200">92% Done</span>
+                  </div>
+                  <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
+                    <div className="h-full w-[92%] bg-brand-500 rounded-full" />
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <div className="flex justify-between text-[10px] text-slate-455">
+                    <span>Matrix Addition proofs</span>
+                    <span className="font-bold text-slate-200">86% Done</span>
+                  </div>
+                  <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
+                    <div className="h-full w-[86%] bg-brand-500 rounded-full" />
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+
+            {/* Class Marks Average */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                <span>Quiz & Online Test Averages</span>
+                <span className="text-[10px] text-indigo-400 font-mono">Avg Score: 8.8/10</span>
+              </h4>
+              <div className="h-40 flex items-end justify-around gap-2 pt-4 pb-2 border-b border-slate-850">
+                <div className="w-12 flex flex-col items-center gap-1">
+                  <div className="w-full bg-slate-900 rounded-t h-28 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-indigo-500/80" style={{ height: '88%' }} />
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-500">QUIZ 1</span>
+                </div>
+                <div className="w-12 flex flex-col items-center gap-1">
+                  <div className="w-full bg-slate-900 rounded-t h-28 relative overflow-hidden">
+                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-indigo-600 to-indigo-450" style={{ height: '82%' }} />
+                  </div>
+                  <span className="text-[9px] font-mono text-slate-500">QUIZ 2</span>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* Action exporters */}
+          <GlassCard className="space-y-4">
+            <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+              <Layers className="text-brand-400" size={15} />
+              Excel/CSV Registries Exporters & Report cards preview
+            </h4>
+            <p className="text-[10px] text-slate-400 leading-normal">Compile student grades and class roster schedules directly inside your browser cache and trigger local downloads instantly.</p>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <button 
+                onClick={exportClassRosterToCSV}
+                className="p-3 bg-slate-900/40 hover:bg-slate-900/60 border border-slate-850 rounded-xl transition-all flex items-center gap-3 text-left active:scale-[0.98]"
+              >
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <Layers size={14} />
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold text-slate-200">Export Class Directory</h5>
+                  <p className="text-[9px] text-slate-500 mt-0.5">Spreadsheet of assigned roster</p>
+                </div>
+              </button>
+
+              <button 
+                onClick={exportClassGradesToCSV}
+                className="p-3 bg-slate-900/40 hover:bg-slate-900/60 border border-slate-850 rounded-xl transition-all flex items-center gap-3 text-left active:scale-[0.98]"
+              >
+                <div className="p-2 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                  <Layers size={14} />
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold text-slate-200">Export Student Grades</h5>
+                  <p className="text-[9px] text-slate-500 mt-0.5">CSV report of term scores</p>
+                </div>
+              </button>
+
+              <button 
+                onClick={() => setShowReportCardPdf({ name: 'Leo da Vinci', roll: '10', class: 'Grade 10-A', term: 'Term 1 Exam', grades: [
+                  { subject: 'Mathematics', max: 100, score: 95, grade: 'A+', comment: 'Outstanding proof methodologies.' },
+                  { subject: 'Physics', max: 100, score: 88, grade: 'A', comment: 'Rigorous work in Mechanics.' },
+                  { subject: 'Computer Science', max: 100, score: 98, grade: 'A+', comment: 'Flawless Pointer reverse algorithms.' }
+                ]})}
+                className="p-3 bg-slate-900/40 hover:bg-slate-900/60 border border-slate-850 rounded-xl transition-all flex items-center gap-3 text-left active:scale-[0.98]"
+              >
+                <div className="p-2 rounded-lg bg-brand-500/10 text-brand-400 border border-brand-500/20">
+                  <Layers size={14} />
+                </div>
+                <div>
+                  <h5 className="text-xs font-bold text-slate-200">Print Report Cards</h5>
+                  <p className="text-[9px] text-slate-500 mt-0.5">High fidelity printable PDF sheet</p>
+                </div>
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Report card pdf layout modal */}
+      {showReportCardPdf && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
+          <GlassCard className="w-full max-w-2xl bg-white text-slate-900 p-8 space-y-6 relative max-h-[90vh] overflow-y-auto">
+            <button 
+              onClick={() => setShowReportCardPdf(null)}
+              className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors border border-slate-250"
+              title="Close Preview"
+            >
+              <Trash2 size={16} />
+            </button>
+
+            <div className="flex justify-between items-start border-b-2 border-slate-150 pb-4">
+              <div>
+                <h2 className="text-xl font-black text-slate-800">AEGIS ACADEMY</h2>
+                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider font-mono">Academic Report Card</p>
+                <p className="text-xs text-slate-400 mt-0.5">Silicon Valley Way, Tech District, USA</p>
+              </div>
+              <div className="text-right">
+                <span className="px-2.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-bold border border-brand-200 uppercase">OFFICIAL REPORT</span>
+                <p className="text-xs font-mono font-bold text-slate-600 mt-2">{showReportCardPdf.term}</p>
+                <p className="text-[9px] text-slate-450 mt-0.5">Date Issued: {new Date().toLocaleDateString()}</p>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4 text-xs">
+              <div>
+                <span className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">Student Identity</span>
+                <p className="font-bold text-slate-700 mt-0.5">{showReportCardPdf.name}</p>
+                <p className="text-slate-500 mt-0.5">Class: {showReportCardPdf.class} (Roll #{showReportCardPdf.roll})</p>
+              </div>
+              <div className="text-right">
+                <span className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">Homeroom Advisor</span>
+                <p className="font-bold text-slate-700 mt-0.5">Dr. Marcus Aurelius</p>
+                <p className="text-slate-500 mt-0.5">Faculty specialization: Theoretical Physics</p>
+              </div>
+            </div>
+
+            {/* Grades list table */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden mt-4">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                    <th className="py-2.5 px-3">Subject</th>
+                    <th className="py-2.5 px-3 text-right">Max Marks</th>
+                    <th className="py-2.5 px-3 text-right">Marks Obtained</th>
+                    <th className="py-2.5 px-3 text-center">Grade</th>
+                    <th className="py-2.5 px-3">Remarks / comments</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-150">
+                  {showReportCardPdf.grades.map((g: any, i: number) => (
+                    <tr key={i}>
+                      <td className="py-3 px-3 font-semibold text-slate-700">{g.subject}</td>
+                      <td className="py-3 px-3 text-right font-mono text-slate-500">{g.max}</td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-700">{g.score}</td>
+                      <td className="py-3 px-3 text-center font-bold text-brand-600">{g.grade}</td>
+                      <td className="py-3 px-3 text-slate-500 italic text-[11px]">{g.comment}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Total summaries */}
+            <div className="flex justify-end pt-2">
+              <div className="w-64 text-xs space-y-1.5 text-right font-mono border-t border-slate-200 pt-3">
+                <div className="flex justify-between text-slate-500">
+                  <span>Aggregate Total:</span>
+                  <span>281 / 300</span>
+                </div>
+                <div className="flex justify-between text-slate-800 font-bold text-sm">
+                  <span>Overall Percentage:</span>
+                  <span>93.6%</span>
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
+              <button 
+                onClick={() => window.print()}
+                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors active:scale-[0.98]"
+              >
+                Print report Card
+              </button>
+              <button 
+                onClick={() => setShowReportCardPdf(null)}
+                className="px-4 py-2 border border-slate-205 text-slate-550 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors"
+              >
+                Close Preview
+              </button>
+            </div>
           </GlassCard>
         </div>
       )}

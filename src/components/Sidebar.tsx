@@ -2,9 +2,11 @@ import React from 'react';
 import { useStore } from '../store/useStore';
 import { mockDb } from '../services/mockDb';
 import { subscriptionPlans } from '../services/subscriptionConfig';
+import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare, 
-  Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList, ShieldAlert, X
+  Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList, ShieldAlert, X,
+  Mail, Database, Key, Terminal
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -14,6 +16,45 @@ interface SidebarProps {
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
   const { session, isMobileMenuOpen, setMobileMenuOpen } = useStore();
+
+  const [permissions, setPermissions] = React.useState<Record<string, boolean>>({
+    billing: false,
+    directory: false,
+    academics: false,
+    grading: false,
+    security: false,
+    books: false,
+    transport: false
+  });
+
+  React.useEffect(() => {
+    if (!session || !session.user.schoolId) return;
+    
+    const loadPermissions = async () => {
+      try {
+        const { mockApi } = await import('../services/mockApi');
+        const matrix = await mockApi.fetchSchoolRolePermissions(session.user.schoolId!);
+        const rolePermissions = matrix[session.user.role];
+        if (rolePermissions) {
+          setPermissions(rolePermissions);
+        }
+      } catch (e) {
+        console.error('Failed to load dynamic permissions in Sidebar:', e);
+      }
+    };
+    
+    loadPermissions();
+    
+    // Subscribe to realtime updates on permissions!
+    const channel = supabase
+      .channel(`sidebar-permissions-${session.user.id}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, loadPermissions)
+      .subscribe();
+      
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session]);
 
   if (!session) return null;
 
@@ -33,6 +74,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'materials', label: 'Materials', icon: BookOpen },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
           { id: 'grades', label: 'Report Cards', icon: Award },
+          { id: 'library', label: 'Library Books', icon: BookMarked },
+          { id: 'transit', label: 'School Transit', icon: Layers },
           { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: !plan.features.communications }
         ];
       case 'PARENT':
@@ -44,6 +87,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
           { id: 'grades', label: 'Grades Progress', icon: Award },
           { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: !plan.features.billing },
+          { id: 'library', label: 'Library Books', icon: BookMarked },
+          { id: 'transit', label: 'School Transit', icon: Layers },
           { id: 'forums', label: 'Forums', icon: MessageSquare, locked: !plan.features.communications }
         ];
       case 'TEACHER':
@@ -57,7 +102,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'assignments', label: 'Assignment Creator', icon: PenTool },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
           { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: !school || school.subscriptionPlan !== 'enterprise' },
-          { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: !plan.features.communications }
+          { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: !plan.features.communications },
+          { id: 'analytics', label: 'Class Analytics', icon: Activity }
         ];
       case 'ADMIN':
         return [
@@ -69,15 +115,74 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'subjects', label: 'Subject Catalog', icon: BookMarked },
           { id: 'academicsessions', label: 'Academic Sessions', icon: Calendar },
           { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing },
+          { id: 'communications', label: 'Communication Center', icon: Mail },
+          { id: 'analytics', label: 'Institutional Analytics', icon: Activity },
+          { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key },
+          { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database },
           { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
           { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert }
         ];
+      case 'FINANCE_ADMIN':
+      case 'ACADEMIC_ADMIN':
+      case 'EXAM_CONTROLLER':
+      case 'LIBRARIAN':
+      case 'TRANSPORT_MANAGER':
+      case 'CUSTOM_SUB_ADMIN': {
+        const subAdminTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
+          { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard }
+        ];
+        
+        // If billing is allowed
+        if (permissions.billing) {
+          subAdminTabs.push({ id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing });
+          subAdminTabs.push({ id: 'analytics', label: 'Fee Analytics', icon: Activity });
+        }
+        
+        // If directory is allowed
+        if (permissions.directory) {
+          subAdminTabs.push({ id: 'students', label: 'Student Directory', icon: Users });
+          subAdminTabs.push({ id: 'teachers', label: 'Teacher Directory', icon: UsersRound });
+          subAdminTabs.push({ id: 'parents', label: 'Parent Directory', icon: UsersRound });
+        }
+        
+        // If academics is allowed
+        if (permissions.academics) {
+          subAdminTabs.push({ id: 'classes', label: 'Classes & Sections', icon: Layers });
+          subAdminTabs.push({ id: 'subjects', label: 'Subject Catalog', icon: BookMarked });
+          subAdminTabs.push({ id: 'academicsessions', label: 'Academic Sessions', icon: Calendar });
+        }
+        
+        // If grading is allowed
+        if (permissions.grading) {
+          subAdminTabs.push({ id: 'marksheets', label: ' Homeroom Marksheets', icon: ClipboardList });
+          subAdminTabs.push({ id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes });
+        }
+
+        // If books is allowed (Library)
+        if (permissions.books) {
+          subAdminTabs.push({ id: 'books', label: 'Library Registry', icon: BookOpen });
+        }
+
+        // If transport is allowed (Transport)
+        if (permissions.transport) {
+          subAdminTabs.push({ id: 'transport', label: 'Transit Registry', icon: Layers });
+        }
+        
+        // If security is allowed (Sub-Admin backups / telemetry access)
+        if (permissions.security) {
+          subAdminTabs.push({ id: 'backups', label: 'Disaster Recovery', icon: Database });
+        }
+        
+        return subAdminTabs;
+      }
       case 'SUPER_ADMIN':
         return [
           { id: 'dashboard', label: 'SaaS Telemetry', icon: Activity, locked: !plan.features.advancedAnalytics },
           { id: 'tenants', label: 'School Registry', icon: Layers },
           { id: 'users', label: 'Global User Manager', icon: UsersRound },
-          { id: 'audits', label: 'Global Audit Logs', icon: Settings, locked: !plan.features.auditLogs }
+          { id: 'audits', label: 'Global Audit Logs', icon: Settings, locked: !plan.features.auditLogs },
+          { id: 'backups', label: 'Disaster Recovery Panel', icon: Database },
+          { id: 'logging', label: 'Centralized Logging Console', icon: Terminal }
         ];
       default:
         return [];

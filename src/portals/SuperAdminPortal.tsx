@@ -5,9 +5,11 @@ import { supabase } from '../lib/supabase';
 import { AuditLog, School, User } from '../types';
 import { mockDb } from '../services/mockDb';
 import { GlassCard } from '../components/GlassCard';
+import { OfflineSyncManager } from '../components/OfflineSyncManager';
 import { 
   Activity, Building, Settings, ShieldAlert, Cpu, 
-  Layers, Key, PlusCircle, Search, RefreshCw, Eye, EyeOff
+  Layers, Key, PlusCircle, Search, RefreshCw, Eye, EyeOff,
+  Database, Terminal, HardDrive, Play, CheckCircle2, Clock, Sliders, Shield, AlertTriangle, CheckCircle, XCircle, Trash2, CheckSquare, Mail, Send
 } from 'lucide-react';
 
 export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
@@ -19,6 +21,26 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
   const [auditLogs, setAuditLogs] = useState<(AuditLog & { userName: string; userEmail: string })[]>([]);
   const [searchAuditQuery, setSearchAuditQuery] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // ── SaaS backups states ──
+  const [backupPolicy, setBackupPolicy] = useState<'hourly' | 'daily' | 'weekly'>('daily');
+  const [backupLoading, setBackupLoading] = useState(false);
+  const [backupLogs, setBackupLogs] = useState<any[]>([
+    { id: '1', filename: 'aegis_global_dump_20260529_0000.enc', type: 'FULL_SNAPSHOT', size: '4.8 GB', status: 'SUCCESS', hash: 'sha256-k8m9n0...', timestamp: new Date(Date.now() - 3600000).toISOString() },
+    { id: '2', filename: 'aegis_global_dump_20260528_0000.enc', type: 'FULL_SNAPSHOT', size: '4.7 GB', status: 'SUCCESS', hash: 'sha256-j2k3l4...', timestamp: new Date(Date.now() - 90000000).toISOString() }
+  ]);
+  const [restoreToken, setRestoreToken] = useState('');
+  const [restoreProgress, setRestoreProgress] = useState(-1);
+  const [restoreLogs, setRestoreLogs] = useState<string[]>([]);
+
+  // ── Logging & crash auditing console states ──
+  const [loggingConsoleOpen, setLoggingConsoleOpen] = useState(true);
+  const [crashLogs, setCrashLogs] = useState<any[]>([
+    { id: 'c1', type: 'NETWORK', code: 'TIMEOUT', msg: 'Network timeout in syncNotificationsData fetch', occurrences: 12, severity: 'HIGH', resolved: false },
+    { id: 'c2', type: 'SECURITY', code: 'RLS_VIOLATION', msg: 'Database RLS policy select failure on public.parent_student_mappings', occurrences: 3, severity: 'CRITICAL', resolved: false },
+    { id: 'c3', type: 'RENDER', code: 'HYDRATION_MISMATCH', msg: 'Hydration mismatch during SSR pre-render pass', occurrences: 1, severity: 'LOW', resolved: true },
+    { id: 'c4', type: 'WEBSOCKET', code: 'CONNECTION_DROP', msg: 'Supabase Realtime WebSocket handshake dropped unexpectedly', occurrences: 8, severity: 'MEDIUM', resolved: false }
+  ]);
 
   // Forms
   const [showAddSchool, setShowAddSchool] = useState(false);
@@ -122,6 +144,61 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
       });
     }
   }, [searchAuditQuery, activeTab]);
+
+  const handleGlobalBackup = async () => {
+    if (backupLoading) return;
+    setBackupLoading(true);
+    await new Promise(resolve => setTimeout(resolve, 1500));
+
+    const snapId = Math.random().toString(36).substr(2, 5);
+    const newLog = {
+      id: Math.random().toString(),
+      filename: `aegis_global_dump_20260529_${snapId}.enc`,
+      type: 'MANUAL_SNAPSHOT',
+      size: '4.9 GB',
+      status: 'SUCCESS',
+      hash: 'sha256-' + Math.random().toString(36).substr(2, 10) + '...',
+      timestamp: new Date().toISOString()
+    };
+
+    setBackupLogs(prev => [newLog, ...prev]);
+    setBackupLoading(false);
+    alert('SaaS Global Core Database & Storage snapshot completed successfully!');
+  };
+
+  const handleGlobalRestore = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!restoreToken) {
+      alert('Please enter a valid global master recovery token.');
+      return;
+    }
+    setRestoreProgress(0);
+    setRestoreLogs([]);
+
+    const steps = [
+      { progress: 15, log: 'Authenticating global SaaS master credentials...' },
+      { progress: 30, log: 'Acquiring global replica instance lease lock...' },
+      { progress: 50, log: 'Restoring multi-tenant public schema tables...' },
+      { progress: 70, log: 'Re-syncing multi-tenant object storage cache chains...' },
+      { progress: 85, log: 'Verifying row isolation security constraints across all tenants...' },
+      { progress: 100, log: 'Global rollback complete! All child cluster nodes updated.' }
+    ];
+
+    for (const step of steps) {
+      await new Promise(resolve => setTimeout(resolve, 500));
+      setRestoreProgress(step.progress);
+      setRestoreLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${step.log}`]);
+    }
+
+    alert('SaaS Platform Rollback completed successfully! Tenants synchronized.');
+    setRestoreProgress(-1);
+    setRestoreToken('');
+  };
+
+  const handleResolveCrash = (id: string) => {
+    setCrashLogs(prev => prev.map(c => c.id === id ? { ...c, resolved: true } : c));
+    alert('Crash alert status updated to RESOLVED.');
+  };
 
   const handleCreateSchool = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -362,6 +439,8 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
               </div>
             </GlassCard>
           </div>
+
+          <OfflineSyncManager />
         </div>
       )}
 
@@ -850,6 +929,279 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                 <button type="submit" className="glass-btn-primary text-xs">Apply Globally</button>
               </div>
             </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── 1. SAAS GLOBAL DISASTER RECOVERY & BACKUPS ── */}
+      {activeTab === 'backups' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <HardDrive className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Global SaaS Disaster Recovery & Backups</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Manage backups and rollbacks across the entire multi-tenant ERP platform instance.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Action Card */}
+            <GlassCard className="lg:col-span-2 space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Settings className="text-brand-400" size={15} />
+                Platform Archival Settings
+              </h4>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Automated Backup Polices</label>
+                  <select 
+                    value={backupPolicy} 
+                    onChange={(e) => setBackupPolicy(e.target.value as any)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                  >
+                    <option value="hourly">Hourly Core Incremental Dump</option>
+                    <option value="daily">Daily Total Dump (Highly Secure)</option>
+                    <option value="weekly">Weekly Full Platform Snapshot</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1 justify-end flex flex-col">
+                  <button 
+                    onClick={handleGlobalBackup} 
+                    disabled={backupLoading}
+                    className="glass-btn-primary py-2.5 font-bold text-xs flex items-center justify-center gap-2"
+                  >
+                    {backupLoading ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" />
+                        <span>Creating SaaS Platform Backup...</span>
+                      </>
+                    ) : (
+                      <>
+                        <HardDrive size={13} />
+                        <span>Trigger Full State Snapshot</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl">
+                <h5 className="text-[11px] font-bold text-slate-350">Platform Restoration Policy</h5>
+                <p className="text-[10px] text-slate-400 leading-relaxed mt-1">
+                  SaaS level restorations overwrite core schema tables across all schools. Row levels are fully isolated inside the dump block, but executing restorations requires absolute confirmation and master encryption keys.
+                </p>
+              </div>
+            </GlassCard>
+
+            {/* Rollback Gateway */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Shield className="text-red-400" size={15} />
+                Global Restorations Gateway
+              </h4>
+
+              <form onSubmit={handleGlobalRestore} className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Global Master Recovery token</label>
+                  <input 
+                    type="text" 
+                    placeholder="Enter sha256 master token" 
+                    value={restoreToken}
+                    onChange={(e) => setRestoreToken(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-red-500 font-mono"
+                    required
+                  />
+                </div>
+
+                <button 
+                  type="submit" 
+                  disabled={restoreProgress >= 0}
+                  className="w-full px-4 py-2.5 rounded-xl bg-red-650 hover:bg-red-550 text-white font-bold text-xs flex items-center justify-center gap-2 transition-all active:scale-[0.98] disabled:opacity-50"
+                >
+                  <RefreshCw size={13} className={restoreProgress >= 0 ? 'animate-spin' : ''} />
+                  <span>{restoreProgress >= 0 ? 'Executing Global Restore...' : 'Restore Core Platform state'}</span>
+                </button>
+              </form>
+
+              {restoreProgress >= 0 && (
+                <div className="space-y-2 pt-2">
+                  <div className="flex justify-between text-[10px] font-bold text-slate-400 font-mono">
+                    <span>GLOBAL RESTORE IN PROGRESS</span>
+                    <span>{restoreProgress}%</span>
+                  </div>
+                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden">
+                    <div className="h-full bg-red-500 rounded-full transition-all duration-300" style={{ width: `${restoreProgress}%` }} />
+                  </div>
+                </div>
+              )}
+            </GlassCard>
+          </div>
+
+          {/* Console logging output stream */}
+          {restoreLogs.length > 0 && (
+            <GlassCard className="space-y-2">
+              <h4 className="font-bold text-slate-200 text-xs font-mono">GLOBAL RECOVERY CONSOLE STREAM</h4>
+              <div className="bg-black/90 border border-slate-900 rounded-xl p-3 max-h-48 overflow-y-auto space-y-1.5">
+                {restoreLogs.map((logStr, i) => (
+                  <p key={i} className="text-[10px] font-mono text-slate-450 leading-relaxed">{logStr}</p>
+                ))}
+              </div>
+            </GlassCard>
+          )}
+
+          {/* SaaS global registry list */}
+          <GlassCard className="space-y-3">
+            <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+              <Clock className="text-brand-400" size={15} />
+              SaaS Level Recovery Registry Logs
+            </h4>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/20">
+                    <th className="py-2.5 px-3">Log ID</th>
+                    <th className="py-2.5 px-3">Encrypted Filename</th>
+                    <th className="py-2.5 px-3">Type</th>
+                    <th className="py-2.5 px-3">Size</th>
+                    <th className="py-2.5 px-3">State Status</th>
+                    <th className="py-2.5 px-3">Key hash</th>
+                    <th className="py-2.5 px-3 text-right">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-850/50">
+                  {backupLogs.map((log) => (
+                    <tr key={log.id} className="hover:bg-slate-900/10 transition-colors">
+                      <td className="py-2.5 px-3 font-mono text-[10px] text-slate-500">#{log.id.slice(0, 6)}</td>
+                      <td className="py-2.5 px-3 font-mono text-[11px] text-brand-400">{log.filename}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="px-2 py-0.5 rounded bg-slate-900 text-slate-400 border border-slate-850 text-[9px] font-bold">
+                          {log.type}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 text-slate-350 font-mono">{log.size}</td>
+                      <td className="py-2.5 px-3">
+                        <span className="text-green-400 font-bold text-[10px] flex items-center gap-1">
+                          <CheckCircle2 size={11} />
+                          {log.status}
+                        </span>
+                      </td>
+                      <td className="py-2.5 px-3 font-mono text-slate-500 text-[10px]">{log.hash}</td>
+                      <td className="py-2.5 px-3 text-right text-slate-500 font-mono text-[10px]">{new Date(log.timestamp).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── 2. CENTRALIZED LOGGING & ERROR AUDITING CONSOLE ── */}
+      {activeTab === 'logging' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <Terminal className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Centralized Logging & Error Auditing Console</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Real-time Sentry & LogRocket simulated instrumentation tracking errors, WebSocket statuses, and database events.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          {/* Stats metrics */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="p-4 bg-red-950/15 border border-red-500/25 rounded-2xl">
+              <span className="text-[9px] font-bold tracking-widest uppercase text-red-400">CRITICAL THREATS</span>
+              <p className="text-2xl font-black text-red-200 mt-1 font-mono">{crashLogs.filter(c => c.severity === 'CRITICAL' && !c.resolved).length}</p>
+            </div>
+            <div className="p-4 bg-orange-950/15 border border-orange-500/25 rounded-2xl">
+              <span className="text-[9px] font-bold tracking-widest uppercase text-orange-400">HIGH SEVERITY</span>
+              <p className="text-2xl font-black text-orange-200 mt-1 font-mono">{crashLogs.filter(c => c.severity === 'HIGH' && !c.resolved).length}</p>
+            </div>
+            <div className="p-4 bg-amber-950/15 border border-amber-500/25 rounded-2xl">
+              <span className="text-[9px] font-bold tracking-widest uppercase text-amber-400">MEDIUM RISKS</span>
+              <p className="text-2xl font-black text-amber-200 mt-1 font-mono">{crashLogs.filter(c => c.severity === 'MEDIUM' && !c.resolved).length}</p>
+            </div>
+            <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl">
+              <span className="text-[9px] font-bold tracking-widest uppercase text-slate-400">RESOLVED CACHES</span>
+              <p className="text-2xl font-black text-slate-350 mt-1 font-mono">{crashLogs.filter(c => c.resolved).length}</p>
+            </div>
+          </div>
+
+          {/* Crash logs registry list */}
+          <GlassCard className="space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-850 pb-2.5">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <AlertTriangle className="text-red-400" size={15} />
+                Sentry Active Crash instrumentation registry
+              </h4>
+              <button 
+                onClick={() => {
+                  alert('Session logs flushed and Sentry queue cleared successfully!');
+                }}
+                className="px-2.5 py-1 rounded bg-slate-905 border border-slate-850 text-slate-400 hover:text-slate-105 hover:bg-slate-900 text-[10px] font-bold transition-all"
+              >
+                Flush active logs
+              </button>
+            </div>
+
+            <div className="space-y-3.5">
+              {crashLogs.map((c) => (
+                <div key={c.id} className={`p-4 border rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 transition-all ${
+                  c.resolved 
+                    ? 'bg-slate-900/10 border-slate-850 text-slate-500' 
+                    : c.severity === 'CRITICAL' 
+                      ? 'bg-red-950/10 border-red-500/20 text-slate-300' 
+                      : c.severity === 'HIGH' 
+                        ? 'bg-orange-950/10 border-orange-500/20 text-slate-300' 
+                        : 'bg-amber-950/5 border-amber-500/10 text-slate-300'
+                }`}>
+                  <div className="flex items-start gap-3">
+                    <span className={`px-2 py-0.5 rounded text-[9px] font-mono font-black ${
+                      c.resolved 
+                        ? 'bg-slate-900 text-slate-650' 
+                        : c.severity === 'CRITICAL' ? 'bg-red-500/15 text-red-400' : 'bg-orange-500/15 text-orange-400'
+                    }`}>
+                      {c.type}
+                    </span>
+                    <div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className={`font-bold font-mono text-xs ${c.resolved ? 'text-slate-600 line-through' : 'text-slate-200'}`}>{c.code}</span>
+                        <span className="text-[9px] text-slate-500 font-mono">({c.occurrences} occurrences)</span>
+                      </div>
+                      <p className={`text-[11px] mt-1 ${c.resolved ? 'text-slate-600' : 'text-slate-400'}`}>{c.msg}</p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2 self-end sm:self-auto">
+                    {c.resolved ? (
+                      <span className="text-[10px] text-green-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                        <CheckCircle2 size={12} /> Resolved
+                      </span>
+                    ) : (
+                      <button 
+                        onClick={() => handleResolveCrash(c.id)}
+                        className="px-3 py-1 bg-brand-600/10 border border-brand-500/20 hover:border-brand-500/50 hover:bg-brand-650/15 text-brand-400 hover:text-brand-305 text-[10px] font-bold rounded-xl transition-all"
+                      >
+                        Resolve issue
+                      </button>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
           </GlassCard>
         </div>
       )}

@@ -5,7 +5,10 @@ import {
   QuizAttempt, Exam, ExamSchedule, ExamMark, FeeStructure, FeePayment, 
   ForumCategory, ForumPost, ForumReply, ChatMessage, AuditLog, 
   StudyMaterial, Announcement, Notification, SystemTelemetry, PhoneNumber, EmailAddress,
-  Section, HomeworkAttachment
+  Section, HomeworkAttachment, Book,
+  Driver, Bus, Route, PickupPoint, TransportAssignment, TransportFeeRecord, VehicleLog,
+  MaintenanceLog, DriverAttendance, BookCategory, BookIssue, BookReturn, LibraryFine,
+  LibraryInvoice, DigitalLibraryAsset, ExamSubject, StudentMark, ReportCard, ExamResult, QuizResult
 } from '../types';
 
 // Storage keys
@@ -258,6 +261,117 @@ const SEED_EMAIL_ADDRESSES: EmailAddress[] = [
   { id: 'ea-9', userId: 'u-parent2', schoolId: 'school-1', emailType: 'LOGIN', email: 'parent2@aegis.com', isPrimary: true, isVerified: true, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
 ];
 
+const SEED_BOOKS: Book[] = [
+  { id: 'bk-1', schoolId: 'school-1', title: 'Advanced Calculus and Applications', author: 'Dr. Ramanujan Iyer', isbn: '978-0-13-110362-7', subject: 'Mathematics', totalCopies: 15, availableCopies: 9, createdAt: new Date('2024-06-01').toISOString() },
+  { id: 'bk-2', schoolId: 'school-1', title: 'Principles of Quantum Mechanics', author: 'R. Shankar', isbn: '978-0-306-44790-7', subject: 'Physics', totalCopies: 12, availableCopies: 7, createdAt: new Date('2024-06-01').toISOString() },
+  { id: 'bk-3', schoolId: 'school-1', title: 'Introduction to Algorithms', author: 'Thomas H. Cormen', isbn: '978-0-262-03384-8', subject: 'Computer Science', totalCopies: 20, availableCopies: 14, createdAt: new Date('2024-06-01').toISOString() },
+  { id: 'bk-4', schoolId: 'school-1', title: 'Organic Chemistry: Structure & Function', author: 'K. Peter C. Vollhardt', isbn: '978-1-319-18871-5', subject: 'Chemistry', totalCopies: 10, availableCopies: 6, createdAt: new Date('2024-06-01').toISOString() },
+  { id: 'bk-5', schoolId: 'school-1', title: 'Modern Biology: Principles & Processes', author: 'H. Curtis & N. Barnes', isbn: '978-0-07-015834-5', subject: 'Biology', totalCopies: 18, availableCopies: 11, createdAt: new Date('2024-06-01').toISOString() },
+  { id: 'bk-6', schoolId: 'school-1', title: 'A Brief History of Time', author: 'Stephen Hawking', isbn: '978-0-553-38016-3', subject: 'Physics', totalCopies: 8, availableCopies: 3, createdAt: new Date('2024-06-01').toISOString() },
+  { id: 'bk-7', schoolId: 'school-1', title: 'The Art of Electronics', author: 'Paul Horowitz', isbn: '978-0-521-80926-9', subject: 'Electronics', totalCopies: 6, availableCopies: 4, createdAt: new Date('2024-06-01').toISOString() },
+  { id: 'bk-8', schoolId: 'school-1', title: 'Linear Algebra Done Right', author: 'Sheldon Axler', isbn: '978-3-319-11079-0', subject: 'Mathematics', totalCopies: 14, availableCopies: 10, createdAt: new Date('2024-06-01').toISOString() }
+];
+
+const SEED_DRIVERS: Driver[] = [
+  { id: 'dr-1', schoolId: 'school-1', name: 'Robert Peterson', licenseNumber: 'DL-9938812', phone: '+1 555-0199', status: 'ACTIVE', createdAt: new Date().toISOString() },
+  { id: 'dr-2', schoolId: 'school-1', name: 'David Miller', licenseNumber: 'DL-2299834', phone: '+1 555-0144', status: 'ACTIVE', createdAt: new Date().toISOString() }
+];
+
+const SEED_BUSES: Bus[] = [
+  { id: 'bus-1', schoolId: 'school-1', numberPlate: 'MH-12-AB-3456', capacity: 40, status: 'ACTIVE', driverId: 'dr-1', createdAt: new Date().toISOString() },
+  { id: 'bus-2', schoolId: 'school-1', numberPlate: 'MH-12-XY-9876', capacity: 32, status: 'ACTIVE', driverId: 'dr-2', createdAt: new Date().toISOString() }
+];
+
+const SEED_ROUTES: Route[] = [
+  { id: 'rt-1', schoolId: 'school-1', name: 'Downtown Expressway Route', routeCode: 'R-102', startPoint: 'Main Depot', endPoint: 'Aegis High Campus', fare: 45.0, createdAt: new Date().toISOString() },
+  { id: 'rt-2', schoolId: 'school-1', name: 'Westside Suburbs Route', routeCode: 'R-105', startPoint: 'West Mall Stop', endPoint: 'Aegis High Campus', fare: 60.0, createdAt: new Date().toISOString() }
+];
+
+const SEED_PICKUP_POINTS: PickupPoint[] = [
+  { id: 'pp-1', schoolId: 'school-1', name: 'Main Square Crossing', latitude: 40.7128, longitude: -74.0060, routeId: 'rt-1', createdAt: new Date().toISOString() },
+  { id: 'pp-2', schoolId: 'school-1', name: 'Highway Exit 4 Junction', latitude: 40.7589, longitude: -73.9851, routeId: 'rt-1', createdAt: new Date().toISOString() },
+  { id: 'pp-3', schoolId: 'school-1', name: 'Greenwood Park Stop', latitude: 40.6782, longitude: -73.9442, routeId: 'rt-2', createdAt: new Date().toISOString() }
+];
+
+const SEED_TRANSPORT_ASSIGNMENTS: TransportAssignment[] = [
+  { id: 'ta-1', schoolId: 'school-1', studentId: 'st-1', routeId: 'rt-1', busId: 'bus-1', pickupPointId: 'pp-1', status: 'ACTIVE', createdAt: new Date().toISOString() },
+  { id: 'ta-2', schoolId: 'school-1', studentId: 'st-2', routeId: 'rt-1', busId: 'bus-1', pickupPointId: 'pp-2', status: 'ACTIVE', createdAt: new Date().toISOString() }
+];
+
+const SEED_TRANSPORT_FEE_RECORDS: TransportFeeRecord[] = [
+  { id: 'tfr-1', schoolId: 'school-1', academicSessionId: 'session-1', studentId: 'st-1', routeId: 'rt-1', amount: 180.00, status: 'UNPAID', createdAt: new Date().toISOString() },
+  { id: 'tfr-2', schoolId: 'school-1', academicSessionId: 'session-1', studentId: 'st-2', routeId: 'rt-1', amount: 180.00, status: 'PAID', createdAt: new Date().toISOString() }
+];
+
+const SEED_VEHICLE_LOGS: VehicleLog[] = [
+  { id: 'vl-1', schoolId: 'school-1', busId: 'bus-1', logType: 'FUEL', description: 'Diesel refill 60 Liters', amount: 90.0, createdAt: new Date().toISOString() },
+  { id: 'vl-2', schoolId: 'school-1', busId: 'bus-2', logType: 'TRIP_START', description: 'Morning trip start', amount: 0, createdAt: new Date().toISOString() }
+];
+
+const SEED_MAINTENANCE_LOGS: MaintenanceLog[] = [
+  { id: 'ml-1', schoolId: 'school-1', busId: 'bus-1', logDate: new Date().toISOString().split('T')[0], description: 'Engine oil replacement and filters clean', cost: 120.00, createdAt: new Date().toISOString() }
+];
+
+const SEED_DRIVER_ATTENDANCE: DriverAttendance[] = [
+  { id: 'da-1', schoolId: 'school-1', driverId: 'dr-1', date: new Date().toISOString().split('T')[0], status: 'PRESENT', createdAt: new Date().toISOString() },
+  { id: 'da-2', schoolId: 'school-1', driverId: 'dr-2', date: new Date().toISOString().split('T')[0], status: 'PRESENT', createdAt: new Date().toISOString() }
+];
+
+const SEED_BOOK_CATEGORIES: BookCategory[] = [
+  { id: 'bc-1', schoolId: 'school-1', name: 'Mathematics & Algebra', code: 'MATH', createdAt: new Date().toISOString() },
+  { id: 'bc-2', schoolId: 'school-1', name: 'Physics & Thermodynamics', code: 'PHYS', createdAt: new Date().toISOString() },
+  { id: 'bc-3', schoolId: 'school-1', name: 'Computer Coding', code: 'CS', createdAt: new Date().toISOString() }
+];
+
+const SEED_BOOK_ISSUES: BookIssue[] = [
+  { id: 'bi-1', schoolId: 'school-1', bookId: 'bk-1', studentId: 'st-1', issueDate: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(), dueDate: new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString(), returnDate: null, fineAmount: 0, status: 'ISSUED', createdAt: new Date().toISOString() },
+  { id: 'bi-2', schoolId: 'school-1', bookId: 'bk-2', studentId: 'st-2', issueDate: new Date(Date.now() - 20 * 24 * 3600 * 1000).toISOString(), dueDate: new Date(Date.now() - 5 * 24 * 3600 * 1000).toISOString(), returnDate: null, fineAmount: 3.50, status: 'OVERDUE', createdAt: new Date().toISOString() }
+];
+
+const SEED_BOOK_RETURNS: BookReturn[] = [
+  { id: 'br-1', schoolId: 'school-1', issueId: 'bi-1', returnDate: new Date().toISOString(), fineAmount: 0, status: 'RETURNED', createdAt: new Date().toISOString() }
+];
+
+const SEED_LIBRARY_FINES: LibraryFine[] = [
+  { id: 'lf-1', schoolId: 'school-1', issueId: 'bi-2', studentId: 'st-2', amount: 3.50, isPaid: false, createdAt: new Date().toISOString() }
+];
+
+const SEED_LIBRARY_INVOICES: LibraryInvoice[] = [
+  { id: 'li-1', schoolId: 'school-1', studentId: 'st-2', amount: 3.50, status: 'UNPAID', createdAt: new Date().toISOString() }
+];
+
+const SEED_DIGITAL_LIBRARY_ASSETS: DigitalLibraryAsset[] = [
+  { id: 'dla-1', schoolId: 'school-1', title: 'Calculus Made Easy - PDF TextBook', author: 'Silvanus P. Thompson', fileUrl: 'https://aegis-erp.s3.amazonaws.com/calculus_easy.pdf', fileType: 'pdf', createdAt: new Date().toISOString() },
+  { id: 'dla-2', schoolId: 'school-1', title: 'Interactive Algorithms 3D Visualizer', author: 'CLRS', fileUrl: 'https://aegis-erp.s3.amazonaws.com/algorithms.zip', fileType: 'epub', createdAt: new Date().toISOString() }
+];
+
+const SEED_EXAM_SUBJECTS: ExamSubject[] = [
+  { id: 'es-1', schoolId: 'school-1', examId: 'ex-1', subjectId: 's-math', maxMarks: 100, passingMarks: 40, createdAt: new Date().toISOString() },
+  { id: 'es-2', schoolId: 'school-1', examId: 'ex-1', subjectId: 's-physics', maxMarks: 100, passingMarks: 40, createdAt: new Date().toISOString() }
+];
+
+const SEED_STUDENT_MARKS: StudentMark[] = [
+  { id: 'sm-1', schoolId: 'school-1', examId: 'ex-1', subjectId: 's-math', studentId: 'st-1', marksObtained: 85, remarks: 'Excellent score', createdAt: new Date().toISOString() },
+  { id: 'sm-2', schoolId: 'school-1', examId: 'ex-1', subjectId: 's-physics', studentId: 'st-1', marksObtained: 78, remarks: 'Good analytical skills', createdAt: new Date().toISOString() },
+  { id: 'sm-3', schoolId: 'school-1', examId: 'ex-1', subjectId: 's-math', studentId: 'st-2', marksObtained: 55, remarks: 'Needs revision', createdAt: new Date().toISOString() },
+  { id: 'sm-4', schoolId: 'school-1', examId: 'ex-1', subjectId: 's-physics', studentId: 'st-2', marksObtained: 60, remarks: 'Average response', createdAt: new Date().toISOString() }
+];
+
+const SEED_EXAM_RESULTS: ExamResult[] = [
+  { id: 'er-1', schoolId: 'school-1', studentId: 'st-1', examId: 'ex-1', totalMarks: 200, marksObtained: 163, percentage: 81.5, grade: 'A', status: 'PASSED', createdAt: new Date().toISOString() },
+  { id: 'er-2', schoolId: 'school-1', studentId: 'st-2', examId: 'ex-1', totalMarks: 200, marksObtained: 115, percentage: 57.5, grade: 'C', status: 'PASSED', createdAt: new Date().toISOString() }
+];
+
+const SEED_REPORT_CARDS: ReportCard[] = [
+  { id: 'rc-1', schoolId: 'school-1', academicSessionId: 'session-1', studentId: 'st-1', term: 'TERM 1', attendancePercentage: 92, gradePointAverage: 8.15, remarks: 'Distinction performance in mathematical studies.', fileUrl: '', createdAt: new Date().toISOString() },
+  { id: 'rc-2', schoolId: 'school-1', academicSessionId: 'session-1', studentId: 'st-2', term: 'TERM 1', attendancePercentage: 88, gradePointAverage: 5.75, remarks: 'Needs concentration on logic sciences.', fileUrl: '', createdAt: new Date().toISOString() }
+];
+
+const SEED_QUIZ_RESULTS: QuizResult[] = [
+  { id: 'qr-1', schoolId: 'school-1', studentId: 'st-1', quizId: 'q-1', score: 9, totalMarks: 10, createdAt: new Date().toISOString() },
+  { id: 'qr-2', schoolId: 'school-1', studentId: 'st-2', quizId: 'q-1', score: 7, totalMarks: 10, createdAt: new Date().toISOString() }
+];
+
 // --- MOCK DATABASE CLASS ---
 
 class MockDatabase {
@@ -295,6 +409,27 @@ class MockDatabase {
   phoneNumbers: PhoneNumber[];
   emailAddresses: EmailAddress[];
   homeworkAttachments: HomeworkAttachment[];
+  books: Book[];
+  drivers: Driver[];
+  buses: Bus[];
+  routes: Route[];
+  pickupPoints: PickupPoint[];
+  transportAssignments: TransportAssignment[];
+  transportFeeRecords: TransportFeeRecord[];
+  vehicleLogs: VehicleLog[];
+  maintenanceLogs: MaintenanceLog[];
+  driverAttendance: DriverAttendance[];
+  bookCategories: BookCategory[];
+  bookIssues: BookIssue[];
+  bookReturns: BookReturn[];
+  libraryFines: LibraryFine[];
+  libraryInvoices: LibraryInvoice[];
+  digitalLibraryAssets: DigitalLibraryAsset[];
+  examSubjects: ExamSubject[];
+  studentMarks: StudentMark[];
+  examResults: ExamResult[];
+  reportCards: ReportCard[];
+  quizResults: QuizResult[];
 
   constructor() {
     this.users = getStorage<User[]>('users', SEED_USERS);
@@ -344,6 +479,27 @@ class MockDatabase {
     this.phoneNumbers = getStorage<PhoneNumber[]>('phone_numbers', SEED_PHONE_NUMBERS);
     this.emailAddresses = getStorage<EmailAddress[]>('email_addresses', SEED_EMAIL_ADDRESSES);
     this.homeworkAttachments = getStorage<HomeworkAttachment[]>('homework_attachments', []);
+    this.books = getStorage<Book[]>('books', SEED_BOOKS);
+    this.drivers = getStorage<Driver[]>('drivers', SEED_DRIVERS);
+    this.buses = getStorage<Bus[]>('buses', SEED_BUSES);
+    this.routes = getStorage<Route[]>('routes', SEED_ROUTES);
+    this.pickupPoints = getStorage<PickupPoint[]>('pickup_points', SEED_PICKUP_POINTS);
+    this.transportAssignments = getStorage<TransportAssignment[]>('transport_assignments', SEED_TRANSPORT_ASSIGNMENTS);
+    this.transportFeeRecords = getStorage<TransportFeeRecord[]>('transport_fee_records', SEED_TRANSPORT_FEE_RECORDS);
+    this.vehicleLogs = getStorage<VehicleLog[]>('vehicle_logs', SEED_VEHICLE_LOGS);
+    this.maintenanceLogs = getStorage<MaintenanceLog[]>('maintenance_logs', SEED_MAINTENANCE_LOGS);
+    this.driverAttendance = getStorage<DriverAttendance[]>('driver_attendance', SEED_DRIVER_ATTENDANCE);
+    this.bookCategories = getStorage<BookCategory[]>('book_categories', SEED_BOOK_CATEGORIES);
+    this.bookIssues = getStorage<BookIssue[]>('book_issues', SEED_BOOK_ISSUES);
+    this.bookReturns = getStorage<BookReturn[]>('book_returns', SEED_BOOK_RETURNS);
+    this.libraryFines = getStorage<LibraryFine[]>('library_fines', SEED_LIBRARY_FINES);
+    this.libraryInvoices = getStorage<LibraryInvoice[]>('library_invoices', SEED_LIBRARY_INVOICES);
+    this.digitalLibraryAssets = getStorage<DigitalLibraryAsset[]>('digital_library_assets', SEED_DIGITAL_LIBRARY_ASSETS);
+    this.examSubjects = getStorage<ExamSubject[]>('exam_subjects', SEED_EXAM_SUBJECTS);
+    this.studentMarks = getStorage<StudentMark[]>('student_marks', SEED_STUDENT_MARKS);
+    this.examResults = getStorage<ExamResult[]>('exam_results', SEED_EXAM_RESULTS);
+    this.reportCards = getStorage<ReportCard[]>('report_cards', SEED_REPORT_CARDS);
+    this.quizResults = getStorage<QuizResult[]>('quiz_results', SEED_QUIZ_RESULTS);
   }
 
   saveAll() {
@@ -381,6 +537,27 @@ class MockDatabase {
     setStorage('email_addresses', this.emailAddresses);
     setStorage('academic_sessions', this.academicSessions);
     setStorage('homework_attachments', this.homeworkAttachments);
+    setStorage('books', this.books);
+    setStorage('drivers', this.drivers);
+    setStorage('buses', this.buses);
+    setStorage('routes', this.routes);
+    setStorage('pickup_points', this.pickupPoints);
+    setStorage('transport_assignments', this.transportAssignments);
+    setStorage('transport_fee_records', this.transportFeeRecords);
+    setStorage('vehicle_logs', this.vehicleLogs);
+    setStorage('maintenance_logs', this.maintenanceLogs);
+    setStorage('driver_attendance', this.driverAttendance);
+    setStorage('book_categories', this.bookCategories);
+    setStorage('book_issues', this.bookIssues);
+    setStorage('book_returns', this.bookReturns);
+    setStorage('library_fines', this.libraryFines);
+    setStorage('library_invoices', this.libraryInvoices);
+    setStorage('digital_library_assets', this.digitalLibraryAssets);
+    setStorage('exam_subjects', this.examSubjects);
+    setStorage('student_marks', this.studentMarks);
+    setStorage('exam_results', this.examResults);
+    setStorage('report_cards', this.reportCards);
+    setStorage('quiz_results', this.quizResults);
   }
 
   // --- CRUD HELPERS ---

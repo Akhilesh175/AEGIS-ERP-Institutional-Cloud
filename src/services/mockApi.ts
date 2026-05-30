@@ -4,7 +4,8 @@ import {
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizAttempt, 
   Exam, ExamMark, FeeStructure, FeePayment, PaymentStatus, ChatMessage, Announcement, 
   Notification, AuditLog, StudyMaterial, ExamSchedule, 
-  TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory, PhoneNumber, EmailAddress, Section, HomeworkAttachment
+  TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory, PhoneNumber, EmailAddress, Section, HomeworkAttachment,
+  Role, RolePermission
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans } from './subscriptionConfig';
@@ -1881,6 +1882,91 @@ export const mockApi = {
       }
     } catch (e) {
       console.error('Failed to sync subjects:', e);
+    }
+  },
+
+  async syncNotificationsData(userId: string): Promise<void> {
+    try {
+      const { data: dbNotifications } = await supabaseAdmin
+        .from('notifications')
+        .select('*')
+        .eq('user_id', userId);
+
+      if (dbNotifications) {
+        mockDb.notifications = mockDb.notifications.filter(n => n.userId !== userId);
+        dbNotifications.forEach((r: any) => {
+          const notify: Notification = {
+            id: r.id,
+            userId: r.user_id,
+            title: r.title,
+            message: r.content,
+            isRead: r.is_read,
+            createdAt: r.created_at
+          };
+          mockDb.notifications.push(notify);
+        });
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync notifications:', e);
+    }
+  },
+
+  async sendNotification(userId: string, title: string, message: string, type = 'ANNOUNCEMENT', schoolId?: string): Promise<Notification> {
+    const student = mockDb.students.find(s => s.userId === userId);
+    const teacher = mockDb.teachers.find(t => t.userId === userId);
+    const parent = mockDb.parents.find(p => p.userId === userId);
+    const resolvedSchoolId = schoolId || student?.schoolId || teacher?.schoolId || parent?.schoolId || null;
+
+    let dbRow: any = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('notifications')
+        .insert({
+          school_id: resolvedSchoolId,
+          user_id: userId,
+          title: title,
+          content: message,
+          type: type,
+          is_read: false
+        })
+        .select()
+        .single();
+      if (error) throw error;
+      dbRow = data;
+    } catch (e) {
+      console.error('Failed to save notification in DB:', e);
+    }
+
+    const notify: Notification = {
+      id: dbRow ? dbRow.id : 'n-' + Math.random().toString(36).substr(2, 9),
+      userId,
+      title,
+      message,
+      isRead: false,
+      createdAt: dbRow ? dbRow.created_at : new Date().toISOString()
+    };
+
+    const idx = mockDb.notifications.findIndex(n => n.id === notify.id);
+    if (idx === -1) mockDb.notifications.unshift(notify);
+    else mockDb.notifications[idx] = notify;
+    mockDb.saveAll();
+    return notify;
+  },
+
+  async markNotificationAsRead(notificationId: string): Promise<void> {
+    try {
+      await supabaseAdmin
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId);
+    } catch (e) {
+      console.error('Failed to mark notification as read in DB:', e);
+    }
+    const idx = mockDb.notifications.findIndex(n => n.id === notificationId);
+    if (idx !== -1) {
+      mockDb.notifications[idx].isRead = true;
+      mockDb.saveAll();
     }
   },
 
@@ -4056,6 +4142,141 @@ export const mockApi = {
     mockDb.saveAll();
   },
 
+  async adminCreateSubAdmin(
+    adminId: string, 
+    email: string, 
+    firstName: string, 
+    lastName: string, 
+    phone: string, 
+    role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER', 
+    password: string
+  ): Promise<void> {
+    await delay(600);
+    const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
+    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+
+    const schoolId = admin.school_id;
+    if (!schoolId) throw new Error('Admin has no associated school');
+
+    const normalizedEmail = validateAndNormalizeEmail(email);
+
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: normalizedEmail,
+      password,
+      email_confirm: true,
+      user_metadata: { school_id: schoolId, role: role }
+    });
+    if (authError || !authData.user) throw new Error('Failed to create auth user: ' + (authError?.message || 'Unknown error'));
+    
+    const newUserId = authData.user.id;
+    
+    // Insert into users table
+    const { error: dbError } = await supabaseAdmin.from('users').insert({
+      id: newUserId,
+      email: normalizedEmail,
+      role: role,
+      first_name: firstName,
+      last_name: lastName,
+      phone: phone,
+      school_id: schoolId,
+      is_active: true
+    });
+    
+    if (dbError) {
+      await supabaseAdmin.auth.admin.deleteUser(newUserId);
+      throw new Error('Failed to create user database profile: ' + dbError.message);
+    }
+
+    // Resolve matching role_id if exists
+    const { data: dbRole } = await supabaseAdmin
+      .from('roles')
+      .select('id')
+      .eq('school_id', schoolId)
+      .eq('role_code', role)
+      .maybeSingle();
+
+    const roleId = dbRole?.id || null;
+
+    // Dynamically insert into matching dedicated sub-admin table
+    let dedicatedTable = '';
+    if (role === 'FINANCE_ADMIN') dedicatedTable = 'finance_admins';
+    else if (role === 'ACADEMIC_ADMIN') dedicatedTable = 'academic_admins';
+    else if (role === 'EXAM_CONTROLLER') dedicatedTable = 'exam_controllers';
+    else if (role === 'LIBRARIAN') dedicatedTable = 'librarians';
+    else if (role === 'TRANSPORT_MANAGER') dedicatedTable = 'transport_managers';
+    else if (role === 'CUSTOM_SUB_ADMIN') dedicatedTable = 'custom_sub_admins';
+
+    if (dedicatedTable) {
+      const { error: profileErr } = await supabaseAdmin.from(dedicatedTable).insert({
+        user_id: newUserId,
+        school_id: schoolId,
+        role_id: roleId,
+        status: 'ACTIVE',
+        permissions: {}
+      });
+      if (profileErr) {
+        // Rollback
+        await supabaseAdmin.from('users').delete().eq('id', newUserId);
+        await supabaseAdmin.auth.admin.deleteUser(newUserId);
+        throw new Error('Failed to create dedicated sub-admin profile record: ' + profileErr.message);
+      }
+    }
+
+
+    // Write Audit Log
+    try {
+      await mockApi.writeAuditLog(
+        adminId,
+        null,
+        schoolId,
+        'directory',
+        'CREATE_USER',
+        newUserId,
+        null,
+        { email: normalizedEmail, firstName, lastName, role, phone }
+      );
+    } catch (err) {
+      console.error('Audit logging failed:', err);
+    }
+
+
+    // Insert login email into email_addresses table
+    await supabaseAdmin.from('email_addresses').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      email_type: 'LOGIN',
+      email: normalizedEmail,
+      is_primary: true,
+      is_verified: true
+    });
+
+    // Insert phone number into phone_numbers table if provided
+    if (phone) {
+      const parsedPhone = parseAndValidatePhone(phone);
+      if (parsedPhone.fullNumber) {
+        await supabaseAdmin.from('phone_numbers').insert({
+          user_id: newUserId,
+          school_id: schoolId,
+          phone_type: 'PRIMARY',
+          country_code: parsedPhone.countryCode,
+          national_number: parsedPhone.nationalNumber,
+          full_number: parsedPhone.fullNumber
+        });
+      }
+    }
+
+    // Sync to local mockDb cache
+    const user: User = {
+      id: newUserId, email: normalizedEmail, role: role, firstName, lastName,
+      phone: phone || '', avatarUrl: '', isActive: true, schoolId,
+      password, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    };
+    mockDb.users.push(user);
+
+    mockDb.addLog(adminId, 'CREATE_SUB_ADMIN', { subAdminName: `${firstName} ${lastName}`, role: role, email: normalizedEmail });
+    mockDb.saveAll();
+  },
+
   async adminCreateParent(
     adminId: string, 
     email: string, 
@@ -5266,8 +5487,8 @@ export const mockApi = {
     
     if (query) {
       filtered = filtered.filter(log => 
-        log.action.toLowerCase().includes(query.toLowerCase()) || 
-        log.userId?.toLowerCase().includes(query.toLowerCase())
+        (log.action || '').toLowerCase().includes(query.toLowerCase()) || 
+        (log.userId || '').toLowerCase().includes(query.toLowerCase())
       );
     }
 
@@ -6703,5 +6924,1078 @@ export const mockApi = {
     } catch {
       return null;
     }
+  },
+
+  async fetchRoles(schoolId: string): Promise<Role[]> {
+    const { data, error } = await supabaseAdmin
+      .from('roles')
+      .select('*')
+      .eq('school_id', schoolId);
+      
+    if (error || !data) return [];
+    
+    return data.map((d: any) => ({
+      id: d.id,
+      roleName: d.role_name,
+      roleCode: d.role_code,
+      description: d.description || undefined,
+      schoolId: d.school_id,
+      createdAt: d.created_at,
+      updatedAt: d.updated_at
+    }));
+  },
+
+  async fetchSchoolRolePermissions(schoolId: string): Promise<Record<string, Record<string, boolean>>> {
+    const { data: dbRoles, error: rolesError } = await supabaseAdmin
+      .from('roles')
+      .select('id, role_code')
+      .eq('school_id', schoolId);
+
+    const defaultMatrix: Record<string, Record<string, boolean>> = {
+      FINANCE_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
+      ACADEMIC_ADMIN: { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true },
+      EXAM_CONTROLLER: { billing: false, directory: false, academics: true, grading: true, security: false, books: false, transport: false },
+      LIBRARIAN: { billing: false, directory: false, academics: true, grading: false, security: false, books: true, transport: false },
+      TRANSPORT_MANAGER: { billing: true, directory: false, academics: false, grading: false, security: false, books: false, transport: true },
+      CUSTOM_SUB_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false }
+    };
+
+    if (rolesError || !dbRoles || dbRoles.length === 0) {
+      return defaultMatrix;
+    }
+
+    const matrix: Record<string, Record<string, boolean>> = {};
+    for (const roleCode of Object.keys(defaultMatrix)) {
+      const role = dbRoles.find(r => r.role_code === roleCode);
+      const rolePerms: Record<string, boolean> = { ...defaultMatrix[roleCode] };
+      
+      if (role) {
+        const { data: perms } = await supabaseAdmin
+          .from('role_permissions')
+          .select('module_name, can_view')
+          .eq('role_id', role.id);
+        
+        if (perms && perms.length > 0) {
+          perms.forEach((p: any) => {
+            rolePerms[p.module_name] = p.can_view;
+          });
+        }
+      }
+      matrix[roleCode] = rolePerms;
+    }
+    
+    return matrix;
+  },
+
+  async saveRolePermissionsMatrix(schoolId: string, matrix: Record<string, Record<string, boolean>>): Promise<void> {
+    const { data: dbRoles, error: rolesError } = await supabaseAdmin
+      .from('roles')
+      .select('id, role_code')
+      .eq('school_id', schoolId);
+      
+    if (rolesError || !dbRoles) throw new Error('Failed to load roles from database');
+
+    for (const [roleCode, modules] of Object.entries(matrix)) {
+      let role = dbRoles.find(r => r.role_code === roleCode);
+      
+      // If role somehow does not exist, create it dynamically
+      if (!role) {
+        const { data: newRole, error: createRoleErr } = await supabaseAdmin
+          .from('roles')
+          .insert({
+            role_name: roleCode.replace('_', ' '),
+            role_code: roleCode,
+            description: `Dynamic sub-admin role for ${roleCode}`,
+            school_id: schoolId
+          })
+          .select('id, role_code')
+          .single();
+          
+        if (createRoleErr || !newRole) {
+          console.error(`Failed to create missing role ${roleCode}`, createRoleErr);
+          continue;
+        }
+        role = newRole;
+      }
+      
+      for (const [moduleName, canView] of Object.entries(modules)) {
+        const { error } = await supabaseAdmin
+          .from('role_permissions')
+          .upsert({
+            role_id: role.id,
+            module_name: moduleName,
+            can_view: canView,
+            can_create: canView,
+            can_edit: canView,
+            can_delete: canView,
+            can_export: canView,
+            can_approve: canView
+          }, {
+            onConflict: 'role_id,module_name'
+          });
+        
+        if (error) {
+          console.error(`Error saving permission ${roleCode}:${moduleName}`, error);
+        }
+      }
+    }
+  },
+
+  async writeAuditLog(
+    userId: string | null,
+    roleId: string | null,
+    schoolId: string,
+    moduleName: string,
+    actionType: string,
+    targetId?: string,
+    oldData?: any,
+    newData?: any
+  ): Promise<void> {
+    let ipAddress = '127.0.0.1';
+    let userAgent = 'Browser (Aegis Web App Client)';
+    try {
+      userAgent = navigator.userAgent;
+    } catch {}
+
+    await supabaseAdmin
+      .from('audit_logs')
+      .insert({
+        user_id: userId || null,
+        role_id: roleId || null,
+        school_id: schoolId,
+        module_name: moduleName,
+        action_type: actionType,
+        target_id: targetId || null,
+        old_data: oldData || null,
+        new_data: newData || null,
+        ip_address: ipAddress,
+        user_agent: userAgent
+      });
+  },
+
+  async fetchAuditLogs(schoolId: string): Promise<AuditLog[]> {
+    const { data, error } = await supabaseAdmin
+      .from('audit_logs')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
+      
+    if (error || !data) return [];
+    
+    return data.map((d: any) => ({
+      id: d.id,
+      userId: d.user_id,
+      roleId: d.role_id,
+      moduleName: d.module_name,
+      actionType: d.action_type,
+      targetId: d.target_id,
+      oldData: d.old_data,
+      newData: d.new_data,
+      ipAddress: d.ip_address,
+      userAgent: d.user_agent,
+      schoolId: d.school_id,
+      createdAt: d.created_at
+    }));
+  },
+
+  async updateUserStatus(userId: string, isActive: boolean): Promise<void> {
+    const { data: userRow } = await supabaseAdmin
+      .from('users')
+      .select('role')
+      .eq('id', userId)
+      .single();
+
+    const { error } = await supabaseAdmin
+      .from('users')
+      .update({ is_active: isActive })
+      .eq('id', userId);
+      
+    if (error) throw new Error('Failed to update operator status in Supabase: ' + error.message);
+
+    if (userRow) {
+      let dedicatedTable = '';
+      if (userRow.role === 'FINANCE_ADMIN') dedicatedTable = 'finance_admins';
+      else if (userRow.role === 'ACADEMIC_ADMIN') dedicatedTable = 'academic_admins';
+      else if (userRow.role === 'EXAM_CONTROLLER') dedicatedTable = 'exam_controllers';
+      else if (userRow.role === 'LIBRARIAN') dedicatedTable = 'librarians';
+      else if (userRow.role === 'TRANSPORT_MANAGER') dedicatedTable = 'transport_managers';
+      else if (userRow.role === 'CUSTOM_SUB_ADMIN') dedicatedTable = 'custom_sub_admins';
+
+      if (dedicatedTable) {
+        await supabaseAdmin
+          .from(dedicatedTable)
+          .update({ status: isActive ? 'ACTIVE' : 'INACTIVE' })
+          .eq('user_id', userId);
+      }
+    }
+  },
+
+  async fetchOperators(schoolId: string): Promise<User[]> {
+    const adminRoles = [
+      'ADMIN', 'SUPER_ADMIN', 'FINANCE_ADMIN', 'ACADEMIC_ADMIN', 
+      'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'
+    ];
+    
+    const { data, error } = await supabaseAdmin
+      .from('users')
+      .select('*')
+      .eq('school_id', schoolId)
+      .in('role', adminRoles);
+      
+    if (error || !data) return [];
+    
+    const operatorsList: User[] = [];
+    for (const u of data) {
+      let isActiveStatus = u.is_active !== false;
+      let dedicatedTable = '';
+      if (u.role === 'FINANCE_ADMIN') dedicatedTable = 'finance_admins';
+      else if (u.role === 'ACADEMIC_ADMIN') dedicatedTable = 'academic_admins';
+      else if (u.role === 'EXAM_CONTROLLER') dedicatedTable = 'exam_controllers';
+      else if (u.role === 'LIBRARIAN') dedicatedTable = 'librarians';
+      else if (u.role === 'TRANSPORT_MANAGER') dedicatedTable = 'transport_managers';
+      else if (u.role === 'CUSTOM_SUB_ADMIN') dedicatedTable = 'custom_sub_admins';
+
+      if (dedicatedTable) {
+        const { data: profile } = await supabaseAdmin
+          .from(dedicatedTable)
+          .select('status')
+          .eq('user_id', u.id)
+          .maybeSingle();
+        if (profile) {
+          isActiveStatus = profile.status === 'ACTIVE';
+        }
+      }
+
+      operatorsList.push({
+        id: u.id,
+        email: u.email,
+        role: u.role,
+        firstName: u.first_name,
+        lastName: u.last_name,
+        phone: u.phone || undefined,
+        avatarUrl: u.avatar_url || undefined,
+        isActive: isActiveStatus,
+        schoolId: u.school_id,
+        createdAt: u.created_at,
+        updatedAt: u.updated_at,
+        roleId: u.role_id || undefined,
+        lastLoginAt: u.last_login_at || undefined,
+        loginDevice: u.login_device || undefined,
+        sessionStatus: u.session_status || 'OFFLINE'
+      });
+    }
+    
+    return operatorsList;
+  },
+
+  // --- Dedicated Finance Admin Helpers ---
+  async fetchInvoices(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('invoices')
+      .select('*, student:students(*, userDetails:users(*))')
+      .eq('school_id', schoolId);
+    if (error || !data) return [];
+    return data.map(d => ({
+      id: d.id,
+      invoiceNumber: d.invoice_number,
+      amount: Number(d.amount),
+      dueDate: d.due_date,
+      status: d.status,
+      createdAt: d.created_at,
+      studentName: d.student?.userDetails ? `${d.student.userDetails.first_name} ${d.student.userDetails.last_name}` : 'Unknown Student',
+      studentEmail: d.student?.userDetails?.email || 'N/A'
+    }));
+  },
+
+  async createInvoice(schoolId: string, sessionId: string, studentId: string, amount: number, dueDate: string): Promise<void> {
+    const invNumber = 'INV-' + Math.floor(100000 + Math.random() * 900000);
+    const { error } = await supabaseAdmin.from('invoices').insert({
+      school_id: schoolId,
+      academic_session_id: sessionId,
+      student_id: studentId,
+      invoice_number: invNumber,
+      amount: amount,
+      due_date: dueDate,
+      status: 'UNPAID'
+    });
+    if (error) throw new Error('Failed to generate fee invoice: ' + error.message);
+  },
+
+  async fetchPaymentLogs(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('payment_logs')
+      .select('*, payment:fee_payments(*)')
+      .eq('school_id', schoolId);
+    if (error || !data) return [];
+    return data;
+  },
+
+  async fetchTransportFeeRecords(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('transport_fee_records')
+      .select('*, student:students(*, userDetails:users(*)), route:routes(*)')
+      .eq('school_id', schoolId);
+    if (error || !data) return [];
+    return data;
+  },
+
+  // --- Dedicated Exam Controller Helpers ---
+  async fetchReportCards(schoolId: string, studentId?: string): Promise<any[]> {
+    let query = supabaseAdmin.from('report_cards').select('*, student:students(*, userDetails:users(*))').eq('school_id', schoolId);
+    if (studentId) query = query.eq('student_id', studentId);
+    const { data, error } = await query;
+    if (error || !data) return [];
+    return data.map(d => ({
+      id: d.id,
+      term: d.term,
+      attendancePercentage: Number(d.attendance_percentage || 0),
+      gradePointAverage: Number(d.grade_point_average || 0),
+      remarks: d.remarks || '',
+      fileUrl: d.file_url || '',
+      createdAt: d.created_at,
+      studentName: d.student?.userDetails ? `${d.student.userDetails.first_name} ${d.student.userDetails.last_name}` : 'Unknown Student'
+    }));
+  },
+
+  async createReportCard(
+    schoolId: string, sessionId: string, studentId: string, term: string, 
+    attendancePercentage: number, gradePointAverage: number, remarks: string, fileUrl: string
+  ): Promise<void> {
+    const { error } = await supabaseAdmin.from('report_cards').insert({
+      school_id: schoolId,
+      academic_session_id: sessionId,
+      student_id: studentId,
+      term: term,
+      attendance_percentage: attendancePercentage,
+      grade_point_average: gradePointAverage,
+      remarks: remarks,
+      file_url: fileUrl
+    });
+    if (error) throw new Error('Failed to publish student report card: ' + error.message);
+  },
+
+  async fetchQuizResults(schoolId: string, studentId?: string): Promise<any[]> {
+    let query = supabaseAdmin.from('quiz_results').select('*, student:students(*, userDetails:users(*)), quiz:quizzes(*)').eq('school_id', schoolId);
+    if (studentId) query = query.eq('student_id', studentId);
+    const { data, error } = await query;
+    if (error || !data) return [];
+    return data;
+  },
+
+  // --- Dedicated Librarian Helpers ---
+  async fetchBookInventory(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('book_inventory')
+      .select('*, book:books(*)')
+      .eq('school_id', schoolId);
+    if (error || !data) return [];
+    return data;
+  },
+
+  async fetchDigitalLibraryAssets(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('digital_library_assets')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) return [];
+    return data.map(d => ({
+      id: d.id,
+      title: d.title,
+      author: d.author || 'Anonymous',
+      fileUrl: d.file_url,
+      fileType: d.file_type || 'pdf',
+      createdAt: d.created_at
+    }));
+  },
+
+  // --- Dedicated Transport Manager Helpers ---
+  async fetchDrivers(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('drivers')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) return [];
+    return data.map(d => ({
+      id: d.id,
+      name: d.name,
+      licenseNumber: d.license_number,
+      phone: d.phone,
+      status: d.status,
+      createdAt: d.created_at
+    }));
+  },
+
+  async createDriver(schoolId: string, sessionId: string, name: string, licenseNumber: string, phone: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('drivers').insert({
+      school_id: schoolId,
+      academic_session_id: sessionId || null,
+      name: name,
+      license_number: licenseNumber,
+      phone: phone,
+      status: 'ACTIVE'
+    });
+    if (error) throw new Error('Failed to register driver: ' + error.message);
+  },
+
+  async fetchPickupPoints(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('pickup_points')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) return [];
+    return data;
+  },
+
+  async fetchVehicleLogs(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('vehicle_logs')
+      .select('*, bus:buses(*)')
+      .eq('school_id', schoolId);
+    if (error || !data) return mockDb.vehicleLogs.filter(vl => vl.schoolId === schoolId);
+    return data;
+  },
+
+  // --- Dedicated Buses & Transport CRUD ---
+  async fetchBuses(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('buses')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) return mockDb.buses.filter(b => b.schoolId === schoolId);
+    return data.map(b => ({
+      id: b.id,
+      numberPlate: b.number_plate || b.numberPlate,
+      capacity: Number(b.capacity || 0),
+      status: b.status,
+      driverId: b.driver_id || b.driverId,
+      createdAt: b.created_at
+    }));
+  },
+
+  async createBus(schoolId: string, numberPlate: string, capacity: number, status: string, driverId: string | null): Promise<void> {
+    const { error } = await supabaseAdmin.from('buses').insert({
+      school_id: schoolId,
+      number_plate: numberPlate,
+      capacity,
+      status,
+      driver_id: driverId || null
+    });
+    if (error) {
+      mockDb.buses.push({
+        id: 'bus-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        numberPlate,
+        capacity,
+        status: status as any,
+        driverId,
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async deleteBus(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('buses').delete().eq('id', id);
+    if (error) {
+      const idx = mockDb.buses.findIndex(b => b.id === id);
+      if (idx !== -1) {
+        mockDb.buses.splice(idx, 1);
+        mockDb.saveAll();
+      }
+    }
+  },
+
+  async fetchRoutes(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('routes')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) return mockDb.routes.filter(r => r.schoolId === schoolId);
+    return data.map(r => ({
+      id: r.id,
+      name: r.name,
+      routeCode: r.route_code || r.routeCode,
+      startPoint: r.start_point || r.startPoint,
+      endPoint: r.end_point || r.endPoint,
+      fare: Number(r.fare || 0),
+      createdAt: r.created_at
+    }));
+  },
+
+  async createRoute(schoolId: string, name: string, routeCode: string, startPoint: string, endPoint: string, fare: number): Promise<void> {
+    const { error } = await supabaseAdmin.from('routes').insert({
+      school_id: schoolId,
+      name,
+      route_code: routeCode,
+      start_point: startPoint,
+      end_point: endPoint,
+      fare
+    });
+    if (error) {
+      mockDb.routes.push({
+        id: 'rt-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        name,
+        routeCode,
+        startPoint,
+        endPoint,
+        fare,
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async deleteRoute(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('routes').delete().eq('id', id);
+    if (error) {
+      const idx = mockDb.routes.findIndex(r => r.id === id);
+      if (idx !== -1) {
+        mockDb.routes.splice(idx, 1);
+        mockDb.saveAll();
+      }
+    }
+  },
+
+  async fetchTransportAssignments(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('transport_assignments')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) return mockDb.transportAssignments.filter(ta => ta.schoolId === schoolId);
+    return data.map(ta => ({
+      id: ta.id,
+      studentId: ta.student_id || ta.studentId,
+      routeId: ta.route_id || ta.routeId,
+      busId: ta.bus_id || ta.busId,
+      pickupPointId: ta.pickup_point_id || ta.pickupPointId,
+      status: ta.status,
+      createdAt: ta.created_at
+    }));
+  },
+
+  async createTransportAssignment(schoolId: string, studentId: string, routeId: string, busId: string, pickupPointId: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('transport_assignments').insert({
+      school_id: schoolId,
+      student_id: studentId,
+      route_id: routeId,
+      bus_id: busId,
+      pickup_point_id: pickupPointId,
+      status: 'ACTIVE'
+    });
+    if (error) {
+      mockDb.transportAssignments.push({
+        id: 'ta-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        studentId,
+        routeId,
+        busId,
+        pickupPointId,
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async deleteTransportAssignment(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('transport_assignments').delete().eq('id', id);
+    if (error) {
+      const idx = mockDb.transportAssignments.findIndex(ta => ta.id === id);
+      if (idx !== -1) {
+        mockDb.transportAssignments.splice(idx, 1);
+        mockDb.saveAll();
+      }
+    }
+  },
+
+  async fetchMaintenanceLogs(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('maintenance_logs')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) return mockDb.maintenanceLogs.filter(ml => ml.schoolId === schoolId);
+    return data;
+  },
+
+  async createMaintenanceLog(schoolId: string, busId: string, logDate: string, description: string, cost: number): Promise<void> {
+    const { error } = await supabaseAdmin.from('maintenance_logs').insert({
+      school_id: schoolId,
+      bus_id: busId,
+      log_date: logDate,
+      description,
+      cost
+    });
+    if (error) {
+      mockDb.maintenanceLogs.push({
+        id: 'ml-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        busId,
+        logDate,
+        description,
+        cost,
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async fetchDriverAttendance(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('driver_attendance')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) return mockDb.driverAttendance.filter(da => da.schoolId === schoolId);
+    return data;
+  },
+
+  async markDriverAttendance(schoolId: string, driverId: string, date: string, status: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('driver_attendance').upsert({
+      school_id: schoolId,
+      driver_id: driverId,
+      date,
+      status
+    }, { onConflict: 'driver_id,date' });
+    if (error) {
+      const idx = mockDb.driverAttendance.findIndex(da => da.driverId === driverId && da.date === date);
+      if (idx === -1) {
+        mockDb.driverAttendance.push({
+          id: 'da-' + Math.random().toString(36).substr(2, 9),
+          schoolId,
+          driverId,
+          date,
+          status: status as any,
+          createdAt: new Date().toISOString()
+        });
+      } else {
+        mockDb.driverAttendance[idx].status = status as any;
+      }
+      mockDb.saveAll();
+    }
+  },
+
+  // --- Admin Book CRUD ---
+  async adminCreateBook(title: string, author: string, isbn: string, subject: string, totalCopies: number): Promise<void> {
+    const newBook = {
+      id: 'bk-' + Math.random().toString(36).substr(2, 9),
+      schoolId: '',
+      title,
+      author,
+      isbn,
+      subject,
+      totalCopies,
+      availableCopies: totalCopies,
+      createdAt: new Date().toISOString()
+    };
+    const { error } = await supabaseAdmin.from('book_inventory').insert({
+      title,
+      author,
+      isbn,
+      subject,
+      total_copies: totalCopies,
+      available_copies: totalCopies
+    });
+    if (error) {
+      mockDb.books.push(newBook);
+      mockDb.saveAll();
+    }
+  },
+
+  // --- Dedicated Library CRUD ---
+  async fetchBookCategories(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('book_categories')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) return mockDb.bookCategories.filter(bc => bc.schoolId === schoolId);
+    return data;
+  },
+
+  async createBookCategory(schoolId: string, name: string, code: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('book_categories').insert({
+      school_id: schoolId,
+      name,
+      code
+    });
+    if (error) {
+      mockDb.bookCategories.push({
+        id: 'bc-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        name,
+        code,
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async deleteBookCategory(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('book_categories').delete().eq('id', id);
+    if (error) {
+      const idx = mockDb.bookCategories.findIndex(bc => bc.id === id);
+      if (idx !== -1) {
+        mockDb.bookCategories.splice(idx, 1);
+        mockDb.saveAll();
+      }
+    }
+  },
+
+  async fetchBookIssues(schoolId: string, studentId?: string): Promise<any[]> {
+    let query = supabaseAdmin.from('book_issues').select('*, book:books(*), student:students(*, userDetails:users(*))').eq('school_id', schoolId);
+    if (studentId) query = query.eq('student_id', studentId);
+    const { data, error } = await query;
+    if (error || !data) {
+      const local = mockDb.bookIssues.filter(bi => bi.schoolId === schoolId);
+      if (studentId) return local.filter(bi => bi.studentId === studentId);
+      return local;
+    }
+    return data;
+  },
+
+  async issueBook(schoolId: string, bookId: string, studentId: string, issueDate: string, dueDate: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('book_issues').insert({
+      school_id: schoolId,
+      book_id: bookId,
+      student_id: studentId,
+      issue_date: issueDate,
+      due_date: dueDate,
+      status: 'ISSUED'
+    });
+    if (error) {
+      mockDb.bookIssues.push({
+        id: 'bi-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        bookId,
+        studentId,
+        issueDate,
+        dueDate,
+        returnDate: null,
+        fineAmount: 0,
+        status: 'ISSUED',
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async returnBook(schoolId: string, issueId: string, returnDate: string, fineAmount: number, status: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('book_returns').insert({
+      school_id: schoolId,
+      issue_id: issueId,
+      return_date: returnDate,
+      fine_amount: fineAmount,
+      status
+    });
+    await supabaseAdmin.from('book_issues').update({ status: 'RETURNED', return_date: returnDate, fine_amount: fineAmount }).eq('id', issueId);
+    if (error) {
+      const idx = mockDb.bookIssues.findIndex(bi => bi.id === issueId);
+      if (idx !== -1) {
+        mockDb.bookIssues[idx].status = 'RETURNED';
+        mockDb.bookIssues[idx].returnDate = returnDate;
+        mockDb.bookIssues[idx].fineAmount = fineAmount;
+      }
+      mockDb.bookReturns.push({
+        id: 'br-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        issueId,
+        returnDate,
+        fineAmount,
+        status: status as any,
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async fetchLibraryFines(schoolId: string, studentId?: string): Promise<any[]> {
+    let query = supabaseAdmin.from('library_fines').select('*, issue:book_issues(*, book:books(*)), student:students(*, userDetails:users(*))').eq('school_id', schoolId);
+    if (studentId) query = query.eq('student_id', studentId);
+    const { data, error } = await query;
+    if (error || !data) {
+      const local = mockDb.libraryFines.filter(lf => lf.schoolId === schoolId);
+      if (studentId) return local.filter(lf => lf.studentId === studentId);
+      return local;
+    }
+    return data;
+  },
+
+  async payLibraryFine(schoolId: string, fineId: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('library_fines').update({ is_paid: true }).eq('id', fineId);
+    if (error) {
+      const idx = mockDb.libraryFines.findIndex(lf => lf.id === fineId);
+      if (idx !== -1) {
+        mockDb.libraryFines[idx].isPaid = true;
+        mockDb.saveAll();
+      }
+    }
+  },
+
+  async createDigitalLibraryAsset(schoolId: string, title: string, author: string, fileUrl: string, fileType: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('digital_library_assets').insert({
+      school_id: schoolId,
+      title,
+      author,
+      file_url: fileUrl,
+      file_type: fileType
+    });
+    if (error) {
+      mockDb.digitalLibraryAssets.push({
+        id: 'dla-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        title,
+        author,
+        fileUrl,
+        fileType,
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async fetchLibraryInvoices(schoolId: string, studentId?: string): Promise<any[]> {
+    let query = supabaseAdmin.from('library_invoices').select('*, student:students(*, userDetails:users(*))').eq('school_id', schoolId);
+    if (studentId) query = query.eq('student_id', studentId);
+    const { data, error } = await query;
+    if (error || !data) {
+      const local = mockDb.libraryInvoices.filter(li => li.schoolId === schoolId);
+      if (studentId) return local.filter(li => li.studentId === studentId);
+      return local;
+    }
+    return data;
+  },
+
+  // --- Dedicated Exams CRUD ---
+  async fetchExams(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('exams')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) return mockDb.exams.filter(e => e.schoolId === schoolId);
+    return data;
+  },
+
+  async createExam(schoolId: string, academicSessionId: string, name: string, term: string, startDate: string, endDate: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('exams').insert({
+      school_id: schoolId,
+      academic_session_id: academicSessionId,
+      name,
+      term,
+      start_date: startDate,
+      end_date: endDate
+    });
+    if (error) {
+      mockDb.exams.push({
+        id: 'ex-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        academicSessionId,
+        name,
+        startDate,
+        endDate
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async deleteExam(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('exams').delete().eq('id', id);
+    if (error) {
+      const idx = mockDb.exams.findIndex(e => e.id === id);
+      if (idx !== -1) {
+        mockDb.exams.splice(idx, 1);
+        mockDb.saveAll();
+      }
+    }
+  },
+
+  async fetchExamSubjects(schoolId: string, examId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('exam_subjects')
+      .select('*, subject:subjects(*)')
+      .eq('school_id', schoolId)
+      .eq('exam_id', examId);
+    if (error || !data) return mockDb.examSubjects.filter(es => es.schoolId === schoolId && es.examId === examId);
+    return data;
+  },
+
+  async createExamSubject(schoolId: string, examId: string, subjectId: string, maxMarks: number, passingMarks: number): Promise<void> {
+    const { error } = await supabaseAdmin.from('exam_subjects').insert({
+      school_id: schoolId,
+      exam_id: examId,
+      subject_id: subjectId,
+      max_marks: maxMarks,
+      passing_marks: passingMarks
+    });
+    if (error) {
+      mockDb.examSubjects.push({
+        id: 'es-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        examId,
+        subjectId,
+        maxMarks,
+        passingMarks,
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async fetchStudentMarks(schoolId: string, examId: string, subjectId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('student_marks')
+      .select('*, student:students(*, userDetails:users(*))')
+      .eq('school_id', schoolId)
+      .eq('exam_id', examId)
+      .eq('subject_id', subjectId);
+    if (error || !data) return mockDb.studentMarks.filter(sm => sm.schoolId === schoolId && sm.examId === examId && sm.subjectId === subjectId);
+    return data;
+  },
+
+  async enterStudentMarks(schoolId: string, examId: string, subjectId: string, studentId: string, marksObtained: number, remarks: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('student_marks').upsert({
+      school_id: schoolId,
+      exam_id: examId,
+      subject_id: subjectId,
+      student_id: studentId,
+      marks_obtained: marksObtained,
+      remarks
+    }, { onConflict: 'exam_id,subject_id,student_id' });
+    if (error) {
+      const idx = mockDb.studentMarks.findIndex(sm => sm.examId === examId && sm.subjectId === subjectId && sm.studentId === studentId);
+      if (idx === -1) {
+        mockDb.studentMarks.push({
+          id: 'sm-' + Math.random().toString(36).substr(2, 9),
+          schoolId,
+          examId,
+          subjectId,
+          studentId,
+          marksObtained,
+          remarks,
+          createdAt: new Date().toISOString()
+        });
+      } else {
+        mockDb.studentMarks[idx].marksObtained = marksObtained;
+        mockDb.studentMarks[idx].remarks = remarks;
+      }
+      mockDb.saveAll();
+    }
+  },
+
+  async fetchExamResults(schoolId: string, examId?: string, studentId?: string): Promise<any[]> {
+    let query = supabaseAdmin.from('exam_results').select('*, student:students(*, userDetails:users(*)), exam:exams(*)').eq('school_id', schoolId);
+    if (examId) query = query.eq('exam_id', examId);
+    if (studentId) query = query.eq('student_id', studentId);
+    const { data, error } = await query;
+    if (error || !data) {
+      let local = mockDb.examResults.filter(er => er.schoolId === schoolId);
+      if (examId) local = local.filter(er => er.examId === examId);
+      if (studentId) local = local.filter(er => er.studentId === studentId);
+      return local;
+    }
+    return data;
+  },
+
+  async publishExamResults(schoolId: string, examId: string, studentId: string, totalMarks: number, marksObtained: number, percentage: number, grade: string, status: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('exam_results').upsert({
+      school_id: schoolId,
+      student_id: studentId,
+      exam_id: examId,
+      total_marks: totalMarks,
+      marks_obtained: marksObtained,
+      percentage,
+      grade,
+      status
+    }, { onConflict: 'student_id,exam_id' });
+    if (error) {
+      const idx = mockDb.examResults.findIndex(er => er.examId === examId && er.studentId === studentId);
+      if (idx === -1) {
+        mockDb.examResults.push({
+          id: 'er-' + Math.random().toString(36).substr(2, 9),
+          schoolId,
+          studentId,
+          examId,
+          totalMarks,
+          marksObtained,
+          percentage,
+          grade,
+          status: status as any,
+          createdAt: new Date().toISOString()
+        });
+      } else {
+        mockDb.examResults[idx].totalMarks = totalMarks;
+        mockDb.examResults[idx].marksObtained = marksObtained;
+        mockDb.examResults[idx].percentage = percentage;
+        mockDb.examResults[idx].grade = grade;
+        mockDb.examResults[idx].status = status as any;
+      }
+      mockDb.saveAll();
+    }
+  },
+
+  async adminPromoteStudents(schoolId: string, studentIds: string[], targetClassId: string): Promise<void> {
+    const { error } = await supabaseAdmin
+      .from('students')
+      .update({ class_id: targetClassId })
+      .in('id', studentIds);
+    if (error) {
+      studentIds.forEach(id => {
+        const student = mockDb.students.find(s => s.id === id);
+        if (student) {
+          student.classId = targetClassId;
+        }
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async createPickupPoint(schoolId: string, name: string, latitude: number, longitude: number, routeId: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('pickup_points').insert({
+      school_id: schoolId,
+      name,
+      latitude,
+      longitude,
+      route_id: routeId
+    });
+    if (error) {
+      mockDb.pickupPoints.push({
+        id: 'pp-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        name,
+        latitude,
+        longitude,
+        routeId,
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
+  },
+
+  async deletePickupPoint(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('pickup_points').delete().eq('id', id);
+    if (error) {
+      const idx = mockDb.pickupPoints.findIndex(pp => pp.id === id);
+      if (idx !== -1) {
+        mockDb.pickupPoints.splice(idx, 1);
+        mockDb.saveAll();
+      }
+    }
+  },
+
+  async fetchAllStudentMarks(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('student_marks')
+      .select('*, student:students(*, userDetails:users(*))')
+      .eq('school_id', schoolId);
+    if (error || !data) return mockDb.studentMarks.filter(sm => sm.schoolId === schoolId);
+    return data;
+  },
+
+  async fetchAllExamSubjects(schoolId: string): Promise<any[]> {
+    const { data, error } = await supabaseAdmin
+      .from('exam_subjects')
+      .select('*, subject:subjects(*)')
+      .eq('school_id', schoolId);
+    if (error || !data) return mockDb.examSubjects.filter(es => es.schoolId === schoolId);
+    return data;
   }
 };
+
