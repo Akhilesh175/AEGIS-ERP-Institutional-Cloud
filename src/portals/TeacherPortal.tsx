@@ -561,6 +561,15 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_marks' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_schedules' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exams' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'report_cards' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buses' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pickup_points' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_assignments' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_attendance' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, handleAcademicSync)
       .subscribe();
 
     return () => {

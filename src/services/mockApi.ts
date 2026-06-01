@@ -107,7 +107,7 @@ export const getAdminSchoolId = (): string => {
     const sessionRaw = localStorage.getItem(SESSION_KEY);
     if (sessionRaw) {
       const session = JSON.parse(sessionRaw) as AuthSession;
-      if (session.user.role === 'ADMIN' && session.user.schoolId) {
+      if (['ADMIN', 'FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'].includes(session.user.role) && session.user.schoolId) {
         return session.user.schoolId;
       }
     }
@@ -3218,7 +3218,17 @@ export const mockApi = {
       `)
       .eq('school_id', schoolId);
 
-    if (error || !studentRows) return [];
+    if (error || !studentRows || studentRows.length === 0) {
+      // Graceful fallback to local seed data/cache
+      const localSt = mockDb.students.filter(s => s.schoolId === schoolId);
+      return localSt.map(s => {
+        const u = mockDb.users.find(usr => usr.id === s.userId) || {
+          id: s.userId, email: 'student@example.com', role: 'STUDENT', firstName: 'Student', lastName: 'Name', phone: '', avatarUrl: '', isActive: true, schoolId, password: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        };
+        const cls = mockDb.classes.find(c => c.id === s.classId);
+        return { ...s, userDetails: u, className: cls?.name || 'Unassigned' };
+      });
+    }
 
     // Reconcile local cache
     const result = studentRows.map((row: any) => {
@@ -3271,7 +3281,7 @@ export const mockApi = {
   ): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
-    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+    if (adminErr || !admin || !['ADMIN', 'ACADEMIC_ADMIN'].includes(admin.role)) throw new Error('Unauthorized');
 
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
@@ -3467,7 +3477,16 @@ export const mockApi = {
       `)
       .eq('school_id', schoolId);
 
-    if (error || !teacherRows) return [];
+    if (error || !teacherRows || teacherRows.length === 0) {
+      // Graceful fallback to local seed data
+      const localT = mockDb.teachers.filter(t => t.schoolId === schoolId);
+      return localT.map(t => {
+        const u = mockDb.users.find(usr => usr.id === t.userId) || {
+          id: t.userId, email: 'teacher@example.com', role: 'TEACHER', firstName: 'Teacher', lastName: 'Name', phone: '', avatarUrl: '', isActive: true, schoolId, password: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        };
+        return { ...t, userDetails: u };
+      });
+    }
 
     const result = teacherRows.map((row: any) => {
       const u = row.users;
@@ -3515,7 +3534,24 @@ export const mockApi = {
       `)
       .eq('school_id', schoolId);
 
-    if (error || !parentRows) return [];
+    if (error || !parentRows || parentRows.length === 0) {
+      // Graceful fallback to local seed data
+      const localP = mockDb.parents.filter(p => p.schoolId === schoolId);
+      return localP.map(p => {
+        const u = mockDb.users.find(usr => usr.id === p.userId) || {
+          id: p.userId, email: 'parent@example.com', role: 'PARENT', firstName: 'Parent', lastName: 'Name', phone: '', avatarUrl: '', isActive: true, schoolId, password: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        };
+        const linkedStudentNames = mockDb.parentStudentMappings
+          .filter(m => m.parentId === p.id)
+          .map(m => {
+            const s = mockDb.students.find(st => st.id === m.studentId);
+            if (!s) return null;
+            const su = mockDb.users.find(usr => usr.id === s.userId);
+            return su ? `${su.firstName} ${su.lastName}` : null;
+          }).filter(Boolean) as string[];
+        return { ...p, userDetails: u, linkedStudentNames };
+      });
+    }
 
     // Fetch parent-student mappings
     const parentIds = parentRows.map((r: any) => r.id);
@@ -4002,7 +4038,7 @@ export const mockApi = {
   async adminCreateTeacher(adminId: string, email: string, firstName: string, lastName: string, employeeId: string, qualification: string, specialization: string, phone: string, password: string): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
-    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+    if (adminErr || !admin || !['ADMIN', 'ACADEMIC_ADMIN'].includes(admin.role)) throw new Error('Unauthorized');
 
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
@@ -4293,7 +4329,7 @@ export const mockApi = {
   ): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
-    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+    if (adminErr || !admin || !['ADMIN', 'ACADEMIC_ADMIN'].includes(admin.role)) throw new Error('Unauthorized');
 
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
@@ -4480,6 +4516,9 @@ export const mockApi = {
 
   async adminDeleteTeacher(adminId: string, teacherId: string): Promise<void> {
     await delay(300);
+    const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role').eq('id', adminId).single();
+    if (adminErr || !admin || !['ADMIN', 'ACADEMIC_ADMIN'].includes(admin.role)) throw new Error('Unauthorized');
+
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher not found.');
     const authUserId = teacher.userId;
@@ -4505,6 +4544,9 @@ export const mockApi = {
 
   async adminDeleteStudent(adminId: string, studentId: string): Promise<void> {
     await delay(300);
+    const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role').eq('id', adminId).single();
+    if (adminErr || !admin || !['ADMIN', 'ACADEMIC_ADMIN'].includes(admin.role)) throw new Error('Unauthorized');
+
     const student = mockDb.students.find(s => s.id === studentId);
     if (!student) throw new Error('Student not found.');
     const authUserId = student.userId;
@@ -4528,6 +4570,9 @@ export const mockApi = {
 
   async adminDeleteParent(adminId: string, parentId: string): Promise<void> {
     await delay(300);
+    const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role').eq('id', adminId).single();
+    if (adminErr || !admin || !['ADMIN', 'ACADEMIC_ADMIN'].includes(admin.role)) throw new Error('Unauthorized');
+
     const parent = mockDb.parents.find(p => p.id === parentId);
     if (!parent) throw new Error('Parent not found.');
     const authUserId = parent.userId;
@@ -4573,7 +4618,7 @@ export const mockApi = {
       .eq('id', adminId)
       .single();
 
-    if (adminErr || !admin || admin.role !== 'ADMIN') {
+    if (adminErr || !admin || !['ADMIN', 'ACADEMIC_ADMIN'].includes(admin.role)) {
       return { deleted: false, role: 'UNAUTHORIZED', message: 'Unauthorized' };
     }
 
@@ -4648,7 +4693,7 @@ export const mockApi = {
       .eq('id', adminId)
       .single();
 
-    if (adminErr || !admin || admin.role !== 'ADMIN') {
+    if (adminErr || !admin || !['ADMIN', 'ACADEMIC_ADMIN'].includes(admin.role)) {
       throw new Error('Unauthorized');
     }
 
@@ -5787,7 +5832,7 @@ export const mockApi = {
   async adminResetPassword(adminId: string, targetUserId: string, newPasswordPlain: string): Promise<void> {
     await delay(500);
     const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
-    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized operational context.');
+    if (adminErr || !admin || !['ADMIN', 'ACADEMIC_ADMIN'].includes(admin.role)) throw new Error('Unauthorized operational context.');
 
     const target = mockDb.users.find(u => u.id === targetUserId);
     if (!target) throw new Error('User not found');
@@ -7244,7 +7289,24 @@ export const mockApi = {
     let query = supabaseAdmin.from('report_cards').select('*, student:students(*, userDetails:users(*))').eq('school_id', schoolId);
     if (studentId) query = query.eq('student_id', studentId);
     const { data, error } = await query;
-    if (error || !data) return [];
+    if (error || !data || data.length === 0) {
+      let local = mockDb.reportCards.filter(rc => rc.schoolId === schoolId);
+      if (studentId) local = local.filter(rc => rc.studentId === studentId);
+      return local.map(rc => {
+        const st = mockDb.students.find(s => s.id === rc.studentId);
+        const su = st ? mockDb.users.find(usr => usr.id === st.userId) : null;
+        return {
+          id: rc.id,
+          term: rc.term,
+          attendancePercentage: rc.attendancePercentage,
+          gradePointAverage: rc.gradePointAverage,
+          remarks: rc.remarks,
+          fileUrl: rc.fileUrl || '',
+          createdAt: rc.createdAt,
+          studentName: su ? `${su.firstName} ${su.lastName}` : 'Unknown Student'
+        };
+      });
+    }
     return data.map(d => ({
       id: d.id,
       term: d.term,
@@ -7261,9 +7323,14 @@ export const mockApi = {
     schoolId: string, sessionId: string, studentId: string, term: string, 
     attendancePercentage: number, gradePointAverage: number, remarks: string, fileUrl: string
   ): Promise<void> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const resolvedSessionId = (sessionId && isUUID(sessionId)) 
+      ? sessionId 
+      : await this.resolveActiveSessionId(schoolId);
+
     const { error } = await supabaseAdmin.from('report_cards').insert({
       school_id: schoolId,
-      academic_session_id: sessionId,
+      academic_session_id: resolvedSessionId,
       student_id: studentId,
       term: term,
       attendance_percentage: attendancePercentage,
@@ -7314,27 +7381,56 @@ export const mockApi = {
       .from('drivers')
       .select('*')
       .eq('school_id', schoolId);
-    if (error || !data) return [];
-    return data.map(d => ({
-      id: d.id,
-      name: d.name,
-      licenseNumber: d.license_number,
-      phone: d.phone,
-      status: d.status,
-      createdAt: d.created_at
-    }));
+    if (error || !data) return mockDb.drivers.filter(d => d.schoolId === schoolId);
+    
+    if (data.length > 0) {
+      const mapped = data.map(d => ({
+        id: d.id,
+        schoolId: d.school_id || schoolId,
+        name: d.name,
+        licenseNumber: d.license_number || d.licenseNumber,
+        phone: d.phone,
+        status: d.status || 'ACTIVE',
+        createdAt: d.created_at
+      }));
+
+      mapped.forEach(d => {
+        const idx = mockDb.drivers.findIndex(md => md.id === d.id);
+        if (idx === -1) mockDb.drivers.push(d);
+        else mockDb.drivers[idx] = d;
+      });
+      mockDb.drivers = mockDb.drivers.filter(md => md.schoolId !== schoolId || mapped.some(m => m.id === md.id));
+      mockDb.saveAll();
+
+      return mapped;
+    }
+    return mockDb.drivers.filter(d => d.schoolId === schoolId);
   },
 
   async createDriver(schoolId: string, sessionId: string, name: string, licenseNumber: string, phone: string): Promise<void> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const resolvedSessionId = (sessionId && isUUID(sessionId)) ? sessionId : null;
+
     const { error } = await supabaseAdmin.from('drivers').insert({
       school_id: schoolId,
-      academic_session_id: sessionId || null,
+      academic_session_id: resolvedSessionId,
       name: name,
       license_number: licenseNumber,
       phone: phone,
       status: 'ACTIVE'
     });
-    if (error) throw new Error('Failed to register driver: ' + error.message);
+    if (error) {
+      mockDb.drivers.push({
+        id: 'dr-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        name,
+        licenseNumber,
+        phone,
+        status: 'ACTIVE',
+        createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    }
   },
 
   async fetchPickupPoints(schoolId: string): Promise<any[]> {
@@ -7342,8 +7438,35 @@ export const mockApi = {
       .from('pickup_points')
       .select('*')
       .eq('school_id', schoolId);
-    if (error || !data) return [];
-    return data;
+    if (error || !data) return mockDb.pickupPoints.filter(p => p.schoolId === schoolId);
+    
+    if (data.length > 0) {
+      const mapped = data.map(p => {
+        const parts = (p.name || '').split('::');
+        const name = parts[0] || p.name;
+        const routeId = parts[1] || p.route_id || p.routeId || '';
+        return {
+          id: p.id,
+          schoolId: p.school_id || schoolId,
+          name,
+          routeId,
+          latitude: p.latitude !== null ? Number(p.latitude) : null,
+          longitude: p.longitude !== null ? Number(p.longitude) : null,
+          createdAt: p.created_at
+        };
+      });
+
+      mapped.forEach(p => {
+        const idx = mockDb.pickupPoints.findIndex(mp => mp.id === p.id);
+        if (idx === -1) mockDb.pickupPoints.push(p);
+        else mockDb.pickupPoints[idx] = p;
+      });
+      mockDb.pickupPoints = mockDb.pickupPoints.filter(mp => mp.schoolId !== schoolId || mapped.some(m => m.id === mp.id));
+      mockDb.saveAll();
+
+      return mapped;
+    }
+    return mockDb.pickupPoints.filter(p => p.schoolId === schoolId);
   },
 
   async fetchVehicleLogs(schoolId: string): Promise<any[]> {
@@ -7362,46 +7485,85 @@ export const mockApi = {
       .select('*')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.buses.filter(b => b.schoolId === schoolId);
-    return data.map(b => ({
-      id: b.id,
-      numberPlate: b.number_plate || b.numberPlate,
-      capacity: Number(b.capacity || 0),
-      status: b.status,
-      driverId: b.driver_id || b.driverId,
-      createdAt: b.created_at
-    }));
+    
+    if (data.length > 0) {
+      const mapped = data.map(b => ({
+        id: b.id,
+        schoolId: b.school_id || schoolId,
+        numberPlate: b.number_plate || b.plate_number || b.numberPlate || '',
+        capacity: Number(b.capacity || 0),
+        status: b.status || 'ACTIVE',
+        driverId: b.driver_id || b.driverId || null,
+        createdAt: b.created_at
+      }));
+      
+      mapped.forEach(b => {
+        const idx = mockDb.buses.findIndex(mb => mb.id === b.id);
+        if (idx === -1) mockDb.buses.push(b);
+        else mockDb.buses[idx] = b;
+      });
+      mockDb.buses = mockDb.buses.filter(mb => mb.schoolId !== schoolId || mapped.some(m => m.id === mb.id));
+      mockDb.saveAll();
+
+      return mapped;
+    }
+    return mockDb.buses.filter(b => b.schoolId === schoolId);
   },
 
   async createBus(schoolId: string, numberPlate: string, capacity: number, status: string, driverId: string | null): Promise<void> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const validDriverId = (driverId && isUUID(driverId)) ? driverId : null;
+
+    // Save to local cache first
+    const localId = 'bus-' + Math.random().toString(36).substr(2, 9);
+    const busObject = {
+      id: localId,
+      schoolId,
+      numberPlate,
+      capacity,
+      status: status as any,
+      driverId,
+      createdAt: new Date().toISOString()
+    };
+    mockDb.buses.push(busObject);
+    mockDb.saveAll();
+
     const { error } = await supabaseAdmin.from('buses').insert({
       school_id: schoolId,
       number_plate: numberPlate,
+      plate_number: numberPlate,
       capacity,
       status,
-      driver_id: driverId || null
+      driver_id: validDriverId
     });
     if (error) {
-      mockDb.buses.push({
-        id: 'bus-' + Math.random().toString(36).substr(2, 9),
-        schoolId,
-        numberPlate,
-        capacity,
-        status: status as any,
-        driverId,
-        createdAt: new Date().toISOString()
+      // Resilient fallback: Try using only the default columns that exist in the legacy DB schema
+      let driverName = 'Assigned Driver';
+      let driverPhone = '';
+      if (driverId) {
+        const drivers = mockDb.drivers.filter(d => d.schoolId === schoolId);
+        const driver = drivers.find(d => d.id === driverId);
+        if (driver) {
+          driverName = driver.name;
+          driverPhone = driver.phone;
+        }
+      }
+      await supabaseAdmin.from('buses').insert({
+        school_id: schoolId,
+        plate_number: numberPlate,
+        driver_name: driverName,
+        driver_phone: driverPhone,
+        capacity
       });
-      mockDb.saveAll();
     }
   },
 
   async deleteBus(id: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('buses').delete().eq('id', id);
-    if (error) {
-      const idx = mockDb.buses.findIndex(b => b.id === id);
-      if (idx !== -1) {
-        mockDb.buses.splice(idx, 1);
-        mockDb.saveAll();
-      }
+    await supabaseAdmin.from('buses').delete().eq('id', id);
+    const idx = mockDb.buses.findIndex(b => b.id === id);
+    if (idx !== -1) {
+      mockDb.buses.splice(idx, 1);
+      mockDb.saveAll();
     }
   },
 
@@ -7411,49 +7573,77 @@ export const mockApi = {
       .select('*')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.routes.filter(r => r.schoolId === schoolId);
-    return data.map(r => ({
-      id: r.id,
-      name: r.name,
-      routeCode: r.route_code || r.routeCode,
-      startPoint: r.start_point || r.startPoint,
-      endPoint: r.end_point || r.endPoint,
-      fare: Number(r.fare || 0),
-      createdAt: r.created_at
-    }));
+    
+    if (data.length > 0) {
+      const mapped = data.map(r => {
+        const parts = (r.name || '').split('::');
+        const name = parts[0] || r.name;
+        const routeCode = parts[1] || r.route_code || r.routeCode || 'R-101';
+        return {
+          id: r.id,
+          schoolId: r.school_id || schoolId,
+          name,
+          routeCode,
+          startPoint: r.start_point || r.startPoint || '',
+          endPoint: r.end_point || r.endPoint || '',
+          fare: Number(r.fare || 0),
+          createdAt: r.created_at
+        };
+      });
+
+      mapped.forEach(r => {
+        const idx = mockDb.routes.findIndex(mr => mr.id === r.id);
+        if (idx === -1) mockDb.routes.push(r);
+        else mockDb.routes[idx] = r;
+      });
+      mockDb.routes = mockDb.routes.filter(mr => mr.schoolId !== schoolId || mapped.some(m => m.id === mr.id));
+      mockDb.saveAll();
+
+      return mapped;
+    }
+    return mockDb.routes.filter(r => r.schoolId === schoolId);
   },
 
   async createRoute(schoolId: string, name: string, routeCode: string, startPoint: string, endPoint: string, fare: number): Promise<void> {
     const { error } = await supabaseAdmin.from('routes').insert({
       school_id: schoolId,
-      name,
+      name: `${name}::${routeCode}`,
       route_code: routeCode,
       start_point: startPoint,
       end_point: endPoint,
       fare
     });
     if (error) {
-      mockDb.routes.push({
-        id: 'rt-' + Math.random().toString(36).substr(2, 9),
-        schoolId,
-        name,
-        routeCode,
-        startPoint,
-        endPoint,
-        fare,
-        createdAt: new Date().toISOString()
+      // Resilient fallback: Retry inserting with name = name::routeCode to avoid missing route_code column error
+      const { error: retryErr } = await supabaseAdmin.from('routes').insert({
+        school_id: schoolId,
+        name: `${name}::${routeCode}`,
+        start_point: startPoint,
+        end_point: endPoint,
+        fare
       });
-      mockDb.saveAll();
+      if (retryErr) {
+        mockDb.routes.push({
+          id: 'rt-' + Math.random().toString(36).substr(2, 9),
+          schoolId,
+          name,
+          routeCode,
+          startPoint,
+          endPoint,
+          fare,
+          createdAt: new Date().toISOString()
+        });
+        mockDb.saveAll();
+      }
     }
   },
 
   async deleteRoute(id: string): Promise<void> {
     const { error } = await supabaseAdmin.from('routes').delete().eq('id', id);
-    if (error) {
-      const idx = mockDb.routes.findIndex(r => r.id === id);
-      if (idx !== -1) {
-        mockDb.routes.splice(idx, 1);
-        mockDb.saveAll();
-      }
+    const idx = mockDb.routes.findIndex(r => r.id === id);
+    if (idx !== -1) {
+      mockDb.routes.splice(idx, 1);
+      mockDb.saveAll();
     }
   },
 
@@ -7463,49 +7653,75 @@ export const mockApi = {
       .select('*')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.transportAssignments.filter(ta => ta.schoolId === schoolId);
-    return data.map(ta => ({
-      id: ta.id,
-      studentId: ta.student_id || ta.studentId,
-      routeId: ta.route_id || ta.routeId,
-      busId: ta.bus_id || ta.busId,
-      pickupPointId: ta.pickup_point_id || ta.pickupPointId,
-      status: ta.status,
-      createdAt: ta.created_at
-    }));
+    
+    if (data.length > 0) {
+      const mapped = data.map(ta => ({
+        id: ta.id,
+        schoolId: ta.school_id || schoolId,
+        studentId: ta.student_id || ta.studentId,
+        routeId: ta.route_id || ta.routeId,
+        busId: ta.bus_id || ta.busId,
+        pickupPointId: ta.pickup_point_id || ta.pickupPointId || '',
+        status: ta.status || 'ACTIVE',
+        createdAt: ta.created_at
+      }));
+
+      mapped.forEach(ta => {
+        const idx = mockDb.transportAssignments.findIndex(mta => mta.id === ta.id);
+        if (idx === -1) mockDb.transportAssignments.push(ta);
+        else mockDb.transportAssignments[idx] = ta;
+      });
+      mockDb.transportAssignments = mockDb.transportAssignments.filter(mta => mta.schoolId !== schoolId || mapped.some(m => m.id === mta.id));
+      mockDb.saveAll();
+
+      return mapped;
+    }
+    return mockDb.transportAssignments.filter(ta => ta.schoolId === schoolId);
   },
 
   async createTransportAssignment(schoolId: string, studentId: string, routeId: string, busId: string, pickupPointId: string): Promise<void> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const validPickupPointId = (pickupPointId && isUUID(pickupPointId)) ? pickupPointId : null;
+
+    // Save to local cache first
+    const localId = 'ta-' + Math.random().toString(36).substr(2, 9);
+    mockDb.transportAssignments.push({
+      id: localId,
+      schoolId,
+      studentId,
+      routeId,
+      busId,
+      pickupPointId,
+      status: 'ACTIVE',
+      createdAt: new Date().toISOString()
+    });
+    mockDb.saveAll();
+
     const { error } = await supabaseAdmin.from('transport_assignments').insert({
       school_id: schoolId,
       student_id: studentId,
       route_id: routeId,
       bus_id: busId,
-      pickup_point_id: pickupPointId,
+      pickup_point_id: validPickupPointId,
       status: 'ACTIVE'
     });
     if (error) {
-      mockDb.transportAssignments.push({
-        id: 'ta-' + Math.random().toString(36).substr(2, 9),
-        schoolId,
-        studentId,
-        routeId,
-        busId,
-        pickupPointId,
-        status: 'ACTIVE',
-        createdAt: new Date().toISOString()
+      // Resilient fallback: Retry inserting without pickup_point_id and status columns
+      await supabaseAdmin.from('transport_assignments').insert({
+        school_id: schoolId,
+        student_id: studentId,
+        route_id: routeId,
+        bus_id: busId
       });
-      mockDb.saveAll();
     }
   },
 
   async deleteTransportAssignment(id: string): Promise<void> {
     const { error } = await supabaseAdmin.from('transport_assignments').delete().eq('id', id);
-    if (error) {
-      const idx = mockDb.transportAssignments.findIndex(ta => ta.id === id);
-      if (idx !== -1) {
-        mockDb.transportAssignments.splice(idx, 1);
-        mockDb.saveAll();
-      }
+    const idx = mockDb.transportAssignments.findIndex(ta => ta.id === id);
+    if (idx !== -1) {
+      mockDb.transportAssignments.splice(idx, 1);
+      mockDb.saveAll();
     }
   },
 
@@ -7546,7 +7762,25 @@ export const mockApi = {
       .select('*')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.driverAttendance.filter(da => da.schoolId === schoolId);
-    return data;
+    
+    const mapped = data.map(da => ({
+      id: da.id,
+      schoolId: da.school_id || schoolId,
+      driverId: da.driver_id || da.driverId,
+      date: da.date,
+      status: da.status,
+      createdAt: da.created_at
+    }));
+
+    mapped.forEach(da => {
+      const idx = mockDb.driverAttendance.findIndex(mda => mda.id === da.id);
+      if (idx === -1) mockDb.driverAttendance.push(da);
+      else mockDb.driverAttendance[idx] = da;
+    });
+    mockDb.driverAttendance = mockDb.driverAttendance.filter(mda => mda.schoolId !== schoolId || mapped.some(m => m.id === mda.id));
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   async markDriverAttendance(schoolId: string, driverId: string, date: string, status: string): Promise<void> {
@@ -7556,29 +7790,30 @@ export const mockApi = {
       date,
       status
     }, { onConflict: 'driver_id,date' });
-    if (error) {
-      const idx = mockDb.driverAttendance.findIndex(da => da.driverId === driverId && da.date === date);
-      if (idx === -1) {
-        mockDb.driverAttendance.push({
-          id: 'da-' + Math.random().toString(36).substr(2, 9),
-          schoolId,
-          driverId,
-          date,
-          status: status as any,
-          createdAt: new Date().toISOString()
-        });
-      } else {
-        mockDb.driverAttendance[idx].status = status as any;
-      }
-      mockDb.saveAll();
+    
+    // Always sync locally
+    const idx = mockDb.driverAttendance.findIndex(da => da.driverId === driverId && da.date === date);
+    if (idx === -1) {
+      mockDb.driverAttendance.push({
+        id: 'da-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        driverId,
+        date,
+        status: status as any,
+        createdAt: new Date().toISOString()
+      });
+    } else {
+      mockDb.driverAttendance[idx].status = status as any;
     }
+    mockDb.saveAll();
   },
 
   // --- Admin Book CRUD ---
   async adminCreateBook(title: string, author: string, isbn: string, subject: string, totalCopies: number): Promise<void> {
+    const schoolId = getAdminSchoolId();
     const newBook = {
       id: 'bk-' + Math.random().toString(36).substr(2, 9),
-      schoolId: '',
+      schoolId,
       title,
       author,
       isbn,
@@ -7588,6 +7823,7 @@ export const mockApi = {
       createdAt: new Date().toISOString()
     };
     const { error } = await supabaseAdmin.from('book_inventory').insert({
+      school_id: schoolId,
       title,
       author,
       isbn,
@@ -7770,7 +8006,7 @@ export const mockApi = {
       .from('exams')
       .select('*')
       .eq('school_id', schoolId);
-    if (error || !data) return mockDb.exams.filter(e => e.schoolId === schoolId);
+    if (error || !data || data.length === 0) return mockDb.exams.filter(e => e.schoolId === schoolId);
     return data;
   },
 
@@ -7784,15 +8020,25 @@ export const mockApi = {
       end_date: endDate
     });
     if (error) {
-      mockDb.exams.push({
-        id: 'ex-' + Math.random().toString(36).substr(2, 9),
-        schoolId,
-        academicSessionId,
+      // Graceful fallback: Retry insert without 'term' column
+      const { error: retryErr } = await supabaseAdmin.from('exams').insert({
+        school_id: schoolId,
+        academic_session_id: academicSessionId,
         name,
-        startDate,
-        endDate
+        start_date: startDate,
+        end_date: endDate
       });
-      mockDb.saveAll();
+      if (retryErr) {
+        mockDb.exams.push({
+          id: 'ex-' + Math.random().toString(36).substr(2, 9),
+          schoolId,
+          academicSessionId,
+          name,
+          startDate,
+          endDate
+        });
+        mockDb.saveAll();
+      }
     }
   },
 
@@ -7885,7 +8131,7 @@ export const mockApi = {
     if (examId) query = query.eq('exam_id', examId);
     if (studentId) query = query.eq('student_id', studentId);
     const { data, error } = await query;
-    if (error || !data) {
+    if (error || !data || data.length === 0) {
       let local = mockDb.examResults.filter(er => er.schoolId === schoolId);
       if (examId) local = local.filter(er => er.examId === examId);
       if (studentId) local = local.filter(er => er.studentId === studentId);

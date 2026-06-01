@@ -18,6 +18,7 @@ import { OfflineSyncManager } from '../components/OfflineSyncManager';
 export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const { session, setSession, syncSubscriptionPlan } = useStore();
   const adminId = session?.user.id;
+  const isAcademicOrSchoolAdmin = session?.user.role === 'ADMIN' || session?.user.role === 'ACADEMIC_ADMIN';
   const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
 
@@ -877,6 +878,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'librarians' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_managers' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'custom_sub_admins' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'buses' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'routes' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pickup_points' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_assignments' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_attendance' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exams' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'report_cards' }, handleAdminSync)
       .subscribe();
 
 
@@ -1945,25 +1955,27 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               <div className="grid grid-cols-2 gap-4">
                 <button 
                   onClick={() => setShowAddStudent(true)}
-                  disabled={overview.totalStudents >= overview.subscription.limits.maxStudents}
+                  disabled={!isAcademicOrSchoolAdmin || overview.totalStudents >= overview.subscription.limits.maxStudents}
                   className="p-4 bg-slate-900/30 hover:bg-brand-600/10 border border-slate-850 hover:border-brand-500/30 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900/30 disabled:hover:border-slate-850"
-                  title={overview.totalStudents >= overview.subscription.limits.maxStudents ? 'Student limit reached for your plan' : ''}
+                  title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : overview.totalStudents >= overview.subscription.limits.maxStudents ? 'Student limit reached for your plan' : ''}
                 >
                   <Plus className="text-brand-400 group-hover:scale-110 transition-transform" size={20} />
                   <span className="text-xs font-semibold text-slate-200">Register Student</span>
                 </button>
                 <button 
                   onClick={() => setShowAddTeacher(true)}
-                  disabled={overview.totalTeachers >= overview.subscription.limits.maxTeachers}
+                  disabled={!isAcademicOrSchoolAdmin || overview.totalTeachers >= overview.subscription.limits.maxTeachers}
                   className="p-4 bg-slate-900/30 hover:bg-brand-600/10 border border-slate-850 hover:border-brand-500/30 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900/30 disabled:hover:border-slate-850"
-                  title={overview.totalTeachers >= overview.subscription.limits.maxTeachers ? 'Teacher limit reached for your plan' : ''}
+                  title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : overview.totalTeachers >= overview.subscription.limits.maxTeachers ? 'Teacher limit reached for your plan' : ''}
                 >
                   <UsersRound className="text-brand-400 group-hover:scale-110 transition-transform" size={20} />
                   <span className="text-xs font-semibold text-slate-200">Register Teacher</span>
                 </button>
                 <button 
                   onClick={() => setShowAddParent(true)}
-                  className="p-4 bg-slate-900/30 hover:bg-brand-600/10 border border-slate-850 hover:border-brand-500/30 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all group"
+                  disabled={!isAcademicOrSchoolAdmin}
+                  className="p-4 bg-slate-900/30 hover:bg-brand-600/10 border border-slate-850 hover:border-brand-500/30 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900/30 disabled:hover:border-slate-850"
+                  title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
                 >
                   <Users className="text-brand-400 group-hover:scale-110 transition-transform" size={20} />
                   <span className="text-xs font-semibold text-slate-200">Register Parent</span>
@@ -1977,7 +1989,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 </button>
                 <button 
                   onClick={() => setShowLinkParent(true)}
-                  className="p-4 bg-slate-900/30 hover:bg-brand-600/10 border border-slate-850 hover:border-brand-500/30 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all group"
+                  disabled={!isAcademicOrSchoolAdmin}
+                  className="p-4 bg-slate-900/30 hover:bg-brand-600/10 border border-slate-850 hover:border-brand-500/30 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900/30 disabled:hover:border-slate-850"
+                  title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
                 >
                   <Link className="text-brand-400 group-hover:scale-110 transition-transform" size={20} />
                   <span className="text-xs font-semibold text-slate-200">Map Parent-Student</span>
