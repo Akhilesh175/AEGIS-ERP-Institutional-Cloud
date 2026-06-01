@@ -4368,6 +4368,11 @@ export const mockApi = {
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
 
+    const { data: schoolObj } = await supabaseAdmin.from('schools').select('subscription_plan').eq('id', schoolId).single();
+    if (schoolObj?.subscription_plan?.toLowerCase() !== 'enterprise') {
+      throw new Error('Provisioning sub-admin operators requires an active Enterprise Subscription plan.');
+    }
+
     const normalizedEmail = validateAndNormalizeEmail(email);
     const trimmedEmployeeId = employeeId?.trim() || '';
 
@@ -4582,6 +4587,11 @@ export const mockApi = {
 
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
+
+    const { data: schoolObj } = await supabaseAdmin.from('schools').select('subscription_plan').eq('id', schoolId).single();
+    if (schoolObj?.subscription_plan?.toLowerCase() !== 'enterprise') {
+      throw new Error('Modifying sub-admin operators requires an active Enterprise Subscription plan.');
+    }
 
     const normalizedEmail = validateAndNormalizeEmail(email);
     const trimmedEmployeeId = employeeId.trim();
@@ -7551,6 +7561,11 @@ export const mockApi = {
   },
 
   async saveRolePermissionsMatrix(schoolId: string, matrix: Record<string, Record<string, boolean>>): Promise<void> {
+    const { data: schoolObj } = await supabaseAdmin.from('schools').select('subscription_plan').eq('id', schoolId).single();
+    if (schoolObj?.subscription_plan?.toLowerCase() !== 'enterprise') {
+      throw new Error('Modifying the Dynamic Permissions Matrix requires an active Enterprise Subscription plan.');
+    }
+
     const { data: dbRoles, error: rolesError } = await supabaseAdmin
       .from('roles')
       .select('id, role_code')

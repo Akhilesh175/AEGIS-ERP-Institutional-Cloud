@@ -920,12 +920,14 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
     const handleAdminSync = () => {
       console.log('Realtime administration update detected, refreshing admin portal directories...');
+      syncSubscriptionPlan();
       loadData();
       loadAcademicSessions();
     };
 
     const channel = supabase
       .channel('admin-academic-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'schools' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'students' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'parents' }, handleAdminSync)

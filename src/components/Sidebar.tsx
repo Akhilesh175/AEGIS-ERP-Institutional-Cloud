@@ -15,7 +15,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
-  const { session, isMobileMenuOpen, setMobileMenuOpen } = useStore();
+  const { session, isMobileMenuOpen, setMobileMenuOpen, syncSubscriptionPlan } = useStore();
 
   const [permissions, setPermissions] = React.useState<Record<string, boolean>>({
     billing: false,
@@ -50,11 +50,26 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       .channel(`sidebar-permissions-${session.user.id}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'role_permissions' }, loadPermissions)
       .subscribe();
+
+    // Subscribe to realtime updates on school subscription plans!
+    const schoolChannel = supabase
+      .channel(`sidebar-school-${session.user.schoolId}`)
+      .on('postgres_changes', { 
+        event: 'UPDATE', 
+        schema: 'public', 
+        table: 'schools', 
+        filter: `id=eq.${session.user.schoolId}` 
+      }, () => {
+        console.log('Realtime school subscription update detected in Sidebar! Syncing plan...');
+        syncSubscriptionPlan();
+      })
+      .subscribe();
       
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(schoolChannel);
     };
-  }, [session]);
+  }, [session, syncSubscriptionPlan]);
 
   if (!session) return null;
 
@@ -134,48 +149,48 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         ];
         
         // If billing is allowed
-        if (permissions.billing) {
-          subAdminTabs.push({ id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing || !isEnterprise });
-          subAdminTabs.push({ id: 'analytics', label: 'Fee Analytics', icon: Activity, locked: !isEnterprise });
+        if (permissions.billing && isEnterprise) {
+          subAdminTabs.push({ id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing });
+          subAdminTabs.push({ id: 'analytics', label: 'Fee Analytics', icon: Activity });
         }
         
         // If directory is allowed
-        if (permissions.directory) {
-          subAdminTabs.push({ id: 'students', label: 'Student Directory', icon: Users, locked: !isEnterprise });
-          subAdminTabs.push({ id: 'teachers', label: 'Teacher Directory', icon: UsersRound, locked: !isEnterprise });
-          subAdminTabs.push({ id: 'parents', label: 'Parent Directory', icon: UsersRound, locked: !isEnterprise });
+        if (permissions.directory && isEnterprise) {
+          subAdminTabs.push({ id: 'students', label: 'Student Directory', icon: Users });
+          subAdminTabs.push({ id: 'teachers', label: 'Teacher Directory', icon: UsersRound });
+          subAdminTabs.push({ id: 'parents', label: 'Parent Directory', icon: UsersRound });
         }
         
         // If academics is allowed
-        if (permissions.academics) {
-          subAdminTabs.push({ id: 'classes', label: 'Classes & Sections', icon: Layers, locked: !isEnterprise });
-          subAdminTabs.push({ id: 'subjects', label: 'Subject Catalog', icon: BookMarked, locked: !isEnterprise });
-          subAdminTabs.push({ id: 'academicsessions', label: 'Academic Sessions', icon: Calendar, locked: !isEnterprise });
+        if (permissions.academics && isEnterprise) {
+          subAdminTabs.push({ id: 'classes', label: 'Classes & Sections', icon: Layers });
+          subAdminTabs.push({ id: 'subjects', label: 'Subject Catalog', icon: BookMarked });
+          subAdminTabs.push({ id: 'academicsessions', label: 'Academic Sessions', icon: Calendar });
           if (role === 'ACADEMIC_ADMIN') {
-            subAdminTabs.push({ id: 'attendance', label: 'Student Attendance', icon: Layers, locked: !isEnterprise });
-            subAdminTabs.push({ id: 'assignments', label: 'Homework & Assignments', icon: PenTool, locked: !isEnterprise });
+            subAdminTabs.push({ id: 'attendance', label: 'Student Attendance', icon: Layers });
+            subAdminTabs.push({ id: 'assignments', label: 'Homework & Assignments', icon: PenTool });
           }
         }
         
         // If grading is allowed
-        if (permissions.grading) {
-          subAdminTabs.push({ id: 'marksheets', label: ' Homeroom Marksheets', icon: ClipboardList, locked: !isEnterprise });
-          subAdminTabs.push({ id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes || !isEnterprise });
+        if (permissions.grading && isEnterprise) {
+          subAdminTabs.push({ id: 'marksheets', label: ' Homeroom Marksheets', icon: ClipboardList });
+          subAdminTabs.push({ id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes });
         }
 
         // If books is allowed (Library)
-        if (permissions.books) {
-          subAdminTabs.push({ id: 'books', label: 'Library Registry', icon: BookOpen, locked: !isEnterprise });
+        if (permissions.books && isEnterprise) {
+          subAdminTabs.push({ id: 'books', label: 'Library Registry', icon: BookOpen });
         }
 
         // If transport is allowed (Transport)
-        if (permissions.transport) {
-          subAdminTabs.push({ id: 'transport', label: 'Transit Registry', icon: Layers, locked: !isEnterprise });
+        if (permissions.transport && isEnterprise) {
+          subAdminTabs.push({ id: 'transport', label: 'Transit Registry', icon: Layers });
         }
         
         // If security is allowed (Sub-Admin backups / telemetry access)
-        if (permissions.security) {
-          subAdminTabs.push({ id: 'backups', label: 'Disaster Recovery', icon: Database, locked: !isEnterprise });
+        if (permissions.security && isEnterprise) {
+          subAdminTabs.push({ id: 'backups', label: 'Disaster Recovery', icon: Database });
         }
         
         return subAdminTabs;
