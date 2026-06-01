@@ -39,7 +39,11 @@ const SEED_SCHOOL: School = {
   address: '100 Silicon Valley Way, Tech District',
   phone: '+1 (555) 123-4567',
   subscriptionPlan: 'enterprise',
-  createdAt: new Date('2024-01-01').toISOString()
+  createdAt: new Date('2024-01-01').toISOString(),
+  country: 'USA',
+  currencyCode: 'USD',
+  currencySymbol: '$',
+  timezone: 'America/New_York'
 };
 
 const SEED_ACADEMIC_SESSIONS = [
@@ -435,6 +439,19 @@ class MockDatabase {
   constructor() {
     this.users = getStorage<User[]>('users', SEED_USERS);
     this.schools = getStorage<School[]>('schools', [SEED_SCHOOL]);
+    let schoolsMigrated = false;
+    this.schools.forEach((s, idx) => {
+      if (!s.country || !s.currencyCode || !s.currencySymbol) {
+        this.schools[idx].country = s.country || 'USA';
+        this.schools[idx].currencyCode = s.currencyCode || 'USD';
+        this.schools[idx].currencySymbol = s.currencySymbol || '$';
+        this.schools[idx].timezone = s.timezone || 'America/New_York';
+        schoolsMigrated = true;
+      }
+    });
+    if (schoolsMigrated) {
+      setStorage('schools', this.schools);
+    }
     this.academicSessions = getStorage<typeof SEED_ACADEMIC_SESSIONS>('academic_sessions', SEED_ACADEMIC_SESSIONS);
     this.classes = getStorage<Class[]>('classes', SEED_CLASSES);
     this.sections = getStorage<Section[]>('sections', SEED_SECTIONS);

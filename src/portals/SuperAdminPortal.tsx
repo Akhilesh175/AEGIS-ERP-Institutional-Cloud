@@ -48,6 +48,23 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
   const [schAddr, setSchAddr] = useState('');
   const [schPhone, setSchPhone] = useState('');
   const [schPlan, setSchPlan] = useState('enterprise');
+  const [schCountry, setSchCountry] = useState('USA');
+  const [schCurrencyCode, setSchCurrencyCode] = useState('USD');
+  const [schCurrencySymbol, setSchCurrencySymbol] = useState('$');
+  const [schTimezone, setSchTimezone] = useState('America/New_York');
+
+  const countryPresets = [
+    { name: 'United States', code: 'USA', currency: 'USD', symbol: '$', timezone: 'America/New_York' },
+    { name: 'United Kingdom', code: 'GBR', currency: 'GBP', symbol: '£', timezone: 'Europe/London' },
+    { name: 'India', code: 'IND', currency: 'INR', symbol: '₹', timezone: 'Asia/Kolkata' },
+    { name: 'Nigeria', code: 'NGA', currency: 'NGN', symbol: '₦', timezone: 'Africa/Lagos' },
+    { name: 'South Africa', code: 'ZAF', currency: 'ZAR', symbol: 'R', timezone: 'Africa/Johannesburg' },
+    { name: 'United Arab Emirates', code: 'ARE', currency: 'AED', symbol: 'د.إ', timezone: 'Asia/Dubai' },
+    { name: 'Kenya', code: 'KEN', currency: 'KES', symbol: 'KSh', timezone: 'Africa/Nairobi' },
+    { name: 'Canada', code: 'CAN', currency: 'CAD', symbol: 'C$', timezone: 'America/Toronto' },
+    { name: 'Australia', code: 'AUS', currency: 'AUD', symbol: 'A$', timezone: 'Australia/Sydney' },
+    { name: 'Europe', code: 'EUR', currency: 'EUR', symbol: '€', timezone: 'Europe/Paris' },
+  ];
 
   // Admin Creation Forms
   const [showAddAdmin, setShowAddAdmin] = useState(false);
@@ -205,11 +222,25 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
     if (!superAdminId || !schName.trim()) return;
 
     try {
-      await mockApi.superAdminCreateSchool(superAdminId, schName, schAddr, schPhone, schPlan);
+      await mockApi.superAdminCreateSchool(
+        superAdminId, 
+        schName, 
+        schAddr, 
+        schPhone, 
+        schPlan,
+        schCountry,
+        schCurrencyCode,
+        schCurrencySymbol,
+        schTimezone
+      );
       setShowAddSchool(false);
       setSchName('');
       setSchAddr('');
       setSchPhone('');
+      setSchCountry('USA');
+      setSchCurrencyCode('USD');
+      setSchCurrencySymbol('$');
+      setSchTimezone('America/New_York');
       loadData();
       alert('Institutional school node deployed to Aegis SaaS Cluster!');
     } catch (err: any) {
@@ -776,6 +807,44 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                   </select>
                 </div>
               </div>
+
+              <div className="space-y-1">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Country Location Preset</label>
+                <select
+                  value={schCountry}
+                  onChange={(e) => {
+                    const countryCode = e.target.value;
+                    setSchCountry(countryCode);
+                    const preset = countryPresets.find(p => p.code === countryCode);
+                    if (preset) {
+                      setSchCurrencyCode(preset.currency);
+                      setSchCurrencySymbol(preset.symbol);
+                      setSchTimezone(preset.timezone);
+                    }
+                  }}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
+                >
+                  {countryPresets.map(p => (
+                    <option key={p.code} value={p.code}>{p.name} ({p.currency})</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-3 gap-2">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Currency Code</label>
+                  <input type="text" value={schCurrencyCode} onChange={(e) => setSchCurrencyCode(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none font-mono" required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Symbol</label>
+                  <input type="text" value={schCurrencySymbol} onChange={(e) => setSchCurrencySymbol(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none font-mono" required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Timezone</label>
+                  <input type="text" value={schTimezone} onChange={(e) => setSchTimezone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none font-mono" required />
+                </div>
+              </div>
+
               <div className="flex justify-end gap-2 pt-2 border-t border-slate-850">
                 <button type="button" onClick={() => setShowAddSchool(false)} className="glass-btn-secondary text-xs">Cancel</button>
                 <button type="submit" className="glass-btn-primary text-xs">Deploy Cluster</button>

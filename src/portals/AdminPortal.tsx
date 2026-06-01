@@ -1697,7 +1697,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const handleDisburseDriverSalary = async (driverId: string, amount: number, attendanceRecordId?: string | null) => {
     if (!adminId || !session?.user.schoolId) return;
-    if (!window.confirm(`Are you sure you want to disburse a daily salary payout of $${amount.toFixed(2)} to this driver?`)) return;
+    const curSym = overview?.currencySymbol || '$';
+    if (!window.confirm(`Are you sure you want to disburse a daily salary payout of ${curSym}${amount.toFixed(2)} to this driver?`)) return;
 
     setDisbursingDriverId(driverId);
     try {
@@ -1711,7 +1712,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
         'Daily salary disburse ledger payout'
       );
       loadData();
-      alert(`Successfully disbursed daily salary payout of $${amount.toFixed(2)}!`);
+      alert(`Successfully disbursed daily salary payout of ${curSym}${amount.toFixed(2)}!`);
     } catch (err: any) {
       alert(err.message || 'Error disbursing salary');
     } finally {
@@ -1866,7 +1867,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   </div>
                   <div>
                     <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Total fee income</span>
-                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${overview.feeCollections.paid.toLocaleString()}</h3>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.currencySymbol || '$'}{overview.feeCollections.paid.toLocaleString()}</h3>
                   </div>
                 </GlassCard>
 
@@ -1886,7 +1887,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   </div>
                   <div>
                     <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Total Dues Value</span>
-                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${invoicesAmount.toLocaleString()}</h3>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.currencySymbol || '$'}{invoicesAmount.toLocaleString()}</h3>
                   </div>
                 </GlassCard>
 
@@ -1896,7 +1897,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   </div>
                   <div>
                     <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Pending Collections</span>
-                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${overview.feeCollections.pending.toLocaleString()}</h3>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.currencySymbol || '$'}{overview.feeCollections.pending.toLocaleString()}</h3>
                   </div>
                 </GlassCard>
               </>
@@ -2031,7 +2032,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   </div>
                   <div>
                     <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Outstanding Fines Ledger</span>
-                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${(overview.totalClasses * 3.5).toFixed(2)}</h3>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.currencySymbol || '$'}{(overview.totalClasses * 3.5).toFixed(2)}</h3>
                   </div>
                 </GlassCard>
               </>
@@ -2121,7 +2122,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   </div>
                   <div>
                     <span className="block text-[10px] text-slate-500 font-bold uppercase tracking-wider leading-none">Total Income</span>
-                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">${overview.feeCollections.paid.toLocaleString()}</h3>
+                    <h3 className="text-2xl font-extrabold text-slate-100 mt-1">{overview.currencySymbol || '$'}{overview.feeCollections.paid.toLocaleString()}</h3>
                   </div>
                 </GlassCard>
               </>
@@ -2236,11 +2237,11 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               <div className="grid grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-850">
                 <div>
                   <span className="text-[10px] text-slate-500 font-bold uppercase leading-none">Paid Ledger</span>
-                  <p className="text-lg font-bold text-green-400 mt-1">${overview.feeCollections.paid.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-green-400 mt-1">{overview.currencySymbol || '$'}{overview.feeCollections.paid.toLocaleString()}</p>
                 </div>
                 <div>
                   <span className="text-[10px] text-slate-500 font-bold uppercase leading-none">Outstanding Dues</span>
-                  <p className="text-lg font-bold text-red-400 mt-1">${overview.feeCollections.pending.toLocaleString()}</p>
+                  <p className="text-lg font-bold text-red-400 mt-1">{overview.currencySymbol || '$'}{overview.feeCollections.pending.toLocaleString()}</p>
                 </div>
               </div>
             </GlassCard>
@@ -2921,7 +2922,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Collected Income</p>
                   <h3 className="text-xl font-extrabold text-emerald-400">
-                    ${(feePayments || [])
+                    {overview?.currencySymbol || '$'}{(feePayments || [])
                       .filter(p => p && p.status === 'PAID')
                       .reduce((acc, p) => acc + (Number(p.amountPaid) || 0), 0)
                       .toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -2937,7 +2938,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Outstanding Invoices</p>
                   <h3 className="text-xl font-extrabold text-amber-400">
-                    ${(
+                    {overview?.currencySymbol || '$'}{(
                       (feeStructures || []).reduce((acc, fs) => acc + ((Number(fs?.amount) || 0) * (students || []).filter(s => s && s.classId === fs?.classId).length), 0) -
                       (feePayments || []).filter(p => p && p.status === 'PAID').reduce((acc, p) => acc + (Number(p.amountPaid) || 0), 0)
                     ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
@@ -2953,7 +2954,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Institutional Ledger</p>
                   <h3 className="text-xl font-extrabold text-brand-400">
-                    ${(feeStructures || [])
+                    {overview?.currencySymbol || '$'}{(feeStructures || [])
                       .reduce((acc, fs) => acc + ((Number(fs?.amount) || 0) * (students || []).filter(s => s && s.classId === fs?.classId).length), 0)
                       .toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </h3>
@@ -2968,7 +2969,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Disbursed Driver Salaries</p>
                   <h3 className="text-xl font-extrabold text-rose-455">
-                    ${driverSalaryPayouts
+                    {overview?.currencySymbol || '$'}{driverSalaryPayouts
                       .reduce((acc, p) => acc + (Number(p.payoutAmount) || 0), 0)
                       .toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </h3>
@@ -3023,7 +3024,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                                 </span>
                                 <h4 className="font-semibold text-slate-200 text-xs mt-1.5 line-clamp-1">{fs.description}</h4>
                               </div>
-                              <span className="text-xs font-extrabold text-slate-100 shrink-0">${(Number(fs.amount) || 0).toFixed(2)}</span>
+                              <span className="text-xs font-extrabold text-slate-100 shrink-0">{overview.currencySymbol || '$'}{(Number(fs.amount) || 0).toFixed(2)}</span>
                             </div>
 
                             <div className="flex items-center justify-between mt-3 text-[10px] text-slate-400 border-t border-slate-850/60 pt-2">
@@ -3115,18 +3116,18 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                                   <td className="py-3 px-4 text-slate-400">{student.rollNumber || '-'}</td>
                                   <td className="py-3 px-4">
                                     {payment && (Number(payment.amountPaid) || 0) > 0 ? (
-                                      <div className="font-semibold text-emerald-400">${(Number(payment.amountPaid) || 0).toFixed(2)}</div>
+                                      <div className="font-semibold text-emerald-400">{overview.currencySymbol || '$'}{(Number(payment.amountPaid) || 0).toFixed(2)}</div>
                                     ) : (
-                                      <span className="text-slate-500">$0.00</span>
+                                      <span className="text-slate-500">{overview.currencySymbol || '$'}0.00</span>
                                     )}
                                     {payment?.paymentDate && (
                                       <div className="text-[8px] text-slate-500 font-mono mt-0.5">{new Date(payment.paymentDate).toLocaleDateString()}</div>
                                     )}
                                   </td>
                                   <td className="py-3 px-4 font-mono font-bold text-slate-300">
-                                    ${(Number(balanceDue) || 0).toFixed(2)}
+                                    {overview.currencySymbol || '$'}{(Number(balanceDue) || 0).toFixed(2)}
                                     {lateFee > 0 && (
-                                      <div className="text-[8px] text-rose-400 font-semibold mt-0.5">+ $15.00 Overdue Fee</div>
+                                      <div className="text-[8px] text-rose-400 font-semibold mt-0.5">+ {overview.currencySymbol || '$'}15.00 Overdue Fee</div>
                                     )}
                                   </td>
                                   <td className="py-3 px-4">
@@ -3271,8 +3272,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                                 {unpaidCount} Days
                               </span>
                             </td>
-                            <td className="py-3 px-4 text-slate-450 font-mono">${dailyRate.toFixed(2)}/day</td>
-                            <td className="py-3 px-4 font-mono font-bold text-slate-100">${pendingPayout.toFixed(2)}</td>
+                            <td className="py-3 px-4 text-slate-450 font-mono">{overview.currencySymbol || '$'}{dailyRate.toFixed(2)}/day</td>
+                            <td className="py-3 px-4 font-mono font-bold text-slate-100">{overview.currencySymbol || '$'}{pendingPayout.toFixed(2)}</td>
                             <td className="py-3 px-4 text-right">
                               <button
                                 onClick={() => handleDisburseDriverSalary(driver.id, pendingPayout, unpaidRecords[0]?.id || null)}

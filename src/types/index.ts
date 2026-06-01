@@ -67,6 +67,10 @@ export interface School {
   phone?: string;
   subscriptionPlan: string;
   createdAt: string;
+  country?: string;
+  currencyCode?: string;
+  currencySymbol?: string;
+  timezone?: string;
 }
 
 export interface AcademicSession {
@@ -685,5 +689,7 @@ export interface DriverSalaryPayout {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+  currencyCode?: string;
+  currencySymbol?: string;
 }
 

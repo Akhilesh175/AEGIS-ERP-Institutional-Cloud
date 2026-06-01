@@ -774,13 +774,17 @@ export const mockApi = {
         subscriptionPlan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
         
         // Sync local mockDb schools cache
-        const schoolMapped = {
+        const schoolMapped: School = {
           id: dbSchool.id,
           name: dbSchool.name,
           address: dbSchool.address || '',
           phone: dbSchool.phone || '',
           subscriptionPlan: subscriptionPlan as any,
-          createdAt: dbSchool.created_at
+          createdAt: dbSchool.created_at,
+          country: dbSchool.country || 'USA',
+          currencyCode: dbSchool.currency_code || 'USD',
+          currencySymbol: dbSchool.currency_symbol || '$',
+          timezone: dbSchool.timezone || 'America/New_York'
         };
         const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
         if (idx === -1) mockDb.schools.push(schoolMapped);
@@ -1853,13 +1857,17 @@ export const mockApi = {
         .maybeSingle();
 
       if (dbSchool) {
-        const schoolMapped = {
+        const schoolMapped: School = {
           id: dbSchool.id,
           name: dbSchool.name,
           address: dbSchool.address || '',
           phone: dbSchool.phone || '',
           subscriptionPlan: (dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium') as any,
-          createdAt: dbSchool.created_at
+          createdAt: dbSchool.created_at,
+          country: dbSchool.country || 'USA',
+          currencyCode: dbSchool.currency_code || 'USD',
+          currencySymbol: dbSchool.currency_symbol || '$',
+          timezone: dbSchool.timezone || 'America/New_York'
         };
         const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
         if (idx === -1) mockDb.schools.push(schoolMapped);
@@ -3376,25 +3384,42 @@ export const mockApi = {
     // Fetch live school from Supabase and sync local mockDb in real time
     let schoolName = 'Aegis Academy';
     let subscriptionPlan = 'freemium';
+    let currencyCode = 'USD';
+    let currencySymbol = '$';
+
     if (schoolId) {
       const { data: dbSchool } = await supabaseAdmin.from('schools').select('*').eq('id', schoolId).maybeSingle();
       if (dbSchool) {
         schoolName = dbSchool.name;
         subscriptionPlan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
+        currencyCode = dbSchool.currency_code || 'USD';
+        currencySymbol = dbSchool.currency_symbol || '$';
         
         // Sync local mockDb schools cache
-        const schoolMapped = {
+        const schoolMapped: School = {
           id: dbSchool.id,
           name: dbSchool.name,
           address: dbSchool.address || '',
           phone: dbSchool.phone || '',
           subscriptionPlan: subscriptionPlan as any,
-          createdAt: dbSchool.created_at
+          createdAt: dbSchool.created_at,
+          country: dbSchool.country || 'USA',
+          currencyCode: currencyCode,
+          currencySymbol: currencySymbol,
+          timezone: dbSchool.timezone || 'America/New_York'
         };
         const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
         if (idx === -1) mockDb.schools.push(schoolMapped);
         else mockDb.schools[idx] = schoolMapped;
         mockDb.saveAll();
+      } else {
+        const localSchool = mockDb.schools.find(s => s.id === schoolId);
+        if (localSchool) {
+          schoolName = localSchool.name;
+          subscriptionPlan = localSchool.subscriptionPlan;
+          currencyCode = localSchool.currencyCode || 'USD';
+          currencySymbol = localSchool.currencySymbol || '$';
+        }
       }
     }
     const plan = subscriptionPlans[subscriptionPlan] || subscriptionPlans.freemium;
@@ -3406,6 +3431,10 @@ export const mockApi = {
       totalClasses: schoolClasses.length,
       totalSubjects: schoolSubjects.length,
       recentRegistrations: [],
+      schoolId,
+      schoolName,
+      currencyCode,
+      currencySymbol,
       feeCollections: {
         paid: payments.filter(p => p.status === 'PAID').reduce((acc, p) => acc + p.amountPaid, 0),
         pending: structures.reduce((acc, fs) => {
@@ -6080,13 +6109,17 @@ export const mockApi = {
       `);
 
     const mappedSchools = (schoolsData || []).map(s => {
-      const schoolMapped = {
+      const schoolMapped: School = {
         id: s.id,
         name: s.name,
         address: s.address || '',
         phone: s.phone || '',
         subscriptionPlan: s.subscription_plan ? (s.subscription_plan.toLowerCase() as any) : 'freemium',
-        createdAt: s.created_at
+        createdAt: s.created_at,
+        country: s.country || 'USA',
+        currencyCode: s.currency_code || 'USD',
+        currencySymbol: s.currency_symbol || '$',
+        timezone: s.timezone || 'America/New_York'
       };
 
       const idx = mockDb.schools.findIndex(x => x.id === s.id);
@@ -6171,12 +6204,26 @@ export const mockApi = {
     });
   },
 
-  async superAdminCreateSchool(superAdminId: string, name: string, address: string, phone: string, subscription: string): Promise<School> {
+  async superAdminCreateSchool(
+    superAdminId: string, 
+    name: string, 
+    address: string, 
+    phone: string, 
+    subscription: string,
+    country: string = 'USA',
+    currencyCode: string = 'USD',
+    currencySymbol: string = '$',
+    timezone: string = 'America/New_York'
+  ): Promise<School> {
     const { data, error } = await supabaseAdmin.from('schools').insert({
       name,
       address,
       phone,
-      subscription_plan: subscription
+      subscription_plan: subscription,
+      country,
+      currency_code: currencyCode,
+      currency_symbol: currencySymbol,
+      timezone
     }).select().single();
 
     if (error || !data) throw new Error('Failed to create school in database: ' + (error?.message || 'Unknown error'));
@@ -6187,7 +6234,11 @@ export const mockApi = {
       address: data.address || '',
       phone: data.phone || '',
       subscriptionPlan: data.subscription_plan ? (data.subscription_plan.toLowerCase() as any) : 'freemium',
-      createdAt: data.created_at
+      createdAt: data.created_at,
+      country: data.country || country,
+      currencyCode: data.currency_code || currencyCode,
+      currencySymbol: data.currency_symbol || currencySymbol,
+      timezone: data.timezone || timezone
     };
 
     const idx = mockDb.schools.findIndex(x => x.id === data.id);
@@ -8400,7 +8451,9 @@ export const mockApi = {
       transactionReference: r.transaction_reference,
       notes: r.notes,
       createdAt: r.created_at,
-      updatedAt: r.updated_at
+      updatedAt: r.updated_at,
+      currencyCode: r.currency_code || 'USD',
+      currencySymbol: r.currency_symbol || '$'
     }));
 
     // Cache locally
@@ -8442,6 +8495,9 @@ export const mockApi = {
     }
 
     const txRef = 'TXP' + Math.random().toString(36).substr(2, 8).toUpperCase();
+    const school = mockDb.schools.find(s => s.id === schoolId);
+    const currencyCode = school?.currencyCode || 'USD';
+    const currencySymbol = school?.currencySymbol || '$';
 
     // 1. Insert in Supabase
     const { data: dbPayout, error } = await supabaseAdmin.from('driver_salary_payouts').insert({
@@ -8453,7 +8509,9 @@ export const mockApi = {
       payout_date: new Date().toISOString(),
       paid_by_user_id: paidByUserId || adminId,
       transaction_reference: txRef,
-      notes: notes || 'Daily attendance disburse'
+      notes: notes || 'Daily attendance disburse',
+      currency_code: currencyCode,
+      currency_symbol: currencySymbol
     }).select('*').single();
 
     if (error || !dbPayout) {
@@ -8470,7 +8528,9 @@ export const mockApi = {
         transactionReference: txRef,
         notes: notes || 'Daily attendance disburse',
         createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
+        updatedAt: new Date().toISOString(),
+        currencyCode,
+        currencySymbol
       };
       mockDb.driverSalaryPayouts.push(localPayout);
       mockDb.saveAll();
@@ -8489,7 +8549,9 @@ export const mockApi = {
       transactionReference: dbPayout.transaction_reference,
       notes: dbPayout.notes,
       createdAt: dbPayout.created_at,
-      updatedAt: dbPayout.updated_at
+      updatedAt: dbPayout.updated_at,
+      currencyCode: dbPayout.currency_code || currencyCode,
+      currencySymbol: dbPayout.currency_symbol || currencySymbol
     };
 
     mockDb.driverSalaryPayouts.push(newPayout);

@@ -1065,7 +1065,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                             {f.status}
                           </span>
                           <h4 className="font-bold text-slate-200 text-sm mt-2">{f.description}</h4>
-                          <p className="text-xs text-slate-400">Total Bill Amount: ${f.amount.toFixed(2)}</p>
+                          <p className="text-xs text-slate-400">Total Bill Amount: {studentSchool?.currencySymbol || '$'}{f.amount.toFixed(2)}</p>
                           <p className="text-[10px] text-slate-500">Bill Due: {new Date(f.dueDate).toLocaleDateString()}</p>
                         </div>
 
@@ -1162,7 +1162,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                           <h4 className="font-bold text-slate-200 text-xs">Outstanding Library Fines</h4>
                           {libraryFines.map(lf => (
                             <div key={lf.id} className="p-3 bg-red-500/5 border border-red-500/10 rounded-xl">
-                              <p className="text-xs text-slate-400">Balance: <span className="text-red-400 font-bold">${lf.amount || lf.fineAmount}</span></p>
+                              <p className="text-xs text-slate-400">Balance: <span className="text-red-400 font-bold">{studentSchool?.currencySymbol || '$'}{lf.amount || lf.fineAmount}</span></p>
                               <p className="text-[9px] text-slate-500">Reason: {lf.reason || 'Late Return Fee'}</p>
                               <span className={`text-[9px] font-bold ${lf.isPaid || lf.is_paid ? 'text-green-400' : 'text-red-400'}`}>
                                 {lf.isPaid || lf.is_paid ? 'Paid' : 'Unpaid'}
@@ -1196,7 +1196,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                       <h4 className="font-bold text-slate-200 text-xs">Assigned Route & Stop</h4>
                       <p className="text-xs text-slate-350">Route: <span className="font-semibold text-brand-400">{assignedRoute?.name || 'Assigned Route'}</span> ({assignedRoute?.routeCode || 'Code Pending'})</p>
                       <p className="text-xs text-slate-350">Pickup Stop: <span className="font-semibold text-slate-200">{assignedPickupPoint?.name || 'Assigned Stop'}</span></p>
-                      <p className="text-xs text-slate-350">Transit Fare: <span className="font-semibold text-slate-200">${assignedRoute?.fare || 0}</span></p>
+                      <p className="text-xs text-slate-350">Transit Fare: <span className="font-semibold text-slate-200">{studentSchool?.currencySymbol || '$'}{assignedRoute?.fare || 0}</span></p>
                     </div>
                     <div className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-3">
                       <h4 className="font-bold text-slate-200 text-xs">Vehicle & Driver Details</h4>
