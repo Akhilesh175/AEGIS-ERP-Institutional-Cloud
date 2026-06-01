@@ -12,6 +12,25 @@ import { SuperAdminPortal } from './portals/SuperAdminPortal';
 import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { GlassCard } from './components/GlassCard';
 
+const getTabsForRole = (role: string): string[] => {
+  switch (role) {
+    case 'STUDENT':
+      return ['dashboard', 'timetable', 'materials', 'quizzes', 'grades', 'library', 'transit', 'forums'];
+    case 'PARENT':
+      return ['dashboard', 'homework', 'timetable', 'materials', 'quizzes', 'grades', 'fees', 'library', 'transit', 'forums'];
+    case 'TEACHER':
+      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics'];
+    case 'SUPER_ADMIN':
+      return ['dashboard', 'tenants', 'users', 'audits', 'backups', 'logging'];
+    default: // ADMIN or any SUB_ADMIN role
+      return [
+        'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
+        'fees', 'communications', 'analytics', 'rbac', 'backups', 'impersonation', 'dangerzone', 
+        'books', 'transport', 'marksheets', 'quizzes', 'attendance', 'assignments'
+      ];
+  }
+};
+
 export const App: React.FC = () => {
   const { session, theme, toggleTheme, setSession, initializeStore } = useStore();
   
@@ -23,16 +42,73 @@ export const App: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
 
   // Tab State
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(() => {
+    const hash = window.location.hash.substring(1);
+    return hash || 'dashboard';
+  });
+
+  const prevUserIdRef = React.useRef<string | undefined>(undefined);
+
+  const updateActiveTab = (tab: string) => {
+    setActiveTab(tab);
+    window.location.hash = tab;
+  };
+
+  // Sync active tab to hash on change (safeguard)
+  useEffect(() => {
+    if (activeTab) {
+      window.location.hash = activeTab;
+    }
+  }, [activeTab]);
+
+  // Synchronize browser history (back/forward) with the active tab state
+  useEffect(() => {
+    const handleHashChange = () => {
+      const hash = window.location.hash.substring(1);
+      if (hash) {
+        // Validate route for the current user's role
+        if (session) {
+          const allowed = getTabsForRole(session.user.role);
+          if (allowed.includes(hash)) {
+            setActiveTab(hash);
+            return;
+          }
+        } else {
+          setActiveTab('dashboard');
+          return;
+        }
+      }
+      setActiveTab('dashboard');
+    };
+
+    window.addEventListener('hashchange', handleHashChange);
+    return () => window.removeEventListener('hashchange', handleHashChange);
+  }, [session]);
 
   useEffect(() => {
     initializeStore();
   }, []);
 
-  // Sync default tab when session changes
+  // Sync default tab ONLY when session user ID actually changes (log in/out)
   useEffect(() => {
-    setActiveTab('dashboard');
+    const currentUserId = session?.user?.id;
+    if (currentUserId !== prevUserIdRef.current) {
+      prevUserIdRef.current = currentUserId;
+      setActiveTab('dashboard');
+      window.location.hash = 'dashboard';
+    }
   }, [session]);
+
+  // Validate current activeTab against the session role
+  useEffect(() => {
+    if (!session) return;
+    const role = session.user.role;
+    const allowed = getTabsForRole(role);
+    if (activeTab !== 'dashboard' && !allowed.includes(activeTab)) {
+      setActiveTab('dashboard');
+      window.location.hash = 'dashboard';
+    }
+  }, [activeTab, session]);
 
   // Session validation guard: if the user account was deleted or deactivated,
   // log them out instantly to protect database records and enforce access gates.
@@ -268,7 +344,7 @@ export const App: React.FC = () => {
       <div className="flex-1 flex overflow-hidden">
         
         {/* Sidebar Navigation */}
-        <Sidebar activeTab={activeTab} setActiveTab={setActiveTab} />
+        <Sidebar activeTab={activeTab} setActiveTab={updateActiveTab} />
 
         {/* Dashboard Content */}
         <main className="flex-1 overflow-y-auto px-6 py-6 md:px-8">
@@ -276,7 +352,7 @@ export const App: React.FC = () => {
           {/* Active Portal Mount */}
           {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
           {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
-          {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={setActiveTab} />}
+          {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
           {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
           {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
 
