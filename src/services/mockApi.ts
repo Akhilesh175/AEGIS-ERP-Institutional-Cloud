@@ -8,7 +8,7 @@ import {
   Role, RolePermission
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
-import { subscriptionPlans } from './subscriptionConfig';
+import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
 
 // Helper to simulate network latency
 const delay = (ms = 400) => new Promise(resolve => setTimeout(resolve, ms));
@@ -2310,6 +2310,19 @@ export const mockApi = {
   // ==========================================
   // 4. TEACHER PORTAL ENDPOINTS
   // ==========================================
+
+  async verifySchoolFeature(schoolId: string, feature: string): Promise<void> {
+    const { data: dbSchool } = await supabaseAdmin
+      .from('schools')
+      .select('subscription_plan')
+      .eq('id', schoolId)
+      .maybeSingle();
+    const planName = dbSchool?.subscription_plan?.toLowerCase() || 'freemium';
+    const plan = subscriptionPlans[planName] || subscriptionPlans.freemium;
+    if (!(plan.features as any)[feature]) {
+      throw new Error(`Security Policy Alert: The requested feature (${String(feature)}) is locked under your institution's current "${planName.toUpperCase()}" subscription plan. Please upgrade to a higher tier.`);
+    }
+  },
 
   async verifyClassTeacherHubSubscription(teacherId: string): Promise<void> {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
@@ -5750,6 +5763,7 @@ export const mockApi = {
   ): Promise<FeeStructure> {
     await delay(600);
     const schoolId = getAdminSchoolId();
+    await this.verifySchoolFeature(schoolId, 'billing');
     const activeSessionId = await this.resolveActiveSessionId(schoolId);
 
     // 1. Insert fee structure in Supabase
@@ -5821,6 +5835,8 @@ export const mockApi = {
     description: string
   ): Promise<FeeStructure> {
     await delay(500);
+    const schoolId = getAdminSchoolId();
+    await this.verifySchoolFeature(schoolId, 'billing');
 
     const { data: dbStructure, error } = await supabaseAdmin
       .from('fee_structures')
@@ -5859,6 +5875,8 @@ export const mockApi = {
 
   async adminDeleteFeeStructure(adminId: string, id: string): Promise<void> {
     await delay(400);
+    const schoolId = getAdminSchoolId();
+    await this.verifySchoolFeature(schoolId, 'billing');
 
     const { error } = await supabaseAdmin
       .from('fee_structures')
@@ -5898,9 +5916,12 @@ export const mockApi = {
     status: PaymentStatus
   ): Promise<FeePayment> {
     await delay(600);
-    const { data: admin } = await supabaseAdmin.from('users').select('role').eq('id', adminId).single();
+    const { data: admin } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
     if (!admin || !['ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
       throw new Error('Access Denied: Only School Admin and Finance Admin can record fee payments.');
+    }
+    if (admin.school_id) {
+      await this.verifySchoolFeature(admin.school_id, 'billing');
     }
 
     // Upsert payment into database using ON CONFLICT (fee_structure_id, student_id)
@@ -5950,9 +5971,12 @@ export const mockApi = {
 
   async adminApproveFeePayment(adminId: string, paymentId: string): Promise<void> {
     await delay(300);
-    const { data: admin } = await supabaseAdmin.from('users').select('role').eq('id', adminId).single();
+    const { data: admin } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
     if (!admin || !['ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
       throw new Error('Access Denied: Only School Admin and Finance Admin can approve fee payments.');
+    }
+    if (admin.school_id) {
+      await this.verifySchoolFeature(admin.school_id, 'billing');
     }
 
     const payment = mockDb.feePayments.find(p => p.id === paymentId);
@@ -5973,9 +5997,12 @@ export const mockApi = {
 
   async adminRejectFeePayment(adminId: string, paymentId: string): Promise<void> {
     await delay(300);
-    const { data: admin } = await supabaseAdmin.from('users').select('role').eq('id', adminId).single();
+    const { data: admin } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
     if (!admin || !['ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
       throw new Error('Access Denied: Only School Admin and Finance Admin can reject fee payments.');
+    }
+    if (admin.school_id) {
+      await this.verifySchoolFeature(admin.school_id, 'billing');
     }
 
     const payment = mockDb.feePayments.find(p => p.id === paymentId);
@@ -7185,6 +7212,17 @@ export const mockApi = {
     if (sender.role !== 'SUPER_ADMIN' && receiver.role !== 'SUPER_ADMIN') {
       if (sender.schoolId !== receiver.schoolId) {
         throw new Error('Access Denied: School-scoped tenant isolation violation.');
+      }
+    }
+
+    // Enforce school subscription validation for communications
+    if (sender.role !== 'SUPER_ADMIN' && sender.schoolId) {
+      const school = mockDb.schools.find(s => s.id === sender.schoolId);
+      if (school) {
+        const plan = subscriptionPlans[school.subscriptionPlan] || subscriptionPlans.freemium;
+        if (!plan.features.communications) {
+          throw new Error(`Direct messaging and communications are not enabled on your ${school.subscriptionPlan} subscription tier. Please upgrade.`);
+        }
       }
     }
 

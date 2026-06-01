@@ -74,9 +74,24 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
             try {
               const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(parsed.user.schoolId);
               if (livePlan) {
-                const updatedSession = { ...parsed, schoolSubscriptionPlan: livePlan };
+                const updatedSession = { ...parsed, schoolSubscriptionPlan: livePlan.toLowerCase() };
                 set({ session: updatedSession });
                 localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+                
+                // Force sync the local mockDb school registry to invalidate any stale premium tier states
+                const dbSchoolsRaw = localStorage.getItem('aegis_erp_db_schools');
+                if (dbSchoolsRaw) {
+                  try {
+                    const dbSchools = JSON.parse(dbSchoolsRaw);
+                    const idx = dbSchools.findIndex((s: any) => s.id === parsed.user.schoolId);
+                    if (idx !== -1 && dbSchools[idx].subscriptionPlan !== livePlan.toLowerCase()) {
+                      dbSchools[idx].subscriptionPlan = livePlan.toLowerCase();
+                      localStorage.setItem('aegis_erp_db_schools', JSON.stringify(dbSchools));
+                    }
+                  } catch (err) {
+                    console.error('Failed to parse cached schools:', err);
+                  }
+                }
               }
             } catch (e) {
               console.error('Failed to sync live subscription plan:', e);
@@ -88,17 +103,33 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
       }
     }
   },
-
+ 
   syncSubscriptionPlan: async () => {
     const sess = get().session;
     if (sess?.user?.schoolId) {
       try {
         const { mockApi } = await import('../services/mockApi');
         const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(sess.user.schoolId);
-        if (livePlan && livePlan !== sess.schoolSubscriptionPlan) {
-          const updatedSession = { ...sess, schoolSubscriptionPlan: livePlan };
+        if (livePlan) {
+          const planNormalized = livePlan.toLowerCase();
+          const updatedSession = { ...sess, schoolSubscriptionPlan: planNormalized };
           set({ session: updatedSession });
           localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+          
+          // Force sync the local mockDb school registry as well
+          const dbSchoolsRaw = localStorage.getItem('aegis_erp_db_schools');
+          if (dbSchoolsRaw) {
+            try {
+              const dbSchools = JSON.parse(dbSchoolsRaw);
+              const idx = dbSchools.findIndex((s: any) => s.id === sess.user.schoolId);
+              if (idx !== -1 && dbSchools[idx].subscriptionPlan !== planNormalized) {
+                dbSchools[idx].subscriptionPlan = planNormalized;
+                localStorage.setItem('aegis_erp_db_schools', JSON.stringify(dbSchools));
+              }
+            } catch (err) {
+              console.error('Failed to sync mockDb schools local storage:', err);
+            }
+          }
         }
       } catch (e) {
         console.error('Failed to sync subscription plan in polling loop:', e);

@@ -7,7 +7,7 @@ import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePaymen
 import { GlassCard } from '../components/GlassCard';
 import { 
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
-  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Trash2, AlertTriangle, CheckCircle, XCircle, Edit, CreditCard,
+  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Lock, Trash2, AlertTriangle, CheckCircle, XCircle, Edit, CreditCard,
   Mail, Send, RefreshCw, Play, FileSpreadsheet, FileText, CheckSquare, Sliders, HardDrive, Download, ChevronRight, BarChart2, Clock, Settings, Shield, Search, Activity,
   Award, BookOpen
 } from 'lucide-react';
@@ -19,7 +19,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const { session, setSession, syncSubscriptionPlan } = useStore();
   const adminId = session?.user.id;
   const isAcademicOrSchoolAdmin = session?.user.role === 'ADMIN' || session?.user.role === 'ACADEMIC_ADMIN';
-  const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
+  const cachedSchool = session?.user.schoolId ? mockDb.schools.find(s => s.id === session.user.schoolId) : null;
+  const currentPlanName = (cachedSchool?.subscriptionPlan || session?.schoolSubscriptionPlan || 'freemium').toLowerCase();
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
 
   // Datasets
@@ -202,6 +203,16 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
 
   // ── RBAC Dynamic Permission states ───────────────────
+  const rbacModules = [
+    { key: 'academics', label: 'Academics & Classes Setup' },
+    { key: 'directory', label: 'Directory Management (Students/Teachers/Parents)' },
+    { key: 'grading', label: 'Grading, Exams & Marks Manager' },
+    { key: 'billing', label: 'Billing, Invoices & Driver Ledger' },
+    { key: 'books', label: 'Library Catalog Management' },
+    { key: 'transport', label: 'Transport Vehicles & Routes' },
+    { key: 'security', label: 'System Audits & Backup Panels' }
+  ];
+
   const [rbacPermissions, setRbacPermissions] = useState<Record<string, Record<string, boolean>>>({
     FINANCE_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
     ACADEMIC_ADMIN: { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true },
@@ -380,6 +391,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const handleCreateSubAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (currentPlanName !== 'enterprise') {
+      alert('Security Policy Alert: Registering sub-admin operators requires an active Enterprise subscription plan. Please upgrade your institution.');
+      return;
+    }
     if (!saEmail.trim() || !saPassword || saPassword.length < 6) {
       alert('Email cannot be empty and password must be at least 6 characters.');
       return;
@@ -4061,6 +4076,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
       {/* ── 1. EMAIL & SMS COMMUNICATION CENTER ── */}
       {activeTab === 'communications' && (
+        currentPlanName !== 'enterprise' ? (
+          <div className="max-w-lg mx-auto py-12 text-center animate-fade-in">
+            <PremiumLock isLocked={true} requiredTier="enterprise" featureName="Email & SMS Communication Center">
+              <div />
+            </PremiumLock>
+          </div>
+        ) : (
         <div className="space-y-6 animate-fade-in">
           {/* Header */}
           <GlassCard className="border border-brand-500/10">
@@ -4261,10 +4283,18 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             </div>
           </GlassCard>
         </div>
+        )
       )}
 
       {/* ── 2. INSTITUTIONAL ANALYTICS & FILE EXPORTERS ── */}
       {activeTab === 'analytics' && (
+        currentPlanName !== 'enterprise' ? (
+          <div className="max-w-lg mx-auto py-12 text-center animate-fade-in">
+            <PremiumLock isLocked={true} requiredTier="enterprise" featureName="Advanced Academic & Finance Analytics">
+              <div />
+            </PremiumLock>
+          </div>
+        ) : (
         <div className="space-y-6 animate-fade-in">
           {/* Header */}
           <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -4469,10 +4499,18 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             </div>
           </GlassCard>
         </div>
+        )
       )}
 
       {/* ── 3. SAAS DISASTER RECOVERY & BACKUPS ── */}
       {activeTab === 'backups' && (
+        currentPlanName !== 'enterprise' ? (
+          <div className="max-w-lg mx-auto py-12 text-center animate-fade-in">
+            <PremiumLock isLocked={true} requiredTier="enterprise" featureName="SaaS Disaster Recovery & Backup Panel">
+              <div />
+            </PremiumLock>
+          </div>
+        ) : (
         <div className="space-y-6 animate-fade-in">
           {/* Header */}
           <GlassCard className="border border-brand-500/10">
@@ -4641,15 +4679,90 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             </div>
           </GlassCard>
         </div>
+        )
       )}
 
       {/* ── 4. DYNAMIC MODULES & RBAC PERMISSIONS ── */}
       {activeTab === 'rbac' && (
         currentPlanName !== 'enterprise' ? (
-          <div className="max-w-lg mx-auto py-12">
-            <PremiumLock isLocked={true} requiredTier="enterprise" featureName="Dynamic Permissions Grid (RBAC Matrix)">
-              <div />
-            </PremiumLock>
+          <div className="space-y-6 animate-fade-in text-xs max-w-4xl mx-auto py-8">
+            {currentPlanName === 'freemium' ? (
+              /* Freemium Plan Lock Screen */
+              <GlassCard className="border-red-500/20 bg-black/60 shadow-[0_0_50px_rgba(239,68,68,0.1)] p-8 text-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-3 bg-red-500/10 border-l border-b border-red-500/20 rounded-bl-xl text-red-400 font-bold uppercase tracking-wider text-[8px]">
+                  Freemium Lock
+                </div>
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-red-400 to-rose-600 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-red-500/20 animate-pulse">
+                  <Lock className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-slate-100 mb-2">Dynamic RBAC & Sub-Admins Locked</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto mb-6">
+                  You are currently on the <span className="text-red-400 font-bold uppercase">Freemium</span> tier. Advanced role permissions configuration, dynamic sub-admin directories, and granular authorization matrix tables are restricted to Enterprise schools.
+                </p>
+                <div className="inline-block p-4 bg-slate-900/60 border border-slate-800 rounded-xl max-w-lg mx-auto text-left space-y-2 mb-6 w-full">
+                  <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Enterprise Upgrade Benefits:</p>
+                  <ul className="list-disc pl-4 space-y-1 text-slate-400 text-[10px]">
+                    <li>Dynamic Sub-Admin Role Matrix (Finance, Transport, Exams, Librarian, Custom)</li>
+                    <li>SaaS Disaster Recovery with automated off-site backups</li>
+                    <li>Advanced institutional metrics, analytics, and printable invoicing PDF reports</li>
+                  </ul>
+                </div>
+                <button 
+                  disabled
+                  className="px-6 py-2.5 bg-gradient-to-r from-brand-600 to-purple-600 hover:from-brand-500 hover:to-purple-500 text-white rounded-lg font-bold w-full max-w-xs transition-all active:scale-[0.98] cursor-not-allowed opacity-80"
+                >
+                  Request Enterprise Upgrade
+                </button>
+              </GlassCard>
+            ) : currentPlanName === 'basic' ? (
+              /* Basic Plan Lock Screen */
+              <GlassCard className="border-amber-500/20 bg-black/60 shadow-[0_0_50px_rgba(245,158,11,0.1)] p-8 text-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-3 bg-amber-500/10 border-l border-b border-amber-500/20 rounded-bl-xl text-amber-400 font-bold uppercase tracking-wider text-[8px] flex items-center gap-1">
+                  <Crown size={8} /> Enterprise Only
+                </div>
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-amber-400 to-orange-500 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-amber-500/20">
+                  <Lock className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-slate-100 mb-2">Advanced RBAC Matrix Restricted</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto mb-6">
+                  School accounts on the <span className="text-amber-400 font-bold uppercase">Basic</span> plan cannot manage custom sub-admin operator directory listings or configure modular access rules.
+                </p>
+                <div className="inline-block p-4 bg-slate-900/60 border border-slate-800 rounded-xl max-w-lg mx-auto text-left space-y-2 mb-6 w-full">
+                  <p className="text-[10px] font-bold text-slate-300 uppercase tracking-widest">Enterprise Feature Set:</p>
+                  <ul className="list-disc pl-4 space-y-1 text-slate-400 text-[10px]">
+                    <li>Complete dynamic granular permissions toggle grid for 7 modules</li>
+                    <li>Add/Remove/Suspend Sub-Admins in real time</li>
+                    <li>Enterprise-grade auditing logs and threat detection telemetry</li>
+                  </ul>
+                </div>
+                <button 
+                  disabled
+                  className="px-6 py-2.5 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white rounded-lg font-bold w-full max-w-xs transition-all active:scale-[0.98] cursor-not-allowed opacity-80"
+                >
+                  Contact Admin for Enterprise Tier
+                </button>
+              </GlassCard>
+            ) : (
+              /* Pro Plan Lock Screen (Upgrade to Enterprise Required) */
+              <GlassCard className="border-indigo-500/20 bg-black/60 shadow-[0_0_50px_rgba(99,102,241,0.1)] p-8 text-center relative overflow-hidden">
+                <div className="absolute top-0 right-0 p-3 bg-indigo-500/10 border-l border-b border-indigo-500/20 rounded-bl-xl text-indigo-400 font-bold uppercase tracking-wider text-[8px]">
+                  Enterprise Upgrade Required
+                </div>
+                <div className="w-16 h-16 rounded-full bg-gradient-to-br from-indigo-400 to-purple-600 flex items-center justify-center mx-auto mb-6 shadow-lg shadow-indigo-500/20">
+                  <Lock className="w-8 h-8 text-white" />
+                </div>
+                <h3 className="text-2xl font-bold text-slate-100 mb-2">Upgrade to Enterprise Plan</h3>
+                <p className="text-xs text-slate-400 max-w-md mx-auto mb-6">
+                  You are currently on the <span className="text-indigo-400 font-bold uppercase">Pro</span> tier. Dynamic sub-admin management and advanced modular authorization matrix controls require an active upgrade to the designated <span className="text-indigo-400 font-bold uppercase">Enterprise</span> Plan.
+                </p>
+                <button 
+                  disabled
+                  className="px-6 py-2.5 bg-gradient-to-r from-indigo-500 to-purple-600 hover:from-indigo-400 hover:to-purple-500 text-white rounded-lg font-bold w-full max-w-xs transition-all active:scale-[0.98] cursor-not-allowed opacity-80"
+                >
+                  Activate Enterprise Subscription
+                </button>
+              </GlassCard>
+            )}
           </div>
         ) : (
         <div className="space-y-6 animate-fade-in text-xs">
@@ -4698,20 +4811,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
                     <th className="py-3 px-4">System Modules</th>
                     {Object.keys(rbacPermissions).map((role) => (
-                      <th key={role} className="py-3 px-4 text-center font-mono">{role.replace('_', ' ')}</th>
+                      <th key={role} className="py-3 px-4 text-center">{role.replace('_', ' ')}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-850/40">
-                  {[
-                    { key: 'billing', label: 'Billing, Invoicing, and Fee Ledger Reports' },
-                    { key: 'directory', label: 'Student, Teacher, and Parent Directories' },
-                    { key: 'academics', label: 'Classes, Sections, and Subject Catalogs' },
-                    { key: 'grading', label: 'Exam Marksheets and Homeroom grading matrix' },
-                    { key: 'books', label: 'Library Books Registry & Issue/Return trackers' },
-                    { key: 'transport', label: 'School Bus Routes & transit logs' },
-                    { key: 'security', label: 'Disaster Recovery and core threat telemetry' }
-                  ].map((module) => (
+                  {rbacModules.map((module) => (
                     <tr key={module.key} className="hover:bg-slate-900/10 transition-colors">
                       <td className="py-3.5 px-4 font-semibold text-slate-300">{module.label}</td>
                       {Object.keys(rbacPermissions).map((role) => (
@@ -5105,7 +5210,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       )}
 
       {/* Sub-Admin Registration Modal */}
-      {showAddSubAdmin && (
+      {showAddSubAdmin && currentPlanName === 'enterprise' && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
           <GlassCard className="w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="border-b border-slate-850 pb-2 flex items-center justify-between">

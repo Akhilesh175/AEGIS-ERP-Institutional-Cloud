@@ -74,10 +74,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
   if (!session) return null;
 
   const role = session.user.role;
-  const school = session.user.schoolId ? mockDb.schools.find(s => s.id === session.user.schoolId) : null;
-  const plan = school ? subscriptionPlans[school.subscriptionPlan] || subscriptionPlans.freemium : subscriptionPlans.freemium;
-
-  // Removed filterTabs since we now show locked items with icons
+  const planName = (session.schoolSubscriptionPlan || 'freemium').toLowerCase();
+  const plan = subscriptionPlans[planName] || subscriptionPlans.freemium;
 
   // Define tab mappings per role
   const getTabs = () => {
@@ -110,18 +108,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         return [
           { id: 'dashboard', label: 'Classes Taught', icon: LayoutDashboard },
           { id: 'timetable', label: 'Teaching Schedule', icon: Calendar },
-          { id: 'classroster', label: 'Class Roster', icon: Users, locked: !school || school.subscriptionPlan === 'freemium' },
+          { id: 'classroster', label: 'Class Roster', icon: Users, locked: planName === 'freemium' },
           { id: 'attendance', label: 'Attendance Roll', icon: Layers },
           { id: 'grades', label: 'Gradebook Matrix', icon: Award },
-          { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: !school || school.subscriptionPlan === 'freemium' || school.subscriptionPlan === 'basic' },
+          { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: planName === 'freemium' || planName === 'basic' },
           { id: 'assignments', label: 'Assignment Creator', icon: PenTool },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
-          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: !school || school.subscriptionPlan !== 'enterprise' },
+          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: planName !== 'enterprise' },
           { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: !plan.features.communications },
           { id: 'analytics', label: 'Class Analytics', icon: Activity }
         ];
-      case 'ADMIN':
-        return [
+      case 'ADMIN': {
+        const isEnterprise = planName === 'enterprise';
+        const adminTabs = [
           { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard },
           { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'teachers', label: 'Teacher Directory', icon: UsersRound },
@@ -131,19 +130,30 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'academicsessions', label: 'Academic Sessions', icon: Calendar },
           { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing },
           { id: 'communications', label: 'Communication Center', icon: Mail },
-          { id: 'analytics', label: 'Institutional Analytics', icon: Activity },
-          { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: school?.subscriptionPlan !== 'enterprise' },
-          { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database },
+          { id: 'analytics', label: 'Institutional Analytics', icon: Activity }
+        ];
+
+        if (isEnterprise) {
+          adminTabs.push(
+            { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key },
+            { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database }
+          );
+        }
+
+        adminTabs.push(
           { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
           { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert }
-        ];
+        );
+
+        return adminTabs;
+      }
       case 'FINANCE_ADMIN':
       case 'ACADEMIC_ADMIN':
       case 'EXAM_CONTROLLER':
       case 'LIBRARIAN':
       case 'TRANSPORT_MANAGER':
       case 'CUSTOM_SUB_ADMIN': {
-        const isEnterprise = school?.subscriptionPlan === 'enterprise';
+        const isEnterprise = planName === 'enterprise';
         const subAdminTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
           { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard }
         ];
@@ -177,12 +187,12 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           subAdminTabs.push({ id: 'marksheets', label: ' Homeroom Marksheets', icon: ClipboardList });
           subAdminTabs.push({ id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes });
         }
-
+ 
         // If books is allowed (Library)
         if (permissions.books && isEnterprise) {
           subAdminTabs.push({ id: 'books', label: 'Library Registry', icon: BookOpen });
         }
-
+ 
         // If transport is allowed (Transport)
         if (permissions.transport && isEnterprise) {
           subAdminTabs.push({ id: 'transport', label: 'Transit Registry', icon: Layers });
