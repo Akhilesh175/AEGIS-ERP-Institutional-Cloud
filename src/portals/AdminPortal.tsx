@@ -3200,8 +3200,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                         return (
                           <tr key={driver.id} className="hover:bg-slate-900/10 text-slate-200">
                             <td className="py-3 px-4">
-                              <div className="font-semibold text-slate-200">{driver.userDetails.firstName} {driver.userDetails.lastName}</div>
-                              <div className="text-[9px] text-slate-500 font-mono">{driver.userDetails.email}</div>
+                              <div className="font-semibold text-slate-200">{driver.userDetails?.firstName || 'Unknown'} {driver.userDetails?.lastName || 'Driver'}</div>
+                              <div className="text-[9px] text-slate-500 font-mono">{driver.userDetails?.email || 'No email registered'}</div>
                             </td>
                             <td className="py-3 px-4 text-slate-400 font-mono">{driver.licenseNumber}</td>
                             <td className="py-3 px-4">
@@ -3214,7 +3214,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                             <td className="py-3 px-4 text-right">
                               <button
                                 onClick={() => {
-                                  alert(`Successfully disbursed daily salary payout of $${payout.toFixed(2)} to ${driver.userDetails.firstName} ${driver.userDetails.lastName}!`);
+                                  alert(`Successfully disbursed daily salary payout of $${payout.toFixed(2)} to ${driver.userDetails?.firstName || 'Unknown'} ${driver.userDetails?.lastName || 'Driver'}!`);
                                 }}
                                 disabled={payout === 0}
                                 className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
@@ -3451,7 +3451,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
             <div className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest leading-none">Student Account</p>
-              <h5 className="font-bold text-slate-200 mt-1">{collectingPayment.student.userDetails.firstName} {collectingPayment.student.userDetails.lastName}</h5>
+              <h5 className="font-bold text-slate-200 mt-1">{collectingPayment.student.userDetails?.firstName || 'Unknown'} {collectingPayment.student.userDetails?.lastName || 'Student'}</h5>
               <p className="text-[10px] text-slate-400 mt-0.5">Structure: {collectingPayment.structure.description}</p>
             </div>
 
