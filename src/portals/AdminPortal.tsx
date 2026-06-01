@@ -2892,7 +2892,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Collected Income</p>
                   <h3 className="text-xl font-extrabold text-emerald-400">
-                    ${feePayments.filter(p => p.status === 'PAID').reduce((acc, p) => acc + p.amountPaid, 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    ${(feePayments || [])
+                      .filter(p => p && p.status === 'PAID')
+                      .reduce((acc, p) => acc + (Number(p.amountPaid) || 0), 0)
+                      .toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </h3>
                   <span className="text-[9px] text-slate-500">Total cleared student payments</span>
                 </div>
@@ -2906,8 +2909,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Outstanding Invoices</p>
                   <h3 className="text-xl font-extrabold text-amber-400">
                     ${(
-                      feeStructures.reduce((acc, fs) => acc + (fs.amount * students.filter(s => s.classId === fs.classId).length), 0) -
-                      feePayments.filter(p => p.status === 'PAID').reduce((acc, p) => acc + p.amountPaid, 0)
+                      (feeStructures || []).reduce((acc, fs) => acc + ((Number(fs?.amount) || 0) * (students || []).filter(s => s && s.classId === fs?.classId).length), 0) -
+                      (feePayments || []).filter(p => p && p.status === 'PAID').reduce((acc, p) => acc + (Number(p.amountPaid) || 0), 0)
                     ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </h3>
                   <span className="text-[9px] text-slate-500">Total pending collectable fees</span>
@@ -2921,7 +2924,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Institutional Ledger</p>
                   <h3 className="text-xl font-extrabold text-brand-400">
-                    ${feeStructures.reduce((acc, fs) => acc + (fs.amount * students.filter(s => s.classId === fs.classId).length), 0).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    ${(feeStructures || [])
+                      .reduce((acc, fs) => acc + ((Number(fs?.amount) || 0) * (students || []).filter(s => s && s.classId === fs?.classId).length), 0)
+                      .toLocaleString(undefined, { minimumFractionDigits: 2 })}
                   </h3>
                   <span className="text-[9px] text-slate-500">Total institutional billing mapped</span>
                 </div>
@@ -2974,7 +2979,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                                 </span>
                                 <h4 className="font-semibold text-slate-200 text-xs mt-1.5 line-clamp-1">{fs.description}</h4>
                               </div>
-                              <span className="text-xs font-extrabold text-slate-100 shrink-0">${fs.amount.toFixed(2)}</span>
+                              <span className="text-xs font-extrabold text-slate-100 shrink-0">${(Number(fs.amount) || 0).toFixed(2)}</span>
                             </div>
 
                             <div className="flex items-center justify-between mt-3 text-[10px] text-slate-400 border-t border-slate-850/60 pt-2">
@@ -3056,17 +3061,17 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                               const status = payment ? payment.status : 'PENDING';
                               const isOverdue = new Date(selectedFeeStructure.dueDate).getTime() < Date.now();
                               const lateFee = (status !== 'PAID' && isOverdue) ? 15.00 : 0.00;
-                              const balanceDue = status === 'PAID' ? 0.00 : (selectedFeeStructure.amount + lateFee);
+                              const balanceDue = status === 'PAID' ? 0.00 : ((Number(selectedFeeStructure.amount) || 0) + lateFee);
                               return (
                                 <tr key={student.id} className="hover:bg-slate-900/10 text-slate-200">
                                   <td className="py-3 px-4">
-                                    <div className="font-semibold text-slate-200">{student.userDetails.firstName} {student.userDetails.lastName}</div>
-                                    <div className="text-[9px] text-slate-500 font-mono">{student.admissionNumber}</div>
+                                    <div className="font-semibold text-slate-200">{student.userDetails?.firstName || 'Unknown'} {student.userDetails?.lastName || 'Student'}</div>
+                                    <div className="text-[9px] text-slate-500 font-mono">{student.admissionNumber || 'N/A'}</div>
                                   </td>
                                   <td className="py-3 px-4 text-slate-400">{student.rollNumber || '-'}</td>
                                   <td className="py-3 px-4">
-                                    {payment && payment.amountPaid > 0 ? (
-                                      <div className="font-semibold text-emerald-400">${payment.amountPaid.toFixed(2)}</div>
+                                    {payment && (Number(payment.amountPaid) || 0) > 0 ? (
+                                      <div className="font-semibold text-emerald-400">${(Number(payment.amountPaid) || 0).toFixed(2)}</div>
                                     ) : (
                                       <span className="text-slate-500">$0.00</span>
                                     )}
@@ -3075,7 +3080,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                                     )}
                                   </td>
                                   <td className="py-3 px-4 font-mono font-bold text-slate-300">
-                                    ${balanceDue.toFixed(2)}
+                                    ${(Number(balanceDue) || 0).toFixed(2)}
                                     {lateFee > 0 && (
                                       <div className="text-[8px] text-rose-400 font-semibold mt-0.5">+ $15.00 Overdue Fee</div>
                                     )}

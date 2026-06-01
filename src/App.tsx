@@ -11,6 +11,7 @@ import { AdminPortal } from './portals/AdminPortal';
 import { SuperAdminPortal } from './portals/SuperAdminPortal';
 import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff } from 'lucide-react';
 import { GlassCard } from './components/GlassCard';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const getTabsForRole = (role: string): string[] => {
   switch (role) {
@@ -349,12 +350,14 @@ export const App: React.FC = () => {
         {/* Dashboard Content */}
         <main className="flex-1 overflow-y-auto px-6 py-6 md:px-8">
           
-          {/* Active Portal Mount */}
-          {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
-          {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
-          {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
-          {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
-          {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
+          <ErrorBoundary>
+            {/* Active Portal Mount */}
+            {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
+            {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
+            {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
+            {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
+            {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
+          </ErrorBoundary>
 
         </main>
       </div>
