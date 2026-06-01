@@ -117,6 +117,49 @@ export const getAdminSchoolId = (): string => {
   return 'school-1'; // default fallback
 };
 
+export const getActiveUser = (): { id: string; role: string; schoolId: string } | null => {
+  try {
+    const sessionRaw = localStorage.getItem(SESSION_KEY);
+    if (sessionRaw) {
+      const session = JSON.parse(sessionRaw) as AuthSession;
+      if (session.user) {
+        return {
+          id: session.user.id,
+          role: session.user.role,
+          schoolId: session.user.schoolId || ''
+        };
+      }
+    }
+  } catch (e) {
+    console.error(e);
+  }
+  return null;
+};
+
+export const checkCoreAdminOrAcademicAdmin = (): void => {
+  const activeUser = getActiveUser();
+  if (!activeUser || !['ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN'].includes(activeUser.role)) {
+    throw new Error('Access Denied: Only School Admin and Academic Admin are authorized to perform this operation.');
+  }
+};
+
+export const isChatAllowed = (roleA: string, roleB: string): boolean => {
+  if (roleA === roleB) return false;
+  const subAdmins = ['FINANCE_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'ACADEMIC_ADMIN', 'CUSTOM_SUB_ADMIN'];
+  const isSubAdmin = (r: string) => subAdmins.includes(r);
+  
+  const checkPair = (r1: string, r2: string) => {
+    if (r1 === 'TEACHER' && r2 === 'ADMIN') return true;
+    if (r1 === 'STUDENT' && (r2 === 'TEACHER' || isSubAdmin(r2))) return true;
+    if (r1 === 'PARENT' && (r2 === 'TEACHER' || isSubAdmin(r2))) return true;
+    if (isSubAdmin(r1) && (r2 === 'ADMIN' || r2 === 'STUDENT' || r2 === 'TEACHER' || r2 === 'PARENT')) return true;
+    if (r1 === 'ADMIN' && (r2 === 'SUPER_ADMIN' || isSubAdmin(r2))) return true;
+    return false;
+  };
+  
+  return checkPair(roleA, roleB) || checkPair(roleB, roleA);
+};
+
 
 // ── Super Admin Identity Lock ────────────────────────────────────────────────
 // ONLY this exact email address is permitted to log in as SUPER_ADMIN.
@@ -2519,6 +2562,60 @@ export const mockApi = {
     mockDb.saveAll();
   },
 
+  async adminMarkAttendance(
+    adminId: string, 
+    classId: string, 
+    date: string, 
+    records: { studentId: string; status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'; remarks?: string }[]
+  ): Promise<void> {
+    await delay(500);
+    const admin = mockDb.users.find(u => u.id === adminId);
+    if (!admin) throw new Error('Admin user not found');
+    const schoolId = admin.schoolId;
+    if (!schoolId) throw new Error('Admin schoolId is undefined');
+    const academicSessionId = await this.resolveActiveSessionId(schoolId);
+
+    for (const rec of records) {
+      try {
+        const { data: existingRecord } = await supabaseAdmin
+          .from('attendance')
+          .select('id')
+          .eq('student_id', rec.studentId)
+          .eq('date', date)
+          .maybeSingle();
+
+        if (existingRecord) {
+          const { error } = await supabaseAdmin
+            .from('attendance')
+            .update({
+              status: rec.status,
+              remarks: rec.remarks || null
+            })
+            .eq('id', existingRecord.id);
+          if (error) throw error;
+        } else {
+          const { error } = await supabaseAdmin
+            .from('attendance')
+            .insert({
+              school_id: schoolId,
+              academic_session_id: academicSessionId,
+              student_id: rec.studentId,
+              date,
+              status: rec.status,
+              remarks: rec.remarks || null
+            });
+          if (error) throw error;
+        }
+      } catch (err) {
+        console.error('Failed to save attendance record to database:', err);
+      }
+    }
+
+    await this.syncAttendanceData(schoolId);
+    mockDb.addLog(adminId, 'MARK_ATTENDANCE_ADMIN', { classId, count: records.length, date });
+    mockDb.saveAll();
+  },
+
   async teacherGetSubmissions(teacherId: string, classId: string): Promise<(AssignmentSubmission & { studentName: string; assignmentTitle: string; maxMarks: number })[]> {
     await delay();
     
@@ -2761,6 +2858,76 @@ export const mockApi = {
     return assign;
   },
 
+  async adminCreateAssignment(
+    adminId: string, 
+    classId: string, 
+    subjectId: string, 
+    title: string, 
+    description: string, 
+    dueDate: string, 
+    isHomework: boolean, 
+    sectionId?: string | null, 
+    customId?: string | null
+  ): Promise<Assignment> {
+    await delay(500);
+    const admin = mockDb.users.find(u => u.id === adminId);
+    if (!admin) throw new Error('Admin not found.');
+    const schoolId = admin.schoolId;
+    if (!schoolId) throw new Error('Admin schoolId is undefined');
+    const academicSessionId = await this.resolveActiveSessionId(schoolId);
+
+    const { data: dbAssign, error } = await supabaseAdmin
+      .from('homeworks')
+      .insert({
+        id: customId || undefined,
+        school_id: schoolId,
+        class_id: classId,
+        section_id: sectionId || null,
+        subject_id: subjectId,
+        title,
+        description,
+        instructions: description,
+        due_date: dueDate,
+        status: 'PUBLISHED',
+        academic_session_id: academicSessionId
+      })
+      .select()
+      .single();
+
+    if (error || !dbAssign) {
+      throw new Error('Failed to create homework in database: ' + (error?.message || 'Unknown error'));
+    }
+
+    const ass: Assignment = {
+      id: dbAssign.id,
+      classId: dbAssign.class_id,
+      sectionId: dbAssign.section_id || undefined,
+      subjectId: dbAssign.subject_id,
+      teacherId: null,
+      title: dbAssign.title,
+      description: dbAssign.description,
+      dueDate: dbAssign.due_date,
+      maxMarks: 100,
+      fileAttachmentUrl: dbAssign.attachment_url || undefined,
+      attachments: [],
+      isHomework: true,
+      academicSessionId: dbAssign.academic_session_id || academicSessionId,
+      createdAt: dbAssign.created_at
+    };
+
+    const idx = mockDb.assignments.findIndex(a => a.id === ass.id);
+    if (idx === -1) {
+      mockDb.assignments.push(ass);
+    } else {
+      mockDb.assignments[idx] = ass;
+    }
+
+    await this.syncAssignmentsData(schoolId);
+    mockDb.addLog(adminId, 'CREATE_HOMEWORK_ADMIN', { title, classId });
+    mockDb.saveAll();
+    return ass;
+  },
+
   async teacherEditAssignment(assignmentId: string, classId: string, subjectId: string, title: string, description: string, dueDate: string, isHomework: boolean, sectionId?: string | null): Promise<Assignment> {
     await delay(500);
 
@@ -2978,6 +3145,7 @@ export const mockApi = {
 
   async adminCreateAcademicSession(schoolId: string, name: string, startDate: string, endDate: string, isCurrent: boolean): Promise<any> {
     await delay(500);
+    checkCoreAdminOrAcademicAdmin();
 
     // Duplicate name prevention
     const existingDuplicate = mockDb.academicSessions.find(
@@ -3036,6 +3204,7 @@ export const mockApi = {
 
   async adminSetActiveAcademicSession(schoolId: string, sessionId: string): Promise<void> {
     await delay(500);
+    checkCoreAdminOrAcademicAdmin();
     // Set all sessions for this school as inactive
     const { error: resetError } = await supabaseAdmin
       .from('academic_sessions')
@@ -3061,6 +3230,7 @@ export const mockApi = {
 
   async adminEditAcademicSession(schoolId: string, sessionId: string, name: string, startDate: string, endDate: string): Promise<any> {
     await delay(500);
+    checkCoreAdminOrAcademicAdmin();
 
     // Duplicate name prevention (exclude self)
     const existingDuplicate = mockDb.academicSessions.find(
@@ -3104,6 +3274,7 @@ export const mockApi = {
 
   async adminDeleteAcademicSession(schoolId: string, sessionId: string): Promise<void> {
     await delay(500);
+    checkCoreAdminOrAcademicAdmin();
 
     // Prevent deleting the currently active session
     const target = mockDb.academicSessions.find(s => s.id === sessionId && s.schoolId === schoolId);
@@ -3724,6 +3895,7 @@ export const mockApi = {
 
   async adminCreateClass(adminId: string, className: string): Promise<Class> {
     await delay(500);
+    checkCoreAdminOrAcademicAdmin();
     const schoolId = getAdminSchoolId();
     const activeSessionId = await this.resolveActiveSessionId(schoolId);
 
@@ -3771,6 +3943,7 @@ export const mockApi = {
 
   async adminAssignClassTeacher(adminId: string, classId: string, teacherId: string): Promise<void> {
     await delay(300);
+    checkCoreAdminOrAcademicAdmin();
     const cls = mockDb.classes.find(c => c.id === classId);
     if (!cls) throw new Error('Class not found');
     
@@ -5715,6 +5888,10 @@ export const mockApi = {
     status: PaymentStatus
   ): Promise<FeePayment> {
     await delay(600);
+    const { data: admin } = await supabaseAdmin.from('users').select('role').eq('id', adminId).single();
+    if (!admin || !['ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
+      throw new Error('Access Denied: Only School Admin and Finance Admin can record fee payments.');
+    }
 
     // Upsert payment into database using ON CONFLICT (fee_structure_id, student_id)
     const { data: dbPayment, error } = await supabaseAdmin
@@ -5759,6 +5936,55 @@ export const mockApi = {
     mockDb.addLog(adminId, 'RECORD_FEE_PAYMENT', { studentId, feeStructureId, amountPaid, status });
     mockDb.saveAll();
     return recorded;
+  },
+
+  async adminApproveFeePayment(adminId: string, paymentId: string): Promise<void> {
+    await delay(300);
+    const { data: admin } = await supabaseAdmin.from('users').select('role').eq('id', adminId).single();
+    if (!admin || !['ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
+      throw new Error('Access Denied: Only School Admin and Finance Admin can approve fee payments.');
+    }
+
+    const payment = mockDb.feePayments.find(p => p.id === paymentId);
+    if (!payment) throw new Error('Payment record not found');
+
+    const { error } = await supabaseAdmin
+      .from('fee_payments')
+      .update({ status: 'PAID', payment_date: new Date().toISOString() })
+      .eq('id', paymentId);
+
+    if (error) throw new Error('Failed to approve payment: ' + error.message);
+
+    payment.status = 'PAID';
+    payment.paymentDate = new Date().toISOString();
+    mockDb.addLog(adminId, 'APPROVE_FEE_PAYMENT', { paymentId });
+    mockDb.saveAll();
+  },
+
+  async adminRejectFeePayment(adminId: string, paymentId: string): Promise<void> {
+    await delay(300);
+    const { data: admin } = await supabaseAdmin.from('users').select('role').eq('id', adminId).single();
+    if (!admin || !['ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
+      throw new Error('Access Denied: Only School Admin and Finance Admin can reject fee payments.');
+    }
+
+    const payment = mockDb.feePayments.find(p => p.id === paymentId);
+    if (!payment) throw new Error('Payment record not found');
+
+    const { error } = await supabaseAdmin
+      .from('fee_payments')
+      .update({ status: 'PENDING', amount_paid: 0, payment_date: '', payment_method: '', transaction_id: null })
+      .eq('id', paymentId);
+
+    if (error) throw new Error('Failed to reject payment: ' + error.message);
+
+    payment.status = 'PENDING';
+    payment.amountPaid = 0;
+    payment.paymentDate = '';
+    payment.paymentMethod = '';
+    payment.transactionId = undefined;
+    mockDb.addLog(adminId, 'REJECT_FEE_PAYMENT', { paymentId });
+    mockDb.saveAll();
   },
 
 
@@ -6881,72 +7107,20 @@ export const mockApi = {
     const currentUsr = mockDb.users.find(u => u.id === userId);
     if (!currentUsr) return [];
 
-    let allowedContactUserIds: string[] = [];
-
-    // Filter contacts based on role contexts (Strict boundary checking)
-    if (currentUsr.role === 'TEACHER') {
-      const teacher = mockDb.teachers.find(t => t.userId === userId);
-      const teacherClasses = mockDb.teacherClassSubjectMappings
-        .filter(m => m.teacherId === teacher?.id)
-        .map(m => m.classId);
-
-      const studentUsers = mockDb.students
-        .filter(s => s.classId && teacherClasses.includes(s.classId))
-        .map(s => s.userId);
-
-      const studentIds = mockDb.students
-        .filter(s => s.classId && teacherClasses.includes(s.classId))
-        .map(s => s.id);
-
-      const parentIds = mockDb.parentStudentMappings
-        .filter(m => studentIds.includes(m.studentId))
-        .map(m => m.parentId);
-
-      const parentUsers = mockDb.parents
-        .filter(p => parentIds.includes(p.id))
-        .map(p => p.userId);
-
-      allowedContactUserIds = [...studentUsers, ...parentUsers];
-    } else if (currentUsr.role === 'STUDENT') {
-      const student = mockDb.students.find(s => s.userId === userId);
-      const studentClass = student?.classId;
+    // Filter contacts based on role contexts (Strict boundary checking) and school isolation
+    const allowedContactUserIds = mockDb.users.filter(u => {
+      if (u.id === userId) return false;
       
-      const teacherIds = mockDb.teacherClassSubjectMappings
-        .filter(m => m.classId === studentClass)
-        .map(m => m.teacherId);
+      // Enforce strict school tenant isolation (unless super admin is involved)
+      if (currentUsr.role !== 'SUPER_ADMIN' && u.role !== 'SUPER_ADMIN') {
+        if (currentUsr.schoolId !== u.schoolId) return false;
+      }
+      
+      // Enforce strict RBAC direct messaging allowed contacts
+      return isChatAllowed(currentUsr.role, u.role);
+    }).map(u => u.id);
 
-      allowedContactUserIds = mockDb.teachers
-        .filter(t => teacherIds.includes(t.id))
-        .map(t => t.userId);
-    } else if (currentUsr.role === 'PARENT') {
-      const parent = mockDb.parents.find(p => p.userId === userId);
-      const studentIds = mockDb.parentStudentMappings
-        .filter(m => m.parentId === parent?.id)
-        .map(m => m.studentId);
-
-      const classIds = mockDb.students
-        .filter(s => studentIds.includes(s.id) && s.classId)
-        .map(s => s.classId as string);
-
-      const teacherIds = mockDb.teacherClassSubjectMappings
-        .filter(m => classIds.includes(m.classId))
-        .map(m => m.teacherId);
-
-      allowedContactUserIds = mockDb.teachers
-        .filter(t => teacherIds.includes(t.id))
-        .map(t => t.userId);
-    } else {
-      // Admins & Super Admins can converse globally
-      allowedContactUserIds = mockDb.users.map(u => u.id);
-    }
-
-    // Always include any user who has an active message history to avoid empty chat screens
-    const historyUserIds = mockDb.chatMessages
-      .filter(m => m.senderId === userId || m.receiverId === userId)
-      .map(m => m.senderId === userId ? m.receiverId : m.senderId);
-
-    const mergedUserIds = Array.from(new Set([...allowedContactUserIds, ...historyUserIds])).filter(id => id !== userId);
-    const chats = mockDb.users.filter(u => mergedUserIds.includes(u.id));
+    const chats = mockDb.users.filter(u => allowedContactUserIds.includes(u.id));
 
     return chats.map(u => {
       const msgs = mockDb.chatMessages.filter(
@@ -6991,6 +7165,23 @@ export const mockApi = {
 
   async sendChatMessage(senderId: string, receiverId: string, message: string): Promise<ChatMessage> {
     await delay(200);
+
+    const sender = mockDb.users.find(u => u.id === senderId);
+    const receiver = mockDb.users.find(u => u.id === receiverId);
+
+    if (!sender || !receiver) throw new Error('Sender or receiver not found');
+
+    // Enforce school isolation
+    if (sender.role !== 'SUPER_ADMIN' && receiver.role !== 'SUPER_ADMIN') {
+      if (sender.schoolId !== receiver.schoolId) {
+        throw new Error('Access Denied: School-scoped tenant isolation violation.');
+      }
+    }
+
+    // Enforce role DM rules
+    if (!isChatAllowed(sender.role, receiver.role)) {
+      throw new Error('Unauthorized messaging channel: Direct messaging is restricted between these roles.');
+    }
 
     const { data: r, error } = await supabaseAdmin
       .from('chat_messages')
@@ -8193,31 +8384,37 @@ export const mockApi = {
   },
 
   async createBookCategory(schoolId: string, name: string, code: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('book_categories').insert({
+    const id = 'bc-' + Math.random().toString(36).substr(2, 9);
+    const newCategory = {
+      id,
+      schoolId,
+      name,
+      code,
+      createdAt: new Date().toISOString()
+    };
+
+    const { data, error } = await supabaseAdmin.from('book_categories').insert({
+      id,
       school_id: schoolId,
       name,
       code
-    });
-    if (error) {
-      mockDb.bookCategories.push({
-        id: 'bc-' + Math.random().toString(36).substr(2, 9),
-        schoolId,
-        name,
-        code,
-        createdAt: new Date().toISOString()
-      });
-      mockDb.saveAll();
+    }).select().single();
+
+    if (data) {
+      newCategory.id = data.id;
+      newCategory.createdAt = data.created_at;
     }
+
+    mockDb.bookCategories.push(newCategory);
+    mockDb.saveAll();
   },
 
   async deleteBookCategory(id: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('book_categories').delete().eq('id', id);
-    if (error) {
-      const idx = mockDb.bookCategories.findIndex(bc => bc.id === id);
-      if (idx !== -1) {
-        mockDb.bookCategories.splice(idx, 1);
-        mockDb.saveAll();
-      }
+    await supabaseAdmin.from('book_categories').delete().eq('id', id);
+    const idx = mockDb.bookCategories.findIndex(bc => bc.id === id);
+    if (idx !== -1) {
+      mockDb.bookCategories.splice(idx, 1);
+      mockDb.saveAll();
     }
   },
 
@@ -8312,25 +8509,33 @@ export const mockApi = {
   },
 
   async createDigitalLibraryAsset(schoolId: string, title: string, author: string, fileUrl: string, fileType: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('digital_library_assets').insert({
+    const id = 'dla-' + Math.random().toString(36).substr(2, 9);
+    const newAsset = {
+      id,
+      schoolId,
+      title,
+      author,
+      fileUrl,
+      fileType,
+      createdAt: new Date().toISOString()
+    };
+
+    const { data, error } = await supabaseAdmin.from('digital_library_assets').insert({
+      id,
       school_id: schoolId,
       title,
       author,
       file_url: fileUrl,
       file_type: fileType
-    });
-    if (error) {
-      mockDb.digitalLibraryAssets.push({
-        id: 'dla-' + Math.random().toString(36).substr(2, 9),
-        schoolId,
-        title,
-        author,
-        fileUrl,
-        fileType,
-        createdAt: new Date().toISOString()
-      });
-      mockDb.saveAll();
+    }).select().single();
+
+    if (data) {
+      newAsset.id = data.id;
+      newAsset.createdAt = data.created_at;
     }
+
+    mockDb.digitalLibraryAssets.push(newAsset);
+    mockDb.saveAll();
   },
 
   async fetchLibraryInvoices(schoolId: string, studentId?: string): Promise<any[]> {

@@ -117,7 +117,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing },
           { id: 'communications', label: 'Communication Center', icon: Mail },
           { id: 'analytics', label: 'Institutional Analytics', icon: Activity },
-          { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key },
+          { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: school?.subscriptionPlan !== 'enterprise' },
           { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database },
           { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
           { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert }
@@ -128,49 +128,54 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       case 'LIBRARIAN':
       case 'TRANSPORT_MANAGER':
       case 'CUSTOM_SUB_ADMIN': {
+        const isEnterprise = school?.subscriptionPlan === 'enterprise';
         const subAdminTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
           { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard }
         ];
         
         // If billing is allowed
         if (permissions.billing) {
-          subAdminTabs.push({ id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing });
-          subAdminTabs.push({ id: 'analytics', label: 'Fee Analytics', icon: Activity });
+          subAdminTabs.push({ id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing || !isEnterprise });
+          subAdminTabs.push({ id: 'analytics', label: 'Fee Analytics', icon: Activity, locked: !isEnterprise });
         }
         
         // If directory is allowed
         if (permissions.directory) {
-          subAdminTabs.push({ id: 'students', label: 'Student Directory', icon: Users });
-          subAdminTabs.push({ id: 'teachers', label: 'Teacher Directory', icon: UsersRound });
-          subAdminTabs.push({ id: 'parents', label: 'Parent Directory', icon: UsersRound });
+          subAdminTabs.push({ id: 'students', label: 'Student Directory', icon: Users, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'teachers', label: 'Teacher Directory', icon: UsersRound, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'parents', label: 'Parent Directory', icon: UsersRound, locked: !isEnterprise });
         }
         
         // If academics is allowed
         if (permissions.academics) {
-          subAdminTabs.push({ id: 'classes', label: 'Classes & Sections', icon: Layers });
-          subAdminTabs.push({ id: 'subjects', label: 'Subject Catalog', icon: BookMarked });
-          subAdminTabs.push({ id: 'academicsessions', label: 'Academic Sessions', icon: Calendar });
+          subAdminTabs.push({ id: 'classes', label: 'Classes & Sections', icon: Layers, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'subjects', label: 'Subject Catalog', icon: BookMarked, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'academicsessions', label: 'Academic Sessions', icon: Calendar, locked: !isEnterprise });
+          if (role === 'ACADEMIC_ADMIN') {
+            subAdminTabs.push({ id: 'attendance', label: 'Student Attendance', icon: Layers, locked: !isEnterprise });
+            subAdminTabs.push({ id: 'assignments', label: 'Homework & Assignments', icon: PenTool, locked: !isEnterprise });
+          }
         }
         
         // If grading is allowed
         if (permissions.grading) {
-          subAdminTabs.push({ id: 'marksheets', label: ' Homeroom Marksheets', icon: ClipboardList });
-          subAdminTabs.push({ id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes });
+          subAdminTabs.push({ id: 'marksheets', label: ' Homeroom Marksheets', icon: ClipboardList, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes || !isEnterprise });
         }
 
         // If books is allowed (Library)
         if (permissions.books) {
-          subAdminTabs.push({ id: 'books', label: 'Library Registry', icon: BookOpen });
+          subAdminTabs.push({ id: 'books', label: 'Library Registry', icon: BookOpen, locked: !isEnterprise });
         }
 
         // If transport is allowed (Transport)
         if (permissions.transport) {
-          subAdminTabs.push({ id: 'transport', label: 'Transit Registry', icon: Layers });
+          subAdminTabs.push({ id: 'transport', label: 'Transit Registry', icon: Layers, locked: !isEnterprise });
         }
         
         // If security is allowed (Sub-Admin backups / telemetry access)
         if (permissions.security) {
-          subAdminTabs.push({ id: 'backups', label: 'Disaster Recovery', icon: Database });
+          subAdminTabs.push({ id: 'backups', label: 'Disaster Recovery', icon: Database, locked: !isEnterprise });
         }
         
         return subAdminTabs;
@@ -203,6 +208,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
             {role === 'TEACHER' && 'Teacher Portal'}
             {role === 'ADMIN' && 'Head Administrative Portal'}
             {role === 'SUPER_ADMIN' && 'Super Admin Engine'}
+            {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'].includes(role) && 'Sub-Admin Portal'}
           </p>
         </div>
 

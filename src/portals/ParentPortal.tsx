@@ -86,6 +86,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
 
   const [issuedBooks, setIssuedBooks] = useState<any[]>([]);
   const [libraryFines, setLibraryFines] = useState<any[]>([]);
+  const [digitalLibraryAssets, setDigitalLibraryAssets] = useState<any[]>([]);
   
   // Discussion state
   const [forumPosts, setForumPosts] = useState<any[]>([]);
@@ -180,14 +181,15 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
         setForumPosts(allPosts.filter(p => allowedCatIds.includes(p.categoryId)));
 
         // Fetch dynamic transit and library details for parent selectedStudent
-        const [allAssignments, allBuses, allRoutes, allPickupPoints, allDrivers, myIssues, myFines] = await Promise.all([
+        const [allAssignments, allBuses, allRoutes, allPickupPoints, allDrivers, myIssues, myFines, digitalAssets] = await Promise.all([
           mockApi.fetchTransportAssignments(studentObj.schoolId),
           mockApi.fetchBuses(studentObj.schoolId),
           mockApi.fetchRoutes(studentObj.schoolId),
           mockApi.fetchPickupPoints(studentObj.schoolId),
           mockApi.fetchDrivers(studentObj.schoolId),
           mockApi.fetchBookIssues(studentObj.schoolId, selectedStudent),
-          mockApi.fetchLibraryFines(studentObj.schoolId, selectedStudent)
+          mockApi.fetchLibraryFines(studentObj.schoolId, selectedStudent),
+          mockApi.fetchDigitalLibraryAssets(studentObj.schoolId)
         ]);
 
         const myAssignment = allAssignments.find(ta => ta.studentId === selectedStudent && ta.status === 'ACTIVE');
@@ -213,6 +215,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
 
         setIssuedBooks(myIssues.filter(bi => bi.status === 'ISSUED'));
         setLibraryFines(myFines);
+        setDigitalLibraryAssets(digitalAssets || []);
       }
 
       setLoading(false);
@@ -1097,6 +1100,43 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                         </div>
                       ))}
                     </div>
+                  </GlassCard>
+
+                  <GlassCard className="space-y-4">
+                    <h3 className="font-bold text-slate-100 flex items-center gap-2 pb-2 border-b border-slate-850">
+                      <BookOpen className="text-brand-500" size={18} />
+                      Digital E-Books & Video Guides Catalog
+                    </h3>
+                    {digitalLibraryAssets.length === 0 ? (
+                      <p className="text-xs text-slate-500 italic py-4 text-center">No digital library assets uploaded yet.</p>
+                    ) : (
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
+                        {digitalLibraryAssets.map(asset => (
+                          <div key={asset.id} className="p-3.5 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-3 hover:border-slate-750 transition-all animate-fade-in">
+                            <div>
+                              <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 font-mono uppercase tracking-wider mb-2">
+                                {asset.fileType || 'PDF E-Book'}
+                              </span>
+                              <h4 className="font-bold text-slate-200 text-xs leading-snug">{asset.title}</h4>
+                              {asset.author && (
+                                <p className="text-[10px] text-slate-400 mt-1 font-medium">By: {asset.author}</p>
+                              )}
+                            </div>
+                            <div className="pt-2 border-t border-slate-850/60 flex items-center justify-between">
+                              <span className="text-[9px] text-slate-500 font-mono">{new Date(asset.createdAt).toLocaleDateString()}</span>
+                              <a 
+                                href={asset.fileUrl} 
+                                target="_blank" 
+                                rel="noopener noreferrer" 
+                                className="px-3 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 hover:text-brand-350 text-[10px] font-bold rounded-lg border border-brand-500/20 transition-all flex items-center gap-1"
+                              >
+                                Access File &rarr;
+                              </a>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
                   </GlassCard>
                 </div>
                 <div className="space-y-6">

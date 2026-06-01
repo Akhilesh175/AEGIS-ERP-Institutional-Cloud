@@ -155,6 +155,17 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [bcName, setBcName] = useState('');
   const [bcCode, setBcCode] = useState('');
 
+  const [attendanceRecords, setAttendanceRecords] = useState<Record<string, 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'>>({});
+  const [attendanceRemarks, setAttendanceRemarks] = useState<Record<string, string>>({});
+  const [attendanceClassId, setAttendanceClassId] = useState('');
+  const [attendanceDate, setAttendanceDate] = useState(new Date().toISOString().split('T')[0]);
+
+  const [assignTitle, setAssignTitle] = useState('');
+  const [assignDesc, setAssignDesc] = useState('');
+  const [assignClassId, setAssignClassId] = useState('');
+  const [assignSubjectId, setAssignSubjectId] = useState('');
+  const [assignDueDate, setAssignDueDate] = useState('');
+
   const [biBookId, setBiBookId] = useState('');
   const [biStudentId, setBiStudentId] = useState('');
   const [biDueDate, setBiDueDate] = useState('');
@@ -1161,6 +1172,70 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     }
   };
 
+  React.useEffect(() => {
+    if (!attendanceClassId) return;
+    const classStudents = students.filter(s => s.classId === attendanceClassId);
+    const initialRecords: Record<string, 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'> = {};
+    classStudents.forEach(s => {
+      const att = mockDb.attendance.find(a => a.studentId === s.id && a.date === attendanceDate);
+      initialRecords[s.id] = att ? att.status : 'PRESENT';
+    });
+    setAttendanceRecords(initialRecords);
+  }, [attendanceClassId, attendanceDate, students]);
+
+  const handleSaveAttendance = async () => {
+    if (!adminId || !attendanceClassId || !attendanceDate) {
+      alert('Please select a class and date to record attendance.');
+      return;
+    }
+    const classStudents = students.filter(s => s.classId === attendanceClassId);
+    if (classStudents.length === 0) {
+      alert('No students found in the selected class.');
+      return;
+    }
+
+    const records = classStudents.map(s => ({
+      studentId: s.id,
+      status: attendanceRecords[s.id] || 'PRESENT',
+      remarks: attendanceRemarks[s.id] || ''
+    }));
+
+    try {
+      await mockApi.adminMarkAttendance(adminId, attendanceClassId, attendanceDate, records);
+      loadData();
+      alert('Attendance register logs recorded successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to save attendance logs');
+    }
+  };
+
+  const handleCreateAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminId || !assignClassId || !assignSubjectId || !assignTitle || !assignDesc || !assignDueDate) {
+      alert('Please fill out all fields.');
+      return;
+    }
+
+    try {
+      await mockApi.adminCreateAssignment(
+        adminId,
+        assignClassId,
+        assignSubjectId,
+        assignTitle,
+        assignDesc,
+        assignDueDate,
+        true
+      );
+      setAssignTitle('');
+      setAssignDesc('');
+      setAssignDueDate('');
+      loadData();
+      alert('Homework/Assignment deployed successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create homework assignment');
+    }
+  };
+
   const handleReturnBook = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!session?.user.schoolId || !brIssueId) return;
@@ -1598,6 +1673,30 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     }
   };
 
+  const handleQuickApprovePayment = async (studentId: string, structureId: string, amount: number) => {
+    if (!adminId) return;
+    try {
+      const txId = 'TX' + Math.random().toString(36).substr(2, 8).toUpperCase();
+      await mockApi.adminRecordFeePayment(adminId, studentId, structureId, amount, 'Cash', txId, 'PAID');
+      loadData();
+      alert('Payment approved and marked PAID successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Error approving payment');
+    }
+  };
+
+  const handleQuickRejectPayment = async (studentId: string, structureId: string) => {
+    if (!adminId) return;
+    if (!window.confirm('Are you sure you want to reject/unpay this student\'s invoice? This sets the status back to PENDING.')) return;
+    try {
+      await mockApi.adminRecordFeePayment(adminId, studentId, structureId, 0, 'Cash', '', 'PENDING');
+      loadData();
+      alert('Payment status reset to pending/unpaid.');
+    } catch (err: any) {
+      alert(err.message || 'Error resetting payment status');
+    }
+  };
+
   // Safe Impersonation trigger
   const handleImpersonateUser = async (email: string) => {
     if (!window.confirm(`Initiating security portal gateway entry for: ${email}\nAre you sure you want to impersonate this session?`)) return;
@@ -1673,6 +1772,20 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             <p className="text-[9px] text-slate-500 font-mono tracking-wider">STRICT MULTI-SCHOOL RBAC POLICY SEPARATION</p>
           </div>
         </GlassCard>
+      </div>
+    );
+  }
+
+  const isSubAdmin = session?.user.role && [
+    'FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'
+  ].includes(session.user.role);
+
+  if (isSubAdmin && currentPlanName !== 'enterprise') {
+    return (
+      <div className="max-w-lg mx-auto py-24 px-6 text-center animate-fade-in">
+        <PremiumLock isLocked={true} requiredTier="enterprise" featureName="Sub-Admin Feature Access & Portals">
+          <div />
+        </PremiumLock>
       </div>
     );
   }
@@ -2038,7 +2151,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 </button>
                 <button 
                   onClick={() => setShowAddClass(true)}
-                  className="p-4 bg-slate-900/30 hover:bg-brand-600/10 border border-slate-850 hover:border-brand-500/30 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all group"
+                  disabled={!isAcademicOrSchoolAdmin}
+                  className="p-4 bg-slate-900/30 hover:bg-brand-600/10 border border-slate-850 hover:border-brand-500/30 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900/30 disabled:hover:border-slate-850"
+                  title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
                 >
                   <Layers className="text-brand-400 group-hover:scale-110 transition-transform" size={20} />
                   <span className="text-xs font-semibold text-slate-200">Establish Class</span>
@@ -2054,7 +2169,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 </button>
                 <button 
                   onClick={() => setShowAssignClassTeacher(true)}
-                  className="p-4 bg-slate-900/30 hover:bg-brand-600/10 border border-slate-850 hover:border-brand-500/30 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all group"
+                  disabled={!isAcademicOrSchoolAdmin}
+                  className="p-4 bg-slate-900/30 hover:bg-brand-600/10 border border-slate-850 hover:border-brand-500/30 rounded-2xl flex flex-col items-center justify-center gap-2 text-center transition-all group disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:bg-slate-900/30 disabled:hover:border-slate-850"
+                  title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
                 >
                   <BookMarked className="text-brand-400 group-hover:scale-110 transition-transform" size={20} />
                   <span className="text-xs font-semibold text-slate-200">Assign Class Teacher</span>
@@ -2164,13 +2281,17 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                       </button>
                       <button 
                         onClick={() => handleResetPassword(s.userDetails.id, s.userDetails.firstName + ' ' + s.userDetails.lastName)}
-                        className="text-slate-400 hover:text-slate-200 font-bold flex items-center gap-1 text-[11px] transition-colors"
+                        disabled={!isAcademicOrSchoolAdmin}
+                        className="text-slate-400 hover:text-slate-200 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
                       >
                         Reset Password
                       </button>
                       <button 
                         onClick={() => handleDeleteStudent(s.id, s.userDetails.firstName + ' ' + s.userDetails.lastName)}
-                        className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 text-[11px] transition-colors"
+                        disabled={!isAcademicOrSchoolAdmin}
+                        className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
                       >
                         Delete
                       </button>
@@ -2266,13 +2387,17 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                       </button>
                       <button 
                         onClick={() => handleResetPassword(t.userDetails.id, t.userDetails.firstName + ' ' + t.userDetails.lastName)}
-                        className="text-slate-400 hover:text-slate-200 font-bold flex items-center gap-1 text-[11px] transition-colors"
+                        disabled={!isAcademicOrSchoolAdmin}
+                        className="text-slate-400 hover:text-slate-200 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
                       >
                         Reset Password
                       </button>
                       <button 
                         onClick={() => handleDeleteTeacher(t.id, t.userDetails.firstName + ' ' + t.userDetails.lastName)}
-                        className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 text-[11px] transition-colors"
+                        disabled={!isAcademicOrSchoolAdmin}
+                        className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
                       >
                         Delete
                       </button>
@@ -2375,13 +2500,17 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                       </button>
                       <button 
                         onClick={() => handleResetPassword(p.userDetails.id, p.userDetails.firstName + ' ' + p.userDetails.lastName)}
-                        className="text-slate-400 hover:text-slate-200 font-bold flex items-center gap-1 text-[11px] transition-colors"
+                        disabled={!isAcademicOrSchoolAdmin}
+                        className="text-slate-400 hover:text-slate-200 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
                       >
                         Reset Password
                       </button>
                       <button 
                         onClick={() => handleDeleteParent(p.id, p.userDetails.firstName + ' ' + p.userDetails.lastName)}
-                        className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 text-[11px] transition-colors"
+                        disabled={!isAcademicOrSchoolAdmin}
+                        className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+                        title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
                       >
                         Delete
                       </button>
@@ -2895,6 +3024,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                             <th className="py-3 px-4">Student Name</th>
                             <th className="py-3 px-4">Roll Number</th>
                             <th className="py-3 px-4">Amount Paid</th>
+                            <th className="py-3 px-4">Due Balance</th>
                             <th className="py-3 px-4">Status</th>
                             <th className="py-3 px-4 text-right">Actions</th>
                           </tr>
@@ -2907,6 +3037,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                                 p => p.feeStructureId === selectedFeeStructure.id && p.studentId === student.id
                               );
                               const status = payment ? payment.status : 'PENDING';
+                              const isOverdue = new Date(selectedFeeStructure.dueDate).getTime() < Date.now();
+                              const lateFee = (status !== 'PAID' && isOverdue) ? 15.00 : 0.00;
+                              const balanceDue = status === 'PAID' ? 0.00 : (selectedFeeStructure.amount + lateFee);
                               return (
                                 <tr key={student.id} className="hover:bg-slate-900/10 text-slate-200">
                                   <td className="py-3 px-4">
@@ -2916,40 +3049,78 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                                   <td className="py-3 px-4 text-slate-400">{student.rollNumber || '-'}</td>
                                   <td className="py-3 px-4">
                                     {payment && payment.amountPaid > 0 ? (
-                                      <div className="font-semibold text-slate-200">${payment.amountPaid.toFixed(2)}</div>
+                                      <div className="font-semibold text-emerald-400">${payment.amountPaid.toFixed(2)}</div>
                                     ) : (
                                       <span className="text-slate-500">$0.00</span>
                                     )}
                                     {payment?.paymentDate && (
-                                      <div className="text-[8px] text-slate-500">{new Date(payment.paymentDate).toLocaleDateString()}</div>
+                                      <div className="text-[8px] text-slate-500 font-mono mt-0.5">{new Date(payment.paymentDate).toLocaleDateString()}</div>
+                                    )}
+                                  </td>
+                                  <td className="py-3 px-4 font-mono font-bold text-slate-300">
+                                    ${balanceDue.toFixed(2)}
+                                    {lateFee > 0 && (
+                                      <div className="text-[8px] text-rose-400 font-semibold mt-0.5">+ $15.00 Overdue Fee</div>
                                     )}
                                   </td>
                                   <td className="py-3 px-4">
                                     <span className={`text-[9px] font-bold px-2.5 py-0.5 rounded-full border ${
                                       status === 'PAID' 
                                         ? 'bg-green-500/10 border-green-500/20 text-green-400' 
-                                        : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                                        : isOverdue
+                                          ? 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                          : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
                                     }`}>
-                                      {status}
+                                      {status === 'PAID' ? 'PAID' : isOverdue ? 'LATE / OVERDUE' : 'PENDING'}
                                     </span>
                                   </td>
                                   <td className="py-3 px-4 text-right">
-                                    <button
-                                      onClick={() => {
-                                        setCollectingPayment({ student, structure: selectedFeeStructure });
-                                        setPaymentAmountPaid(selectedFeeStructure.amount.toString());
-                                        setPaymentMethod('Cash');
-                                        setPaymentTxId('TX' + Math.random().toString(36).substr(2, 8).toUpperCase());
-                                        setPaymentStatus('PAID');
-                                      }}
-                                      className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all hover:shadow-lg active:scale-95 ${
-                                        status === 'PAID'
-                                          ? 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-slate-200'
-                                          : 'bg-brand-600 hover:bg-brand-500 text-white hover:shadow-brand-500/10'
-                                      }`}
-                                    >
-                                      {status === 'PAID' ? 'Edit Payment' : 'Collect Fee'}
-                                    </button>
+                                    <div className="flex items-center justify-end gap-2">
+                                      {status === 'PAID' ? (
+                                        <>
+                                          <button
+                                            onClick={() => {
+                                              setCollectingPayment({ student, structure: selectedFeeStructure });
+                                              setPaymentAmountPaid(payment?.amountPaid?.toString() || '');
+                                              setPaymentMethod(payment?.paymentMethod || 'Cash');
+                                              setPaymentTxId(payment?.transactionId || '');
+                                              setPaymentStatus('PAID');
+                                            }}
+                                            className="px-2.5 py-1 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-[10px] font-bold transition-all"
+                                          >
+                                            Edit
+                                          </button>
+                                          <button
+                                            onClick={() => handleQuickRejectPayment(student.id, selectedFeeStructure.id)}
+                                            className="px-2.5 py-1 border border-red-500/20 hover:bg-red-500/10 text-red-450 hover:text-red-400 rounded-lg text-[10px] font-bold transition-all"
+                                            title="Reject / Revoke payment"
+                                          >
+                                            Reject
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <>
+                                          <button
+                                            onClick={() => handleQuickApprovePayment(student.id, selectedFeeStructure.id, selectedFeeStructure.amount + lateFee)}
+                                            className="px-2.5 py-1 border border-emerald-500/20 hover:bg-emerald-500/10 text-emerald-450 hover:text-emerald-400 rounded-lg text-[10px] font-bold transition-all"
+                                          >
+                                            Approve
+                                          </button>
+                                          <button
+                                            onClick={() => {
+                                              setCollectingPayment({ student, structure: selectedFeeStructure });
+                                              setPaymentAmountPaid((selectedFeeStructure.amount + lateFee).toString());
+                                              setPaymentMethod('Cash');
+                                              setPaymentTxId('TX' + Math.random().toString(36).substr(2, 8).toUpperCase());
+                                              setPaymentStatus('PAID');
+                                            }}
+                                            className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10px] font-bold transition-all active:scale-95 shadow-lg shadow-brand-500/10"
+                                          >
+                                            Collect
+                                          </button>
+                                        </>
+                                      )}
+                                    </div>
                                   </td>
                                 </tr>
                               );
@@ -2967,6 +3138,86 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   )}
                 </GlassCard>
               </div>
+            </div>
+
+            {/* Driver Attendance & Salary Payout Ledger */}
+            <div className="mt-6">
+              <GlassCard className="p-5 space-y-4">
+                <div className="border-b border-slate-850 pb-3 flex justify-between items-center">
+                  <div>
+                    <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                      <Building className="text-emerald-500" size={16} />
+                      Driver Attendance & Salary Payout Ledger
+                    </h3>
+                    <p className="text-[11px] text-slate-400 mt-0.5">
+                      Real-time synchronized transport staff salary payroll synced with daily driver check-ins.
+                    </p>
+                  </div>
+                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-450 border border-emerald-500/20 font-mono">Synced</span>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-850">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 bg-slate-900/30 text-slate-400 font-bold">
+                        <th className="py-3 px-4">Driver Name</th>
+                        <th className="py-3 px-4">License Number</th>
+                        <th className="py-3 px-4">Days Present</th>
+                        <th className="py-3 px-4">Daily Rate</th>
+                        <th className="py-3 px-4">Total Salary Payout</th>
+                        <th className="py-3 px-4 text-right">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/60">
+                      {driversList.map(driver => {
+                        const presentCount = driverAttendanceList.filter(
+                          a => a.driverId === driver.id && a.status === 'PRESENT'
+                        ).length;
+                        const dailyRate = 45.00;
+                        const payout = presentCount * dailyRate;
+                        return (
+                          <tr key={driver.id} className="hover:bg-slate-900/10 text-slate-200">
+                            <td className="py-3 px-4">
+                              <div className="font-semibold text-slate-200">{driver.userDetails.firstName} {driver.userDetails.lastName}</div>
+                              <div className="text-[9px] text-slate-500 font-mono">{driver.userDetails.email}</div>
+                            </td>
+                            <td className="py-3 px-4 text-slate-400 font-mono">{driver.licenseNumber}</td>
+                            <td className="py-3 px-4">
+                              <span className="font-semibold text-emerald-400 font-mono bg-emerald-500/5 px-2 py-0.5 rounded-full border border-emerald-500/10">
+                                {presentCount} Days
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-400 font-mono">${dailyRate.toFixed(2)}/day</td>
+                            <td className="py-3 px-4 font-mono font-bold text-slate-100">${payout.toFixed(2)}</td>
+                            <td className="py-3 px-4 text-right">
+                              <button
+                                onClick={() => {
+                                  alert(`Successfully disbursed daily salary payout of $${payout.toFixed(2)} to ${driver.userDetails.firstName} ${driver.userDetails.lastName}!`);
+                                }}
+                                disabled={payout === 0}
+                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                                  payout === 0 
+                                    ? 'bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed'
+                                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/10 active:scale-95'
+                                }`}
+                              >
+                                Disburse Salary
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {driversList.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-500 text-xs">
+                            No active drivers registered in the system.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </GlassCard>
             </div>
           </div>
         </PremiumLock>
@@ -4392,6 +4643,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
       {/* ── 4. DYNAMIC MODULES & RBAC PERMISSIONS ── */}
       {activeTab === 'rbac' && (
+        currentPlanName !== 'enterprise' ? (
+          <div className="max-w-lg mx-auto py-12">
+            <PremiumLock isLocked={true} requiredTier="enterprise" featureName="Dynamic Permissions Grid (RBAC Matrix)">
+              <div />
+            </PremiumLock>
+          </div>
+        ) : (
         <div className="space-y-6 animate-fade-in text-xs">
           {/* Header */}
           <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
@@ -4739,6 +4997,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             </div>
           </GlassCard>
         </div>
+        )
       )}
 
 
@@ -5481,6 +5740,62 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   ))}
                 </div>
               </GlassCard>
+
+              {/* Book Categories Management Board */}
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Layers className="text-brand-400" size={15} />
+                  Book Categories Board
+                </h4>
+                <form onSubmit={handleCreateBookCategory} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Category Name</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. Science Fiction" 
+                        value={bcName} 
+                        onChange={(e) => setBcName(e.target.value)} 
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" 
+                        required 
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] text-slate-500 font-bold uppercase">Category Code</label>
+                      <input 
+                        type="text" 
+                        placeholder="e.g. SCI-FI" 
+                        value={bcCode} 
+                        onChange={(e) => setBcCode(e.target.value)} 
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" 
+                        required 
+                      />
+                    </div>
+                  </div>
+                  <button type="submit" className="w-full py-1.5 bg-emerald-650 hover:bg-emerald-700 rounded-lg font-bold text-slate-100 transition-colors text-xs">Create Category</button>
+                </form>
+
+                <div className="space-y-2 max-h-40 overflow-y-auto">
+                  {bookCategories.length === 0 ? (
+                    <p className="text-[10px] text-slate-500 text-center py-2 font-mono">NO ACTIVE CATEGORIES FOUND</p>
+                  ) : (
+                    bookCategories.map(bc => (
+                      <div key={bc.id} className="p-2 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
+                        <div>
+                          <p className="font-bold text-slate-200 text-xs">{bc.name}</p>
+                          <p className="text-[9px] text-slate-500 font-mono">{bc.code}</p>
+                        </div>
+                        <button 
+                          onClick={() => handleDeleteBookCategory(bc.id)}
+                          className="p-1 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
+                        >
+                          <Trash2 size={12} />
+                        </button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </GlassCard>
             </div>
 
             {/* COLUMN 2: Issue Manager & Returns */}
@@ -6078,6 +6393,238 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               </div>
             </GlassCard>
           )}
+        </div>
+      )}
+
+      {activeTab === 'attendance' && (
+        <div className="space-y-6 animate-fade-in text-xs">
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <Layers className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Student Attendance Register Roll</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Mark daily school attendance for student directories with single-click actions.</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-3">
+              <select
+                value={attendanceClassId}
+                onChange={(e) => setAttendanceClassId(e.target.value)}
+                className="bg-slate-900 border border-slate-800 text-slate-200 rounded-lg px-3 py-1.5 text-xs focus:outline-none focus:border-brand-500"
+              >
+                <option value="">-- Select Class --</option>
+                {classes.map(c => (
+                  <option key={c.id} value={c.id}>{c.name}</option>
+                ))}
+              </select>
+              <input
+                type="date"
+                value={attendanceDate}
+                onChange={(e) => setAttendanceDate(e.target.value)}
+                className="bg-slate-900 border border-slate-800 text-slate-250 rounded-lg px-3 py-1 text-xs focus:outline-none focus:border-brand-500"
+              />
+              <button 
+                onClick={handleSaveAttendance}
+                disabled={!attendanceClassId}
+                className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold transition-all active:scale-95 shadow-lg shadow-brand-500/15"
+              >
+                Save Attendance
+              </button>
+            </div>
+          </GlassCard>
+
+          {attendanceClassId ? (
+            <GlassCard className="space-y-4">
+              <div className="overflow-x-auto border border-slate-850/50 rounded-xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                      <th className="py-3 px-4">Roll</th>
+                      <th className="py-3 px-4">Student Name</th>
+                      <th className="py-3 px-4">Status Indicators</th>
+                      <th className="py-3 px-4">Attendance Remarks</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850/40 text-slate-300">
+                    {students.filter(s => s.classId === attendanceClassId).map(s => (
+                      <tr key={s.id} className="hover:bg-slate-900/10">
+                        <td className="py-3 px-4 font-mono">{s.rollNumber || 'N/A'}</td>
+                        <td className="py-3 px-4 font-semibold text-slate-200">{s.userDetails?.firstName} {s.userDetails?.lastName}</td>
+                        <td className="py-3 px-4">
+                          <div className="flex gap-2">
+                            {['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'].map(status => {
+                              const isSelected = attendanceRecords[s.id] === status;
+                              return (
+                                <button
+                                  key={status}
+                                  onClick={() => setAttendanceRecords(prev => ({ ...prev, [s.id]: status as any }))}
+                                  className={`px-2 py-0.5 rounded text-[9px] font-bold border transition-colors ${
+                                    isSelected 
+                                      ? status === 'PRESENT' 
+                                        ? 'bg-green-500/10 border-green-500/40 text-green-400' 
+                                        : status === 'ABSENT' 
+                                          ? 'bg-red-500/10 border-red-500/40 text-red-400' 
+                                          : 'bg-amber-500/10 border-amber-500/40 text-amber-400'
+                                      : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
+                                  }`}
+                                >
+                                  {status}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4">
+                          <input 
+                            type="text" 
+                            placeholder="Delay logs, medical notes..."
+                            value={attendanceRemarks[s.id] || ''}
+                            onChange={(e) => setAttendanceRemarks(prev => ({ ...prev, [s.id]: e.target.value }))}
+                            className="bg-slate-950 border border-slate-800 text-slate-200 rounded-lg p-1 px-2 text-xs focus:outline-none focus:border-brand-500 w-full max-w-xs"
+                          />
+                        </td>
+                      </tr>
+                    ))}
+                    {students.filter(s => s.classId === attendanceClassId).length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="py-8 text-center text-slate-500 italic">No students currently registered in this class.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </GlassCard>
+          ) : (
+            <GlassCard className="text-center py-12 bg-slate-900/15 border-slate-850">
+              <Layers className="text-slate-600 mx-auto mb-4 opacity-50" size={48} />
+              <p className="text-slate-400 font-medium">Please select a class above to view the register roster.</p>
+            </GlassCard>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'assignments' && (
+        <div className="space-y-6 animate-fade-in text-xs">
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <BookOpen className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Homework & Assignments Registry</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Deploy new daily homework curriculum, assign grades, and download student solutions.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <GlassCard className="space-y-4 lg:col-span-1">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Plus className="text-brand-450" size={15} />
+                Deploy Homework / Assignment
+              </h4>
+              <form onSubmit={handleCreateAssignment} className="space-y-3.5 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-500 font-bold uppercase">Task Title</label>
+                  <input 
+                    type="text"
+                    placeholder="e.g. Spacetime Calculus Proofs"
+                    value={assignTitle}
+                    onChange={(e) => setAssignTitle(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-500 font-bold uppercase">Problem Description</label>
+                  <textarea 
+                    placeholder="Provide full problem questions or equations..."
+                    rows={4}
+                    value={assignDesc}
+                    onChange={(e) => setAssignDesc(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500 resize-none"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-500 font-bold uppercase">Due Date</label>
+                  <input 
+                    type="datetime-local"
+                    value={assignDueDate}
+                    onChange={(e) => setAssignDueDate(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-500 font-bold uppercase">Target Class</label>
+                  <select 
+                    value={assignClassId}
+                    onChange={(e) => setAssignClassId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-200 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                    required
+                  >
+                    <option value="">-- Choose Class --</option>
+                    {classes.map(c => (
+                      <option key={c.id} value={c.id}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-500 font-bold uppercase">Subject Category</label>
+                  <select 
+                    value={assignSubjectId}
+                    onChange={(e) => setAssignSubjectId(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-200 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                    required
+                  >
+                    <option value="">-- Choose Subject --</option>
+                    {subjects.map(s => (
+                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                    ))}
+                  </select>
+                </div>
+                <button type="submit" className="w-full py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[11px] font-bold transition-all active:scale-95 shadow-lg shadow-brand-500/15">
+                  Publish Assignment
+                </button>
+              </form>
+            </GlassCard>
+
+            <GlassCard className="space-y-4 lg:col-span-2">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <BookOpen className="text-brand-400" size={15} />
+                Currently Deployed Assignments
+              </h4>
+              <div className="space-y-3 max-h-[550px] overflow-y-auto">
+                {mockDb.assignments.filter(a => classes.some(c => c.id === a.classId)).map(ass => {
+                  const cls = classes.find(c => c.id === ass.classId);
+                  const sub = subjects.find(s => s.id === ass.subjectId);
+                  return (
+                    <div key={ass.id} className="p-3.5 bg-slate-900/30 border border-slate-850 rounded-xl space-y-2 hover:border-slate-750 transition-colors">
+                      <div className="flex justify-between items-start">
+                        <div>
+                          <span className="text-[9px] font-bold uppercase tracking-wider text-brand-400 bg-brand-500/5 px-2 py-0.5 rounded border border-brand-500/10">
+                            {cls?.name || 'General Class'}
+                          </span>
+                          <span className="ml-2 text-[9px] font-bold uppercase tracking-wider text-slate-400 bg-slate-850 px-2 py-0.5 rounded border border-slate-800">
+                            {sub?.name || 'General Subject'}
+                          </span>
+                          <h5 className="font-bold text-slate-200 text-xs mt-1.5">{ass.title}</h5>
+                        </div>
+                        <span className="text-[9px] font-mono text-slate-500 font-semibold">Due: {new Date(ass.dueDate).toLocaleString()}</span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 italic line-clamp-2">"{ass.description}"</p>
+                    </div>
+                  );
+                })}
+                {mockDb.assignments.filter(a => classes.some(c => c.id === a.classId)).length === 0 && (
+                  <p className="text-slate-500 text-center py-8 italic">No deployed homeworks/assignments yet.</p>
+                )}
+              </div>
+            </GlassCard>
+          </div>
         </div>
       )}
 
