@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
 import { mockDb } from '../services/mockDb';
-import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePayment } from '../types';
+import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePayment, DriverSalaryPayout } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
@@ -54,6 +54,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [digitalAssetsList, setDigitalAssetsList] = useState<any[]>([]);
   const [studentMarks, setStudentMarks] = useState<any[]>([]);
   const [examSubjects, setExamSubjects] = useState<any[]>([]);
+  const [driverSalaryPayouts, setDriverSalaryPayouts] = useState<DriverSalaryPayout[]>([]);
+  const [disbursingDriverId, setDisbursingDriverId] = useState<string | null>(null);
 
   // Directory Search states
   const [studentSearch, setStudentSearch] = useState('');
@@ -847,7 +849,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             perms, ops, logs, inv, rc, dr, pk, da,
             busList, routeList, assignmentList, maintList, drAttList,
             categoryList, issueList, fineList, exList, exResList, qResList,
-            marksList, examSubList
+            marksList, examSubList, payoutList
           ] = await Promise.all([
             mockApi.fetchSchoolRolePermissions(session.user.schoolId),
             mockApi.fetchOperators(session.user.schoolId),
@@ -869,7 +871,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             mockApi.fetchExamResults(session.user.schoolId),
             mockApi.fetchQuizResults(session.user.schoolId),
             mockApi.fetchAllStudentMarks(session.user.schoolId),
-            mockApi.fetchAllExamSubjects(session.user.schoolId)
+            mockApi.fetchAllExamSubjects(session.user.schoolId),
+            mockApi.fetchDriverSalaryPayouts(session.user.schoolId)
           ]);
           setRbacPermissions(perms);
           setOperators(ops);
@@ -888,6 +891,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
           setTransportAssignments(assignmentList);
           setMaintenanceLogs(maintList);
           setDriverAttendanceList(drAttList);
+          setDriverSalaryPayouts(payoutList);
           setBookCategories(categoryList);
           setBookIssues(issueList);
           setLibraryFines(fineList);
@@ -968,6 +972,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_assignments' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_attendance' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_salary_payouts' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exams' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'report_cards' }, handleAdminSync)
@@ -1687,6 +1692,30 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       alert('Student invoice payment recorded successfully!');
     } catch (err: any) {
       alert(err.message || 'Error recording student payment');
+    }
+  };
+
+  const handleDisburseDriverSalary = async (driverId: string, amount: number, attendanceRecordId?: string | null) => {
+    if (!adminId || !session?.user.schoolId) return;
+    if (!window.confirm(`Are you sure you want to disburse a daily salary payout of $${amount.toFixed(2)} to this driver?`)) return;
+
+    setDisbursingDriverId(driverId);
+    try {
+      await mockApi.adminDisburseDriverSalary(
+        adminId,
+        session.user.schoolId,
+        driverId,
+        amount,
+        attendanceRecordId || null,
+        adminId,
+        'Daily salary disburse ledger payout'
+      );
+      loadData();
+      alert(`Successfully disbursed daily salary payout of $${amount.toFixed(2)}!`);
+    } catch (err: any) {
+      alert(err.message || 'Error disbursing salary');
+    } finally {
+      setDisbursingDriverId(null);
     }
   };
 
@@ -2887,7 +2916,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
         >
           <div className="space-y-6">
             {/* Financial Overview Metrics Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
               <GlassCard className="p-4 flex items-center justify-between border-emerald-500/10 shadow-emerald-500/5">
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Collected Income</p>
@@ -2932,6 +2961,21 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 </div>
                 <div className="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center border border-brand-500/20 text-brand-400">
                   <DollarSign size={20} />
+                </div>
+              </GlassCard>
+
+              <GlassCard className="p-4 flex items-center justify-between border-rose-500/10 shadow-rose-500/5">
+                <div className="space-y-1">
+                  <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Disbursed Driver Salaries</p>
+                  <h3 className="text-xl font-extrabold text-rose-455">
+                    ${driverSalaryPayouts
+                      .reduce((acc, p) => acc + (Number(p.payoutAmount) || 0), 0)
+                      .toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                  </h3>
+                  <span className="text-[9px] text-slate-500">Total salary expenses cleared</span>
+                </div>
+                <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-450">
+                  <Clock size={20} />
                 </div>
               </GlassCard>
             </div>
@@ -3175,28 +3219,37 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                       Real-time synchronized transport staff salary payroll synced with daily driver check-ins.
                     </p>
                   </div>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-500/10 text-emerald-450 border border-emerald-500/20 font-mono">Synced</span>
                 </div>
-
                 <div className="overflow-x-auto rounded-xl border border-slate-850">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-slate-850 bg-slate-900/30 text-slate-400 font-bold">
                         <th className="py-3 px-4">Driver Name</th>
                         <th className="py-3 px-4">License Number</th>
-                        <th className="py-3 px-4">Days Present</th>
-                        <th className="py-3 px-4">Daily Rate</th>
-                        <th className="py-3 px-4">Total Salary Payout</th>
+                        <th className="py-3 px-4">Days Present (Total)</th>
+                        <th className="py-3 px-4">Unpaid Days</th>
+                        <th className="py-3 px-4">Pending Payout</th>
                         <th className="py-3 px-4 text-right">Actions</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-850/60">
                       {driversList.map(driver => {
-                        const presentCount = driverAttendanceList.filter(
+                        const driverPresentRecords = driverAttendanceList.filter(
                           a => a.driverId === driver.id && a.status === 'PRESENT'
-                        ).length;
+                        );
+                        const unpaidRecords = driverPresentRecords.filter(
+                          rec => !driverSalaryPayouts.some(
+                            p => p.attendanceRecordId === rec.id || 
+                            (p.driverId === driver.id && rec.date <= p.payoutDate.split('T')[0])
+                          )
+                        );
+                        const presentCount = driverPresentRecords.length;
+                        const unpaidCount = unpaidRecords.length;
                         const dailyRate = 45.00;
-                        const payout = presentCount * dailyRate;
+                        const pendingPayout = unpaidCount * dailyRate;
+
+                        const isDisbursing = disbursingDriverId === driver.id;
+
                         return (
                           <tr key={driver.id} className="hover:bg-slate-900/10 text-slate-200">
                             <td className="py-3 px-4">
@@ -3209,21 +3262,28 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                                 {presentCount} Days
                               </span>
                             </td>
-                            <td className="py-3 px-4 text-slate-400 font-mono">${dailyRate.toFixed(2)}/day</td>
-                            <td className="py-3 px-4 font-mono font-bold text-slate-100">${payout.toFixed(2)}</td>
+                            <td className="py-3 px-4">
+                              <span className={`font-semibold font-mono px-2 py-0.5 rounded-full border text-[10px] ${
+                                unpaidCount > 0 
+                                  ? 'text-amber-400 bg-amber-500/5 border-amber-500/10'
+                                  : 'text-slate-400 bg-slate-500/5 border-slate-500/10'
+                              }`}>
+                                {unpaidCount} Days
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 text-slate-450 font-mono">${dailyRate.toFixed(2)}/day</td>
+                            <td className="py-3 px-4 font-mono font-bold text-slate-100">${pendingPayout.toFixed(2)}</td>
                             <td className="py-3 px-4 text-right">
                               <button
-                                onClick={() => {
-                                  alert(`Successfully disbursed daily salary payout of $${payout.toFixed(2)} to ${driver.userDetails?.firstName || 'Unknown'} ${driver.userDetails?.lastName || 'Driver'}!`);
-                                }}
-                                disabled={payout === 0}
+                                onClick={() => handleDisburseDriverSalary(driver.id, pendingPayout, unpaidRecords[0]?.id || null)}
+                                disabled={pendingPayout === 0 || isDisbursing}
                                 className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                                  payout === 0 
+                                  pendingPayout === 0 || isDisbursing
                                     ? 'bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed'
                                     : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/10 active:scale-95'
                                 }`}
                               >
-                                Disburse Salary
+                                {isDisbursing ? 'Disbursing...' : 'Disburse Salary'}
                               </button>
                             </td>
                           </tr>
@@ -3231,8 +3291,67 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                       })}
                       {driversList.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="py-8 text-center text-slate-500 text-xs">
+                          <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
                             No active drivers registered in the system.
+                          </td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </GlassCard>
+
+              {/* Sleek Payout Disbursement History Ledger */}
+              <GlassCard className="p-5 border border-slate-850 bg-slate-900/20 mt-6">
+                <div className="flex items-center justify-between border-b border-slate-850 pb-3 mb-4">
+                  <div>
+                    <h4 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                      <Clock className="text-emerald-450" size={16} />
+                      Salary Payout & Disbursement History Ledger
+                    </h4>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Real-time ledger audit trail of all disbursed driver salaries</p>
+                  </div>
+                  <span className="text-[10px] font-mono text-emerald-450 bg-emerald-500/5 px-2 py-0.5 rounded-full border border-emerald-500/10">
+                    {driverSalaryPayouts.length} Payments Disbursed
+                  </span>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-850">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 bg-slate-900/30 text-slate-400 font-bold">
+                        <th className="py-3 px-4">Transaction Ref</th>
+                        <th className="py-3 px-4">Driver Name</th>
+                        <th className="py-3 px-4">Disbursed Amount</th>
+                        <th className="py-3 px-4">Payout Date</th>
+                        <th className="py-3 px-4">Notes</th>
+                        <th className="py-3 px-4 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/60">
+                      {driverSalaryPayouts.map(payout => {
+                        const driver = driversList.find(d => d.id === payout.driverId);
+                        return (
+                          <tr key={payout.id} className="hover:bg-slate-900/10 text-slate-200">
+                            <td className="py-3 px-4 font-mono font-semibold text-brand-400">{payout.transactionReference || 'TXP-PENDING'}</td>
+                            <td className="py-3 px-4">
+                              <div className="font-semibold text-slate-200">{driver?.userDetails?.firstName || 'Unknown'} {driver?.userDetails?.lastName || 'Driver'}</div>
+                            </td>
+                            <td className="py-3 px-4 font-mono font-bold text-emerald-400">${(Number(payout.payoutAmount) || 0).toFixed(2)}</td>
+                            <td className="py-3 px-4 text-slate-400 font-mono">{new Date(payout.payoutDate).toLocaleString()}</td>
+                            <td className="py-3 px-4 text-slate-400 max-w-xs truncate">{payout.notes || 'Daily salary disburse'}</td>
+                            <td className="py-3 px-4 text-right">
+                              <span className="font-semibold text-emerald-400 font-mono bg-emerald-500/5 px-2 py-0.5 rounded-full border border-emerald-500/10 text-[9px]">
+                                {payout.payoutStatus}
+                              </span>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                      {driverSalaryPayouts.length === 0 && (
+                        <tr>
+                          <td colSpan={6} className="py-8 text-center text-slate-500 text-xs">
+                            No salary payouts disbursed yet.
                           </td>
                         </tr>
                       )}

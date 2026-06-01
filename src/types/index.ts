@@ -672,3 +672,18 @@ export interface QuizResult {
   createdAt: string;
 }
 
+export interface DriverSalaryPayout {
+  id: string;
+  schoolId: string;
+  driverId: string;
+  attendanceRecordId?: string | null;
+  payoutAmount: number;
+  payoutStatus: 'PAID' | 'PENDING' | 'REJECTED';
+  payoutDate: string;
+  paidByUserId?: string | null;
+  transactionReference?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+

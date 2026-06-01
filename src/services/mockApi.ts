@@ -5,7 +5,7 @@ import {
   Exam, ExamMark, FeeStructure, FeePayment, PaymentStatus, ChatMessage, Announcement, 
   Notification, AuditLog, StudyMaterial, ExamSchedule, 
   TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory, PhoneNumber, EmailAddress, Section, HomeworkAttachment,
-  Role, RolePermission
+  Role, RolePermission, DriverSalaryPayout, UserRole
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
@@ -1239,6 +1239,40 @@ export const mockApi = {
       }
     } catch (e) {
       console.error('Failed to sync fee payments:', e);
+    }
+  },
+
+  async syncDriverSalaryPayoutsData(schoolId: string): Promise<void> {
+    try {
+      const { data: dbPayouts } = await supabaseAdmin
+        .from('driver_salary_payouts')
+        .select('*')
+        .eq('school_id', schoolId);
+      
+      if (dbPayouts) {
+        dbPayouts.forEach((r: any) => {
+          const dp: DriverSalaryPayout = {
+            id: r.id,
+            schoolId: r.school_id,
+            driverId: r.driver_id,
+            attendanceRecordId: r.attendance_record_id,
+            payoutAmount: Number(r.payout_amount) || 0,
+            payoutStatus: r.payout_status as any,
+            payoutDate: r.payout_date || '',
+            paidByUserId: r.paid_by_user_id,
+            transactionReference: r.transaction_reference,
+            notes: r.notes,
+            createdAt: r.created_at,
+            updatedAt: r.updated_at
+          };
+          const idx = mockDb.driverSalaryPayouts.findIndex(p => p.id === dp.id);
+          if (idx === -1) mockDb.driverSalaryPayouts.push(dp);
+          else mockDb.driverSalaryPayouts[idx] = dp;
+        });
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync driver salary payouts:', e);
     }
   },
 
@@ -8343,6 +8377,124 @@ export const mockApi = {
       });
       mockDb.saveAll();
     }
+  },
+
+  async fetchDriverSalaryPayouts(schoolId: string): Promise<DriverSalaryPayout[]> {
+    const { data, error } = await supabaseAdmin
+      .from('driver_salary_payouts')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error || !data) {
+      return mockDb.driverSalaryPayouts.filter(p => p.schoolId === schoolId);
+    }
+    
+    const mapped = data.map((r: any) => ({
+      id: r.id,
+      schoolId: r.school_id,
+      driverId: r.driver_id,
+      attendanceRecordId: r.attendance_record_id,
+      payoutAmount: Number(r.payout_amount) || 0,
+      payoutStatus: r.payout_status as any,
+      payoutDate: r.payout_date || '',
+      paidByUserId: r.paid_by_user_id,
+      transactionReference: r.transaction_reference,
+      notes: r.notes,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    }));
+
+    // Cache locally
+    mapped.forEach(dp => {
+      const idx = mockDb.driverSalaryPayouts.findIndex(p => p.id === dp.id);
+      if (idx === -1) mockDb.driverSalaryPayouts.push(dp);
+      else mockDb.driverSalaryPayouts[idx] = dp;
+    });
+    mockDb.saveAll();
+
+    return mapped;
+  },
+
+  async adminDisburseDriverSalary(
+    adminId: string,
+    schoolId: string,
+    driverId: string,
+    amount: number,
+    attendanceRecordId?: string | null,
+    paidByUserId?: string | null,
+    notes?: string | null
+  ): Promise<DriverSalaryPayout> {
+    await delay(600);
+    // RBAC Validation
+    const operators = mockDb.users.filter(u => u.schoolId === schoolId);
+    const operator = operators.find(o => o.id === adminId);
+    const allowedRoles: UserRole[] = ['ADMIN', 'FINANCE_ADMIN'];
+    if (!operator || !allowedRoles.includes(operator.role)) {
+      throw new Error('Security Policy Alert: Unauthorized salary disbursement attempt. Payouts require ADMIN or FINANCE_ADMIN privilege.');
+    }
+
+    // Duplicate Prevention Check
+    const existingPayouts = mockDb.driverSalaryPayouts.filter(p => p.schoolId === schoolId);
+    if (attendanceRecordId) {
+      const isAlreadyPaid = existingPayouts.some(p => p.attendanceRecordId === attendanceRecordId && p.driverId === driverId);
+      if (isAlreadyPaid) {
+        throw new Error('Transaction Policy Mismatch: Payout has already been disbursed for this specific attendance record.');
+      }
+    }
+
+    const txRef = 'TXP' + Math.random().toString(36).substr(2, 8).toUpperCase();
+
+    // 1. Insert in Supabase
+    const { data: dbPayout, error } = await supabaseAdmin.from('driver_salary_payouts').insert({
+      school_id: schoolId,
+      driver_id: driverId,
+      attendance_record_id: attendanceRecordId || null,
+      payout_amount: amount,
+      payout_status: 'PAID',
+      payout_date: new Date().toISOString(),
+      paid_by_user_id: paidByUserId || adminId,
+      transaction_reference: txRef,
+      notes: notes || 'Daily attendance disburse'
+    }).select('*').single();
+
+    if (error || !dbPayout) {
+      // Fallback to local memory if Supabase offline/error
+      const localPayout: DriverSalaryPayout = {
+        id: 'dp-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        driverId,
+        attendanceRecordId: attendanceRecordId || null,
+        payoutAmount: amount,
+        payoutStatus: 'PAID',
+        payoutDate: new Date().toISOString(),
+        paidByUserId: paidByUserId || adminId,
+        transactionReference: txRef,
+        notes: notes || 'Daily attendance disburse',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      };
+      mockDb.driverSalaryPayouts.push(localPayout);
+      mockDb.saveAll();
+      return localPayout;
+    }
+
+    const newPayout: DriverSalaryPayout = {
+      id: dbPayout.id,
+      schoolId: dbPayout.school_id,
+      driverId: dbPayout.driver_id,
+      attendanceRecordId: dbPayout.attendance_record_id,
+      payoutAmount: Number(dbPayout.payout_amount) || 0,
+      payoutStatus: dbPayout.payout_status as any,
+      payoutDate: dbPayout.payout_date,
+      paidByUserId: dbPayout.paid_by_user_id,
+      transactionReference: dbPayout.transaction_reference,
+      notes: dbPayout.notes,
+      createdAt: dbPayout.created_at,
+      updatedAt: dbPayout.updated_at
+    };
+
+    mockDb.driverSalaryPayouts.push(newPayout);
+    mockDb.saveAll();
+    return newPayout;
   },
 
   async fetchDriverAttendance(schoolId: string): Promise<any[]> {

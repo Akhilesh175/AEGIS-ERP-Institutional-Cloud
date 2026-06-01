@@ -8,7 +8,7 @@ import {
   Section, HomeworkAttachment, Book,
   Driver, Bus, Route, PickupPoint, TransportAssignment, TransportFeeRecord, VehicleLog,
   MaintenanceLog, DriverAttendance, BookCategory, BookIssue, BookReturn, LibraryFine,
-  LibraryInvoice, DigitalLibraryAsset, ExamSubject, StudentMark, ReportCard, ExamResult, QuizResult
+  LibraryInvoice, DigitalLibraryAsset, ExamSubject, StudentMark, ReportCard, ExamResult, QuizResult, DriverSalaryPayout
 } from '../types';
 
 // Storage keys
@@ -430,6 +430,7 @@ class MockDatabase {
   examResults: ExamResult[];
   reportCards: ReportCard[];
   quizResults: QuizResult[];
+  driverSalaryPayouts: DriverSalaryPayout[];
 
   constructor() {
     this.users = getStorage<User[]>('users', SEED_USERS);
@@ -500,6 +501,7 @@ class MockDatabase {
     this.examResults = getStorage<ExamResult[]>('exam_results', SEED_EXAM_RESULTS);
     this.reportCards = getStorage<ReportCard[]>('report_cards', SEED_REPORT_CARDS);
     this.quizResults = getStorage<QuizResult[]>('quiz_results', SEED_QUIZ_RESULTS);
+    this.driverSalaryPayouts = getStorage<DriverSalaryPayout[]>('driver_salary_payouts', []);
   }
 
   saveAll() {
@@ -558,6 +560,7 @@ class MockDatabase {
     setStorage('exam_results', this.examResults);
     setStorage('report_cards', this.reportCards);
     setStorage('quiz_results', this.quizResults);
+    setStorage('driver_salary_payouts', this.driverSalaryPayouts);
   }
 
   // --- CRUD HELPERS ---
