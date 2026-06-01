@@ -4185,7 +4185,8 @@ export const mockApi = {
     lastName: string, 
     phone: string, 
     role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER', 
-    password: string
+    password: string,
+    employeeId?: string
   ): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
@@ -4195,6 +4196,21 @@ export const mockApi = {
     if (!schoolId) throw new Error('Admin has no associated school');
 
     const normalizedEmail = validateAndNormalizeEmail(email);
+    const trimmedEmployeeId = employeeId?.trim() || '';
+
+    // Validate Employee ID uniqueness within school if provided
+    if (trimmedEmployeeId) {
+      const { data: existingUser } = await supabaseAdmin
+        .from('users')
+        .select('id, first_name, last_name, role')
+        .eq('school_id', schoolId)
+        .eq('employee_id', trimmedEmployeeId)
+        .maybeSingle();
+      
+      if (existingUser) {
+        throw new Error(`Employee ID "${trimmedEmployeeId}" is already assigned to ${existingUser.first_name} ${existingUser.last_name} (${existingUser.role}). Each Employee ID must be unique within your school.`);
+      }
+    }
 
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,
@@ -4206,8 +4222,8 @@ export const mockApi = {
     
     const newUserId = authData.user.id;
     
-    // Insert into users table
-    const { error: dbError } = await supabaseAdmin.from('users').insert({
+    // Insert into users table with employee_id
+    const userInsert: any = {
       id: newUserId,
       email: normalizedEmail,
       role: role,
@@ -4216,7 +4232,10 @@ export const mockApi = {
       phone: phone,
       school_id: schoolId,
       is_active: true
-    });
+    };
+    if (trimmedEmployeeId) userInsert.employee_id = trimmedEmployeeId;
+
+    const { error: dbError } = await supabaseAdmin.from('users').insert(userInsert);
     
     if (dbError) {
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
@@ -4233,7 +4252,7 @@ export const mockApi = {
 
     const roleId = dbRole?.id || null;
 
-    // Dynamically insert into matching dedicated sub-admin table
+    // Dynamically insert into matching dedicated sub-admin table with employee_id
     let dedicatedTable = '';
     if (role === 'FINANCE_ADMIN') dedicatedTable = 'finance_admins';
     else if (role === 'ACADEMIC_ADMIN') dedicatedTable = 'academic_admins';
@@ -4243,13 +4262,16 @@ export const mockApi = {
     else if (role === 'CUSTOM_SUB_ADMIN') dedicatedTable = 'custom_sub_admins';
 
     if (dedicatedTable) {
-      const { error: profileErr } = await supabaseAdmin.from(dedicatedTable).insert({
+      const profileInsert: any = {
         user_id: newUserId,
         school_id: schoolId,
         role_id: roleId,
         status: 'ACTIVE',
         permissions: {}
-      });
+      };
+      if (trimmedEmployeeId) profileInsert.employee_id = trimmedEmployeeId;
+
+      const { error: profileErr } = await supabaseAdmin.from(dedicatedTable).insert(profileInsert);
       if (profileErr) {
         // Rollback
         await supabaseAdmin.from('users').delete().eq('id', newUserId);
@@ -4269,7 +4291,7 @@ export const mockApi = {
         'CREATE_USER',
         newUserId,
         null,
-        { email: normalizedEmail, firstName, lastName, role, phone }
+        { email: normalizedEmail, firstName, lastName, role, phone, employeeId: trimmedEmployeeId || undefined }
       );
     } catch (err) {
       console.error('Audit logging failed:', err);
@@ -4305,11 +4327,12 @@ export const mockApi = {
     const user: User = {
       id: newUserId, email: normalizedEmail, role: role, firstName, lastName,
       phone: phone || '', avatarUrl: '', isActive: true, schoolId,
+      employeeId: trimmedEmployeeId || undefined,
       password, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
     mockDb.users.push(user);
 
-    mockDb.addLog(adminId, 'CREATE_SUB_ADMIN', { subAdminName: `${firstName} ${lastName}`, role: role, email: normalizedEmail });
+    mockDb.addLog(adminId, 'CREATE_SUB_ADMIN', { subAdminName: `${firstName} ${lastName}`, role: role, email: normalizedEmail, employeeId: trimmedEmployeeId || undefined });
     mockDb.saveAll();
   },
 
@@ -7221,6 +7244,7 @@ export const mockApi = {
         avatarUrl: u.avatar_url || undefined,
         isActive: isActiveStatus,
         schoolId: u.school_id,
+        employeeId: u.employee_id || undefined,
         createdAt: u.created_at,
         updatedAt: u.updated_at,
         roleId: u.role_id || undefined,

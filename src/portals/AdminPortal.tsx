@@ -207,6 +207,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [saPhone, setSaPhone] = useState('');
   const [saRole, setSaRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER'>('FINANCE_ADMIN');
   const [saPassword, setSaPassword] = useState('password');
+  const [saEmployeeId, setSaEmployeeId] = useState('');
 
   // Extended RBAC sub-admin operator states
   const [operators, setOperators] = useState<any[]>([]);
@@ -362,10 +363,14 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       alert('Email cannot be empty and password must be at least 6 characters.');
       return;
     }
+    if (!saEmployeeId.trim()) {
+      alert('Employee ID is required. Please assign a unique Employee ID for this sub-admin operator.');
+      return;
+    }
     setRbacLoading(true);
     try {
       await mockApi.adminCreateSubAdmin(
-        adminId!, saEmail, saFirst, saLast, saPhone, saRole, saPassword
+        adminId!, saEmail, saFirst, saLast, saPhone, saRole, saPassword, saEmployeeId.trim()
       );
       setShowAddSubAdmin(false);
       setSaEmail('');
@@ -374,7 +379,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       setSaPhone('');
       setSaRole('FINANCE_ADMIN');
       setSaPassword('password');
-      alert(`Sub-admin user with role [${saRole}] registered successfully in Supabase!`);
+      setSaEmployeeId('');
+      // Reload operators list to show the new sub-admin
+      if (overview?.schoolId) {
+        const ops = await mockApi.fetchOperators(overview.schoolId);
+        setOperators(ops);
+      }
+      alert(`Sub-admin user with role [${saRole}] and Employee ID [${saEmployeeId.trim()}] registered successfully in Supabase!`);
     } catch (err: any) {
       alert(err.message || 'Error creating sub-admin');
     } finally {
@@ -4454,6 +4465,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <thead>
                   <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
                     <th className="py-3 px-4">Operator</th>
+                    <th className="py-3 px-4">Employee ID</th>
                     <th className="py-3 px-4">Role Assigned</th>
                     <th className="py-3 px-4">Session Telemetry</th>
                     <th className="py-3 px-4">Account Status</th>
@@ -4468,7 +4480,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                         op.firstName.toLowerCase().includes(search) ||
                         op.lastName.toLowerCase().includes(search) ||
                         op.email.toLowerCase().includes(search) ||
-                        op.role.toLowerCase().includes(search)
+                        op.role.toLowerCase().includes(search) ||
+                        (op.employeeId || '').toLowerCase().includes(search)
                       );
                     })
                     .map((op) => (
@@ -4476,6 +4489,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                         <td className="py-3 px-4">
                           <div className="font-bold text-slate-200">{op.firstName} {op.lastName}</div>
                           <div className="text-[10px] text-slate-500 font-mono">{op.email}</div>
+                        </td>
+                        <td className="py-3 px-4">
+                          {op.employeeId ? (
+                            <span className="px-2 py-0.5 rounded bg-amber-500/10 text-amber-400 border border-amber-500/20 text-[9px] font-bold font-mono">
+                              {op.employeeId}
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-600 italic">—</span>
+                          )}
                         </td>
                         <td className="py-3 px-4">
                           <span className="px-2 py-0.5 rounded-full bg-slate-900 text-brand-400 border border-brand-500/10 text-[9px] font-bold font-mono">
@@ -4508,7 +4530,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     ))}
                   {operators.length === 0 && (
                     <tr>
-                      <td colSpan={5} className="py-6 text-center text-slate-500 font-mono">
+                      <td colSpan={6} className="py-6 text-center text-slate-500 font-mono">
                         No administrative operators found inside this school tenant registry.
                       </td>
                     </tr>
@@ -4790,6 +4812,19 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Phone</label>
                 <input type="text" placeholder="+1 (555) 000-0000" value={saPhone} onChange={(e) => setSaPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-amber-400">Employee ID / Staff ID <span className="text-red-400">*</span></label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. EMP-FIN-001, STAFF-2026-042" 
+                  value={saEmployeeId} 
+                  onChange={(e) => setSaEmployeeId(e.target.value)} 
+                  className="w-full bg-slate-900 border border-amber-900/40 text-xs rounded-lg p-2 focus:outline-none focus:border-amber-500/60" 
+                  required 
+                />
+                <p className="text-[8px] text-slate-500 mt-0.5">Must be unique within your school. This ID will be permanently linked to the operator profile.</p>
               </div>
 
               <div className="space-y-1 sm:col-span-2">

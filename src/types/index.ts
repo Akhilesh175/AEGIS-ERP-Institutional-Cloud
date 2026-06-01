@@ -25,6 +25,7 @@ export interface User {
   createdAt: string;
   updatedAt: string;
   roleId?: string;
+  employeeId?: string;
   lastLoginAt?: string;
   loginDevice?: string;
   sessionStatus?: string;
