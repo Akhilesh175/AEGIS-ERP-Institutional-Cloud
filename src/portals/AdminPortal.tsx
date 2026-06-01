@@ -209,6 +209,16 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [saPassword, setSaPassword] = useState('password');
   const [saEmployeeId, setSaEmployeeId] = useState('');
 
+  // Editing Sub-Admin States
+  const [showEditSubAdmin, setShowEditSubAdmin] = useState<any | null>(null);
+  const [editEmail, setEditEmail] = useState('');
+  const [editFirst, setEditFirst] = useState('');
+  const [editLast, setEditLast] = useState('');
+  const [editPhone, setEditPhone] = useState('');
+  const [editRole, setEditRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN'>('FINANCE_ADMIN');
+  const [editEmployeeId, setEditEmployeeId] = useState('');
+  const [editIsActive, setEditIsActive] = useState(true);
+
   // Extended RBAC sub-admin operator states
   const [operators, setOperators] = useState<any[]>([]);
   const [auditLogs, setAuditLogs] = useState<any[]>([]);
@@ -388,6 +398,41 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       alert(`Sub-admin user with role [${saRole}] and Employee ID [${saEmployeeId.trim()}] registered successfully in Supabase!`);
     } catch (err: any) {
       alert(err.message || 'Error creating sub-admin');
+    } finally {
+      setRbacLoading(false);
+    }
+  };
+
+  const handleSaveEditSubAdmin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!showEditSubAdmin) return;
+    if (!editEmail.trim() || !editFirst.trim() || !editLast.trim() || !editEmployeeId.trim()) {
+      alert('Email, First Name, Last Name, and Employee ID cannot be empty.');
+      return;
+    }
+    setRbacLoading(true);
+    try {
+      await mockApi.adminEditSubAdmin(
+        adminId!,
+        showEditSubAdmin.id,
+        editEmail.trim(),
+        editFirst.trim(),
+        editLast.trim(),
+        editPhone.trim(),
+        editRole,
+        editEmployeeId.trim(),
+        editIsActive
+      );
+      setShowEditSubAdmin(null);
+      
+      // Reload operators list to show the updated sub-admin
+      if (overview?.schoolId) {
+        const ops = await mockApi.fetchOperators(overview.schoolId);
+        setOperators(ops);
+      }
+      alert('Sub-admin operator details updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Error updating sub-admin');
     } finally {
       setRbacLoading(false);
     }
@@ -4360,13 +4405,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               </div>
             </div>
 
-            <button 
-              onClick={() => setShowAddSubAdmin(true)}
-              className="glass-btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5 font-bold self-start sm:self-auto"
-            >
-              <Plus size={14} />
-              <span>Register Sub-Admin</span>
-            </button>
+            {(session?.user.role === 'ADMIN' || session?.user.role === 'SUPER_ADMIN') && (
+              <button 
+                onClick={() => setShowAddSubAdmin(true)}
+                className="glass-btn-primary py-1.5 px-3 text-xs flex items-center gap-1.5 font-bold self-start sm:self-auto"
+              >
+                <Plus size={14} />
+                <span>Register Sub-Admin</span>
+              </button>
+            )}
           </GlassCard>
 
           {/* Dynamic Grid Table */}
@@ -4469,7 +4516,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     <th className="py-3 px-4">Role Assigned</th>
                     <th className="py-3 px-4">Session Telemetry</th>
                     <th className="py-3 px-4">Account Status</th>
-                    <th className="py-3 px-4 text-right">Actions</th>
+                    {(session?.user.role === 'ADMIN' || session?.user.role === 'SUPER_ADMIN') && (
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-850/40">
@@ -4518,19 +4567,36 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                             {op.isActive ? 'Active' : 'Inactive'}
                           </span>
                         </td>
-                        <td className="py-3 px-4 text-right">
-                          <button
-                            onClick={() => toggleOperatorStatus(op.id, op.isActive)}
-                            className={`px-2 py-1 rounded font-bold text-[9px] transition-all ${op.isActive ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20' : 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20'}`}
-                          >
-                            {op.isActive ? 'Deactivate' : 'Activate'}
-                          </button>
-                        </td>
+                        {(session?.user.role === 'ADMIN' || session?.user.role === 'SUPER_ADMIN') && (
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={() => {
+                                setShowEditSubAdmin(op);
+                                setEditEmail(op.email);
+                                setEditFirst(op.firstName);
+                                setEditLast(op.lastName);
+                                setEditPhone(op.phone || '');
+                                setEditRole(op.role);
+                                setEditEmployeeId(op.employeeId || '');
+                                setEditIsActive(op.isActive);
+                              }}
+                              className="mr-2 px-2 py-1 rounded font-bold text-[9px] transition-all bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/20"
+                            >
+                              Edit
+                            </button>
+                            <button
+                              onClick={() => toggleOperatorStatus(op.id, op.isActive)}
+                              className={`px-2 py-1 rounded font-bold text-[9px] transition-all ${op.isActive ? 'bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/20' : 'bg-green-500/10 hover:bg-green-500/20 text-green-400 border border-green-500/20'}`}
+                            >
+                              {op.isActive ? 'Deactivate' : 'Activate'}
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   {operators.length === 0 && (
                     <tr>
-                      <td colSpan={6} className="py-6 text-center text-slate-500 font-mono">
+                      <td colSpan={session?.user.role === 'ADMIN' || session?.user.role === 'SUPER_ADMIN' ? 6 : 5} className="py-6 text-center text-slate-500 font-mono">
                         No administrative operators found inside this school tenant registry.
                       </td>
                     </tr>
@@ -4843,6 +4909,126 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <button type="button" onClick={() => setShowAddSubAdmin(false)} className="glass-btn-secondary text-xs" disabled={rbacLoading}>Cancel</button>
                 <button type="submit" className="glass-btn-primary text-xs" disabled={rbacLoading}>
                   {rbacLoading ? 'Registering...' : 'Register Operator'}
+                </button>
+              </div>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Sub-Admin Edit Modal */}
+      {showEditSubAdmin && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
+            <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+              <h4 className="font-bold text-slate-100 text-sm">Edit Sub-Admin Console Operator</h4>
+              <button onClick={() => setShowEditSubAdmin(null)} className="text-xs text-slate-400 hover:text-slate-200">Close</button>
+            </div>
+
+            <form onSubmit={handleSaveEditSubAdmin} className="space-y-3 grid grid-cols-1 sm:grid-cols-2 gap-x-4 gap-y-3">
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Email Address</label>
+                <input 
+                  type="email" 
+                  placeholder="operator@aegis.com" 
+                  value={editEmail} 
+                  onChange={(e) => setEditEmail(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" 
+                  required 
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Administrative Role</label>
+                <select 
+                  value={editRole} 
+                  onChange={(e: any) => setEditRole(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" 
+                  required
+                >
+                  <option value="FINANCE_ADMIN">Finance Administration (Biller)</option>
+                  <option value="ACADEMIC_ADMIN">Academic Coordinator</option>
+                  <option value="EXAM_CONTROLLER">Exam Controller & Grader</option>
+                  <option value="LIBRARIAN">School Librarian</option>
+                  <option value="TRANSPORT_MANAGER">Transport Fleet Manager</option>
+                  <option value="CUSTOM_SUB_ADMIN">Custom Operator</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">First Name</label>
+                <input 
+                  type="text" 
+                  placeholder="First Name" 
+                  value={editFirst} 
+                  onChange={(e) => setEditFirst(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" 
+                  required 
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Last Name</label>
+                <input 
+                  type="text" 
+                  placeholder="Last Name" 
+                  value={editLast} 
+                  onChange={(e) => setEditLast(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" 
+                  required 
+                />
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Phone</label>
+                <input 
+                  type="text" 
+                  placeholder="+1 (555) 000-0000" 
+                  value={editPhone} 
+                  onChange={(e) => setEditPhone(e.target.value)} 
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" 
+                />
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-amber-400">Employee ID / Staff ID <span className="text-red-400">*</span></label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. EMP-FIN-001, STAFF-2026-042" 
+                  value={editEmployeeId} 
+                  onChange={(e) => setEditEmployeeId(e.target.value)} 
+                  className="w-full bg-slate-900 border border-amber-900/40 text-xs rounded-lg p-2 focus:outline-none focus:border-amber-500/60" 
+                  required 
+                />
+                <p className="text-[8px] text-slate-500 mt-0.5">Must be unique within your school. This ID will be permanently linked to the operator profile.</p>
+              </div>
+
+              <div className="space-y-1 sm:col-span-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Account Status</label>
+                <div className="flex items-center gap-4 mt-1">
+                  <label className="flex items-center gap-1.5 cursor-pointer text-slate-200">
+                    <input 
+                      type="radio" 
+                      name="editIsActive" 
+                      checked={editIsActive === true} 
+                      onChange={() => setEditIsActive(true)} 
+                      className="accent-brand-500" 
+                    />
+                    <span>Active (Granted Portal Access)</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer text-slate-200">
+                    <input 
+                      type="radio" 
+                      name="editIsActive" 
+                      checked={editIsActive === false} 
+                      onChange={() => setEditIsActive(false)} 
+                      className="accent-red-500" 
+                    />
+                    <span>Deactivated (Suspended Portal Access)</span>
+                  </label>
+                </div>
+              </div>
+
+              <div className="sm:col-span-2 flex justify-end gap-2 pt-2 border-t border-slate-850">
+                <button type="button" onClick={() => setShowEditSubAdmin(null)} className="glass-btn-secondary text-xs" disabled={rbacLoading}>Cancel</button>
+                <button type="submit" className="glass-btn-primary text-xs" disabled={rbacLoading}>
+                  {rbacLoading ? 'Saving...' : 'Save Changes'}
                 </button>
               </div>
             </form>

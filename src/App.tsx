@@ -34,28 +34,61 @@ export const App: React.FC = () => {
     setActiveTab('dashboard');
   }, [session]);
 
-  // Session validation guard: if the user account was deleted from the database,
-  // log them out instantly to prevent broken state and unauthenticated RLS empty screens.
+  // Session validation guard: if the user account was deleted or deactivated,
+  // log them out instantly to protect database records and enforce access gates.
   useEffect(() => {
     const validateSession = async () => {
       const SUPER_ADMIN_EMAIL = 'jy7018080@gmail.com';
       if (session?.user?.id && session.user.email !== SUPER_ADMIN_EMAIL) {
-        const { data: userExists, error } = await supabase
+        const { data: userDb, error } = await supabase
           .from('users')
-          .select('id')
+          .select('id, is_active')
           .eq('id', session.user.id)
           .maybeSingle();
 
-        // If user is completely deleted from the public.users database table,
-        // we must clear the session.
-        if (!userExists || error) {
-          console.warn('Session user does not exist in database. Clearing stale session...');
+        // If user is deleted or explicitly deactivated in Supabase, clear the session
+        if (!userDb || error || userDb.is_active === false) {
+          console.warn('Session user does not exist or is deactivated. Clearing stale session...');
           setSession(null);
           localStorage.removeItem('aegis_session');
+          if (userDb && userDb.is_active === false) {
+            alert('Your account has been deactivated. You have been automatically logged out.');
+          }
         }
       }
     };
     validateSession();
+  }, [session, setSession]);
+
+  // Real-time status sync: listen for administrative deactivation events to instantly log out the user.
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    
+    const channel = supabase
+      .channel(`user-status-sync-${session.user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'users',
+          filter: `id=eq.${session.user.id}`
+        },
+        (payload) => {
+          const updatedUser = payload.new as any;
+          if (updatedUser && updatedUser.is_active === false) {
+            console.log('Realtime administrative deactivation triggered! Enforcing instant session destruction.');
+            setSession(null);
+            localStorage.removeItem('aegis_session');
+            alert('Your account has been deactivated by the administrator. You have been logged out.');
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [session, setSession]);
 
   const handleLogin = async (e: React.FormEvent) => {

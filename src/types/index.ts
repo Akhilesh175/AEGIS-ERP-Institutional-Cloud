@@ -29,6 +29,8 @@ export interface User {
   lastLoginAt?: string;
   loginDevice?: string;
   sessionStatus?: string;
+  deactivatedAt?: string;
+  deactivatedBy?: string;
 }
 
 export interface Role {

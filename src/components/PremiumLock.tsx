@@ -1,6 +1,7 @@
 import React from 'react';
 import { Lock } from 'lucide-react';
 import { GlassCard } from './GlassCard';
+import { useStore } from '../store/useStore';
 
 interface PremiumLockProps {
   isLocked: boolean;
@@ -10,7 +11,10 @@ interface PremiumLockProps {
 }
 
 const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featureName, children }) => {
-  if (!isLocked) {
+  const { session } = useStore();
+  const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
+
+  if (!isLocked || isSuperAdmin) {
     return <>{children}</>;
   }
 

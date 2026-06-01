@@ -632,9 +632,9 @@ export const mockApi = {
       throw new Error('Access Denied: Unauthorized account.');
     }
 
-    if (!userProfile.is_active) {
+    if (userProfile.is_active === false) {
       mockDb.addLog(userProfile.id, 'LOGIN_BLOCKED', { email });
-      throw new Error('Account deactivated. Please contact administration.');
+      throw new Error('Your account has been deactivated. Please contact your school administrator.');
     }
 
     // Map database profile to frontend User object
@@ -4212,6 +4212,71 @@ export const mockApi = {
       }
     }
 
+    // Resolve matching role_id if exists, otherwise seed it
+    const roleNameMap: Record<string, string> = {
+      'FINANCE_ADMIN': 'Finance Admin',
+      'ACADEMIC_ADMIN': 'Academic Admin',
+      'EXAM_CONTROLLER': 'Exam Controller',
+      'LIBRARIAN': 'Librarian',
+      'TRANSPORT_MANAGER': 'Transport Manager',
+      'CUSTOM_SUB_ADMIN': 'Custom Operator'
+    };
+    const roleDescMap: Record<string, string> = {
+      'FINANCE_ADMIN': 'Responsible for billing, invoices, payment structures, and fee tracking.',
+      'ACADEMIC_ADMIN': 'Manages classes, sections, timetables, subjects, and study structures.',
+      'EXAM_CONTROLLER': 'Administers examinations, quiz configurations, marksheets, and grading books.',
+      'LIBRARIAN': 'Manages library book inventory, issue/return logs, and late fee tracking.',
+      'TRANSPORT_MANAGER': 'Administers school buses, routes, driver information, and passenger maps.',
+      'CUSTOM_SUB_ADMIN': 'Customizable operator role with custom-assigned modular access tags.'
+    };
+    const defaultRolePermissions: Record<string, Record<string, boolean>> = {
+      'FINANCE_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
+      'ACADEMIC_ADMIN': { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true },
+      'EXAM_CONTROLLER': { billing: false, directory: true, academics: true, grading: true, security: false, books: false, transport: false },
+      'LIBRARIAN': { billing: false, directory: true, academics: true, grading: false, security: false, books: true, transport: false },
+      'TRANSPORT_MANAGER': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
+      'CUSTOM_SUB_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false }
+    };
+
+    let { data: dbRole } = await supabaseAdmin
+      .from('roles')
+      .select('id')
+      .eq('school_id', schoolId)
+      .eq('role_code', role)
+      .maybeSingle();
+
+    let roleId = dbRole?.id || null;
+
+    if (!roleId) {
+      const roleName = roleNameMap[role] || role.replace('_', ' ');
+      const description = roleDescMap[role] || 'Modular sub-admin role.';
+      
+      const { data: newRole, error: roleError } = await supabaseAdmin
+        .from('roles')
+        .insert({
+          school_id: schoolId,
+          role_code: role,
+          role_name: roleName,
+          description: description
+        })
+        .select('id')
+        .single();
+      
+      if (newRole && !roleError) {
+        roleId = newRole.id;
+        const perms = defaultRolePermissions[role] || {};
+        const permissionRows = Object.keys(perms).map(moduleName => ({
+          role_id: roleId,
+          module_name: moduleName,
+          can_view: perms[moduleName],
+          can_create: perms[moduleName],
+          can_edit: perms[moduleName],
+          can_delete: perms[moduleName]
+        }));
+        await supabaseAdmin.from('role_permissions').insert(permissionRows);
+      }
+    }
+
     const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
       email: normalizedEmail,
       password,
@@ -4222,11 +4287,12 @@ export const mockApi = {
     
     const newUserId = authData.user.id;
     
-    // Insert into users table with employee_id
+    // Insert into users table with employee_id and role_id
     const userInsert: any = {
       id: newUserId,
       email: normalizedEmail,
       role: role,
+      role_id: roleId,
       first_name: firstName,
       last_name: lastName,
       phone: phone,
@@ -4241,16 +4307,6 @@ export const mockApi = {
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create user database profile: ' + dbError.message);
     }
-
-    // Resolve matching role_id if exists
-    const { data: dbRole } = await supabaseAdmin
-      .from('roles')
-      .select('id')
-      .eq('school_id', schoolId)
-      .eq('role_code', role)
-      .maybeSingle();
-
-    const roleId = dbRole?.id || null;
 
     // Dynamically insert into matching dedicated sub-admin table with employee_id
     let dedicatedTable = '';
@@ -4333,6 +4389,254 @@ export const mockApi = {
     mockDb.users.push(user);
 
     mockDb.addLog(adminId, 'CREATE_SUB_ADMIN', { subAdminName: `${firstName} ${lastName}`, role: role, email: normalizedEmail, employeeId: trimmedEmployeeId || undefined });
+    mockDb.saveAll();
+  },
+
+  async adminEditSubAdmin(
+    adminId: string,
+    userId: string,
+    email: string,
+    firstName: string,
+    lastName: string,
+    phone: string,
+    role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN',
+    employeeId: string,
+    isActive: boolean
+  ): Promise<void> {
+    await delay(600);
+    const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
+    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+
+    const schoolId = admin.school_id;
+    if (!schoolId) throw new Error('Admin has no associated school');
+
+    const normalizedEmail = validateAndNormalizeEmail(email);
+    const trimmedEmployeeId = employeeId.trim();
+
+    // Validate Employee ID uniqueness within school if provided
+    if (trimmedEmployeeId) {
+      const { data: existingUser } = await supabaseAdmin
+        .from('users')
+        .select('id, first_name, last_name, role')
+        .eq('school_id', schoolId)
+        .eq('employee_id', trimmedEmployeeId)
+        .neq('id', userId)
+        .maybeSingle();
+      
+      if (existingUser) {
+        throw new Error(`Employee ID "${trimmedEmployeeId}" is already assigned to ${existingUser.first_name} ${existingUser.last_name} (${existingUser.role}). Each Employee ID must be unique within your school.`);
+      }
+    }
+
+    const { data: userRow } = await supabaseAdmin.from('users').select('role, role_id, email, deactivated_at, deactivated_by').eq('id', userId).single();
+    if (!userRow) throw new Error('Operator profile not found.');
+    const oldRole = userRow.role;
+    const oldEmail = userRow.email;
+
+    // Resolve matching role_id if exists, otherwise seed it
+    const roleNameMap: Record<string, string> = {
+      'FINANCE_ADMIN': 'Finance Admin',
+      'ACADEMIC_ADMIN': 'Academic Admin',
+      'EXAM_CONTROLLER': 'Exam Controller',
+      'LIBRARIAN': 'Librarian',
+      'TRANSPORT_MANAGER': 'Transport Manager',
+      'CUSTOM_SUB_ADMIN': 'Custom Operator'
+    };
+    const roleDescMap: Record<string, string> = {
+      'FINANCE_ADMIN': 'Responsible for billing, invoices, payment structures, and fee tracking.',
+      'ACADEMIC_ADMIN': 'Manages classes, sections, timetables, subjects, and study structures.',
+      'EXAM_CONTROLLER': 'Administers examinations, quiz configurations, marksheets, and grading books.',
+      'LIBRARIAN': 'Manages library book inventory, issue/return logs, and late fee tracking.',
+      'TRANSPORT_MANAGER': 'Administers school buses, routes, driver information, and passenger maps.',
+      'CUSTOM_SUB_ADMIN': 'Customizable operator role with custom-assigned modular access tags.'
+    };
+    const defaultRolePermissions: Record<string, Record<string, boolean>> = {
+      'FINANCE_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
+      'ACADEMIC_ADMIN': { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true },
+      'EXAM_CONTROLLER': { billing: false, directory: true, academics: true, grading: true, security: false, books: false, transport: false },
+      'LIBRARIAN': { billing: false, directory: true, academics: true, grading: false, security: false, books: true, transport: false },
+      'TRANSPORT_MANAGER': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
+      'CUSTOM_SUB_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false }
+    };
+
+    let targetRoleId: string | null = null;
+    const { data: dbRole } = await supabaseAdmin
+      .from('roles')
+      .select('id')
+      .eq('school_id', schoolId)
+      .eq('role_code', role)
+      .maybeSingle();
+    targetRoleId = dbRole?.id || null;
+
+    if (!targetRoleId) {
+      const roleName = roleNameMap[role] || role.replace('_', ' ');
+      const description = roleDescMap[role] || 'Modular sub-admin role.';
+      
+      const { data: newRole } = await supabaseAdmin
+        .from('roles')
+        .insert({
+          school_id: schoolId,
+          role_code: role,
+          role_name: roleName,
+          description: description
+        })
+        .select('id')
+        .single();
+      
+      if (newRole) {
+        targetRoleId = newRole.id;
+        const perms = defaultRolePermissions[role] || {};
+        const permissionRows = Object.keys(perms).map(moduleName => ({
+          role_id: targetRoleId,
+          module_name: moduleName,
+          can_view: perms[moduleName],
+          can_create: perms[moduleName],
+          can_edit: perms[moduleName],
+          can_delete: perms[moduleName]
+        }));
+        await supabaseAdmin.from('role_permissions').insert(permissionRows);
+      }
+    }
+
+    // Update Auth user
+    const authUpdate: any = {
+      user_metadata: { role }
+    };
+    if (normalizedEmail !== oldEmail) {
+      authUpdate.email = normalizedEmail;
+      authUpdate.email_confirm = true;
+    }
+    await supabaseAdmin.auth.admin.updateUserById(userId, authUpdate);
+
+    // Update public.users
+    const usersUpdate: any = {
+      email: normalizedEmail,
+      role: role,
+      role_id: targetRoleId,
+      first_name: firstName,
+      last_name: lastName,
+      phone: phone,
+      employee_id: trimmedEmployeeId,
+      is_active: isActive,
+      deactivated_at: isActive ? null : (userRow.deactivated_at || new Date().toISOString()),
+      deactivated_by: isActive ? null : (userRow.deactivated_by || adminId)
+    };
+
+    const { error: usersError } = await supabaseAdmin
+      .from('users')
+      .update(usersUpdate)
+      .eq('id', userId);
+    if (usersError) throw new Error('Failed to update user profile: ' + usersError.message);
+
+    // Dedicated tables sync
+    const getTableName = (roleCode: string) => {
+      if (roleCode === 'FINANCE_ADMIN') return 'finance_admins';
+      if (roleCode === 'ACADEMIC_ADMIN') return 'academic_admins';
+      if (roleCode === 'EXAM_CONTROLLER') return 'exam_controllers';
+      if (roleCode === 'LIBRARIAN') return 'librarians';
+      if (roleCode === 'TRANSPORT_MANAGER') return 'transport_managers';
+      if (roleCode === 'CUSTOM_SUB_ADMIN') return 'custom_sub_admins';
+      return '';
+    };
+
+    const oldTable = getTableName(oldRole);
+    const newTable = getTableName(role);
+
+    if (oldTable && newTable) {
+      if (oldTable !== newTable) {
+        // Delete old profile, insert new
+        await supabaseAdmin.from(oldTable).delete().eq('user_id', userId);
+        
+        await supabaseAdmin.from(newTable).insert({
+          user_id: userId,
+          school_id: schoolId,
+          role_id: targetRoleId,
+          employee_id: trimmedEmployeeId,
+          status: isActive ? 'ACTIVE' : 'INACTIVE',
+          permissions: {},
+          deactivated_at: isActive ? null : new Date().toISOString(),
+          deactivated_by: isActive ? null : adminId
+        });
+      } else {
+        // Just update existing
+        await supabaseAdmin
+          .from(newTable)
+          .update({
+            role_id: targetRoleId,
+            employee_id: trimmedEmployeeId,
+            status: isActive ? 'ACTIVE' : 'INACTIVE',
+            deactivated_at: isActive ? null : new Date().toISOString(),
+            deactivated_by: isActive ? null : adminId
+          })
+          .eq('user_id', userId);
+      }
+    }
+
+    // Sync email_addresses
+    await supabaseAdmin
+      .from('email_addresses')
+      .update({ email: normalizedEmail })
+      .eq('user_id', userId)
+      .eq('email_type', 'LOGIN');
+
+    // Sync phone_numbers
+    if (phone) {
+      const parsedPhone = parseAndValidatePhone(phone);
+      if (parsedPhone.fullNumber) {
+        const { data: phoneRow } = await supabaseAdmin.from('phone_numbers').select('id').eq('user_id', userId).maybeSingle();
+        if (phoneRow) {
+          await supabaseAdmin
+            .from('phone_numbers')
+            .update({
+              country_code: parsedPhone.countryCode,
+              national_number: parsedPhone.nationalNumber,
+              full_number: parsedPhone.fullNumber
+            })
+            .eq('user_id', userId);
+        } else {
+          await supabaseAdmin.from('phone_numbers').insert({
+            user_id: userId,
+            school_id: schoolId,
+            phone_type: 'PRIMARY',
+            country_code: parsedPhone.countryCode,
+            national_number: parsedPhone.nationalNumber,
+            full_number: parsedPhone.fullNumber
+          });
+        }
+      }
+    }
+
+    // Sync to local mockDb
+    const cachedUser = mockDb.users.find(u => u.id === userId);
+    if (cachedUser) {
+      cachedUser.email = normalizedEmail;
+      cachedUser.role = role;
+      cachedUser.firstName = firstName;
+      cachedUser.lastName = lastName;
+      cachedUser.phone = phone;
+      cachedUser.employeeId = trimmedEmployeeId || undefined;
+      cachedUser.isActive = isActive;
+      cachedUser.roleId = targetRoleId || undefined;
+      cachedUser.deactivatedAt = isActive ? undefined : new Date().toISOString();
+      cachedUser.deactivatedBy = isActive ? undefined : (adminId || undefined);
+    }
+    
+    try {
+      await mockApi.writeAuditLog(
+        adminId,
+        null,
+        schoolId,
+        'directory',
+        'EDIT_USER',
+        userId,
+        null,
+        { email: normalizedEmail, firstName, lastName, role, phone, employeeId: trimmedEmployeeId || undefined, isActive }
+      );
+    } catch (err) {
+      console.error('Audit logging failed:', err);
+    }
+
+    mockDb.addLog(adminId, 'EDIT_SUB_ADMIN', { subAdminName: `${firstName} ${lastName}`, role, email: normalizedEmail, employeeId: trimmedEmployeeId || undefined });
     mockDb.saveAll();
   },
 
@@ -7166,7 +7470,7 @@ export const mockApi = {
     }));
   },
 
-  async updateUserStatus(userId: string, isActive: boolean): Promise<void> {
+  async updateUserStatus(userId: string, isActive: boolean, adminId: string | null = null): Promise<void> {
     const { data: userRow } = await supabaseAdmin
       .from('users')
       .select('role')
@@ -7175,7 +7479,11 @@ export const mockApi = {
 
     const { error } = await supabaseAdmin
       .from('users')
-      .update({ is_active: isActive })
+      .update({ 
+        is_active: isActive,
+        deactivated_at: isActive ? null : new Date().toISOString(),
+        deactivated_by: isActive ? null : adminId
+      })
       .eq('id', userId);
       
     if (error) throw new Error('Failed to update operator status in Supabase: ' + error.message);
@@ -7192,9 +7500,22 @@ export const mockApi = {
       if (dedicatedTable) {
         await supabaseAdmin
           .from(dedicatedTable)
-          .update({ status: isActive ? 'ACTIVE' : 'INACTIVE' })
+          .update({ 
+            status: isActive ? 'ACTIVE' : 'INACTIVE',
+            deactivated_at: isActive ? null : new Date().toISOString(),
+            deactivated_by: isActive ? null : adminId
+          })
           .eq('user_id', userId);
       }
+    }
+
+    // Sync status back to local mockDb
+    const cachedUser = mockDb.users.find(u => u.id === userId);
+    if (cachedUser) {
+      cachedUser.isActive = isActive;
+      cachedUser.deactivatedAt = isActive ? undefined : new Date().toISOString();
+      cachedUser.deactivatedBy = isActive ? undefined : (adminId || undefined);
+      mockDb.saveAll();
     }
   },
 
