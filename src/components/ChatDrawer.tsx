@@ -126,8 +126,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
         {/* Messaging Container */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <PremiumLock 
-            isLocked={!plan.features.communications} 
-            requiredTier="Basic" 
+            isLocked={currentPlanName !== 'enterprise'} 
+            requiredTier="Enterprise" 
             featureName="Direct Messaging"
           >
             {!activeContact ? (

@@ -88,6 +88,13 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
                       dbSchools[idx].subscriptionPlan = livePlan.toLowerCase();
                       localStorage.setItem('aegis_erp_db_schools', JSON.stringify(dbSchools));
                     }
+                    
+                    // Keep the in-memory mockDb singleton in sync!
+                    const { mockDb } = await import('../services/mockDb');
+                    const memIdx = mockDb.schools.findIndex((s: any) => s.id === parsed.user.schoolId);
+                    if (memIdx !== -1) {
+                      mockDb.schools[memIdx].subscriptionPlan = livePlan.toLowerCase();
+                    }
                   } catch (err) {
                     console.error('Failed to parse cached schools:', err);
                   }
@@ -125,6 +132,13 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
               if (idx !== -1 && dbSchools[idx].subscriptionPlan !== planNormalized) {
                 dbSchools[idx].subscriptionPlan = planNormalized;
                 localStorage.setItem('aegis_erp_db_schools', JSON.stringify(dbSchools));
+              }
+              
+              // Keep the in-memory mockDb singleton in sync!
+              const { mockDb } = await import('../services/mockDb');
+              const memIdx = mockDb.schools.findIndex((s: any) => s.id === sess.user.schoolId);
+              if (memIdx !== -1) {
+                mockDb.schools[memIdx].subscriptionPlan = planNormalized;
               }
             } catch (err) {
               console.error('Failed to sync mockDb schools local storage:', err);

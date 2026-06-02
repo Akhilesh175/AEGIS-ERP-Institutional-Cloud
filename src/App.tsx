@@ -13,22 +13,43 @@ import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff } fr
 import { GlassCard } from './components/GlassCard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
-const getTabsForRole = (role: string): string[] => {
+const getTabsForRole = (role: string, planName: string): string[] => {
+  const isEnterprise = planName.toLowerCase() === 'enterprise';
   switch (role) {
-    case 'STUDENT':
-      return ['dashboard', 'timetable', 'materials', 'quizzes', 'grades', 'library', 'transit', 'forums'];
-    case 'PARENT':
-      return ['dashboard', 'homework', 'timetable', 'materials', 'quizzes', 'grades', 'fees', 'library', 'transit', 'forums'];
-    case 'TEACHER':
-      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics'];
+    case 'STUDENT': {
+      const allowed = ['dashboard', 'timetable', 'grades'];
+      if (isEnterprise) {
+        allowed.push('materials', 'quizzes', 'library', 'transit', 'forums');
+      }
+      return allowed;
+    }
+    case 'PARENT': {
+      const allowed = ['dashboard', 'homework', 'timetable', 'grades', 'fees'];
+      if (isEnterprise) {
+        allowed.push('materials', 'quizzes', 'library', 'transit', 'forums');
+      }
+      return allowed;
+    }
+    case 'TEACHER': {
+      const allowed = ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics'];
+      if (isEnterprise) {
+        allowed.push('assignments', 'quizzes', 'materials', 'forums');
+      }
+      return allowed;
+    }
     case 'SUPER_ADMIN':
       return ['dashboard', 'tenants', 'users', 'audits', 'backups', 'logging'];
-    default: // ADMIN or any SUB_ADMIN role
-      return [
-        'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
-        'fees', 'communications', 'analytics', 'rbac', 'backups', 'impersonation', 'dangerzone', 
-        'books', 'transport', 'marksheets', 'quizzes', 'attendance', 'assignments'
-      ];
+    default: { // ADMIN or any SUB_ADMIN role
+      const allowed = ['dashboard', 'impersonation', 'dangerzone'];
+      if (isEnterprise) {
+        allowed.push(
+          'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
+          'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
+          'marksheets', 'quizzes', 'attendance', 'assignments'
+        );
+      }
+      return allowed;
+    }
   }
 };
 
@@ -69,7 +90,7 @@ export const App: React.FC = () => {
       if (hash) {
         // Validate route for the current user's role
         if (session) {
-          const allowed = getTabsForRole(session.user.role);
+          const allowed = getTabsForRole(session.user.role, session.schoolSubscriptionPlan || 'freemium');
           if (allowed.includes(hash)) {
             setActiveTab(hash);
             return;
@@ -104,7 +125,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     if (!session) return;
     const role = session.user.role;
-    const allowed = getTabsForRole(role);
+    const allowed = getTabsForRole(role, session.schoolSubscriptionPlan || 'freemium');
     if (activeTab !== 'dashboard' && !allowed.includes(activeTab)) {
       setActiveTab('dashboard');
       window.location.hash = 'dashboard';

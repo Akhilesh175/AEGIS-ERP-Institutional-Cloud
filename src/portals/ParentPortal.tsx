@@ -1082,7 +1082,12 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
               </PremiumLock>
             )}
                   {activeTab === 'library' && (
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+                    <PremiumLock
+                      isLocked={currentPlanName !== 'enterprise'}
+                      requiredTier="Enterprise"
+                      featureName="School Library & Digital Books"
+                    >
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
                 <div className="lg:col-span-2 space-y-6">
                   <GlassCard className="space-y-4">
                     <h3 className="font-bold text-slate-100 flex items-center gap-2 pb-2 border-b border-slate-850">
@@ -1175,45 +1180,52 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                   </GlassCard>
                 </div>
               </div>
+              </PremiumLock>
             )}
 
             {activeTab === 'transit' && (
-              <GlassCard className="space-y-6 animate-fade-in">
-                <div className="border-b border-slate-850 pb-3">
-                  <h3 className="font-bold text-slate-100 flex items-center gap-2">
-                    <Layers className="text-brand-500" size={18} />
-                    Ward's School Transit Details
-                  </h3>
-                </div>
-                {!transitAssignment ? (
-                  <div className="p-6 bg-slate-900/10 border border-dashed border-slate-850 rounded-2xl text-center">
-                    <Layers size={24} className="text-slate-500 mx-auto mb-2" />
-                    <p className="text-xs text-slate-450 italic">No transport route assigned yet.</p>
+              <PremiumLock
+                isLocked={currentPlanName !== 'enterprise'}
+                requiredTier="Enterprise"
+                featureName="School Transit & Route Tracking"
+              >
+                <GlassCard className="space-y-6 animate-fade-in">
+                  <div className="border-b border-slate-850 pb-3">
+                    <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                      <Layers className="text-brand-500" size={18} />
+                      Ward's School Transit Details
+                    </h3>
                   </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    <div className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-3">
-                      <h4 className="font-bold text-slate-200 text-xs">Assigned Route & Stop</h4>
-                      <p className="text-xs text-slate-350">Route: <span className="font-semibold text-brand-400">{assignedRoute?.name || 'Assigned Route'}</span> ({assignedRoute?.routeCode || 'Code Pending'})</p>
-                      <p className="text-xs text-slate-350">Pickup Stop: <span className="font-semibold text-slate-200">{assignedPickupPoint?.name || 'Assigned Stop'}</span></p>
-                      <p className="text-xs text-slate-350">Transit Fare: <span className="font-semibold text-slate-200">{studentSchool?.currencySymbol || '$'}{assignedRoute?.fare || 0}</span></p>
+                  {!transitAssignment ? (
+                    <div className="p-6 bg-slate-900/10 border border-dashed border-slate-850 rounded-2xl text-center">
+                      <Layers size={24} className="text-slate-500 mx-auto mb-2" />
+                      <p className="text-xs text-slate-450 italic">No transport route assigned yet.</p>
                     </div>
-                    <div className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-3">
-                      <h4 className="font-bold text-slate-200 text-xs">Vehicle & Driver Details</h4>
-                      <p className="text-xs text-slate-350">Bus Number Plate: <span className="font-semibold text-slate-200">{assignedBus?.numberPlate || 'Vehicle Pending'}</span></p>
-                      <p className="text-xs text-slate-350">Driver Name: <span className="font-semibold text-slate-200">{assignedDriver?.name || 'Driver Assigned'}</span></p>
-                      <p className="text-xs text-slate-350">Contact: <span className="font-semibold text-slate-200">{assignedDriver?.phone || 'N/A'}</span></p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <div className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-3">
+                        <h4 className="font-bold text-slate-200 text-xs">Assigned Route & Stop</h4>
+                        <p className="text-xs text-slate-350">Route: <span className="font-semibold text-brand-400">{assignedRoute?.name || 'Assigned Route'}</span> ({assignedRoute?.routeCode || 'Code Pending'})</p>
+                        <p className="text-xs text-slate-350">Pickup Stop: <span className="font-semibold text-slate-200">{assignedPickupPoint?.name || 'Assigned Stop'}</span></p>
+                        <p className="text-xs text-slate-350">Transit Fare: <span className="font-semibold text-slate-200">{studentSchool?.currencySymbol || '$'}{assignedRoute?.fare || 0}</span></p>
+                      </div>
+                      <div className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-3">
+                        <h4 className="font-bold text-slate-200 text-xs">Vehicle & Driver Details</h4>
+                        <p className="text-xs text-slate-350">Bus Number Plate: <span className="font-semibold text-slate-200">{assignedBus?.numberPlate || 'Vehicle Pending'}</span></p>
+                        <p className="text-xs text-slate-350">Driver Name: <span className="font-semibold text-slate-200">{assignedDriver?.name || 'Driver Assigned'}</span></p>
+                        <p className="text-xs text-slate-350">Contact: <span className="font-semibold text-slate-200">{assignedDriver?.phone || 'N/A'}</span></p>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </GlassCard>
+                  )}
+                </GlassCard>
+              </PremiumLock>
             )}
 
             {activeTab === 'forums' && (
               <PremiumLock 
-                isLocked={!plan.features.communications} 
-                requiredTier="Basic" 
-                featureName="Communications & Forums"
+                isLocked={currentPlanName !== 'enterprise'} 
+                requiredTier="Enterprise" 
+                featureName="Discussions & Forums"
               >
                 <div className="space-y-6">
                   {selectedPost ? (
@@ -1302,78 +1314,84 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
             )}
 
             {activeTab === 'materials' && (
-              <GlassCard className="space-y-6">
-                <div className="border-b border-slate-850 pb-3">
-                  <h3 className="font-bold text-slate-100 flex items-center gap-2">
-                    <BookOpen className="text-brand-500" size={18} />
-                    Ward's Academic Study Materials & Video Lectures
-                  </h3>
-                </div>
+              <PremiumLock
+                isLocked={currentPlanName !== 'enterprise'}
+                requiredTier="Enterprise"
+                featureName="Premium Learning Resources"
+              >
+                <GlassCard className="space-y-6">
+                  <div className="border-b border-slate-850 pb-3">
+                    <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                      <BookOpen className="text-brand-500" size={18} />
+                      Ward's Academic Study Materials & Video Lectures
+                    </h3>
+                  </div>
 
-                {activeVideoUrl && (
-                  <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl animate-fade-in space-y-2">
-                    <div className="flex items-center justify-between">
-                      <h4 className="text-xs font-semibold text-slate-200">Active Lecture Streaming Node</h4>
-                      <button 
-                        onClick={() => setActiveVideoUrl(null)}
-                        className="text-xs text-red-400 hover:text-red-300 font-semibold"
-                      >
-                        Close Screen
-                      </button>
-                    </div>
-                    {renderVideoPlayer(activeVideoUrl)}
-                  </div>
-                )}
-
-                {materialsLoading ? (
-                  <div className="text-center py-12 text-slate-400 italic text-sm">
-                    Loading study materials...
-                  </div>
-                ) : materials.length === 0 ? (
-                  <div className="text-center py-12 text-slate-400 italic text-sm">
-                    No academic materials uploaded for this student's subjects yet.
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-                    {materials.map(m => (
-                      <div key={m.id} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-brand-500/20 rounded-2xl flex flex-col justify-between gap-4 transition-all">
-                        <div className="space-y-2">
-                          <span className="text-[10px] font-bold text-brand-400 font-mono uppercase tracking-wider">{m.subjectName}</span>
-                          <h4 className="font-bold text-slate-200 text-sm mt-0.5">{m.title}</h4>
-                          <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">{m.description || 'No description provided.'}</p>
-                        </div>
-                        <div className="pt-2 flex items-center justify-between border-t border-slate-850">
-                          <span className="text-[10px] text-slate-500 truncate">Faculty: {m.teacherName}</span>
-                          {m.isVideoStreamable ? (
-                            <button 
-                              onClick={() => setActiveVideoUrl(m.fileUrl)}
-                              className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
-                            >
-                              <Play size={14} className="text-brand-500" />
-                              Stream Live
-                            </button>
-                          ) : (
-                            <a 
-                              href={m.fileUrl} 
-                              download 
-                              className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
-                            >
-                              <Download size={14} className="text-brand-500" />
-                              Get File
-                            </a>
-                          )}
-                        </div>
+                  {activeVideoUrl && (
+                    <div className="p-4 bg-slate-900 border border-slate-800 rounded-2xl animate-fade-in space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-semibold text-slate-200">Active Lecture Streaming Node</h4>
+                        <button 
+                          onClick={() => setActiveVideoUrl(null)}
+                          className="text-xs text-red-400 hover:text-red-300 font-semibold"
+                        >
+                          Close Screen
+                        </button>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </GlassCard>
+                      {renderVideoPlayer(activeVideoUrl)}
+                    </div>
+                  )}
+
+                  {materialsLoading ? (
+                    <div className="text-center py-12 text-slate-400 italic text-sm">
+                      Loading study materials...
+                    </div>
+                  ) : materials.length === 0 ? (
+                    <div className="text-center py-12 text-slate-400 italic text-sm">
+                      No academic materials uploaded for this student's subjects yet.
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {materials.map(m => (
+                        <div key={m.id} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-brand-500/20 rounded-2xl flex flex-col justify-between gap-4 transition-all">
+                          <div className="space-y-2">
+                            <span className="text-[10px] font-bold text-brand-400 font-mono uppercase tracking-wider">{m.subjectName}</span>
+                            <h4 className="font-bold text-slate-200 text-sm mt-0.5">{m.title}</h4>
+                            <p className="text-xs text-slate-400 leading-relaxed line-clamp-3">{m.description || 'No description provided.'}</p>
+                          </div>
+                          <div className="pt-2 flex items-center justify-between border-t border-slate-850">
+                            <span className="text-[10px] text-slate-500 truncate">Faculty: {m.teacherName}</span>
+                            {m.isVideoStreamable ? (
+                              <button 
+                                onClick={() => setActiveVideoUrl(m.fileUrl)}
+                                className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
+                              >
+                                <Play size={14} className="text-brand-500" />
+                                Stream Live
+                              </button>
+                            ) : (
+                              <a 
+                                href={m.fileUrl} 
+                                download 
+                                className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
+                              >
+                                <Download size={14} className="text-brand-500" />
+                                Get File
+                              </a>
+                            )}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </GlassCard>
+              </PremiumLock>
             )}
 
             {activeTab === 'quizzes' && (
               <PremiumLock 
-                isLocked={!plan.features.quizzes} 
-                requiredTier="Basic" 
+                isLocked={currentPlanName !== 'enterprise'} 
+                requiredTier="Enterprise" 
                 featureName="Quizzes & Interactive Online Tests"
               >
                 <GlassCard className="space-y-6">

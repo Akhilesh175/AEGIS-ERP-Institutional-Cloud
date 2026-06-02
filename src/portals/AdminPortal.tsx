@@ -2601,22 +2601,30 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
           <div className="lg:col-span-1">
             <GlassCard className="space-y-4">
               <h3 className="font-bold text-slate-200 text-sm">Establish Class Group</h3>
-              <form onSubmit={handleCreateClass} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Class Name</label>
-                  <input 
-                    type="text"
-                    placeholder="e.g. Grade 12-A"
-                    value={newClassName}
-                    onChange={(e) => setNewClassName(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
-                    required
-                  />
+              {isAcademicOrSchoolAdmin ? (
+                <form onSubmit={handleCreateClass} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Class Name</label>
+                    <input 
+                      type="text"
+                      placeholder="e.g. Grade 12-A"
+                      value={newClassName}
+                      onChange={(e) => setNewClassName(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
+                      required
+                    />
+                  </div>
+                  <button type="submit" className="w-full glass-btn-primary text-xs">
+                    Create Section Group
+                  </button>
+                </form>
+              ) : (
+                <div className="p-4 bg-slate-950/40 border border-slate-850 rounded-xl text-center text-slate-400">
+                  <Lock className="mx-auto mb-2 text-slate-500" size={20} />
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-red-400">RESTRICTED SECTION</p>
+                  <p className="text-[10px] mt-1">Class setup management is restricted to School & Academic Admins only.</p>
                 </div>
-                <button type="submit" className="w-full glass-btn-primary text-xs">
-                  Create Section Group
-                </button>
-              </form>
+              )}
             </GlassCard>
           </div>
         </div>
@@ -2673,54 +2681,62 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <Calendar className="text-brand-500" size={16} />
                 Create Academic Session
               </h3>
-              <form onSubmit={handleCreateAcademicSession} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Session Name</label>
-                  <input 
-                    type="text" 
-                    placeholder="e.g. 2026-2027 Academic Year" 
-                    value={newSessionName} 
-                    onChange={(e) => setNewSessionName(e.target.value)} 
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
-                    required 
-                  />
+              {isAcademicOrSchoolAdmin ? (
+                <form onSubmit={handleCreateAcademicSession} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Session Name</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. 2026-2027 Academic Year" 
+                      value={newSessionName} 
+                      onChange={(e) => setNewSessionName(e.target.value)} 
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
+                      required 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Start Date</label>
+                    <input 
+                      type="date" 
+                      value={newSessionStart} 
+                      onChange={(e) => setNewSessionStart(e.target.value)} 
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
+                      required 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">End Date</label>
+                    <input 
+                      type="date" 
+                      value={newSessionEnd} 
+                      onChange={(e) => setNewSessionEnd(e.target.value)} 
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
+                      required 
+                    />
+                  </div>
+                  <div className="flex items-center gap-2 pt-2">
+                    <input 
+                      type="checkbox" 
+                      id="newSessionActive" 
+                      checked={newSessionActive} 
+                      onChange={(e) => setNewSessionActive(e.target.checked)} 
+                      className="w-4 h-4 bg-slate-900 border border-slate-800 rounded text-brand-500 focus:ring-0 focus:ring-offset-0" 
+                    />
+                    <label htmlFor="newSessionActive" className="text-xs font-semibold text-slate-350 cursor-pointer select-none">
+                      Set as Current Active Session
+                    </label>
+                  </div>
+                  <button type="submit" className="w-full glass-btn-primary text-xs">
+                    Establish Academic Session
+                  </button>
+                </form>
+              ) : (
+                <div className="p-4 bg-slate-950/40 border border-slate-850 rounded-xl text-center text-slate-400">
+                  <Lock className="mx-auto mb-2 text-slate-500" size={20} />
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-red-400">RESTRICTED SECTION</p>
+                  <p className="text-[10px] mt-1">Academic session setup is restricted to School & Academic Admins only.</p>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Start Date</label>
-                  <input 
-                    type="date" 
-                    value={newSessionStart} 
-                    onChange={(e) => setNewSessionStart(e.target.value)} 
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
-                    required 
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">End Date</label>
-                  <input 
-                    type="date" 
-                    value={newSessionEnd} 
-                    onChange={(e) => setNewSessionEnd(e.target.value)} 
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
-                    required 
-                  />
-                </div>
-                <div className="flex items-center gap-2 pt-2">
-                  <input 
-                    type="checkbox" 
-                    id="newSessionActive" 
-                    checked={newSessionActive} 
-                    onChange={(e) => setNewSessionActive(e.target.checked)} 
-                    className="w-4 h-4 bg-slate-900 border border-slate-800 rounded text-brand-500 focus:ring-0 focus:ring-offset-0" 
-                  />
-                  <label htmlFor="newSessionActive" className="text-xs font-semibold text-slate-350 cursor-pointer select-none">
-                    Set as Current Active Session
-                  </label>
-                </div>
-                <button type="submit" className="w-full glass-btn-primary text-xs">
-                  Establish Academic Session
-                </button>
-              </form>
+              )}
             </GlassCard>
 
             {/* Edit Academic Session Drawer */}
@@ -2835,8 +2851,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                         <div className="flex items-center gap-2 flex-shrink-0">
                           <button
                             onClick={() => handleStartEditSession(sess)}
-                            className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-300 hover:border-amber-500/30 hover:text-amber-400 hover:bg-amber-500/5 flex items-center gap-1.5 transition-all"
-                            title="Edit session name and dates"
+                            disabled={!isAcademicOrSchoolAdmin}
+                            className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-300 hover:border-amber-500/30 hover:text-amber-400 hover:bg-amber-500/5 disabled:opacity-40 disabled:hover:text-slate-300 disabled:hover:bg-slate-800/50 flex items-center gap-1.5 transition-all"
+                            title={!isAcademicOrSchoolAdmin ? "Academic or School Admin only" : "Edit session name and dates"}
                           >
                             <Edit size={12} />
                             Edit
@@ -2845,15 +2862,18 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                             <>
                               <button
                                 onClick={() => handleSetActiveSession(sess.id)}
-                                className="glass-btn-primary text-[11px] font-bold px-3 py-1.5 flex items-center gap-1.5 transition-all"
+                                disabled={!isAcademicOrSchoolAdmin}
+                                className="glass-btn-primary text-[11px] font-bold px-3 py-1.5 disabled:opacity-40 flex items-center gap-1.5 transition-all"
+                                title={!isAcademicOrSchoolAdmin ? "Academic or School Admin only" : ""}
                               >
                                 <CheckCircle2 size={13} />
                                 Activate
                               </button>
                               <button
                                 onClick={() => handleDeleteAcademicSession(sess)}
-                                className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-400 hover:border-red-500/30 hover:text-red-400 hover:bg-red-500/5 flex items-center gap-1.5 transition-all"
-                                title="Permanently delete this session and all related data"
+                                disabled={!isAcademicOrSchoolAdmin}
+                                className="text-[11px] font-bold px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-slate-400 hover:border-red-500/30 hover:text-red-400 hover:bg-red-500/5 disabled:opacity-40 disabled:hover:text-slate-400 disabled:hover:bg-slate-800/50 flex items-center gap-1.5 transition-all"
+                                title={!isAcademicOrSchoolAdmin ? "Academic or School Admin only" : "Permanently delete this session and all related data"}
                               >
                                 <Trash2 size={12} />
                                 Delete

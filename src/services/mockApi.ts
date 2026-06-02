@@ -167,6 +167,13 @@ export const isChatAllowed = (roleA: string, roleB: string): boolean => {
 const SUPER_ADMIN_EMAIL = 'jy7018080@gmail.com';
 
 export const mockApi = {
+  async validateEnterpriseSubscription(schoolId: string, featureName: string): Promise<void> {
+    const livePlan = await this.getLiveSchoolSubscriptionPlan(schoolId);
+    if (!livePlan || livePlan.toLowerCase() !== 'enterprise') {
+      throw new Error(`Security Policy Violation: Accessing ${featureName} requires an active Enterprise Tier subscription.`);
+    }
+  },
+
   async resolveActiveSessionId(schoolId: string): Promise<string> {
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const activeSession = mockDb.academicSessions.find(s => s.schoolId === schoolId && s.isCurrent && isUUID(s.id));
@@ -8025,6 +8032,7 @@ export const mockApi = {
 
   // --- Dedicated Librarian Helpers ---
   async fetchBookInventory(schoolId: string): Promise<any[]> {
+    await this.validateEnterpriseSubscription(schoolId, 'Library Books');
     const { data, error } = await supabaseAdmin
       .from('book_inventory')
       .select('*, book:books(*)')
@@ -8034,6 +8042,7 @@ export const mockApi = {
   },
 
   async fetchDigitalLibraryAssets(schoolId: string): Promise<any[]> {
+    await this.validateEnterpriseSubscription(schoolId, 'Digital Library Resources');
     const { data, error } = await supabaseAdmin
       .from('digital_library_assets')
       .select('*')
@@ -8051,6 +8060,7 @@ export const mockApi = {
 
   // --- Dedicated Transport Manager Helpers ---
   async fetchDrivers(schoolId: string): Promise<any[]> {
+    await this.validateEnterpriseSubscription(schoolId, 'School Transit');
     const { data, error } = await supabaseAdmin
       .from('drivers')
       .select('*')
@@ -8108,6 +8118,7 @@ export const mockApi = {
   },
 
   async fetchPickupPoints(schoolId: string): Promise<any[]> {
+    await this.validateEnterpriseSubscription(schoolId, 'School Transit');
     const { data, error } = await supabaseAdmin
       .from('pickup_points')
       .select('*')
@@ -8154,6 +8165,7 @@ export const mockApi = {
 
   // --- Dedicated Buses & Transport CRUD ---
   async fetchBuses(schoolId: string): Promise<any[]> {
+    await this.validateEnterpriseSubscription(schoolId, 'School Transit');
     const { data, error } = await supabaseAdmin
       .from('buses')
       .select('*')
@@ -8322,6 +8334,7 @@ export const mockApi = {
   },
 
   async fetchTransportAssignments(schoolId: string): Promise<any[]> {
+    await this.validateEnterpriseSubscription(schoolId, 'School Transit');
     const { data, error } = await supabaseAdmin
       .from('transport_assignments')
       .select('*')
@@ -8354,6 +8367,7 @@ export const mockApi = {
   },
 
   async createTransportAssignment(schoolId: string, studentId: string, routeId: string, busId: string, pickupPointId: string): Promise<void> {
+    await this.validateEnterpriseSubscription(schoolId, 'School Transit');
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const validPickupPointId = (pickupPointId && isUUID(pickupPointId)) ? pickupPointId : null;
 
@@ -8776,6 +8790,7 @@ export const mockApi = {
   },
 
   async createDigitalLibraryAsset(schoolId: string, title: string, author: string, fileUrl: string, fileType: string): Promise<void> {
+    await this.validateEnterpriseSubscription(schoolId, 'Digital Library Resources');
     const id = 'dla-' + Math.random().toString(36).substr(2, 9);
     const newAsset = {
       id,

@@ -78,49 +78,86 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
   const plan = subscriptionPlans[planName] || subscriptionPlans.freemium;
 
   // Define tab mappings per role
-  const getTabs = () => {
+  const getTabs = (): Array<{ id: string; label: string; icon: any; locked?: boolean }> => {
+    const isEnterprise = planName === 'enterprise';
     switch (role) {
-      case 'STUDENT':
-        return [
+      case 'STUDENT': {
+        const studentTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
           { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
           { id: 'timetable', label: 'Schedule', icon: Calendar },
-          { id: 'materials', label: 'Materials', icon: BookOpen },
-          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
-          { id: 'grades', label: 'Report Cards', icon: Award },
-          { id: 'library', label: 'Library Books', icon: BookMarked },
-          { id: 'transit', label: 'School Transit', icon: Layers },
-          { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: !plan.features.communications }
+          { id: 'grades', label: 'Report Cards', icon: Award }
         ];
-      case 'PARENT':
-        return [
+        if (isEnterprise) {
+          studentTabs.push(
+            { id: 'materials', label: 'Materials', icon: BookOpen },
+            { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
+            { id: 'library', label: 'Library Books', icon: BookMarked },
+            { id: 'transit', label: 'School Transit', icon: Layers },
+            { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: !plan.features.communications }
+          );
+        } else if (planName === 'pro') {
+          // Pro tier: show premium shield (locked)
+          studentTabs.push(
+            { id: 'materials', label: 'Materials', icon: BookOpen, locked: true },
+            { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: true },
+            { id: 'library', label: 'Library Books', icon: BookMarked, locked: true },
+            { id: 'transit', label: 'School Transit', icon: Layers, locked: true },
+            { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: true }
+          );
+        }
+        return studentTabs;
+      }
+      case 'PARENT': {
+        const parentTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
           { id: 'dashboard', label: 'Child Tracker', icon: Eye },
           { id: 'homework', label: 'Homework', icon: BookMarked },
           { id: 'timetable', label: 'Class Schedule', icon: Calendar },
-          { id: 'materials', label: 'Materials', icon: BookOpen },
-          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
           { id: 'grades', label: 'Grades Progress', icon: Award },
-          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: !plan.features.billing },
-          { id: 'library', label: 'Library Books', icon: BookMarked },
-          { id: 'transit', label: 'School Transit', icon: Layers },
-          { id: 'forums', label: 'Forums', icon: MessageSquare, locked: !plan.features.communications }
+          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: !plan.features.billing }
         ];
-      case 'TEACHER':
-        return [
+        if (isEnterprise) {
+          parentTabs.push(
+            { id: 'materials', label: 'Materials', icon: BookOpen },
+            { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
+            { id: 'library', label: 'Library Books', icon: BookMarked },
+            { id: 'transit', label: 'School Transit', icon: Layers },
+            { id: 'forums', label: 'Forums', icon: MessageSquare, locked: !plan.features.communications }
+          );
+        } else if (planName === 'pro') {
+          // Pro tier: show premium shield (locked)
+          parentTabs.push(
+            { id: 'materials', label: 'Materials', icon: BookOpen, locked: true },
+            { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: true },
+            { id: 'library', label: 'Library Books', icon: BookMarked, locked: true },
+            { id: 'transit', label: 'School Transit', icon: Layers, locked: true },
+            { id: 'forums', label: 'Forums', icon: MessageSquare, locked: true }
+          );
+        }
+        return parentTabs;
+      }
+      case 'TEACHER': {
+        const teacherTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
           { id: 'dashboard', label: 'Classes Taught', icon: LayoutDashboard },
           { id: 'timetable', label: 'Teaching Schedule', icon: Calendar },
           { id: 'classroster', label: 'Class Roster', icon: Users, locked: planName === 'freemium' },
           { id: 'attendance', label: 'Attendance Roll', icon: Layers },
           { id: 'grades', label: 'Gradebook Matrix', icon: Award },
           { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'assignments', label: 'Assignment Creator', icon: PenTool },
-          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
-          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: planName !== 'enterprise' },
-          { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: !plan.features.communications },
           { id: 'analytics', label: 'Class Analytics', icon: Activity }
         ];
+        if (isEnterprise) {
+          teacherTabs.push(
+            { id: 'assignments', label: 'Assignment Creator', icon: PenTool },
+            { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
+            { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: planName !== 'enterprise' },
+            { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: !plan.features.communications }
+          );
+        }
+        return teacherTabs;
+      }
       case 'ADMIN': {
         const isEnterprise = planName === 'enterprise';
-        const adminTabs = [
+        const adminTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
           { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard },
           { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'teachers', label: 'Teacher Directory', icon: UsersRound },
@@ -159,48 +196,48 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         ];
         
         // If billing is allowed
-        if (permissions.billing && isEnterprise) {
-          subAdminTabs.push({ id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing });
-          subAdminTabs.push({ id: 'analytics', label: 'Fee Analytics', icon: Activity });
+        if (permissions.billing) {
+          subAdminTabs.push({ id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !isEnterprise || !plan.features.billing });
+          subAdminTabs.push({ id: 'analytics', label: 'Fee Analytics', icon: Activity, locked: !isEnterprise });
         }
         
         // If directory is allowed
-        if (permissions.directory && isEnterprise) {
-          subAdminTabs.push({ id: 'students', label: 'Student Directory', icon: Users });
-          subAdminTabs.push({ id: 'teachers', label: 'Teacher Directory', icon: UsersRound });
-          subAdminTabs.push({ id: 'parents', label: 'Parent Directory', icon: UsersRound });
+        if (permissions.directory) {
+          subAdminTabs.push({ id: 'students', label: 'Student Directory', icon: Users, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'teachers', label: 'Teacher Directory', icon: UsersRound, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'parents', label: 'Parent Directory', icon: UsersRound, locked: !isEnterprise });
         }
         
         // If academics is allowed
-        if (permissions.academics && isEnterprise) {
-          subAdminTabs.push({ id: 'classes', label: 'Classes & Sections', icon: Layers });
-          subAdminTabs.push({ id: 'subjects', label: 'Subject Catalog', icon: BookMarked });
-          subAdminTabs.push({ id: 'academicsessions', label: 'Academic Sessions', icon: Calendar });
+        if (permissions.academics) {
+          subAdminTabs.push({ id: 'classes', label: 'Classes & Sections', icon: Layers, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'subjects', label: 'Subject Catalog', icon: BookMarked, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'academicsessions', label: 'Academic Sessions', icon: Calendar, locked: !isEnterprise });
           if (role === 'ACADEMIC_ADMIN') {
-            subAdminTabs.push({ id: 'attendance', label: 'Student Attendance', icon: Layers });
-            subAdminTabs.push({ id: 'assignments', label: 'Homework & Assignments', icon: PenTool });
+            subAdminTabs.push({ id: 'attendance', label: 'Student Attendance', icon: Layers, locked: !isEnterprise });
+            subAdminTabs.push({ id: 'assignments', label: 'Homework & Assignments', icon: PenTool, locked: !isEnterprise });
           }
         }
         
         // If grading is allowed
-        if (permissions.grading && isEnterprise) {
-          subAdminTabs.push({ id: 'marksheets', label: ' Homeroom Marksheets', icon: ClipboardList });
-          subAdminTabs.push({ id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes });
+        if (permissions.grading) {
+          subAdminTabs.push({ id: 'marksheets', label: ' Homeroom Marksheets', icon: ClipboardList, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !isEnterprise || !plan.features.quizzes });
         }
  
         // If books is allowed (Library)
-        if (permissions.books && isEnterprise) {
-          subAdminTabs.push({ id: 'books', label: 'Library Registry', icon: BookOpen });
+        if (permissions.books) {
+          subAdminTabs.push({ id: 'books', label: 'Library Registry', icon: BookOpen, locked: !isEnterprise });
         }
  
         // If transport is allowed (Transport)
-        if (permissions.transport && isEnterprise) {
-          subAdminTabs.push({ id: 'transport', label: 'Transit Registry', icon: Layers });
+        if (permissions.transport) {
+          subAdminTabs.push({ id: 'transport', label: 'Transit Registry', icon: Layers, locked: !isEnterprise });
         }
         
         // If security is allowed (Sub-Admin backups / telemetry access)
-        if (permissions.security && isEnterprise) {
-          subAdminTabs.push({ id: 'backups', label: 'Disaster Recovery', icon: Database });
+        if (permissions.security) {
+          subAdminTabs.push({ id: 'backups', label: 'Disaster Recovery', icon: Database, locked: !isEnterprise });
         }
         
         return subAdminTabs;
