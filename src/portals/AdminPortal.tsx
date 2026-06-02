@@ -1823,16 +1823,29 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     );
   }
 
-  const isSubAdmin = session?.user.role && [
-    'FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'
-  ].includes(session.user.role);
+
+
+  const isSubAdmin = ['FINANCE_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'ACADEMIC_ADMIN', 'CUSTOM_SUB_ADMIN'].includes(session?.user.role || '');
 
   if (isSubAdmin && currentPlanName !== 'enterprise') {
     return (
-      <div className="max-w-lg mx-auto py-24 px-6 text-center animate-fade-in">
-        <PremiumLock isLocked={true} requiredTier="enterprise" featureName="Sub-Admin Feature Access & Portals">
-          <div />
-        </PremiumLock>
+      <div className="max-w-4xl mx-auto py-12 px-4 text-center">
+        <GlassCard className="border-red-500/20 bg-slate-950/60 shadow-[0_0_50px_rgba(239,68,68,0.15)] p-12 relative overflow-hidden rounded-3xl">
+          <div className="absolute top-0 right-0 p-4 bg-red-500/10 border-l border-b border-red-500/20 rounded-bl-2xl text-red-400 font-extrabold uppercase tracking-widest text-[9px] font-mono">
+            Enterprise Feature
+          </div>
+          <div className="w-20 h-20 rounded-full bg-gradient-to-br from-red-500 to-rose-600 flex items-center justify-center mx-auto mb-8 shadow-xl shadow-red-500/20 animate-bounce">
+            <Lock className="w-10 h-10 text-white" />
+          </div>
+          <h2 className="text-2xl font-extrabold text-slate-100 mb-4 tracking-tight">Sub-Admin Access Suspended</h2>
+          <p className="text-slate-400 text-sm max-w-md mx-auto mb-8 leading-relaxed">
+            Your school's current plan is <span className="text-amber-400 font-bold uppercase">{currentPlanName}</span>. 
+            Granular sub-admin routing, role restrictions, and dedicated dashboards are exclusive to the <span className="text-brand-400 font-bold uppercase">Enterprise</span> tier.
+          </p>
+          <div className="p-4 bg-slate-900/60 border border-slate-800 rounded-2xl max-w-sm mx-auto">
+            <p className="text-xs text-slate-500 font-medium">Please contact your School Principal / Super Admin to upgrade this institution to Enterprise.</p>
+          </div>
+        </GlassCard>
       </div>
     );
   }
@@ -2931,7 +2944,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
       {activeTab === 'fees' && (
         <PremiumLock 
-          isLocked={!plan.features.billing} 
+          isLocked={false} 
           requiredTier="Pro" 
           featureName="Billing & Invoicing"
         >
@@ -4433,9 +4446,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
       {/* ── 2. INSTITUTIONAL ANALYTICS & FILE EXPORTERS ── */}
       {activeTab === 'analytics' && (
-        currentPlanName !== 'enterprise' ? (
+        (currentPlanName === 'freemium' || currentPlanName === 'basic') ? (
           <div className="max-w-lg mx-auto py-12 text-center animate-fade-in">
-            <PremiumLock isLocked={true} requiredTier="enterprise" featureName="Advanced Academic & Finance Analytics">
+            <PremiumLock isLocked={true} requiredTier="Pro" featureName="Advanced Academic & Finance Analytics">
               <div />
             </PremiumLock>
           </div>
@@ -5548,9 +5561,14 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       )}
 
       {activeTab === 'transport' && (
-        <div className="space-y-6 animate-fade-in text-xs">
-          {/* Header */}
-          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+        <PremiumLock 
+          isLocked={currentPlanName !== 'enterprise'} 
+          requiredTier="Enterprise" 
+          featureName="Transit & Transport Management"
+        >
+          <div className="space-y-6 animate-fade-in text-xs">
+            {/* Header */}
+            <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
                 <Layers className="text-brand-400" size={20} />
@@ -5922,6 +5940,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             </GlassCard>
           </div>
         </div>
+        </PremiumLock>
       )}
 
       {activeTab === 'books' && (

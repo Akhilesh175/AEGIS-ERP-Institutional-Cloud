@@ -79,85 +79,50 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
 
   // Define tab mappings per role
   const getTabs = (): Array<{ id: string; label: string; icon: any; locked?: boolean }> => {
-    const isEnterprise = planName === 'enterprise';
     switch (role) {
       case 'STUDENT': {
-        const studentTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
+        return [
           { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
           { id: 'timetable', label: 'Schedule', icon: Calendar },
-          { id: 'grades', label: 'Report Cards', icon: Award }
+          { id: 'grades', label: 'Report Cards', icon: Award },
+          { id: 'materials', label: 'Materials', icon: BookOpen, locked: planName === 'freemium' || planName === 'basic' },
+          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' },
+          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName === 'freemium' },
+          { id: 'transit', label: 'School Transit', icon: Layers, locked: planName !== 'enterprise' },
+          { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: planName !== 'enterprise' }
         ];
-        if (isEnterprise) {
-          studentTabs.push(
-            { id: 'materials', label: 'Materials', icon: BookOpen },
-            { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
-            { id: 'library', label: 'Library Books', icon: BookMarked },
-            { id: 'transit', label: 'School Transit', icon: Layers },
-            { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: !plan.features.communications }
-          );
-        } else if (planName === 'pro') {
-          // Pro tier: show premium shield (locked)
-          studentTabs.push(
-            { id: 'materials', label: 'Materials', icon: BookOpen, locked: true },
-            { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: true },
-            { id: 'library', label: 'Library Books', icon: BookMarked, locked: true },
-            { id: 'transit', label: 'School Transit', icon: Layers, locked: true },
-            { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: true }
-          );
-        }
-        return studentTabs;
       }
       case 'PARENT': {
-        const parentTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
+        return [
           { id: 'dashboard', label: 'Child Tracker', icon: Eye },
           { id: 'homework', label: 'Homework', icon: BookMarked },
           { id: 'timetable', label: 'Class Schedule', icon: Calendar },
           { id: 'grades', label: 'Grades Progress', icon: Award },
-          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: !plan.features.billing }
+          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: false },
+          { id: 'materials', label: 'Materials', icon: BookOpen, locked: planName === 'freemium' || planName === 'basic' },
+          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' },
+          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName === 'freemium' },
+          { id: 'transit', label: 'School Transit', icon: Layers, locked: planName !== 'enterprise' },
+          { id: 'forums', label: 'Forums', icon: MessageSquare, locked: planName !== 'enterprise' }
         ];
-        if (isEnterprise) {
-          parentTabs.push(
-            { id: 'materials', label: 'Materials', icon: BookOpen },
-            { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
-            { id: 'library', label: 'Library Books', icon: BookMarked },
-            { id: 'transit', label: 'School Transit', icon: Layers },
-            { id: 'forums', label: 'Forums', icon: MessageSquare, locked: !plan.features.communications }
-          );
-        } else if (planName === 'pro') {
-          // Pro tier: show premium shield (locked)
-          parentTabs.push(
-            { id: 'materials', label: 'Materials', icon: BookOpen, locked: true },
-            { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: true },
-            { id: 'library', label: 'Library Books', icon: BookMarked, locked: true },
-            { id: 'transit', label: 'School Transit', icon: Layers, locked: true },
-            { id: 'forums', label: 'Forums', icon: MessageSquare, locked: true }
-          );
-        }
-        return parentTabs;
       }
       case 'TEACHER': {
-        const teacherTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
+        return [
           { id: 'dashboard', label: 'Classes Taught', icon: LayoutDashboard },
           { id: 'timetable', label: 'Teaching Schedule', icon: Calendar },
-          { id: 'classroster', label: 'Class Roster', icon: Users, locked: planName === 'freemium' },
+          { id: 'classroster', label: 'Class Roster', icon: Users, locked: false },
           { id: 'attendance', label: 'Attendance Roll', icon: Layers },
           { id: 'grades', label: 'Gradebook Matrix', icon: Award },
-          { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'analytics', label: 'Class Analytics', icon: Activity }
+          { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: planName === 'freemium' },
+          { id: 'analytics', label: 'Class Analytics', icon: Activity },
+          { id: 'assignments', label: 'Assignment Creator', icon: PenTool },
+          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' },
+          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: planName === 'freemium' || planName === 'basic' },
+          { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: planName === 'freemium' }
         ];
-        if (isEnterprise) {
-          teacherTabs.push(
-            { id: 'assignments', label: 'Assignment Creator', icon: PenTool },
-            { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !plan.features.quizzes },
-            { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: planName !== 'enterprise' },
-            { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: !plan.features.communications }
-          );
-        }
-        return teacherTabs;
       }
       case 'ADMIN': {
-        const isEnterprise = planName === 'enterprise';
-        const adminTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
+        return [
           { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard },
           { id: 'students', label: 'Student Directory', icon: Users },
           { id: 'teachers', label: 'Teacher Directory', icon: UsersRound },
@@ -165,24 +130,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'classes', label: 'Classes & Sections', icon: Layers },
           { id: 'subjects', label: 'Subject Catalog', icon: BookMarked },
           { id: 'academicsessions', label: 'Academic Sessions', icon: Calendar },
-          { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !plan.features.billing },
-          { id: 'communications', label: 'Communication Center', icon: Mail },
-          { id: 'analytics', label: 'Institutional Analytics', icon: Activity }
-        ];
-
-        if (isEnterprise) {
-          adminTabs.push(
-            { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key },
-            { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database }
-          );
-        }
-
-        adminTabs.push(
+          { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: false },
+          { id: 'communications', label: 'Communication Center', icon: Mail, locked: planName === 'freemium' },
+          { id: 'analytics', label: 'Institutional Analytics', icon: Activity, locked: planName === 'freemium' || planName === 'basic' },
+          { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: planName !== 'enterprise' },
+          { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database, locked: planName !== 'enterprise' },
           { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
           { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert }
-        );
-
-        return adminTabs;
+        ];
       }
       case 'FINANCE_ADMIN':
       case 'ACADEMIC_ADMIN':
