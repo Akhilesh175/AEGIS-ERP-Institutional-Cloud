@@ -87,6 +87,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
   const [issuedBooks, setIssuedBooks] = useState<any[]>([]);
   const [libraryFines, setLibraryFines] = useState<any[]>([]);
   const [digitalLibraryAssets, setDigitalLibraryAssets] = useState<any[]>([]);
+  const [libraryBooks, setLibraryBooks] = useState<any[]>([]);
   
   // Discussion state
   const [forumPosts, setForumPosts] = useState<any[]>([]);
@@ -146,12 +147,12 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       setMaterialsLoading(true);
       const data = await mockApi.parentGetStudentAcademicRecord(parentId, selectedStudent);
       setAcademicRecord(data);
-      const qz = await mockApi.studentGetQuizzes(selectedStudent);
+      const qz = await mockApi.studentGetQuizzes(selectedStudent).catch(() => []);
       setQuizzes(qz);
       
       const studentObj = mockDb.students.find(s => s.id === selectedStudent);
       if (studentObj) {
-        const mat = await mockApi.getStudyMaterials(studentObj.schoolId, studentObj.classId);
+        const mat = await mockApi.getStudyMaterials(studentObj.schoolId, studentObj.classId).catch(() => []);
         setMaterials(mat);
       } else {
         setMaterials([]);
@@ -169,27 +170,28 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
         await mockApi.syncParentsData(studentObj.schoolId);
         await mockApi.syncParentStudentMappingsData(studentObj.schoolId);
 
-        await mockApi.syncForumCategoriesData(studentObj.schoolId);
-        await mockApi.syncForumPostsData(studentObj.schoolId);
-        await mockApi.syncForumRepliesData(studentObj.schoolId);
+        await mockApi.syncForumCategoriesData(studentObj.schoolId).catch(() => {});
+        await mockApi.syncForumPostsData(studentObj.schoolId).catch(() => {});
+        await mockApi.syncForumRepliesData(studentObj.schoolId).catch(() => {});
         
-        const allPosts = await mockApi.getForumPosts();
-        const cats = await mockApi.getForumCategories(studentObj.schoolId);
+        const allPosts = await mockApi.getForumPosts().catch(() => []);
+        const cats = await mockApi.getForumCategories(studentObj.schoolId).catch(() => []);
         const allowedCats = cats.filter(c => c.classId === studentObj.classId || !c.classId);
         const allowedCatIds = allowedCats.map(c => c.id);
         
         setForumPosts(allPosts.filter(p => allowedCatIds.includes(p.categoryId)));
 
-        // Fetch dynamic transit and library details for parent selectedStudent
-        const [allAssignments, allBuses, allRoutes, allPickupPoints, allDrivers, myIssues, myFines, digitalAssets] = await Promise.all([
-          mockApi.fetchTransportAssignments(studentObj.schoolId),
-          mockApi.fetchBuses(studentObj.schoolId),
-          mockApi.fetchRoutes(studentObj.schoolId),
-          mockApi.fetchPickupPoints(studentObj.schoolId),
-          mockApi.fetchDrivers(studentObj.schoolId),
-          mockApi.fetchBookIssues(studentObj.schoolId, selectedStudent),
-          mockApi.fetchLibraryFines(studentObj.schoolId, selectedStudent),
-          mockApi.fetchDigitalLibraryAssets(studentObj.schoolId)
+        // Fetch dynamic transit and library details for parent selectedStudent with safe catches
+        const [allAssignments, allBuses, allRoutes, allPickupPoints, allDrivers, myIssues, myFines, digitalAssets, booksList] = await Promise.all([
+          mockApi.fetchTransportAssignments(studentObj.schoolId).catch(() => []),
+          mockApi.fetchBuses(studentObj.schoolId).catch(() => []),
+          mockApi.fetchRoutes(studentObj.schoolId).catch(() => []),
+          mockApi.fetchPickupPoints(studentObj.schoolId).catch(() => []),
+          mockApi.fetchDrivers(studentObj.schoolId).catch(() => []),
+          mockApi.fetchBookIssues(studentObj.schoolId, selectedStudent).catch(() => []),
+          mockApi.fetchLibraryFines(studentObj.schoolId, selectedStudent).catch(() => []),
+          mockApi.fetchDigitalLibraryAssets(studentObj.schoolId).catch(() => []),
+          mockApi.fetchBookInventory(studentObj.schoolId).catch(() => [])
         ]);
 
         const myAssignment = allAssignments.find(ta => ta.studentId === selectedStudent && ta.status === 'ACTIVE');
@@ -216,6 +218,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
         setIssuedBooks(myIssues.filter(bi => bi.status === 'ISSUED'));
         setLibraryFines(myFines);
         setDigitalLibraryAssets(digitalAssets || []);
+        setLibraryBooks(booksList || []);
       }
 
       setLoading(false);
@@ -1039,7 +1042,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
 
             {activeTab === 'fees' && (
               <PremiumLock 
-                isLocked={!plan.features.billing} 
+                isLocked={false} 
                 requiredTier="Basic" 
                 featureName="Fee Management"
               >
@@ -1095,15 +1098,26 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                       School Library Catalog
                     </h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
-                      {mockDb.books.map(b => (
-                        <div key={b.id} className="p-3.5 bg-slate-900/30 border border-slate-850 rounded-xl space-y-2">
-                          <h4 className="font-bold text-slate-200 text-xs">{b.title}</h4>
-                          <p className="text-[10px] text-slate-405">Author: {b.author} | ISBN: {b.isbn}</p>
-                          <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded bg-brand-500/10 text-brand-400">
-                            Genre: {b.subject}
-                          </span>
-                        </div>
-                      ))}
+                      {libraryBooks.length === 0 ? (
+                        <p className="text-xs text-slate-500 italic py-4 text-center col-span-2">No books registered in the catalog yet.</p>
+                      ) : (
+                        libraryBooks.map(b => (
+                          <div key={b.id} className="p-3.5 bg-slate-900/30 border border-slate-850 rounded-xl space-y-2 flex flex-col justify-between">
+                            <div>
+                              <h4 className="font-bold text-slate-200 text-xs">{b.title}</h4>
+                              <p className="text-[10px] text-slate-400 mt-1">Author: {b.author} | ISBN: {b.isbn}</p>
+                            </div>
+                            <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-850/40">
+                              <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded bg-brand-500/10 text-brand-400">
+                                Genre: {b.subject}
+                              </span>
+                              <span className={`text-[9px] font-semibold ${b.availableCopies > 0 ? 'text-emerald-450' : 'text-rose-450'}`}>
+                                {b.availableCopies > 0 ? `${b.availableCopies} available` : 'Issued Out'}
+                              </span>
+                            </div>
+                          </div>
+                        ))
+                      )}
                     </div>
                   </GlassCard>
 
@@ -1223,8 +1237,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
 
             {activeTab === 'forums' && (
               <PremiumLock 
-                isLocked={currentPlanName !== 'enterprise'} 
-                requiredTier="Enterprise" 
+                isLocked={currentPlanName === 'freemium'} 
+                requiredTier="Basic" 
                 featureName="Discussions & Forums"
               >
                 <div className="space-y-6">
@@ -1315,8 +1329,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
 
             {activeTab === 'materials' && (
               <PremiumLock
-                isLocked={currentPlanName !== 'enterprise'}
-                requiredTier="Enterprise"
+                isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+                requiredTier="Pro"
                 featureName="Premium Learning Resources"
               >
                 <GlassCard className="space-y-6">
@@ -1390,8 +1404,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
 
             {activeTab === 'quizzes' && (
               <PremiumLock 
-                isLocked={currentPlanName !== 'enterprise'} 
-                requiredTier="Enterprise" 
+                isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'} 
+                requiredTier="Pro" 
                 featureName="Quizzes & Interactive Online Tests"
               >
                 <GlassCard className="space-y-6">

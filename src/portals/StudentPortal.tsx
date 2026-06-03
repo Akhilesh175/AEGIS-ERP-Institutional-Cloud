@@ -87,6 +87,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   const [issuedBooks, setIssuedBooks] = useState<any[]>([]);
   const [libraryFines, setLibraryFines] = useState<any[]>([]);
   const [digitalLibraryAssets, setDigitalLibraryAssets] = useState<any[]>([]);
+  const [libraryBooks, setLibraryBooks] = useState<any[]>([]);
 
   // Interactive Action States
   const [selectedAssignment, setSelectedAssignment] = useState<Assignment | null>(null);
@@ -135,30 +136,30 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       const classId = studentObj?.classId || null;
 
       await syncSubscriptionPlan();
-      const tt = await mockApi.studentGetTimetable(studentId);
+      const tt = await mockApi.studentGetTimetable(studentId).catch(() => []);
       setTimetable(tt);
 
-      const ass = await mockApi.studentGetAssignments(studentId);
+      const ass = await mockApi.studentGetAssignments(studentId).catch(() => []);
       setAssignments(ass);
 
-      const grd = await mockApi.studentGetGrades(studentId);
+      const grd = await mockApi.studentGetGrades(studentId).catch(() => []);
       setGrades(grd);
 
-      const qz = await mockApi.studentGetQuizzes(studentId);
+      const qz = await mockApi.studentGetQuizzes(studentId).catch(() => []);
       setQuizzes(qz);
 
-      const mat = await mockApi.getStudyMaterials(schoolId, classId);
+      const mat = await mockApi.getStudyMaterials(schoolId, classId).catch(() => []);
       setMaterials(mat);
 
-      const ann = await mockApi.getAnnouncements('STUDENT');
+      const ann = await mockApi.getAnnouncements('STUDENT').catch(() => []);
       setAnnouncements(ann);
 
       await mockApi.syncStudentsData(schoolId);
-      await mockApi.syncForumCategoriesData(schoolId);
-      await mockApi.syncForumPostsData(schoolId);
-      await mockApi.syncForumRepliesData(schoolId);
+      await mockApi.syncForumCategoriesData(schoolId).catch(() => {});
+      await mockApi.syncForumPostsData(schoolId).catch(() => {});
+      await mockApi.syncForumRepliesData(schoolId).catch(() => {});
       
-      const cats = await mockApi.getForumCategories(schoolId);
+      const cats = await mockApi.getForumCategories(schoolId).catch(() => []);
       const allowedCats = cats.filter(c => c.classId === studentObj?.classId || !c.classId);
       
       setForumCategories(allowedCats);
@@ -166,23 +167,24 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
         setPostCategoryId(allowedCats[0].id);
       }
 
-      const posts = await mockApi.getForumPosts();
+      const posts = await mockApi.getForumPosts().catch(() => []);
       const allowedCatIds = allowedCats.map(c => c.id);
       setForumPosts(posts.filter(p => allowedCatIds.includes(p.categoryId)));
 
-      const f = await mockApi.studentGetFees(studentId);
+      const f = await mockApi.studentGetFees(studentId).catch(() => []);
       setFees(f);
 
-      // Fetch dynamic transit and library details
-      const [allAssignments, allBuses, allRoutes, allPickupPoints, allDrivers, myIssues, myFines, digitalAssets] = await Promise.all([
-        mockApi.fetchTransportAssignments(schoolId),
-        mockApi.fetchBuses(schoolId),
-        mockApi.fetchRoutes(schoolId),
-        mockApi.fetchPickupPoints(schoolId),
-        mockApi.fetchDrivers(schoolId),
-        mockApi.fetchBookIssues(schoolId, studentId),
-        mockApi.fetchLibraryFines(schoolId, studentId),
-        mockApi.fetchDigitalLibraryAssets(schoolId)
+      // Fetch dynamic transit and library details with safe catches
+      const [allAssignments, allBuses, allRoutes, allPickupPoints, allDrivers, myIssues, myFines, digitalAssets, booksList] = await Promise.all([
+        mockApi.fetchTransportAssignments(schoolId).catch(() => []),
+        mockApi.fetchBuses(schoolId).catch(() => []),
+        mockApi.fetchRoutes(schoolId).catch(() => []),
+        mockApi.fetchPickupPoints(schoolId).catch(() => []),
+        mockApi.fetchDrivers(schoolId).catch(() => []),
+        mockApi.fetchBookIssues(schoolId, studentId).catch(() => []),
+        mockApi.fetchLibraryFines(schoolId, studentId).catch(() => []),
+        mockApi.fetchDigitalLibraryAssets(schoolId).catch(() => []),
+        mockApi.fetchBookInventory(schoolId).catch(() => [])
       ]);
       const myAssignment = allAssignments.find(ta => ta.studentId === studentId && ta.status === 'ACTIVE');
       if (myAssignment) {
@@ -208,6 +210,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       setIssuedBooks(myIssues.filter(bi => bi.status === 'ISSUED'));
       setLibraryFines(myFines);
       setDigitalLibraryAssets(digitalAssets || []);
+      setLibraryBooks(booksList || []);
     } catch (err) {
       console.error(err);
     }
@@ -894,8 +897,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
 
       {activeTab === 'materials' && (
         <PremiumLock
-          isLocked={currentPlanName !== 'enterprise'}
-          requiredTier="Enterprise"
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          requiredTier="Pro"
           featureName="Premium Learning Resources"
         >
           <GlassCard className="space-y-6">
@@ -967,8 +970,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
 
       {activeTab === 'quizzes' && (
         <PremiumLock 
-          isLocked={currentPlanName !== 'enterprise'} 
-          requiredTier="Enterprise" 
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'} 
+          requiredTier="Pro" 
           featureName="Quizzes & Interactive Online Tests"
         >
           <div className="space-y-6 animate-fade-in">
@@ -1149,15 +1152,26 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                 School Library Catalog
               </h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 max-h-[500px] overflow-y-auto pr-1">
-                {mockDb.books.map(b => (
-                  <div key={b.id} className="p-3.5 bg-slate-900/30 border border-slate-850 rounded-xl space-y-2">
-                    <h4 className="font-bold text-slate-200 text-xs">{b.title}</h4>
-                    <p className="text-[10px] text-slate-400">Author: {b.author} | ISBN: {b.isbn}</p>
-                    <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded bg-brand-500/10 text-brand-400">
-                      Genre: {b.subject}
-                    </span>
-                  </div>
-                ))}
+                {libraryBooks.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-4 text-center col-span-2">No books registered in the catalog yet.</p>
+                ) : (
+                  libraryBooks.map(b => (
+                    <div key={b.id} className="p-3.5 bg-slate-900/30 border border-slate-850 rounded-xl space-y-2 flex flex-col justify-between">
+                      <div>
+                        <h4 className="font-bold text-slate-200 text-xs">{b.title}</h4>
+                        <p className="text-[10px] text-slate-400 mt-1">Author: {b.author} | ISBN: {b.isbn}</p>
+                      </div>
+                      <div className="flex items-center justify-between mt-2 pt-2 border-t border-slate-850/40">
+                        <span className="inline-block text-[9px] font-bold px-2 py-0.5 rounded bg-brand-500/10 text-brand-400">
+                          Genre: {b.subject}
+                        </span>
+                        <span className={`text-[9px] font-semibold ${b.availableCopies > 0 ? 'text-emerald-450' : 'text-rose-450'}`}>
+                          {b.availableCopies > 0 ? `${b.availableCopies} available` : 'Issued Out'}
+                        </span>
+                      </div>
+                    </div>
+                  ))
+                )}
               </div>
             </GlassCard>
 
@@ -1277,8 +1291,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
 
       {activeTab === 'forums' && (
         <PremiumLock 
-          isLocked={currentPlanName !== 'enterprise'} 
-          requiredTier="Enterprise" 
+          isLocked={currentPlanName === 'freemium'} 
+          requiredTier="Basic" 
           featureName="Discussions & Forums"
         >
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">

@@ -11,7 +11,7 @@ import { GlassCard } from '../components/GlassCard';
 import { 
   Clipboard, UserCheck, Edit3, Award, PlusCircle, PenTool,
   UploadCloud, FileText, CheckCircle, AlertCircle, Save, Calendar, Clock, MapPin, Layers, Users,
-  Trash2, Eye, X, Video, File, MessageSquare, MessageCircle, BookOpen, Paperclip, Loader2
+  Trash2, Eye, X, Video, File, MessageSquare, MessageCircle, BookOpen, Paperclip, Loader2, AlertTriangle, TrendingUp
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -77,6 +77,15 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   // Managed class timetables (Class Teacher Hub)
   const [managedClasses, setManagedClasses] = useState<Class[]>([]);
   const [selectedManagedClass, setSelectedManagedClass] = useState<string>('');
+  
+  // Attendance gating and detailed visibility states
+  const [teacherAttendanceDate, setTeacherAttendanceDate] = useState<string>(() => new Date().toISOString().split('T')[0]);
+  const [teacherAttendanceSubTab, setTeacherAttendanceSubTab] = useState<'mark' | 'analytics'>('mark');
+  const [teacherAttendanceStudents, setTeacherAttendanceStudents] = useState<(Student & { userDetails: User; attendanceState?: string })[]>([]);
+  const [teacherAttendanceAnalytics, setTeacherAttendanceAnalytics] = useState<any[]>([]);
+  const [teacherAttendanceLoading, setTeacherAttendanceLoading] = useState<boolean>(false);
+  const [selectedTardyStudent, setSelectedTardyStudent] = useState<any | null>(null);
+
   const [newAssignedTeacher, setNewAssignedTeacher] = useState('');
   const [newAssignedSubject, setNewAssignedSubject] = useState('');
   const [newAssignedDay, setNewAssignedDay] = useState(1);
@@ -183,8 +192,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [newPostContent, setNewPostContent] = useState('');
 
   // ── Class Analytics states ──
-  const [analyticsDateRange, setAnalyticsDateRange] = useState('30d');
-  const [analyticsClass, setAnalyticsClass] = useState('all');
+  const [analyticsDateRange, setAnalyticsDateRange] = useState(() => localStorage.getItem('aegis_teacher_analytics_range') || '30d');
+  const [analyticsClass, setAnalyticsClass] = useState(() => localStorage.getItem('aegis_teacher_analytics_class') || 'all');
   const [showReportCardPdf, setShowReportCardPdf] = useState<any | null>(null);
 
   const exportClassRosterToCSV = () => {
@@ -398,13 +407,13 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
     try {
       // Load Class Students
-      const stData = await mockApi.teacherGetClassStudents(teacherId, mapping.classId);
+      const stData = await mockApi.teacherGetClassStudentsReadOnly(teacherId, mapping.classId);
       setStudents(stData);
       
       const initialAttendance: Record<string, 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'> = {};
       const initialRemarks: Record<string, string> = {};
       stData.forEach(s => {
-        initialAttendance[s.id] = (s.attendanceState as any) || 'PRESENT';
+        initialAttendance[s.id] = ((s as any).attendanceState as any) || 'PRESENT';
         initialRemarks[s.id] = '';
       });
       setAttendanceRecords(initialAttendance);
@@ -480,6 +489,58 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       setHmReportCard([]);
     }
   }, [teacherId, selectedManagedClass, hmSelectedStudent, hmSelectedExam]);
+
+  const loadTeacherAttendanceDetails = async () => {
+    if (!teacherId || !selectedManagedClass) return;
+    setTeacherAttendanceLoading(true);
+    try {
+      if (teacherAttendanceSubTab === 'mark') {
+        const data = await mockApi.teacherGetClassStudents(teacherId, selectedManagedClass, teacherAttendanceDate);
+        setTeacherAttendanceStudents(data);
+        
+        // Populate current mark register states
+        const initialAttendance: Record<string, 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'> = {};
+        const initialRemarks: Record<string, string> = {};
+        data.forEach(s => {
+          initialAttendance[s.id] = (s.attendanceState as any) || 'PRESENT';
+          initialRemarks[s.id] = '';
+        });
+        setAttendanceRecords(prev => ({ ...prev, ...initialAttendance }));
+        setAttendanceRemarks(prev => ({ ...prev, ...initialRemarks }));
+      } else {
+        const analytics = await mockApi.teacherGetClassAttendanceAnalytics(teacherId, selectedManagedClass);
+        setTeacherAttendanceAnalytics(analytics);
+      }
+    } catch (err: any) {
+      console.error(err);
+    } finally {
+      setTeacherAttendanceLoading(false);
+    }
+  };
+
+  const handleTeacherSaveAttendance = async () => {
+    if (!teacherId || !selectedManagedClass) return;
+    
+    const records = teacherAttendanceStudents.map(s => ({
+      studentId: s.id,
+      status: attendanceRecords[s.id] || 'PRESENT',
+      remarks: attendanceRemarks[s.id] || ''
+    }));
+
+    try {
+      await mockApi.teacherMarkAttendance(teacherId, selectedManagedClass, teacherAttendanceDate, records);
+      alert('Attendance register updated successfully!');
+      loadTeacherAttendanceDetails();
+    } catch (err: any) {
+      alert(err.message || 'Error marking attendance');
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'attendance' && selectedManagedClass) {
+      loadTeacherAttendanceDetails();
+    }
+  }, [activeTab, selectedManagedClass, teacherAttendanceDate, teacherAttendanceSubTab, refreshTrigger]);
 
   const loadAssignmentsList = async () => {
     if (!teacherId) return;
@@ -596,6 +657,27 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       if (interval) clearInterval(interval);
     };
   }, [activeTab, teacherId, refreshTrigger]);
+
+  useEffect(() => {
+    if (analyticsDateRange) {
+      localStorage.setItem('aegis_teacher_analytics_range', analyticsDateRange);
+    }
+  }, [analyticsDateRange]);
+
+  useEffect(() => {
+    if (analyticsClass) {
+      localStorage.setItem('aegis_teacher_analytics_class', analyticsClass);
+    }
+  }, [analyticsClass]);
+
+  useEffect(() => {
+    if (analyticsClass !== 'all' && managedClasses.length > 0) {
+      const exists = managedClasses.some(c => c.id === analyticsClass);
+      if (!exists) {
+        setAnalyticsClass('all');
+      }
+    }
+  }, [managedClasses, analyticsClass]);
 
   const handleDeleteAssignment = async (id: string) => {
     if (!window.confirm('Are you sure you want to delete this assignment?')) return;
@@ -1538,9 +1620,11 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                       required
                     >
                       <option value="">-- Choose Subject --</option>
-                      {mockDb.subjects.map(s => (
-                        <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                      ))}
+                      {mockDb.subjects
+                        .filter(s => s.schoolId === (session?.user.schoolId || mockDb.teachers.find(t => t.id === teacherId)?.schoolId))
+                        .map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                        ))}
                     </select>
                   </div>
 
@@ -1553,13 +1637,22 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                       required
                     >
                       <option value="">-- Choose Instructor --</option>
-                      {mockDb.teachers.map(t => {
-                        const u = mockDb.users.find(usr => usr.id === t.userId);
-                        if (!u) return null;
-                        return (
-                          <option key={t.id} value={t.id}>{u.firstName} {u.lastName} ({t.specialization})</option>
-                        );
-                      })}
+                      {(() => {
+                        const sId = session?.user.schoolId || mockDb.teachers.find(t => t.id === teacherId)?.schoolId || '';
+                        const schoolTeachers = mockDb.getSchoolTeachers(sId);
+                        if (schoolTeachers.length === 0) {
+                          return <option disabled>No active teachers found</option>;
+                        }
+                        return schoolTeachers.map(t => {
+                          const u = mockDb.users.find(usr => usr.id === t.userId);
+                          if (!u) return null;
+                          return (
+                            <option key={t.id} value={t.id}>
+                              {u.firstName} {u.lastName} — {t.employeeId} ({t.specialization})
+                            </option>
+                          );
+                        });
+                      })()}
                     </select>
                   </div>
 
@@ -1946,73 +2039,279 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       )}
 
       {activeTab === 'attendance' && (
-        <GlassCard className="space-y-6">
-          <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
-            <h3 className="font-bold text-slate-100 flex items-center gap-2">
-              <UserCheck className="text-brand-500" size={18} />
-              Single-Click Attendance Register Roll
-            </h3>
-            <button 
-              onClick={handleMarkAttendance}
-              className="glass-btn-primary text-xs flex items-center gap-1.5"
-            >
-              <Save size={14} />
-              Save Register Logs
-            </button>
-          </div>
+        <PremiumLock 
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'} 
+          requiredTier="Pro"
+          featureName="School Attendance & Progress Analytics"
+        >
+          <div className="space-y-6 animate-fade-in">
+            {/* Header section with Class selector and Date selector */}
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-slate-900/40 p-4 rounded-xl border border-slate-800">
+              <div className="space-y-1">
+                <h3 className="text-xl font-bold text-slate-100 flex items-center gap-2">
+                  <UserCheck className="text-brand-500" size={24} />
+                  Homeroom Attendance Ledger
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Manage class rosters, daily registries, and leverage progress analytics.
+                </p>
+              </div>
 
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs border-collapse">
-              <thead>
-                <tr className="border-b border-slate-850 text-slate-400 font-bold">
-                  <th className="py-3 px-4">Roll</th>
-                  <th className="py-3 px-4">Student</th>
-                  <th className="py-3 px-4">Status Indicators</th>
-                  <th className="py-3 px-4">Attendance Remarks</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-slate-850">
-                {students.map(s => (
-                  <tr key={s.id} className="hover:bg-slate-900/10 text-slate-200">
-                    <td className="py-3 px-4 font-mono">{s.rollNumber}</td>
-                    <td className="py-3 px-4 font-semibold">{s.userDetails.firstName} {s.userDetails.lastName}</td>
-                    <td className="py-3 px-4 flex gap-2">
-                      {['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'].map(status => {
-                        const isSelected = attendanceRecords[s.id] === status;
-                        return (
-                          <button
-                            key={status}
-                            onClick={() => setAttendanceRecords(prev => ({ ...prev, [s.id]: status as any }))}
-                            className={`px-2 py-1 rounded text-[9px] font-bold border transition-colors ${
-                              isSelected 
-                                ? status === 'PRESENT' 
-                                  ? 'bg-green-500/10 border-green-500/40 text-green-400' 
-                                  : status === 'ABSENT' 
-                                    ? 'bg-red-500/10 border-red-500/40 text-red-400' 
-                                    : 'bg-amber-500/10 border-amber-500/40 text-amber-400'
-                                : 'bg-slate-950 border-slate-800 text-slate-400 hover:border-slate-700'
-                            }`}
-                          >
-                            {status}
-                          </button>
-                        );
-                      })}
-                    </td>
-                    <td className="py-3 px-4">
-                      <input 
-                        type="text" 
-                        placeholder="Delay logs, medical notes..."
-                        value={attendanceRemarks[s.id] || ''}
-                        onChange={(e) => setAttendanceRemarks(prev => ({ ...prev, [s.id]: e.target.value }))}
-                        className="bg-slate-950 border border-slate-800 text-slate-100 rounded-lg p-1 px-2 text-xs focus:outline-none focus:border-brand-500 w-full max-w-xs"
-                      />
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Managed Class Dropdown */}
+                {managedClasses.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-slate-400 font-medium">Class:</span>
+                    <select
+                      value={selectedManagedClass}
+                      onChange={(e) => setSelectedManagedClass(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 text-slate-100 text-xs rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                    >
+                      {managedClasses.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                {/* Sub Tab Toggles */}
+                <div className="flex bg-slate-950 border border-slate-850 p-1 rounded-lg">
+                  <button
+                    onClick={() => setTeacherAttendanceSubTab('mark')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                      teacherAttendanceSubTab === 'mark'
+                        ? 'bg-brand-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Mark Register
+                  </button>
+                  <button
+                    onClick={() => setTeacherAttendanceSubTab('analytics')}
+                    className={`px-3 py-1.5 rounded-md text-xs font-semibold transition-all ${
+                      teacherAttendanceSubTab === 'analytics'
+                        ? 'bg-brand-600 text-white shadow-md'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    Analytics & Insights
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Sub-Tab 1: Mark Daily Register */}
+            {teacherAttendanceSubTab === 'mark' && (
+              <GlassCard className="space-y-6">
+                <div className="border-b border-slate-850 pb-4 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs text-slate-400 font-medium">Select Register Date:</span>
+                    <input 
+                      type="date"
+                      value={teacherAttendanceDate}
+                      onChange={(e) => setTeacherAttendanceDate(e.target.value)}
+                      className="bg-slate-950 border border-slate-800 text-slate-100 rounded-lg p-1.5 px-3 text-xs focus:outline-none focus:border-brand-500 font-mono"
+                    />
+                  </div>
+                  
+                  <button 
+                    onClick={handleTeacherSaveAttendance}
+                    className="glass-btn-primary text-xs flex items-center gap-1.5 px-4 py-2"
+                  >
+                    <Save size={14} />
+                    Commit Attendance Ledger
+                  </button>
+                </div>
+
+                {teacherAttendanceLoading ? (
+                  <div className="flex flex-col items-center justify-center py-12 space-y-3">
+                    <div className="w-8 h-8 border-4 border-brand-500/20 border-t-brand-500 rounded-full animate-spin"></div>
+                    <p className="text-xs text-slate-400">Loading homeroom class list...</p>
+                  </div>
+                ) : teacherAttendanceStudents.length === 0 ? (
+                  <div className="text-center py-12 text-slate-500 text-xs">
+                    No students currently mapped to this class.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-850 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                          <th className="py-3 px-4">Roll</th>
+                          <th className="py-3 px-4">Student Name</th>
+                          <th className="py-3 px-4">Daily Status</th>
+                          <th className="py-3 px-4">Detailed Remarks / Medical Tags</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850">
+                        {teacherAttendanceStudents.map(s => (
+                          <tr key={s.id} className="hover:bg-slate-900/10 text-slate-200 transition-colors">
+                            <td className="py-3 px-4 font-mono text-slate-400">{s.rollNumber}</td>
+                            <td className="py-3 px-4 font-semibold text-slate-100">
+                              {s.userDetails?.firstName} {s.userDetails?.lastName}
+                            </td>
+                            <td className="py-3 px-4">
+                              <div className="flex gap-1.5">
+                                {['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'].map(status => {
+                                  const isSelected = attendanceRecords[s.id] === status;
+                                  return (
+                                    <button
+                                      key={status}
+                                      onClick={() => setAttendanceRecords(prev => ({ ...prev, [s.id]: status as any }))}
+                                      className={`px-2.5 py-1 rounded-md text-[9px] font-bold border transition-all duration-200 ${
+                                        isSelected 
+                                          ? status === 'PRESENT' 
+                                            ? 'bg-green-500/10 border-green-500/40 text-green-400 shadow-sm' 
+                                            : status === 'ABSENT' 
+                                              ? 'bg-red-500/10 border-red-500/40 text-red-400 shadow-sm' 
+                                              : status === 'LATE'
+                                                ? 'bg-amber-500/10 border-amber-500/40 text-amber-400 shadow-sm'
+                                                : 'bg-indigo-500/10 border-indigo-500/40 text-indigo-400 shadow-sm'
+                                          : 'bg-slate-950/80 border-slate-850 text-slate-400 hover:border-slate-700 hover:text-slate-200'
+                                      }`}
+                                    >
+                                      {status}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </td>
+                            <td className="py-3 px-4">
+                              <input 
+                                type="text" 
+                                placeholder="Medical notes, parent message, delay reason..."
+                                value={attendanceRemarks[s.id] || ''}
+                                onChange={(e) => setAttendanceRemarks(prev => ({ ...prev, [s.id]: e.target.value }))}
+                                className="bg-slate-950/80 border border-slate-850 text-slate-100 rounded-lg p-1.5 px-3 text-xs focus:outline-none focus:border-brand-500 w-full max-w-sm"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </GlassCard>
+            )}
+
+            {/* Sub-Tab 2: Analytics & Insights */}
+            {teacherAttendanceSubTab === 'analytics' && (
+              <div className="space-y-6">
+                {/* Stats row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <GlassCard className="p-4 flex items-center gap-4">
+                    <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl">
+                      <AlertCircle size={24} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Critical Chronic Absences</h4>
+                      <p className="text-2xl font-black text-red-400 mt-1">
+                        {teacherAttendanceAnalytics.filter(a => a.absenceRate > 20).length}
+                      </p>
+                    </div>
+                  </GlassCard>
+
+                  <GlassCard className="p-4 flex items-center gap-4">
+                    <div className="p-3 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-xl">
+                      <Clock size={24} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Frequent Tardy Logins</h4>
+                      <p className="text-2xl font-black text-amber-400 mt-1">
+                        {teacherAttendanceAnalytics.filter(a => a.lateRate > 15).length}
+                      </p>
+                    </div>
+                  </GlassCard>
+
+                  <GlassCard className="p-4 flex items-center gap-4">
+                    <div className="p-3 bg-green-500/10 border border-green-500/20 text-green-400 rounded-xl">
+                      <CheckCircle size={24} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-semibold text-slate-400 uppercase tracking-wider">Perfect Attendance</h4>
+                      <p className="text-2xl font-black text-green-400 mt-1">
+                        {teacherAttendanceAnalytics.filter(a => a.attendanceRate === 100).length}
+                      </p>
+                    </div>
+                  </GlassCard>
+                </div>
+
+                <GlassCard className="p-6">
+                  <h4 className="text-base font-bold text-slate-100 flex items-center gap-2 mb-4">
+                    <TrendingUp className="text-brand-500" size={18} />
+                    Class Roster Attendance Metric Matrix
+                  </h4>
+
+                  {teacherAttendanceLoading ? (
+                    <div className="flex flex-col items-center justify-center py-12 space-y-3">
+                      <div className="w-8 h-8 border-4 border-brand-500/20 border-t-brand-500 rounded-full animate-spin"></div>
+                      <p className="text-xs text-slate-400">Compiling class analytics...</p>
+                    </div>
+                  ) : teacherAttendanceAnalytics.length === 0 ? (
+                    <div className="text-center py-12 text-slate-500 text-xs">
+                      No analytics data compiled for this class roster.
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-850 text-slate-400 font-bold uppercase tracking-wider text-[10px]">
+                            <th className="py-3 px-4">Student</th>
+                            <th className="py-3 px-4">Attendance Rate</th>
+                            <th className="py-3 px-4">Absence Rate</th>
+                            <th className="py-3 px-4">Tardiness Index</th>
+                            <th className="py-3 px-4 text-center">Alert Condition</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850">
+                          {teacherAttendanceAnalytics.map(row => {
+                            const isCritical = row.absenceRate > 20;
+                            const isTardyAlert = row.lateRate > 15;
+                            return (
+                              <tr key={row.studentId} className="hover:bg-slate-900/10 text-slate-200 transition-colors">
+                                <td className="py-3 px-4 font-semibold text-slate-100">{row.studentName}</td>
+                                <td className="py-3 px-4 font-mono font-bold text-green-400">{row.attendanceRate}%</td>
+                                <td className="py-3 px-4 font-mono text-slate-300">{row.absenceRate}%</td>
+                                <td className="py-3 px-4">
+                                  <div className="flex items-center gap-2">
+                                    <span className="font-mono text-slate-300">{row.lateRate}%</span>
+                                    {isTardyAlert && (
+                                      <button 
+                                        onClick={() => setSelectedTardyStudent(row)}
+                                        className="text-[10px] text-amber-400 bg-amber-500/10 border border-amber-500/20 px-1.5 py-0.5 rounded hover:bg-amber-500/20 transition-all font-bold animate-pulse"
+                                      >
+                                        Logs
+                                      </button>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 text-center">
+                                  {isCritical ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-red-500/10 border border-red-500/30 text-red-400">
+                                      CRITICAL ABSENTEE
+                                    </span>
+                                  ) : isTardyAlert ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-amber-500/10 border border-amber-500/30 text-amber-400">
+                                      TARDY THRESHOLD
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase bg-green-500/10 border border-green-500/30 text-green-400">
+                                      STABLE
+                                    </span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </GlassCard>
+              </div>
+            )}
           </div>
-        </GlassCard>
+        </PremiumLock>
       )}
 
       {activeTab === 'grades' && (
@@ -2252,9 +2551,15 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             </GlassCard>
           </div>
         </PremiumLock>
-      )}      {activeTab === 'assignments' && (
-        <div className="animate-fade-in">
-          <GlassCard className="space-y-4 max-w-xl mx-auto">
+      )}
+      {activeTab === 'assignments' && (
+        <PremiumLock
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          requiredTier="Pro"
+          featureName="Assignment Creator"
+        >
+          <div className="animate-fade-in">
+            <GlassCard className="space-y-4 max-w-xl mx-auto">
             <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
               <PlusCircle className="text-brand-500" size={16} />
               Deploy Homework / Assignment
@@ -2504,6 +2809,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             )}
           </div>
         </div>
+        </PremiumLock>
       )}
 
       {activeTab === 'quizzes' && (
@@ -2731,8 +3037,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       )}
       {activeTab === 'materials' && (
         <PremiumLock
-          isLocked={currentPlanName !== 'enterprise'}
-          requiredTier="Enterprise"
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          requiredTier="Pro"
           featureName="Study Materials Upload"
         >
           <GlassCard className="space-y-4 max-w-xl mx-auto">
@@ -2924,7 +3230,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {activeTab === 'forums' && (
         <PremiumLock 
-          isLocked={!plan.features.communications} 
+          isLocked={currentPlanName === 'freemium'} 
           requiredTier="Basic" 
           featureName="Communications & Forums"
         >
@@ -3854,9 +4160,11 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                     required
                   >
                     <option value="">-- Choose Subject --</option>
-                    {mockDb.subjects.map(s => (
-                      <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
-                    ))}
+                    {mockDb.subjects
+                      .filter(s => s.schoolId === (session?.user.schoolId || mockDb.teachers.find(t => t.id === teacherId)?.schoolId))
+                      .map(s => (
+                        <option key={s.id} value={s.id}>{s.name} ({s.code})</option>
+                      ))}
                   </select>
                 </div>
 
@@ -3869,13 +4177,22 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                     required
                   >
                     <option value="">-- Choose Instructor --</option>
-                    {mockDb.teachers.map(t => {
-                      const u = mockDb.users.find(usr => usr.id === t.userId);
-                      if (!u) return null;
-                      return (
-                        <option key={t.id} value={t.id}>{u.firstName} {u.lastName} ({t.specialization})</option>
-                      );
-                    })}
+                    {(() => {
+                      const sId = session?.user.schoolId || mockDb.teachers.find(t => t.id === teacherId)?.schoolId || '';
+                      const schoolTeachers = mockDb.getSchoolTeachers(sId);
+                      if (schoolTeachers.length === 0) {
+                        return <option disabled>No active teachers found</option>;
+                      }
+                      return schoolTeachers.map(t => {
+                        const u = mockDb.users.find(usr => usr.id === t.userId);
+                        if (!u) return null;
+                        return (
+                          <option key={t.id} value={t.id}>
+                            {u.firstName} {u.lastName} — {t.employeeId} ({t.specialization})
+                          </option>
+                        );
+                      });
+                    })()}
                   </select>
                 </div>
               </div>
@@ -3953,7 +4270,12 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
         </div>
       )}
       {activeTab === 'analytics' && (
-        <div className="space-y-6 animate-fade-in">
+        <PremiumLock
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          requiredTier="Pro"
+          featureName="Class Academic Analytics"
+        >
+          <div className="space-y-6 animate-fade-in">
           {/* Header */}
           <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -4120,6 +4442,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             </div>
           </GlassCard>
         </div>
+        </PremiumLock>
       )}
 
       {/* Report card pdf layout modal */}
@@ -4213,6 +4536,67 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 className="px-4 py-2 border border-slate-205 text-slate-550 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors"
               >
                 Close Preview
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Tardiness Details Modal */}
+      {selectedTardyStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/80 backdrop-blur-sm animate-fade-in">
+          <GlassCard className="w-full max-w-md p-6 space-y-4 border border-slate-800 shadow-2xl relative">
+            <div className="flex items-center justify-between border-b border-slate-850 pb-3">
+              <h3 className="text-lg font-bold text-slate-100 flex items-center gap-2">
+                <Clock className="text-amber-400 animate-pulse" size={20} />
+                Tardiness Logs: {selectedTardyStudent.studentName}
+              </h3>
+              <button 
+                onClick={() => setSelectedTardyStudent(null)}
+                className="text-slate-400 hover:text-slate-200 font-bold"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-3">
+              <div className="flex justify-between items-center bg-slate-900/50 p-3 rounded-lg border border-slate-850 text-xs">
+                <span className="text-slate-400">Class Room:</span>
+                <span className="font-semibold text-slate-200">
+                  {managedClasses.find(c => c.id === selectedManagedClass)?.name || 'N/A'}
+                </span>
+              </div>
+
+              <div className="flex justify-between items-center bg-slate-900/50 p-3 rounded-lg border border-slate-850 text-xs">
+                <span className="text-slate-400">Late Login Rate:</span>
+                <span className="font-mono font-bold text-amber-400">{selectedTardyStudent.lateRate}%</span>
+              </div>
+
+              <div className="space-y-2">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Recent Tardy Indicators</span>
+                <div className="space-y-1.5 max-h-40 overflow-y-auto">
+                  {selectedTardyStudent.logs && selectedTardyStudent.logs.length > 0 ? (
+                    selectedTardyStudent.logs.map((log: any, idx: number) => (
+                      <div key={idx} className="flex justify-between items-center bg-slate-950 p-2.5 rounded-lg border border-slate-900 text-xs font-mono">
+                        <span className="text-slate-400">{log.date}</span>
+                        <span className="text-amber-400 font-semibold">{log.timestamp}</span>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="text-center py-4 text-xs text-slate-500">
+                      No timestamps logged for this period.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-3">
+              <button
+                onClick={() => setSelectedTardyStudent(null)}
+                className="glass-btn-secondary text-xs px-4 py-2"
+              >
+                Close Logs
               </button>
             </div>
           </GlassCard>

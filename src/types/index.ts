@@ -298,6 +298,7 @@ export interface Exam {
   schoolId: string;
   academicSessionId: string;
   name: string;
+  term?: string;
   startDate: string;
   endDate: string;
 }
@@ -449,6 +450,10 @@ export interface Book {
   subject: string;
   totalCopies: number;
   availableCopies: number;
+  categoryId?: string;
+  publisher?: string;
+  edition?: string;
+  shelfNumber?: string;
   createdAt: string;
 }
 
@@ -563,6 +568,7 @@ export interface BookCategory {
   schoolId: string;
   name: string;
   code: string;
+  description?: string;
   createdAt: string;
 }
 
@@ -576,6 +582,7 @@ export interface BookIssue {
   returnDate?: string | null;
   fineAmount: number;
   status: 'ISSUED' | 'RETURNED' | 'OVERDUE';
+  issuedBy?: string;
   createdAt: string;
 }
 
@@ -586,6 +593,7 @@ export interface BookReturn {
   returnDate: string;
   fineAmount: number;
   status: 'RETURNED' | 'DAMAGED' | 'LOST';
+  returnedTo?: string;
   createdAt: string;
 }
 
@@ -596,6 +604,8 @@ export interface LibraryFine {
   studentId: string;
   amount: number;
   isPaid: boolean;
+  reason?: string;
+  status?: 'UNPAID' | 'PAID' | 'WAIVED';
   createdAt: string;
 }
 
@@ -615,6 +625,9 @@ export interface DigitalLibraryAsset {
   author?: string;
   fileUrl: string;
   fileType: string;
+  categoryId?: string;
+  assetType?: string;
+  uploadedBy?: string;
   createdAt: string;
 }
 

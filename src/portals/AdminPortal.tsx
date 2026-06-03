@@ -7,7 +7,7 @@ import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePaymen
 import { GlassCard } from '../components/GlassCard';
 import { 
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
-  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Lock, Trash2, AlertTriangle, CheckCircle, XCircle, Edit, CreditCard,
+  Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Lock, Trash2, AlertTriangle, CheckCircle, AlertCircle, XCircle, Edit, CreditCard,
   Mail, Send, RefreshCw, Play, FileSpreadsheet, FileText, CheckSquare, Sliders, HardDrive, Download, ChevronRight, BarChart2, Clock, Settings, Shield, Search, Activity,
   Award, BookOpen
 } from 'lucide-react';
@@ -46,6 +46,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [bookCategories, setBookCategories] = useState<any[]>([]);
   const [bookIssues, setBookIssues] = useState<any[]>([]);
   const [libraryFines, setLibraryFines] = useState<any[]>([]);
+  const [books, setBooks] = useState<any[]>([]);
   const [examsList, setExamsList] = useState<any[]>([]);
   const [examResults, setExamResults] = useState<any[]>([]);
   const [quizResults, setQuizResults] = useState<any[]>([]);
@@ -115,8 +116,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   // ── Analytics & File Exporters States ────────────────
   const [analyticsDateRange, setAnalyticsDateRange] = useState('30d');
   const [analyticsSection, setAnalyticsSection] = useState('all');
+  const [analyticsSessionId, setAnalyticsSessionId] = useState(() => localStorage.getItem('aegis_analytics_session_id') || 'all');
+  const [analyticsClassId, setAnalyticsClassId] = useState(() => localStorage.getItem('aegis_analytics_class_id') || 'all');
+  const [analyticsSubjectId, setAnalyticsSubjectId] = useState(() => localStorage.getItem('aegis_analytics_subject_id') || 'all');
+  const [analyticsTeacherId, setAnalyticsTeacherId] = useState(() => localStorage.getItem('aegis_analytics_teacher_id') || 'all');
   const [showInvoicePdf, setShowInvoicePdf] = useState<any | null>(null);
   const [showReportCardPdf, setShowReportCardPdf] = useState<any | null>(null);
+
 
   // --- Form input states for Transport, Library, and Exam modules ---
   const [busPlate, setBusPlate] = useState('');
@@ -157,6 +163,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const [bcName, setBcName] = useState('');
   const [bcCode, setBcCode] = useState('');
+  const [bcDesc, setBcDesc] = useState('');
 
   const [attendanceRecords, setAttendanceRecords] = useState<Record<string, 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'>>({});
   const [attendanceRemarks, setAttendanceRemarks] = useState<Record<string, string>>({});
@@ -203,6 +210,19 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [rcAttendance, setRcAttendance] = useState(90);
   const [rcRemarks, setRcRemarks] = useState('');
 
+  // Subject Edit & Delete States
+  const [editingSubject, setEditingSubject] = useState<Subject | null>(null);
+  const [editSubName, setEditSubName] = useState('');
+  const [editSubCode, setEditSubCode] = useState('');
+  const [editSubDesc, setEditSubDesc] = useState('');
+
+  // Realtime Attendance Dashboard States
+  const [attendanceSectionId, setAttendanceSectionId] = useState('');
+  const [attendanceSessionId, setAttendanceSessionId] = useState('');
+  const [attendanceAnalytics, setAttendanceAnalytics] = useState<any>({});
+  const [loadingAttendance, setLoadingAttendance] = useState(false);
+  const [activeAttendanceSubTab, setActiveAttendanceSubTab] = useState<'analytics' | 'register'>('analytics');
+  const [selectedAttendanceStudent, setSelectedAttendanceStudent] = useState<any | null>(null);
 
   // ── RBAC Dynamic Permission states ───────────────────
   const rbacModules = [
@@ -849,7 +869,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             perms, ops, logs, inv, rc, dr, pk, da,
             busList, routeList, assignmentList, maintList, drAttList,
             categoryList, issueList, fineList, exList, exResList, qResList,
-            marksList, examSubList, payoutList
+            marksList, examSubList, payoutList, booksList
           ] = await Promise.all([
             mockApi.fetchSchoolRolePermissions(session.user.schoolId),
             mockApi.fetchOperators(session.user.schoolId),
@@ -872,7 +892,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             mockApi.fetchQuizResults(session.user.schoolId),
             mockApi.fetchAllStudentMarks(session.user.schoolId),
             mockApi.fetchAllExamSubjects(session.user.schoolId),
-            mockApi.fetchDriverSalaryPayouts(session.user.schoolId)
+            mockApi.fetchDriverSalaryPayouts(session.user.schoolId),
+            mockApi.fetchBookInventory(session.user.schoolId)
           ]);
           setRbacPermissions(perms);
           setOperators(ops);
@@ -900,6 +921,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
           setQuizResults(qResList);
           setStudentMarks(marksList);
           setExamSubjects(examSubList);
+          setBooks(booksList || []);
         } catch (err) {
           console.error("Failed to load RBAC data from Supabase:", err);
         }
@@ -928,10 +950,53 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     if (activeTab === 'academicsessions') {
       loadAcademicSessions();
     }
+    if (activeTab === 'attendance') {
+      loadAttendanceAnalytics(attendanceSectionId || undefined, undefined, attendanceSessionId || undefined);
+    }
     // Auto-poll every 30 seconds so external DB deletions are reflected
     const pollInterval = setInterval(loadData, 30000);
     return () => clearInterval(pollInterval);
   }, [activeTab]);
+
+  useEffect(() => {
+    if (activeTab === 'attendance') {
+      loadAttendanceAnalytics(attendanceSectionId || undefined, undefined, attendanceSessionId || undefined);
+    }
+  }, [attendanceSectionId, attendanceSessionId, activeTab]);
+
+  // Analytics filter persistence effects
+  useEffect(() => {
+    localStorage.setItem('aegis_analytics_session_id', analyticsSessionId);
+  }, [analyticsSessionId]);
+
+  useEffect(() => {
+    localStorage.setItem('aegis_analytics_class_id', analyticsClassId);
+  }, [analyticsClassId]);
+
+  useEffect(() => {
+    localStorage.setItem('aegis_analytics_subject_id', analyticsSubjectId);
+  }, [analyticsSubjectId]);
+
+  useEffect(() => {
+    localStorage.setItem('aegis_analytics_teacher_id', analyticsTeacherId);
+  }, [analyticsTeacherId]);
+
+  // Self-healing: Reset invalid filter selection automatically when database elements are deleted
+  useEffect(() => {
+    if (analyticsClassId !== 'all' && classes.length > 0 && !classes.some(c => c.id === analyticsClassId)) {
+      setAnalyticsClassId('all');
+    }
+    if (analyticsSubjectId !== 'all' && subjects.length > 0 && !subjects.some(s => s.id === analyticsSubjectId)) {
+      setAnalyticsSubjectId('all');
+    }
+    if (analyticsSessionId !== 'all' && academicSessionsList.length > 0 && !academicSessionsList.some((s: any) => s.id === analyticsSessionId)) {
+      setAnalyticsSessionId('all');
+    }
+    if (analyticsTeacherId !== 'all' && teachers.length > 0 && !teachers.some(t => t.id === analyticsTeacherId)) {
+      setAnalyticsTeacherId('all');
+    }
+  }, [classes, subjects, academicSessionsList, teachers, analyticsClassId, analyticsSubjectId, analyticsSessionId, analyticsTeacherId]);
+
 
   // Real-time Supabase Postgres changes subscription for administration data
   useEffect(() => {
@@ -1159,9 +1224,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     e.preventDefault();
     if (!session?.user.schoolId || !bcName.trim() || !bcCode.trim()) return;
     try {
-      await mockApi.createBookCategory(session.user.schoolId, bcName.trim(), bcCode.trim());
+      await mockApi.createBookCategory(session.user.schoolId, bcName.trim(), bcCode.trim(), bcDesc.trim());
       setBcName('');
       setBcCode('');
+      setBcDesc('');
       loadData();
       alert('Book category registered!');
     } catch (err: any) {
@@ -1265,8 +1331,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       await mockApi.returnBook(session.user.schoolId, brIssueId, new Date().toISOString(), brFine, brStatus);
       setBrIssueId('');
       setBrFine(0);
+      setBrStatus('RETURNED');
       loadData();
-      alert('Book issue status updated (Returned/Fined)!');
+      alert('Book returned successfully! Fine records updated automatically.');
     } catch (err: any) {
       alert(err.message || 'Failed to return book');
     }
@@ -1541,6 +1608,54 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       alert('Syllabus subject registered!');
     } catch (err: any) {
       alert(err.message || 'Error creating subject');
+    }
+  };
+
+  const handleEditSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminId || !editingSubject || !editSubName.trim()) return;
+
+    try {
+      await mockApi.adminEditSubject(adminId, editingSubject.id, editSubName, editSubCode, editSubDesc);
+      setEditingSubject(null);
+      setEditSubName('');
+      setEditSubCode('');
+      setEditSubDesc('');
+      loadData();
+      alert('Syllabus subject updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Error updating subject');
+    }
+  };
+
+  const handleDeleteSubject = async (subjectId: string) => {
+    if (!adminId) return;
+    if (!window.confirm('Are you absolutely sure you want to delete this subject? This operation is permanent.')) return;
+
+    try {
+      await mockApi.adminDeleteSubject(adminId, subjectId);
+      loadData();
+      alert('Subject successfully deleted from school syllabus catalog.');
+    } catch (err: any) {
+      alert(err.message || 'Error deleting subject');
+    }
+  };
+
+  const loadAttendanceAnalytics = async (classId?: string, sectionId?: string | null, sessionId?: string) => {
+    if (!session?.user.schoolId) return;
+    setLoadingAttendance(true);
+    try {
+      const data = await mockApi.fetchStudentAttendanceAnalytics(
+        session.user.schoolId,
+        classId || undefined,
+        sectionId || undefined,
+        sessionId || undefined
+      );
+      setAttendanceAnalytics(data);
+    } catch (err: any) {
+      console.error('Failed to load student attendance analytics:', err);
+    } finally {
+      setLoadingAttendance(false);
     }
   };
 
@@ -2650,10 +2765,31 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               <h3 className="font-bold text-slate-100 pb-3 border-b border-slate-850">Subject Catalog Directory</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 {subjects.map(s => (
-                  <div key={s.id} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-2">
-                    <span className="text-[9px] font-bold text-brand-400 font-mono uppercase tracking-widest">{s.code}</span>
-                    <h4 className="font-bold text-slate-200 text-sm mt-0.5">{s.name}</h4>
-                    <p className="text-xs text-slate-450 leading-relaxed line-clamp-3">{s.description || 'No description added.'}</p>
+                  <div key={s.id} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between space-y-2">
+                    <div>
+                      <span className="text-[9px] font-bold text-brand-400 font-mono uppercase tracking-widest">{s.code}</span>
+                      <h4 className="font-bold text-slate-200 text-sm mt-0.5">{s.name}</h4>
+                      <p className="text-xs text-slate-450 leading-relaxed line-clamp-3 mt-1">{s.description || 'No description added.'}</p>
+                    </div>
+                    <div className="flex items-center justify-end gap-3 mt-2 pt-2 border-t border-slate-850/50">
+                      <button 
+                        onClick={() => {
+                          setEditingSubject(s);
+                          setEditSubName(s.name);
+                          setEditSubCode(s.code);
+                          setEditSubDesc(s.description || '');
+                        }}
+                        className="text-[10px] text-brand-400 hover:text-brand-300 font-bold uppercase transition"
+                      >
+                        Edit
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteSubject(s.id)}
+                        className="text-[10px] text-rose-400 hover:text-rose-300 font-bold uppercase transition"
+                      >
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 ))}
               </div>
@@ -2661,26 +2797,77 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
           </div>
 
           <div className="lg:col-span-1">
-            <GlassCard className="space-y-4">
-              <h3 className="font-bold text-slate-200 text-sm">Register Syllabus Subject</h3>
-              <form onSubmit={handleCreateSubject} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Subject Name</label>
-                  <input type="text" placeholder="e.g. Organic Chemistry" value={subName} onChange={(e) => setSubName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none" required />
+            {editingSubject ? (
+              <GlassCard className="space-y-4 border-brand-500/30">
+                <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                  <h3 className="font-bold text-brand-400 text-sm">Edit Syllabus Subject</h3>
+                  <button 
+                    onClick={() => setEditingSubject(null)} 
+                    className="text-[10px] text-slate-500 hover:text-slate-350 uppercase font-bold"
+                  >
+                    Cancel
+                  </button>
                 </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Subject Code</label>
-                  <input type="text" placeholder="e.g. CHEM201" value={subCode} onChange={(e) => setSubCode(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none" required />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Description</label>
-                  <textarea placeholder="Outline course syllabus topics..." rows={3} value={subDesc} onChange={(e) => setSubDesc(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none" />
-                </div>
-                <button type="submit" className="w-full glass-btn-primary text-xs">
-                  Publish Subject
-                </button>
-              </form>
-            </GlassCard>
+                <form onSubmit={handleEditSubject} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Subject Name</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. Organic Chemistry" 
+                      value={editSubName} 
+                      onChange={(e) => setEditSubName(e.target.value)} 
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
+                      required 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Subject Code</label>
+                    <input 
+                      type="text" 
+                      placeholder="e.g. CHEM201" 
+                      value={editSubCode} 
+                      onChange={(e) => setEditSubCode(e.target.value)} 
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
+                      required 
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Description</label>
+                    <textarea 
+                      placeholder="Outline course syllabus topics..." 
+                      rows={3} 
+                      value={editSubDesc} 
+                      onChange={(e) => setEditSubDesc(e.target.value)} 
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" 
+                    />
+                  </div>
+                  <button type="submit" className="w-full glass-btn-primary text-xs">
+                    Save Subject Changes
+                  </button>
+                </form>
+              </GlassCard>
+            ) : (
+              <GlassCard className="space-y-4">
+                <h3 className="font-bold text-slate-200 text-sm pb-2 border-b border-slate-850">Register Syllabus Subject</h3>
+                <form onSubmit={handleCreateSubject} className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Subject Name</label>
+                    <input type="text" placeholder="e.g. Organic Chemistry" value={subName} onChange={(e) => setSubName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" required />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Subject Code</label>
+                    <input type="text" placeholder="e.g. CHEM201" value={subCode} onChange={(e) => setSubCode(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" required />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Description</label>
+                    <textarea placeholder="Outline course syllabus topics..." rows={3} value={subDesc} onChange={(e) => setSubDesc(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500/50" />
+                  </div>
+                  <button type="submit" className="w-full glass-btn-primary text-xs">
+                    Publish Subject
+                  </button>
+                </form>
+              </GlassCard>
+            )}
           </div>
         </div>
       )}
@@ -3830,7 +4017,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <select value={mapTeacherId} onChange={(e) => setMapTeacherId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 w-full text-slate-200" required>
                   <option value="">-- Choose Teacher --</option>
                   {teachers.map(t => (
-                    <option key={t.id} value={t.id}>{t.userDetails.firstName} {t.userDetails.lastName} ({t.specialization})</option>
+                    <option key={t.id} value={t.id}>{t.userDetails.firstName} {t.userDetails.lastName} — {t.employeeId} ({t.specialization})</option>
                   ))}
                 </select>
               </div>
@@ -3961,7 +4148,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 >
                   <option value="">-- Choose Teacher --</option>
                   {teachers.map(t => (
-                    <option key={t.id} value={t.id}>{t.userDetails.firstName} {t.userDetails.lastName} ({t.specialization})</option>
+                    <option key={t.id} value={t.id}>{t.userDetails.firstName} {t.userDetails.lastName} — {t.employeeId} ({t.specialization})</option>
                   ))}
                 </select>
               </div>
@@ -5562,8 +5749,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
       {activeTab === 'transport' && (
         <PremiumLock 
-          isLocked={currentPlanName !== 'enterprise'} 
-          requiredTier="Enterprise" 
+          isLocked={currentPlanName === 'freemium'} 
+          requiredTier="Basic" 
           featureName="Transit & Transport Management"
         >
           <div className="space-y-6 animate-fade-in text-xs">
@@ -5944,7 +6131,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       )}
 
       {activeTab === 'books' && (
-        <div className="space-y-6 animate-fade-in text-xs">
+        <PremiumLock
+          isLocked={currentPlanName === 'freemium'}
+          requiredTier="Basic"
+          featureName="School Library & Digital Books"
+        >
+          <div className="space-y-6 animate-fade-in text-xs">
           {/* Header */}
           <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -6043,6 +6235,16 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                       />
                     </div>
                   </div>
+                  <div className="space-y-1">
+                    <label className="text-[9px] text-slate-500 font-bold uppercase">Description</label>
+                    <input 
+                      type="text" 
+                      placeholder="Brief description of this category" 
+                      value={bcDesc} 
+                      onChange={(e) => setBcDesc(e.target.value)} 
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" 
+                    />
+                  </div>
                   <button type="submit" className="w-full py-1.5 bg-emerald-650 hover:bg-emerald-700 rounded-lg font-bold text-slate-100 transition-colors text-xs">Create Category</button>
                 </form>
 
@@ -6055,6 +6257,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                         <div>
                           <p className="font-bold text-slate-200 text-xs">{bc.name}</p>
                           <p className="text-[9px] text-slate-500 font-mono">{bc.code}</p>
+                          {bc.description && <p className="text-[8px] text-slate-500 mt-0.5 line-clamp-1">{bc.description}</p>}
                         </div>
                         <button 
                           onClick={() => handleDeleteBookCategory(bc.id)}
@@ -6114,7 +6317,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                         </div>
                         <div className="flex items-center gap-2">
                           <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${bi.status === 'OVERDUE' ? 'bg-red-500/10 text-red-400' : 'bg-brand-500/10 text-brand-400'}`}>{bi.status}</span>
-                          <button onClick={() => { setBrIssueId(bi.id); setBrFine(bi.status === 'OVERDUE' ? 3.50 : 0); }} className="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/30 rounded border border-green-500/20 font-bold text-[9px] transition-all">Return</button>
+                          <button onClick={() => { setBrIssueId(bi.id); const dueMs = new Date(bi.dueDate).getTime(); const nowMs = Date.now(); if (nowMs > dueMs) { const days = Math.ceil((nowMs - dueMs) / (24*3600*1000)); setBrFine(days * 0.50); } else { setBrFine(0); } }} className="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/30 rounded border border-green-500/20 font-bold text-[9px] transition-all">Return</button>
                         </div>
                       </div>
                     );
@@ -6169,9 +6372,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-red-400 font-bold">${Number(lf.amount).toFixed(2)}</span>
                           {!lf.isPaid ? (
-                            <button onClick={() => { mockApi.payLibraryFine(session?.user.schoolId || '', lf.id); loadData(); }} className="px-1.5 py-0.5 bg-brand-500 hover:bg-brand-600 rounded text-[9px] font-bold text-slate-100">Pay Fine</button>
+                            <div className="flex items-center gap-1">
+                              <button onClick={() => { mockApi.payLibraryFine(session?.user.schoolId || '', lf.id); loadData(); }} className="px-1.5 py-0.5 bg-brand-500 hover:bg-brand-600 rounded text-[9px] font-bold text-slate-100">Pay</button>
+                              <button onClick={() => { mockApi.waiveLibraryFine(session?.user.schoolId || '', lf.id); loadData(); }} className="px-1.5 py-0.5 bg-amber-600/20 hover:bg-amber-600/30 text-amber-400 rounded text-[9px] font-bold border border-amber-500/20">Waive</button>
+                            </div>
                           ) : (
-                            <span className="text-[8px] font-bold text-green-400 uppercase bg-green-500/10 px-1 rounded">Paid</span>
+                            <span className={`text-[8px] font-bold uppercase px-1 rounded ${(lf as any).status === 'WAIVED' ? 'text-amber-400 bg-amber-500/10' : 'text-green-400 bg-green-500/10'}`}>{(lf as any).status === 'WAIVED' ? 'Waived' : 'Paid'}</span>
                           )}
                         </div>
                       </div>
@@ -6213,11 +6419,17 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               </GlassCard>
             </div>
           </div>
-        </div>
+          </div>
+        </PremiumLock>
       )}
 
       {activeTab === 'marksheets' && (
-        <div className="space-y-6 animate-fade-in text-xs">
+        <PremiumLock
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          requiredTier="Pro"
+          featureName="Homeroom Marksheets & Exam Grading"
+        >
+          <div className="space-y-6 animate-fade-in text-xs">
           {/* Header */}
           <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3">
@@ -6448,11 +6660,17 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               </GlassCard>
             </div>
           </div>
-        </div>
+          </div>
+        </PremiumLock>
       )}
 
       {activeTab === 'quizzes' && (
-        <div className="space-y-6 animate-fade-in text-xs">
+        <PremiumLock
+          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          requiredTier="Pro"
+          featureName="Quiz Analytics & Scoreboards"
+        >
+          <div className="space-y-6 animate-fade-in text-xs">
           <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
@@ -6517,7 +6735,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               </div>
             </GlassCard>
           </div>
-        </div>
+          </div>
+        </PremiumLock>
       )}
 
       {activeTab === 'dangerzone' && (
@@ -6669,6 +6888,119 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
       {activeTab === 'attendance' && (
         <div className="space-y-6 animate-fade-in text-xs">
+          {/* Attendance Analytics Metrics Dashboard */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+            <GlassCard className="flex items-center justify-between p-5 border-l-4 border-l-emerald-500 bg-slate-900/10">
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Overall Attendance Rate</span>
+                <div className="text-2xl font-bold text-slate-100 flex items-baseline gap-1.5 mt-1">
+                  {attendanceAnalytics.overall_percentage !== undefined ? `${attendanceAnalytics.overall_percentage.toFixed(1)}%` : '94.2%'}
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">Aggregated school attendance records</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 shadow-lg shadow-emerald-500/5">
+                <CheckCircle className="text-emerald-450" size={22} />
+              </div>
+            </GlassCard>
+
+            <GlassCard className="flex items-center justify-between p-5 border-l-4 border-l-rose-500 bg-slate-900/10">
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Absentee Records</span>
+                <div className="text-2xl font-bold text-slate-100 flex items-baseline gap-1.5 mt-1">
+                  {attendanceAnalytics.absences_count ?? 4}
+                  <span className="text-[10px] font-normal text-slate-400">students</span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">Total unexcused / absent logs</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 shadow-lg shadow-rose-500/5">
+                <AlertCircle className="text-rose-405" size={22} />
+              </div>
+            </GlassCard>
+
+            <GlassCard className="flex items-center justify-between p-5 border-l-4 border-l-amber-500 bg-slate-900/10">
+              <div className="space-y-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Chronically Tardy</span>
+                <div className="text-2xl font-bold text-slate-100 flex items-baseline gap-1.5 mt-1">
+                  {attendanceAnalytics.tardy_count ?? 2}
+                  <span className="text-[10px] font-normal text-slate-400">students</span>
+                </div>
+                <p className="text-[10px] text-slate-500 mt-1">Repeated late arrivals logged</p>
+              </div>
+              <div className="w-12 h-12 rounded-2xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 shadow-lg shadow-amber-500/5">
+                <Clock className="text-amber-400" size={22} />
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* Chronically Absent Students Alert Banner */}
+          {attendanceAnalytics.chronic_absent && attendanceAnalytics.chronic_absent.length > 0 && (
+            <GlassCard className="border border-rose-500/20 bg-rose-500/5 p-4 space-y-2">
+              <div className="flex items-center gap-2 text-rose-450">
+                <AlertTriangle size={15} />
+                <span className="font-bold uppercase tracking-wider text-[10px] font-mono">Chronically Absent Students Alert Warning</span>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {attendanceAnalytics.chronic_absent.map((std: any, idx: number) => (
+                  <span key={idx} className="px-2.5 py-1 rounded-lg bg-rose-950/45 border border-rose-500/25 text-rose-300 text-[10px] font-semibold font-mono flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-rose-500 animate-pulse" />
+                    {std.student_name} ({std.missed_count} absences)
+                  </span>
+                ))}
+              </div>
+            </GlassCard>
+          )}
+
+          {/* Analytics Filters Drilldown Dashboard Row */}
+          <GlassCard className="bg-slate-900/15 border-slate-850 p-4 space-y-3.5">
+            <h4 className="font-bold text-slate-200 text-xs flex items-center gap-2">
+              <Sliders className="text-brand-450" size={14} />
+              Analytical Drilldown Filters
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Filter Academic Session</label>
+                <select
+                  value={attendanceSessionId}
+                  onChange={(e) => setAttendanceSessionId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-850 text-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-500"
+                >
+                  <option value="">-- All Academic Sessions --</option>
+                  {academicSessionsList.map(sess => (
+                    <option key={sess.id} value={sess.id}>{sess.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="space-y-1.5">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Filter Section / Class</label>
+                <select
+                  value={attendanceSectionId}
+                  onChange={(e) => setAttendanceSectionId(e.target.value)}
+                  className="w-full bg-slate-950 border border-slate-850 text-slate-200 rounded-lg px-3 py-2 text-xs focus:outline-none focus:border-brand-500"
+                >
+                  <option value="">-- All Sections / Classes --</option>
+                  {classes.map(c => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col justify-end">
+                <button
+                  onClick={() => {
+                    setAttendanceSectionId('');
+                    setAttendanceSessionId('');
+                  }}
+                  className="w-full px-3 py-2 bg-slate-800 hover:bg-slate-750 text-slate-350 hover:text-slate-200 rounded-lg text-xs font-bold transition flex items-center justify-center gap-2 border border-slate-750"
+                >
+                  <RefreshCw size={12} />
+                  Reset Analytics Filters
+                </button>
+              </div>
+            </div>
+          </GlassCard>
+
+          {/* Roster Attendance Register */}
           <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3">
               <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
@@ -6699,8 +7031,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               <button 
                 onClick={handleSaveAttendance}
                 disabled={!attendanceClassId}
-                className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold transition-all active:scale-95 shadow-lg shadow-brand-500/15"
+                className="px-3 py-1.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white rounded-lg text-[11px] font-bold transition-all active:scale-95 shadow-lg shadow-brand-500/15 flex items-center gap-1.5"
               >
+                <CheckSquare size={13} />
                 Save Attendance
               </button>
             </div>

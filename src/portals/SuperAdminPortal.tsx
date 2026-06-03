@@ -91,10 +91,15 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
 
   // Sync school selection
   useEffect(() => {
-    if (stats?.schoolsList?.length > 0 && !admSchoolId) {
-      setAdmSchoolId(stats.schoolsList[0].id);
+    if (stats?.schoolsList?.length > 0) {
+      const isValid = stats.schoolsList.some((s: School) => s.id === admSchoolId);
+      if (!isValid) {
+        setAdmSchoolId(stats.schoolsList[0].id);
+      }
+    } else {
+      setAdmSchoolId('');
     }
-  }, [stats, showAddAdmin]);
+  }, [stats, showAddAdmin, admSchoolId]);
 
   const handleResetPassword = (userId: string, name: string) => {
     setResetUserId(userId);

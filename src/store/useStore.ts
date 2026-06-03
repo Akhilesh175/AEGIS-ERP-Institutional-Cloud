@@ -7,11 +7,13 @@ interface SchoolERPStore {
   activeStudentId: string | null; // For parents viewing linked children
   activeChatUserId: string | null; // Selected user in drawer
   isMobileMenuOpen: boolean; // Mobile navigation control
+  activeAcademicSessionId: string | null; // Selected session for filters
   setSession: (session: AuthSession | null) => void;
   toggleTheme: () => void;
   setActiveStudentId: (studentId: string | null) => void;
   setActiveChatUserId: (userId: string | null) => void;
   setMobileMenuOpen: (isOpen: boolean) => void;
+  setActiveAcademicSessionId: (sessionId: string | null) => void;
   initializeStore: () => void;
   syncSubscriptionPlan: () => Promise<void>;
 }
@@ -22,6 +24,7 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
   activeStudentId: null,
   activeChatUserId: null,
   isMobileMenuOpen: false,
+  activeAcademicSessionId: null,
 
   setMobileMenuOpen: (isOpen) => set({ isMobileMenuOpen: isOpen }),
 
@@ -48,11 +51,25 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
   
   setActiveChatUserId: (userId) => set({ activeChatUserId: userId }),
 
+  setActiveAcademicSessionId: (sessionId) => {
+    set({ activeAcademicSessionId: sessionId });
+    if (sessionId) {
+      localStorage.setItem('aegis_active_session_id', sessionId);
+    } else {
+      localStorage.removeItem('aegis_active_session_id');
+    }
+  },
+
   initializeStore: () => {
     // Theme initialization
     const savedTheme = localStorage.getItem('aegis_theme') as 'light' | 'dark' | null;
     const initialTheme = savedTheme || 'dark';
     set({ theme: initialTheme });
+
+    const savedSessionId = localStorage.getItem('aegis_active_session_id');
+    if (savedSessionId) {
+      set({ activeAcademicSessionId: savedSessionId });
+    }
     
     const root = window.document.documentElement;
     if (initialTheme === 'dark') {

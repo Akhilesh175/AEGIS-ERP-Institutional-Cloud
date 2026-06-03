@@ -1,4 +1,4 @@
-import { mockDb, getSystemTelemetry } from './mockDb';
+import { mockDb, getSystemTelemetry, SEED_EXAMS, SEED_EXAM_SCHEDULES, SEED_EXAM_MARKS } from './mockDb';
 import { 
   User, Student, Parent, Teacher, Class, Subject, Timetable, 
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizAttempt, 
@@ -143,6 +143,21 @@ export const checkCoreAdminOrAcademicAdmin = (): void => {
   }
 };
 
+export function validateTeacherForTimetable(teacherId: string, schoolId: string): void {
+  const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+  if (!teacherId || !isUUID(teacherId)) {
+    throw new Error('Selected teacher is invalid or no longer available. Please select an active teacher from your school.');
+  }
+  const teacher = mockDb.teachers.find(t => t.id === teacherId);
+  if (!teacher || teacher.schoolId !== schoolId) {
+    throw new Error('Selected teacher is invalid or no longer available. Please select an active teacher from your school.');
+  }
+  const user = mockDb.users.find(u => u.id === teacher.userId);
+  if (!user || !user.isActive) {
+    throw new Error('Selected teacher is invalid or no longer available. Please select an active teacher from your school.');
+  }
+}
+
 export const isChatAllowed = (roleA: string, roleB: string): boolean => {
   if (roleA === roleB) return false;
   const subAdmins = ['FINANCE_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'ACADEMIC_ADMIN', 'CUSTOM_SUB_ADMIN'];
@@ -166,11 +181,21 @@ export const isChatAllowed = (roleA: string, roleB: string): boolean => {
 // Any other email attempting to use a SUPER_ADMIN role will be rejected.
 const SUPER_ADMIN_EMAIL = 'jy7018080@gmail.com';
 
+// Dynamic cache for student attendance analytics to prevent portal lag
+export const attendanceAnalyticsCache: Record<string, { timestamp: number; data: any[] }> = {};
+
 export const mockApi = {
   async validateEnterpriseSubscription(schoolId: string, featureName: string): Promise<void> {
     const livePlan = await this.getLiveSchoolSubscriptionPlan(schoolId);
     if (!livePlan || livePlan.toLowerCase() !== 'enterprise') {
       throw new Error(`Security Policy Violation: Accessing ${featureName} requires an active Enterprise Tier subscription.`);
+    }
+  },
+
+  async validateSubscriptionFeature(schoolId: string, featureName: string, allowedPlans: string[]): Promise<void> {
+    const livePlan = (await this.getLiveSchoolSubscriptionPlan(schoolId) || 'freemium').toLowerCase();
+    if (!allowedPlans.map(p => p.toLowerCase()).includes(livePlan)) {
+      throw new Error(`Security Policy Violation: Accessing ${featureName} requires an active ${allowedPlans.map(p => p.toUpperCase()).join('/')} Tier subscription.`);
     }
   },
 
@@ -979,7 +1004,16 @@ export const mockApi = {
     await this.syncExamSchedulesData(student.schoolId);
     await this.syncExamMarksData(student.schoolId);
 
-    const schedules = mockDb.examSchedules.filter(s => s.classId === student.classId);
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    
+    // Clean up local mock db for this class to prevent seed data from mixing with real Supabase data
+    mockDb.examSchedules = mockDb.examSchedules.filter(s => s.classId === student.classId ? isUUID(s.id) : true);
+
+    let schedules = mockDb.examSchedules.filter(s => s.classId === student.classId);
+    if (schedules.length === 0) {
+      // Graceful fallback to seed arrays
+      schedules = SEED_EXAM_SCHEDULES.map(s => ({ ...s, classId: student.classId as string }));
+    }
 
     return schedules.map(sched => {
       const exam = mockDb.exams.find(e => e.id === sched.examId);
@@ -1427,9 +1461,6 @@ export const mockApi = {
 
   async syncExamsData(schoolId: string): Promise<void> {
     try {
-      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-      mockDb.exams = mockDb.exams.filter(e => e.schoolId !== schoolId || isUUID(e.id));
-
       const { data: dbExams } = await supabaseAdmin
         .from('exams')
         .select('*')
@@ -1445,31 +1476,27 @@ export const mockApi = {
             startDate: r.start_date,
             endDate: r.end_date
           };
-          const idx = mockDb.exams.findIndex(e => e.id === ex.id);
-          if (idx === -1) mockDb.exams.push(ex);
-          else mockDb.exams[idx] = ex;
+          const existingIdx = mockDb.exams.findIndex(e => e.id === ex.id);
+          if (existingIdx >= 0) mockDb.exams[existingIdx] = ex;
+          else mockDb.exams.push(ex);
         });
         mockDb.saveAll();
       }
     } catch (e) {
-      console.error('Failed to sync exams:', e);
+      console.error('Failed to sync exams', e);
     }
   },
 
   async syncExamSchedulesData(schoolId: string): Promise<void> {
     try {
-      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-      const examsList = mockDb.exams.filter(e => e.schoolId === schoolId);
-      if (examsList.length === 0) return;
-      const examIds = examsList.map(e => e.id);
-
-      mockDb.examSchedules = mockDb.examSchedules.filter(s => !examIds.includes(s.examId) || isUUID(s.id));
-
+      const { data: dbExams } = await supabaseAdmin.from('exams').select('id').eq('school_id', schoolId);
+      if (!dbExams || dbExams.length === 0) return;
+      
       const { data: dbSchedules } = await supabaseAdmin
         .from('exam_schedules')
         .select('*')
-        .in('exam_id', examIds);
-
+        .in('exam_id', dbExams.map(e => e.id));
+        
       if (dbSchedules) {
         dbSchedules.forEach((r: any) => {
           const sched: ExamSchedule = {
@@ -1477,56 +1504,55 @@ export const mockApi = {
             examId: r.exam_id,
             classId: r.class_id,
             subjectId: r.subject_id,
-            examDate: r.date,
-            startTime: r.start_time || '',
-            endTime: r.end_time || '',
+            examDate: r.exam_date || r.date,
+            startTime: r.start_time,
+            endTime: r.end_time,
             classroom: r.classroom || '',
-            maxMarks: r.max_marks
+            maxMarks: r.max_marks || 100
           };
-          const idx = mockDb.examSchedules.findIndex(s => s.id === sched.id);
-          if (idx === -1) mockDb.examSchedules.push(sched);
-          else mockDb.examSchedules[idx] = sched;
+          const existingIdx = mockDb.examSchedules.findIndex(s => s.id === sched.id);
+          if (existingIdx >= 0) mockDb.examSchedules[existingIdx] = sched;
+          else mockDb.examSchedules.push(sched);
         });
         mockDb.saveAll();
       }
     } catch (e) {
-      console.error('Failed to sync exam schedules:', e);
+      console.error('Failed to sync exam schedules', e);
     }
   },
 
   async syncExamMarksData(schoolId: string): Promise<void> {
     try {
-      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-      const studentsList = mockDb.students.filter(s => s.schoolId === schoolId);
-      if (studentsList.length === 0) return;
-      const studentIds = studentsList.map(s => s.id);
-
-      mockDb.examMarks = mockDb.examMarks.filter(m => !studentIds.includes(m.studentId) || isUUID(m.id));
-
+      const { data: dbExams } = await supabaseAdmin.from('exams').select('id').eq('school_id', schoolId);
+      if (!dbExams || dbExams.length === 0) return;
+      
+      const { data: dbSchedules } = await supabaseAdmin.from('exam_schedules').select('id').in('exam_id', dbExams.map(e => e.id));
+      if (!dbSchedules || dbSchedules.length === 0) return;
+      
       const { data: dbMarks } = await supabaseAdmin
         .from('exam_marks')
         .select('*')
-        .in('student_id', studentIds);
-
+        .in('exam_schedule_id', dbSchedules.map(s => s.id));
+        
       if (dbMarks) {
         dbMarks.forEach((r: any) => {
           const mark: ExamMark = {
             id: r.id,
             examScheduleId: r.exam_schedule_id,
             studentId: r.student_id,
-            marksObtained: Number(r.marks_obtained),
-            remarks: r.remarks || undefined,
-            gradedBy: r.graded_by || '',
-            createdAt: r.created_at
+            marksObtained: r.marks_obtained,
+            remarks: r.remarks || '',
+            gradedBy: r.graded_by || 't-1',
+            createdAt: r.created_at || new Date().toISOString()
           };
-          const idx = mockDb.examMarks.findIndex(m => m.id === mark.id);
-          if (idx === -1) mockDb.examMarks.push(mark);
-          else mockDb.examMarks[idx] = mark;
+          const existingIdx = mockDb.examMarks.findIndex(m => m.id === mark.id);
+          if (existingIdx >= 0) mockDb.examMarks[existingIdx] = mark;
+          else mockDb.examMarks.push(mark);
         });
         mockDb.saveAll();
       }
     } catch (e) {
-      console.error('Failed to sync exam marks:', e);
+      console.error('Failed to sync exam marks', e);
     }
   },
 
@@ -2092,6 +2118,10 @@ export const mockApi = {
 
   async studentGetQuizQuestions(quizId: string): Promise<QuizQuestion[]> {
     await delay(300);
+    const activeUser = getActiveUser();
+    if (activeUser?.schoolId) {
+      await this.validateSubscriptionFeature(activeUser.schoolId, 'Interactive MCQ Online Quizzes', ['pro', 'enterprise']);
+    }
     const { data: dbQuestions } = await supabaseAdmin
       .from('quiz_questions')
       .select('*')
@@ -2122,6 +2152,7 @@ export const mockApi = {
     const student = mockDb.students.find(s => s.id === studentId);
     if (!student || !student.classId) return [];
 
+    await this.validateSubscriptionFeature(student.schoolId, 'Interactive MCQ Online Quizzes', ['pro', 'enterprise']);
     await this.syncQuizzesData(student.schoolId);
 
     // Find subjects in class via teacher mappings
@@ -2141,6 +2172,8 @@ export const mockApi = {
     await delay(400);
     const student = mockDb.students.find(s => s.id === studentId);
     if (!student) throw new Error('Student not found.');
+
+    await this.validateSubscriptionFeature(student.schoolId, 'Interactive MCQ Online Quizzes', ['pro', 'enterprise']);
 
     const { data: dbAttempt, error: attemptErr } = await supabaseAdmin
       .from('quiz_attempts')
@@ -2275,8 +2308,15 @@ export const mockApi = {
 
     const attendance = mockDb.attendance.filter(a => a.studentId === studentId);
     
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    mockDb.examSchedules = mockDb.examSchedules.filter(s => s.classId === student.classId ? isUUID(s.id) : true);
+    
     // Exam report
-    const schedules = mockDb.examSchedules.filter(sched => sched.classId === student.classId);
+    let schedules = mockDb.examSchedules.filter(sched => sched.classId === student.classId);
+    if (schedules.length === 0) {
+      schedules = SEED_EXAM_SCHEDULES.map(s => ({ ...s, classId: student.classId || '' }));
+    }
+
     const examMarks = schedules.map(sched => {
       const exam = mockDb.exams.find(e => e.id === sched.examId);
       const subject = mockDb.subjects.find(sub => sub.id === sched.subjectId);
@@ -2544,11 +2584,11 @@ export const mockApi = {
     });
   },
 
-  async teacherGetClassStudents(teacherId: string, classId: string): Promise<(Student & { userDetails: User; attendanceState?: string })[]> {
+  async teacherGetClassStudentsReadOnly(teacherId: string, classId: string): Promise<(Student & { userDetails: User })[]> {
     await delay();
     await this.teacherSyncData(teacherId);
     
-    // Safety check: is teacher mapped to this class?
+    // Safety check: is teacher mapped to teach this class?
     const isMapped = mockDb.teacherClassSubjectMappings.some(
       m => m.teacherId === teacherId && m.classId === classId
     );
@@ -2556,13 +2596,35 @@ export const mockApi = {
       throw new Error('Access denied: You are not assigned to teach this class.');
     }
 
-    const todayStr = new Date().toISOString().split('T')[0];
+    return mockDb.students
+      .filter(s => s.classId === classId)
+      .map(s => {
+        const u = mockDb.users.find(usr => usr.id === s.userId)!;
+        return {
+          ...s,
+          userDetails: u
+        };
+      });
+  },
+
+  async teacherGetClassStudents(teacherId: string, classId: string, date?: string): Promise<(Student & { userDetails: User; attendanceState?: string })[]> {
+    await delay();
+    await this.teacherSyncData(teacherId);
+    
+    // Safety check: is teacher the assigned Class Teacher?
+    const cls = mockDb.classes.find(c => c.id === classId);
+    if (!cls) throw new Error('Class not found.');
+    if (cls.classTeacherId !== teacherId) {
+      throw new Error('Security Policy Violation: Daily attendance records are strictly reserved for the assigned Class Teacher of this class.');
+    }
+
+    const targetDate = date || new Date().toISOString().split('T')[0];
 
     return mockDb.students
       .filter(s => s.classId === classId)
       .map(s => {
         const u = mockDb.users.find(usr => usr.id === s.userId)!;
-        const att = mockDb.attendance.find(a => a.studentId === s.id && a.date === todayStr);
+        const att = mockDb.attendance.find(a => a.studentId === s.id && a.date === targetDate);
         return {
           ...s,
           userDetails: u,
@@ -2576,6 +2638,11 @@ export const mockApi = {
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId)!;
     const cls = mockDb.classes.find(c => c.id === classId);
+    if (!cls) throw new Error('Class not found.');
+    if (cls.classTeacherId !== teacherId) {
+      throw new Error('Security Policy Violation: You are not the assigned Class Teacher for this class. Attendance modification denied.');
+    }
+
     const academicSessionId = await this.resolveActiveSessionId(teacher.schoolId);
 
     for (const rec of records) {
@@ -2630,52 +2697,109 @@ export const mockApi = {
     date: string, 
     records: { studentId: string; status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED'; remarks?: string }[]
   ): Promise<void> {
-    await delay(500);
-    const admin = mockDb.users.find(u => u.id === adminId);
-    if (!admin) throw new Error('Admin user not found');
-    const schoolId = admin.schoolId;
-    if (!schoolId) throw new Error('Admin schoolId is undefined');
-    const academicSessionId = await this.resolveActiveSessionId(schoolId);
+    await delay(200);
+    throw new Error('Security Policy Violation: Administrative roles are restricted to read-only attendance visibility. Daily register marking is exclusively reserved for the assigned Class Teacher.');
+  },
 
-    for (const rec of records) {
-      try {
-        const { data: existingRecord } = await supabaseAdmin
-          .from('attendance')
-          .select('id')
-          .eq('student_id', rec.studentId)
-          .eq('date', date)
-          .maybeSingle();
+  async teacherGetClassAttendanceAnalytics(teacherId: string, classId: string): Promise<any[]> {
+    await delay(200);
+    const teacher = mockDb.teachers.find(t => t.id === teacherId);
+    if (!teacher) throw new Error('Teacher not found.');
 
-        if (existingRecord) {
-          const { error } = await supabaseAdmin
-            .from('attendance')
-            .update({
-              status: rec.status,
-              remarks: rec.remarks || null
-            })
-            .eq('id', existingRecord.id);
-          if (error) throw error;
-        } else {
-          const { error } = await supabaseAdmin
-            .from('attendance')
-            .insert({
-              school_id: schoolId,
-              academic_session_id: academicSessionId,
-              student_id: rec.studentId,
-              date,
-              status: rec.status,
-              remarks: rec.remarks || null
-            });
-          if (error) throw error;
-        }
-      } catch (err) {
-        console.error('Failed to save attendance record to database:', err);
-      }
+    const cls = mockDb.classes.find(c => c.id === classId);
+    if (!cls) throw new Error('Class not found.');
+
+    if (cls.classTeacherId !== teacherId) {
+      throw new Error('Security Policy Violation: Access denied. You are not the assigned Class Teacher for this class.');
     }
 
-    await this.syncAttendanceData(schoolId);
-    mockDb.addLog(adminId, 'MARK_ATTENDANCE_ADMIN', { classId, count: records.length, date });
-    mockDb.saveAll();
+    return this.fetchStudentAttendanceAnalytics(teacher.schoolId, classId);
+  },
+
+  async fetchStudentAttendanceAnalytics(
+    schoolId: string,
+    classId?: string,
+    sectionId?: string | null,
+    academicSessionId?: string
+  ): Promise<any[]> {
+    const cacheKey = `${schoolId}_${classId || ''}_${sectionId || ''}_${academicSessionId || ''}`;
+    const cachedEntry = attendanceAnalyticsCache[cacheKey];
+    const CACHE_TTL = 15000; // 15 seconds TTL for fast reload
+    if (cachedEntry && (Date.now() - cachedEntry.timestamp < CACHE_TTL)) {
+      return cachedEntry.data;
+    }
+
+    await delay(100);
+    // Sync all latest student and attendance data before aggregating
+    await this.syncStudentsData(schoolId).catch(() => {});
+    await this.syncAttendanceData(schoolId).catch(() => {});
+
+    let studentList = mockDb.students.filter(s => s.schoolId === schoolId);
+    if (classId) studentList = studentList.filter(s => s.classId === classId);
+    if (sectionId) studentList = studentList.filter(s => s.sectionId === sectionId);
+    if (academicSessionId) studentList = studentList.filter(s => s.academicSessionId === academicSessionId);
+
+    const computed = studentList.map(st => {
+      const user = mockDb.users.find(u => u.id === st.userId);
+      const clsObj = mockDb.classes.find(c => c.id === st.classId);
+      const secObj = st.sectionId ? mockDb.sections.find(s => s.id === st.sectionId) : null;
+      const className = clsObj ? clsObj.name : 'Unassigned';
+      const sectionName = secObj ? secObj.name : 'N/A';
+
+      let records = mockDb.attendance.filter(a => a.studentId === st.id);
+      if (classId) records = records.filter(a => a.classId === classId);
+      if (academicSessionId) records = records.filter(a => a.academicSessionId === academicSessionId);
+      
+      // Class-specific marked attendance dates count as total working days
+      let classRecords = mockDb.attendance.filter(a => a.classId === st.classId);
+      if (academicSessionId) classRecords = classRecords.filter(a => a.academicSessionId === academicSessionId);
+      const distinctDates = Array.from(new Set(classRecords.map(a => a.date)));
+      const totalWorkingDays = distinctDates.length;
+
+      const presentDays = records.filter(r => r.status === 'PRESENT').length;
+      const absentDays = records.filter(r => r.status === 'ABSENT').length;
+      const lateDays = records.filter(r => r.status === 'LATE').length;
+      const excusedDays = records.filter(r => r.status === 'EXCUSED').length;
+
+      const presentCount = presentDays + lateDays;
+      const percentage = totalWorkingDays > 0 ? (presentCount / totalWorkingDays) * 100 : 100;
+      const roundedPercentage = Math.round(percentage * 10) / 10;
+      const eligibilityStatus = roundedPercentage >= 75 ? 'ELIGIBLE' : 'INELIGIBLE';
+      
+      const studentName = `${user?.firstName || ''} ${user?.lastName || ''}`.trim() || 'N/A';
+      const absenceRate = totalWorkingDays > 0 ? Math.round((absentDays / totalWorkingDays) * 100 * 10) / 10 : 0;
+      const lateRate = totalWorkingDays > 0 ? Math.round((lateDays / totalWorkingDays) * 100 * 10) / 10 : 0;
+
+      return {
+        studentId: st.id,
+        rollNumber: st.rollNumber,
+        firstName: user?.firstName || 'N/A',
+        lastName: user?.lastName || 'N/A',
+        studentName,
+        admissionNumber: st.admissionNumber,
+        gender: st.gender,
+        className,
+        sectionName,
+        totalWorkingDays,
+        presentDays: presentCount,
+        absentDays,
+        lateDays,
+        excusedDays,
+        percentage: roundedPercentage,
+        attendanceRate: roundedPercentage,
+        absenceRate,
+        lateRate,
+        eligibilityStatus,
+        lateRecords: records.filter(r => r.status === 'LATE').map(r => ({ date: r.date, remarks: r.remarks || 'Late entry' }))
+      };
+    });
+
+    attendanceAnalyticsCache[cacheKey] = {
+      timestamp: Date.now(),
+      data: computed
+    };
+
+    return computed;
   },
 
   async teacherGetSubmissions(teacherId: string, classId: string): Promise<(AssignmentSubmission & { studentName: string; assignmentTitle: string; maxMarks: number })[]> {
@@ -2849,6 +2973,7 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) return [];
     const schoolId = teacher.schoolId;
+    await this.validateSubscriptionFeature(schoolId, 'Interactive MCQ Online Quizzes', ['pro', 'enterprise']);
     await this.syncQuizzesData(schoolId);
     return mockDb.quizzes
       .filter(q => q.teacherId === teacherId)
@@ -3066,15 +3191,7 @@ export const mockApi = {
     const schoolId = teacher.schoolId;
     if (!schoolId) throw new Error('Teacher has no school association.');
 
-    const { data: dbSchool } = await supabaseAdmin
-      .from('schools')
-      .select('subscription_plan')
-      .eq('id', schoolId)
-      .maybeSingle();
-    const planName = dbSchool?.subscription_plan?.toLowerCase() || 'freemium';
-    if (planName !== 'pro' && planName !== 'enterprise') {
-      throw new Error('Interactive Online Quizzes are only available in Pro and Enterprise subscription plans.');
-    }
+    await this.validateSubscriptionFeature(schoolId, 'Interactive MCQ Online Quizzes', ['pro', 'enterprise']);
 
     const totalMarks = questions.reduce((acc, q) => acc + q.marks, 0);
     const academicSessionId = await this.resolveActiveSessionId(schoolId);
@@ -3163,6 +3280,10 @@ export const mockApi = {
 
   async teacherEditQuiz(quizId: string, title: string, duration: number): Promise<void> {
     await delay(500);
+    const activeUser = getActiveUser();
+    if (activeUser?.schoolId) {
+      await this.validateSubscriptionFeature(activeUser.schoolId, 'Interactive MCQ Online Quizzes', ['pro', 'enterprise']);
+    }
     const { error } = await supabaseAdmin
       .from('quizzes')
       .update({ title, duration_minutes: duration })
@@ -3180,6 +3301,10 @@ export const mockApi = {
 
   async teacherDeleteQuiz(quizId: string): Promise<void> {
     await delay(500);
+    const activeUser = getActiveUser();
+    if (activeUser?.schoolId) {
+      await this.validateSubscriptionFeature(activeUser.schoolId, 'Interactive MCQ Online Quizzes', ['pro', 'enterprise']);
+    }
     const { error } = await supabaseAdmin
       .from('quizzes')
       .delete()
@@ -3733,7 +3858,8 @@ export const mockApi = {
 
     if (error || !teacherRows || teacherRows.length === 0) {
       // Graceful fallback to local seed data
-      const localT = mockDb.teachers.filter(t => t.schoolId === schoolId);
+      const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+      const localT = mockDb.teachers.filter(t => t.schoolId === schoolId && isUUID(t.id));
       return localT.map(t => {
         const u = mockDb.users.find(usr => usr.id === t.userId) || {
           id: t.userId, email: 'teacher@example.com', role: 'TEACHER', firstName: 'Teacher', lastName: 'Name', phone: '', avatarUrl: '', isActive: true, schoolId, password: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
@@ -4029,6 +4155,7 @@ export const mockApi = {
     checkCoreAdminOrAcademicAdmin();
     const cls = mockDb.classes.find(c => c.id === classId);
     if (!cls) throw new Error('Class not found');
+    validateTeacherForTimetable(teacherId, cls.schoolId);
     
     try {
       const { error } = await supabaseAdmin
@@ -4149,6 +4276,10 @@ export const mockApi = {
 
   async adminCreateSubject(adminId: string, name: string, code: string, description: string): Promise<Subject> {
     await delay(400);
+    const activeUser = getActiveUser();
+    if (!activeUser || !['ADMIN', 'ACADEMIC_ADMIN'].includes(activeUser.role)) {
+      throw new Error('Access Denied: Only School Admin (ADMIN) and Academic Admin (ACADEMIC_ADMIN) are authorized to register subjects in the Subject Catalog.');
+    }
     const schoolId = getAdminSchoolId();
 
     // Insert into Supabase subjects table
@@ -4165,6 +4296,42 @@ export const mockApi = {
     return sub;
   },
 
+  async adminEditSubject(adminId: string, subjectId: string, name: string, code: string, description: string): Promise<Subject> {
+    await delay(300);
+    const activeUser = getActiveUser();
+    if (!activeUser || !['ADMIN', 'ACADEMIC_ADMIN'].includes(activeUser.role)) {
+      throw new Error('Access Denied: Only School Admin (ADMIN) and Academic Admin (ACADEMIC_ADMIN) are authorized to modify subjects in the Subject Catalog.');
+    }
+    const { data: subRow, error } = await supabaseAdmin.from('subjects').update({
+      name, code, description
+    }).eq('id', subjectId).select('id, school_id, name, code, description').single();
+
+    if (error || !subRow) throw new Error('Failed to update subject: ' + (error?.message || 'Unknown error'));
+
+    const sub: Subject = { id: subRow.id, schoolId: subRow.school_id, name: subRow.name, code: subRow.code, description: subRow.description || '' };
+    const idx = mockDb.subjects.findIndex(s => s.id === subjectId);
+    if (idx !== -1) {
+      mockDb.subjects[idx] = sub;
+    }
+    mockDb.addLog(adminId, 'EDIT_SUBJECT', { name, code });
+    mockDb.saveAll();
+    return sub;
+  },
+
+  async adminDeleteSubject(adminId: string, subjectId: string): Promise<void> {
+    await delay(300);
+    const activeUser = getActiveUser();
+    if (!activeUser || !['ADMIN', 'ACADEMIC_ADMIN'].includes(activeUser.role)) {
+      throw new Error('Access Denied: Only School Admin (ADMIN) and Academic Admin (ACADEMIC_ADMIN) are authorized to delete subjects from the Subject Catalog.');
+    }
+    const { error } = await supabaseAdmin.from('subjects').delete().eq('id', subjectId);
+    if (error) throw new Error('Failed to delete subject: ' + error.message);
+
+    mockDb.subjects = mockDb.subjects.filter(s => s.id !== subjectId);
+    mockDb.addLog(adminId, 'DELETE_SUBJECT', { subjectId });
+    mockDb.saveAll();
+  },
+
 
   async adminMapTeacherClassSubject(
     adminId: string, 
@@ -4177,6 +4344,10 @@ export const mockApi = {
     classroomNumber?: string
   ): Promise<void> {
     await delay(500);
+
+    const teacher = mockDb.teachers.find(t => t.id === teacherId);
+    const schoolId = teacher ? teacher.schoolId : getAdminSchoolId();
+    validateTeacherForTimetable(teacherId, schoolId);
 
     // Try to resolve existing mapping from cache or database
     let mappingId: string | null = null;
@@ -4239,8 +4410,6 @@ export const mockApi = {
 
     if (dayOfWeek !== undefined && startTime && endTime) {
       try {
-        const teacher = mockDb.teachers.find(t => t.id === teacherId);
-        const schoolId = teacher ? teacher.schoolId : getAdminSchoolId();
         const academicSessionId = await this.resolveActiveSessionId(schoolId);
 
         const { data: dbTt, error: ttError } = await supabaseAdmin
@@ -4278,9 +4447,6 @@ export const mockApi = {
         throw new Error(err.message || 'Failed to save mapping timetable in database.');
       }
     }
-
-    const teacher = mockDb.teachers.find(t => t.id === teacherId);
-    const schoolId = teacher ? teacher.schoolId : getAdminSchoolId();
 
     mockDb.addLog(adminId, 'MAP_TEACHER_CLASS_SUBJECT', { 
       teacherId, classId, subjectId, dayOfWeek, startTime, endTime, classroomNumber 
@@ -6549,40 +6715,13 @@ export const mockApi = {
     await this.syncExamsData(schoolId);
     
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-    mockDb.exams = mockDb.exams.filter(e => isUUID(e.id));
+    // Remove non-UUID seed data only for the current school to avoid leaking mock stubs into real Supabase data views
+    mockDb.exams = mockDb.exams.filter(e => e.schoolId === schoolId ? isUUID(e.id) : true);
 
     let exams = mockDb.exams.filter(e => e.schoolId === schoolId);
     if (exams.length === 0) {
-      const activeSession = mockDb.academicSessions.find(s => s.schoolId === schoolId && s.isCurrent);
-      const sessionId = activeSession && isUUID(activeSession.id) ? activeSession.id : null;
-
-      try {
-        const { data: dbExam, error } = await supabaseAdmin.from('exams').insert({
-          school_id: schoolId,
-          academic_session_id: sessionId,
-          name: 'Term 1 Assessments',
-          start_date: '2026-10-10',
-          end_date: '2026-10-20'
-        }).select().single();
-
-        if (error) {
-          console.error('Failed to create default exam in Supabase:', error.message);
-        } else if (dbExam) {
-          const newExam: Exam = {
-            id: dbExam.id,
-            schoolId: dbExam.school_id,
-            academicSessionId: dbExam.academic_session_id || 'session-1',
-            name: dbExam.name,
-            startDate: dbExam.start_date,
-            endDate: dbExam.end_date
-          };
-          mockDb.exams.push(newExam);
-          mockDb.saveAll();
-          exams = [newExam];
-        }
-      } catch (err) {
-        console.error('Failed to save default exam in database:', err);
-      }
+      // Graceful fallback to seed arrays if Supabase failed or returned empty (do not mutate local DB cache with non-UUIDs)
+      return SEED_EXAMS.map(e => ({ ...e, schoolId }));
     }
     return exams;
   },
@@ -6604,51 +6743,26 @@ export const mockApi = {
     await this.syncExamMarksData(cls.schoolId);
 
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-    mockDb.examSchedules = mockDb.examSchedules.filter(s => isUUID(s.id));
+    
+    // Clean up local mock db for this class to prevent seed data from mixing with real Supabase data
+    mockDb.examSchedules = mockDb.examSchedules.filter(s => s.classId === classId ? isUUID(s.id) : true);
+    mockDb.examMarks = mockDb.examMarks.filter(m => m.studentId === studentId ? isUUID(m.id) : true);
 
     let schedules = mockDb.examSchedules.filter(s => s.examId === examId && s.classId === classId);
     if (schedules.length === 0) {
-      const subjects = mockDb.subjects.filter(s => s.schoolId === cls.schoolId);
-      const defaultSchedules = subjects.slice(0, 3).map((sub, idx) => ({
-        exam_id: examId,
-        class_id: classId,
-        subject_id: sub.id,
-        date: '2026-10-' + (10 + idx).toString(),
-        start_time: '09:00',
-        end_time: '12:00',
-        classroom: 'Main Hall',
-        max_marks: 100
-      }));
-
-      for (const dSched of defaultSchedules) {
-        try {
-          const { data: dbSched, error } = await supabaseAdmin.from('exam_schedules').insert(dSched).select().single();
-          if (error) {
-            console.error('Failed to create default exam schedule in Supabase:', error.message);
-          } else if (dbSched) {
-            const sched: ExamSchedule = {
-              id: dbSched.id,
-              examId: dbSched.exam_id,
-              classId: dbSched.class_id,
-              subjectId: dbSched.subject_id,
-              examDate: dbSched.date,
-              startTime: dbSched.start_time || '',
-              endTime: dbSched.end_time || '',
-              classroom: dbSched.classroom || '',
-              maxMarks: dbSched.max_marks
-            };
-            mockDb.examSchedules.push(sched);
-          }
-        } catch (err) {
-          console.error('Failed to save exam schedule in database:', err);
-        }
-      }
-      mockDb.saveAll();
-      schedules = mockDb.examSchedules.filter(s => s.examId === examId && s.classId === classId);
+      // Graceful fallback to seed arrays if Supabase failed or returned empty (do not mutate local DB cache with non-UUIDs)
+      // Map the IDs so they link correctly for the frontend view
+      schedules = SEED_EXAM_SCHEDULES.map(s => ({ ...s, examId, classId }));
     }
     return schedules.map(sched => {
       const subject = mockDb.subjects.find(s => s.id === sched.subjectId);
-      const mark = mockDb.examMarks.find(m => m.examScheduleId === sched.id && m.studentId === studentId);
+      let mark = mockDb.examMarks.find(m => m.examScheduleId === sched.id && m.studentId === studentId);
+      
+      if (!mark && !isUUID(sched.id)) {
+        // Fallback for seed schedule IDs if no mock mark exists
+        mark = SEED_EXAM_MARKS.find(m => m.examScheduleId === sched.id && m.studentId === studentId);
+      }
+
       return {
         scheduleId: sched.id,
         subjectId: sched.subjectId,
@@ -6673,10 +6787,33 @@ export const mockApi = {
     }
 
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-    mockDb.examMarks = mockDb.examMarks.filter(m => isUUID(m.id));
+    
+    // Keep local exam marks clean for this student but preserve seed marks for others
+    mockDb.examMarks = mockDb.examMarks.filter(m => m.studentId === studentId ? isUUID(m.id) : true);
 
     for (const data of marksData) {
       try {
+        if (!isUUID(data.scheduleId)) {
+          console.warn('Skipping Supabase insert for exam mark because schedule ID is a seed string (not a UUID).');
+          const existingIdx = mockDb.examMarks.findIndex(m => m.examScheduleId === data.scheduleId && m.studentId === studentId);
+          if (existingIdx !== -1) {
+            mockDb.examMarks[existingIdx].marksObtained = data.marksObtained;
+            mockDb.examMarks[existingIdx].remarks = data.remarks;
+            mockDb.examMarks[existingIdx].gradedBy = teacherId;
+          } else {
+            mockDb.examMarks.push({
+              id: 'em-mock-' + Math.random().toString(36).substr(2, 9),
+              examScheduleId: data.scheduleId,
+              studentId,
+              marksObtained: data.marksObtained,
+              remarks: data.remarks,
+              gradedBy: teacherId,
+              createdAt: new Date().toISOString()
+            });
+          }
+          continue;
+        }
+
         const { data: dbMarkRecord } = await supabaseAdmin
           .from('exam_marks')
           .select('id')
@@ -6727,6 +6864,8 @@ export const mockApi = {
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
+
+    validateTeacherForTimetable(teacherId, teacher.schoolId);
 
     const mappingExists = mockDb.teacherClassSubjectMappings.some(
       m => m.teacherId === teacherId && m.classId === classId && m.subjectId === subjectId
@@ -6831,8 +6970,8 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
 
-    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-    const validTeacherId = assignedTeacherId && isUUID(assignedTeacherId) ? assignedTeacherId : null;
+    validateTeacherForTimetable(assignedTeacherId, teacher.schoolId);
+    const validTeacherId = assignedTeacherId;
 
     try {
       const academicSessionId = await this.resolveActiveSessionId(teacher.schoolId);
@@ -6932,10 +7071,11 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
 
-    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-    const validTeacherId = assignedTeacherId && isUUID(assignedTeacherId) ? assignedTeacherId : null;
+    validateTeacherForTimetable(assignedTeacherId, teacher.schoolId);
+    const validTeacherId = assignedTeacherId;
 
-    if (isUUID(timetableId)) {
+    const checkIsUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (checkIsUUID(timetableId)) {
       try {
         const { error } = await supabaseAdmin
           .from('timetables')
@@ -7961,8 +8101,43 @@ export const mockApi = {
       .from('transport_fee_records')
       .select('*, student:students(*, userDetails:users(*)), route:routes(*)')
       .eq('school_id', schoolId);
-    if (error || !data) return [];
-    return data;
+    if (error || !data) return mockDb.transportFeeRecords.filter(tfr => tfr.schoolId === schoolId);
+
+    const mapped = data.map(tfr => ({
+      id: tfr.id,
+      schoolId: tfr.school_id || schoolId,
+      academicSessionId: tfr.academic_session_id,
+      studentId: tfr.student_id,
+      routeId: tfr.route_id,
+      amount: Number(tfr.amount || 0),
+      status: tfr.status || 'UNPAID',
+      createdAt: tfr.created_at,
+      studentName: tfr.student?.userDetails ? `${tfr.student.userDetails.first_name} ${tfr.student.userDetails.last_name}` : 'Unknown Student',
+      routeName: tfr.route ? tfr.route.name.split('::')[0] : 'N/A'
+    }));
+
+    const otherSchools = mockDb.transportFeeRecords.filter(tfr => tfr.schoolId !== schoolId);
+    mockDb.transportFeeRecords = [...otherSchools, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
+  },
+
+  async toggleTransportFeePayment(id: string, currentStatus: string): Promise<void> {
+    const nextStatus = currentStatus === 'PAID' ? 'UNPAID' : 'PAID';
+    const { error } = await supabaseAdmin
+      .from('transport_fee_records')
+      .update({ status: nextStatus })
+      .eq('id', id);
+    
+    const idx = mockDb.transportFeeRecords.findIndex(tfr => tfr.id === id);
+    if (idx !== -1) {
+      mockDb.transportFeeRecords[idx].status = nextStatus;
+      mockDb.saveAll();
+    }
+    if (error) {
+      throw new Error('Failed to update payment status: ' + error.message);
+    }
   },
 
   // --- Dedicated Exam Controller Helpers ---
@@ -8023,6 +8198,7 @@ export const mockApi = {
   },
 
   async fetchQuizResults(schoolId: string, studentId?: string): Promise<any[]> {
+    await this.validateSubscriptionFeature(schoolId, 'Interactive MCQ Online Quizzes', ['pro', 'enterprise']);
     let query = supabaseAdmin.from('quiz_results').select('*, student:students(*, userDetails:users(*)), quiz:quizzes(*)').eq('school_id', schoolId);
     if (studentId) query = query.eq('student_id', studentId);
     const { data, error } = await query;
@@ -8030,19 +8206,28 @@ export const mockApi = {
     return data;
   },
 
-  // --- Dedicated Librarian Helpers ---
   async fetchBookInventory(schoolId: string): Promise<any[]> {
-    await this.validateEnterpriseSubscription(schoolId, 'Library Books');
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('book_inventory')
-      .select('*, book:books(*)')
+      .select('*')
       .eq('school_id', schoolId);
-    if (error || !data) return [];
-    return data;
+    if (error || !data) return mockDb.books.filter(b => b.schoolId === schoolId);
+    return data.map(b => ({
+      id: b.id,
+      schoolId: b.school_id,
+      title: b.title,
+      author: b.author,
+      isbn: b.isbn,
+      subject: b.subject,
+      totalCopies: b.total_copies,
+      availableCopies: b.available_copies,
+      createdAt: b.created_at
+    }));
   },
 
   async fetchDigitalLibraryAssets(schoolId: string): Promise<any[]> {
-    await this.validateEnterpriseSubscription(schoolId, 'Digital Library Resources');
+    await this.validateSubscriptionFeature(schoolId, 'Digital Library Resources', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('digital_library_assets')
       .select('*')
@@ -8060,7 +8245,7 @@ export const mockApi = {
 
   // --- Dedicated Transport Manager Helpers ---
   async fetchDrivers(schoolId: string): Promise<any[]> {
-    await this.validateEnterpriseSubscription(schoolId, 'School Transit');
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('drivers')
       .select('*')
@@ -8092,6 +8277,7 @@ export const mockApi = {
   },
 
   async createDriver(schoolId: string, sessionId: string, name: string, licenseNumber: string, phone: string): Promise<void> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const resolvedSessionId = (sessionId && isUUID(sessionId)) ? sessionId : null;
 
@@ -8118,7 +8304,7 @@ export const mockApi = {
   },
 
   async fetchPickupPoints(schoolId: string): Promise<any[]> {
-    await this.validateEnterpriseSubscription(schoolId, 'School Transit');
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('pickup_points')
       .select('*')
@@ -8155,73 +8341,127 @@ export const mockApi = {
   },
 
   async fetchVehicleLogs(schoolId: string): Promise<any[]> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('vehicle_logs')
       .select('*, bus:buses(*)')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.vehicleLogs.filter(vl => vl.schoolId === schoolId);
-    return data;
+    
+    const mapped = data.map(vl => ({
+      id: vl.id,
+      schoolId: vl.school_id || schoolId,
+      academicSessionId: vl.academic_session_id || '',
+      busId: vl.bus_id,
+      logType: vl.log_type,
+      description: vl.description || '',
+      amount: Number(vl.amount || 0),
+      createdAt: vl.created_at,
+      bus: vl.bus ? {
+        id: vl.bus.id,
+        numberPlate: vl.bus.number_plate || vl.bus.plate_number || ''
+      } : null
+    }));
+
+    const otherSchools = mockDb.vehicleLogs.filter(vl => vl.schoolId !== schoolId);
+    mockDb.vehicleLogs = [...otherSchools, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
+  },
+
+  async createVehicleLog(schoolId: string, sessionId: string, busId: string, logType: string, description: string, amount: number): Promise<void> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const validBusId = (busId && isUUID(busId)) ? busId : null;
+    const validSessionId = (sessionId && isUUID(sessionId)) ? sessionId : null;
+
+    const { data, error } = await supabaseAdmin.from('vehicle_logs').insert({
+      school_id: schoolId,
+      academic_session_id: validSessionId,
+      bus_id: validBusId,
+      log_type: logType,
+      description,
+      amount
+    }).select().single();
+
+    if (error) {
+      const localLog = {
+        id: 'vl-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        busId,
+        logType: logType as any,
+        description,
+        amount,
+        createdAt: new Date().toISOString()
+      };
+      mockDb.vehicleLogs.push(localLog);
+      mockDb.saveAll();
+    } else if (data) {
+      const mapped = {
+        id: data.id,
+        schoolId: data.school_id,
+        academicSessionId: data.academic_session_id,
+        busId: data.bus_id,
+        logType: data.log_type,
+        description: data.description,
+        amount: Number(data.amount || 0),
+        createdAt: data.created_at
+      };
+      mockDb.vehicleLogs.push(mapped);
+      mockDb.saveAll();
+    }
+  },
+
+  async deleteVehicleLog(id: string): Promise<void> {
+    await supabaseAdmin.from('vehicle_logs').delete().eq('id', id);
+    const idx = mockDb.vehicleLogs.findIndex(vl => vl.id === id);
+    if (idx !== -1) {
+      mockDb.vehicleLogs.splice(idx, 1);
+      mockDb.saveAll();
+    }
   },
 
   // --- Dedicated Buses & Transport CRUD ---
   async fetchBuses(schoolId: string): Promise<any[]> {
-    await this.validateEnterpriseSubscription(schoolId, 'School Transit');
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('buses')
       .select('*')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.buses.filter(b => b.schoolId === schoolId);
     
-    if (data.length > 0) {
-      const mapped = data.map(b => ({
-        id: b.id,
-        schoolId: b.school_id || schoolId,
-        numberPlate: b.number_plate || b.plate_number || b.numberPlate || '',
-        capacity: Number(b.capacity || 0),
-        status: b.status || 'ACTIVE',
-        driverId: b.driver_id || b.driverId || null,
-        createdAt: b.created_at
-      }));
-      
-      mapped.forEach(b => {
-        const idx = mockDb.buses.findIndex(mb => mb.id === b.id);
-        if (idx === -1) mockDb.buses.push(b);
-        else mockDb.buses[idx] = b;
-      });
-      mockDb.buses = mockDb.buses.filter(mb => mb.schoolId !== schoolId || mapped.some(m => m.id === mb.id));
-      mockDb.saveAll();
+    const mapped = data.map(b => ({
+      id: b.id,
+      schoolId: b.school_id || schoolId,
+      numberPlate: b.number_plate || b.plate_number || b.numberPlate || '',
+      capacity: Number(b.capacity || 0),
+      status: b.status || 'ACTIVE',
+      driverId: b.driver_id || b.driverId || null,
+      createdAt: b.created_at
+    }));
+    
+    const otherSchools = mockDb.buses.filter(b => b.schoolId !== schoolId);
+    mockDb.buses = [...otherSchools, ...mapped];
+    mockDb.saveAll();
 
-      return mapped;
-    }
-    return mockDb.buses.filter(b => b.schoolId === schoolId);
+    return mapped;
   },
 
   async createBus(schoolId: string, numberPlate: string, capacity: number, status: string, driverId: string | null): Promise<void> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const validDriverId = (driverId && isUUID(driverId)) ? driverId : null;
 
-    // Save to local cache first
-    const localId = 'bus-' + Math.random().toString(36).substr(2, 9);
-    const busObject = {
-      id: localId,
-      schoolId,
-      numberPlate,
-      capacity,
-      status: status as any,
-      driverId,
-      createdAt: new Date().toISOString()
-    };
-    mockDb.buses.push(busObject);
-    mockDb.saveAll();
-
-    const { error } = await supabaseAdmin.from('buses').insert({
+    const { data, error } = await supabaseAdmin.from('buses').insert({
       school_id: schoolId,
       number_plate: numberPlate,
       plate_number: numberPlate,
       capacity,
       status,
       driver_id: validDriverId
-    });
+    }).select().single();
+
     if (error) {
       // Resilient fallback: Try using only the default columns that exist in the legacy DB schema
       let driverName = 'Assigned Driver';
@@ -8234,17 +8474,45 @@ export const mockApi = {
           driverPhone = driver.phone;
         }
       }
-      await supabaseAdmin.from('buses').insert({
+      const { data: fallbackData } = await supabaseAdmin.from('buses').insert({
         school_id: schoolId,
         plate_number: numberPlate,
         driver_name: driverName,
         driver_phone: driverPhone,
         capacity
-      });
+      }).select().single();
+
+      const busObject = {
+        id: fallbackData ? fallbackData.id : ('bus-' + Math.random().toString(36).substr(2, 9)),
+        schoolId,
+        numberPlate,
+        capacity,
+        status: status as any,
+        driverId,
+        createdAt: new Date().toISOString()
+      };
+      mockDb.buses.push(busObject);
+      mockDb.saveAll();
+    } else if (data) {
+      const busObject = {
+        id: data.id,
+        schoolId,
+        numberPlate: data.number_plate || data.plate_number || '',
+        capacity: Number(data.capacity || 0),
+        status: data.status || 'ACTIVE',
+        driverId: data.driver_id || null,
+        createdAt: data.created_at
+      };
+      mockDb.buses.push(busObject);
+      mockDb.saveAll();
     }
   },
 
   async deleteBus(id: string): Promise<void> {
+    const bus = mockDb.buses.find(b => b.id === id);
+    if (bus) {
+      await this.validateSubscriptionFeature(bus.schoolId, 'School Transit', ['enterprise']);
+    }
     await supabaseAdmin.from('buses').delete().eq('id', id);
     const idx = mockDb.buses.findIndex(b => b.id === id);
     if (idx !== -1) {
@@ -8254,78 +8522,92 @@ export const mockApi = {
   },
 
   async fetchRoutes(schoolId: string): Promise<any[]> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('routes')
       .select('*')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.routes.filter(r => r.schoolId === schoolId);
     
-    if (data.length > 0) {
-      const mapped = data.map(r => {
-        const parts = (r.name || '').split('::');
-        const name = parts[0] || r.name;
-        const routeCode = parts[1] || r.route_code || r.routeCode || 'R-101';
-        return {
-          id: r.id,
-          schoolId: r.school_id || schoolId,
-          name,
-          routeCode,
-          startPoint: r.start_point || r.startPoint || '',
-          endPoint: r.end_point || r.endPoint || '',
-          fare: Number(r.fare || 0),
-          createdAt: r.created_at
-        };
-      });
+    const mapped = data.map(r => {
+      const parts = (r.name || '').split('::');
+      const name = parts[0] || r.name;
+      const routeCode = parts[1] || r.route_code || r.routeCode || 'R-101';
+      return {
+        id: r.id,
+        schoolId: r.school_id || schoolId,
+        name,
+        routeCode,
+        startPoint: r.start_point || r.startPoint || '',
+        endPoint: r.end_point || r.endPoint || '',
+        fare: Number(r.fare || 0),
+        createdAt: r.created_at
+      };
+    });
 
-      mapped.forEach(r => {
-        const idx = mockDb.routes.findIndex(mr => mr.id === r.id);
-        if (idx === -1) mockDb.routes.push(r);
-        else mockDb.routes[idx] = r;
-      });
-      mockDb.routes = mockDb.routes.filter(mr => mr.schoolId !== schoolId || mapped.some(m => m.id === mr.id));
-      mockDb.saveAll();
+    const otherSchools = mockDb.routes.filter(r => r.schoolId !== schoolId);
+    mockDb.routes = [...otherSchools, ...mapped];
+    mockDb.saveAll();
 
-      return mapped;
-    }
-    return mockDb.routes.filter(r => r.schoolId === schoolId);
+    return mapped;
   },
 
   async createRoute(schoolId: string, name: string, routeCode: string, startPoint: string, endPoint: string, fare: number): Promise<void> {
-    const { error } = await supabaseAdmin.from('routes').insert({
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
+    const { data, error } = await supabaseAdmin.from('routes').insert({
       school_id: schoolId,
       name: `${name}::${routeCode}`,
       route_code: routeCode,
       start_point: startPoint,
       end_point: endPoint,
       fare
-    });
+    }).select().single();
+
     if (error) {
       // Resilient fallback: Retry inserting with name = name::routeCode to avoid missing route_code column error
-      const { error: retryErr } = await supabaseAdmin.from('routes').insert({
+      const { data: fallbackData, error: retryErr } = await supabaseAdmin.from('routes').insert({
         school_id: schoolId,
         name: `${name}::${routeCode}`,
         start_point: startPoint,
         end_point: endPoint,
         fare
-      });
-      if (retryErr) {
-        mockDb.routes.push({
-          id: 'rt-' + Math.random().toString(36).substr(2, 9),
-          schoolId,
-          name,
-          routeCode,
-          startPoint,
-          endPoint,
-          fare,
-          createdAt: new Date().toISOString()
-        });
-        mockDb.saveAll();
-      }
+      }).select().single();
+      
+      const routeObj = {
+        id: fallbackData ? fallbackData.id : ('rt-' + Math.random().toString(36).substr(2, 9)),
+        schoolId,
+        name,
+        routeCode,
+        startPoint,
+        endPoint,
+        fare,
+        createdAt: new Date().toISOString()
+      };
+      mockDb.routes.push(routeObj);
+      mockDb.saveAll();
+    } else if (data) {
+      const parts = (data.name || '').split('::');
+      const routeObj = {
+        id: data.id,
+        schoolId: data.school_id,
+        name: parts[0] || data.name,
+        routeCode: parts[1] || data.route_code || 'R-101',
+        startPoint: data.start_point || '',
+        endPoint: data.end_point || '',
+        fare: Number(data.fare || 0),
+        createdAt: data.created_at
+      };
+      mockDb.routes.push(routeObj);
+      mockDb.saveAll();
     }
   },
 
   async deleteRoute(id: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('routes').delete().eq('id', id);
+    const route = mockDb.routes.find(r => r.id === id);
+    if (route) {
+      await this.validateSubscriptionFeature(route.schoolId, 'School Transit', ['enterprise']);
+    }
+    await supabaseAdmin.from('routes').delete().eq('id', id);
     const idx = mockDb.routes.findIndex(r => r.id === id);
     if (idx !== -1) {
       mockDb.routes.splice(idx, 1);
@@ -8334,78 +8616,116 @@ export const mockApi = {
   },
 
   async fetchTransportAssignments(schoolId: string): Promise<any[]> {
-    await this.validateEnterpriseSubscription(schoolId, 'School Transit');
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('transport_assignments')
       .select('*')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.transportAssignments.filter(ta => ta.schoolId === schoolId);
     
-    if (data.length > 0) {
-      const mapped = data.map(ta => ({
-        id: ta.id,
-        schoolId: ta.school_id || schoolId,
-        studentId: ta.student_id || ta.studentId,
-        routeId: ta.route_id || ta.routeId,
-        busId: ta.bus_id || ta.busId,
-        pickupPointId: ta.pickup_point_id || ta.pickupPointId || '',
-        status: ta.status || 'ACTIVE',
-        createdAt: ta.created_at
-      }));
+    const mapped = data.map(ta => ({
+      id: ta.id,
+      schoolId: ta.school_id || schoolId,
+      studentId: ta.student_id || ta.studentId,
+      routeId: ta.route_id || ta.routeId,
+      busId: ta.bus_id || ta.busId,
+      pickupPointId: ta.pickup_point_id || ta.pickupPointId || '',
+      status: ta.status || 'ACTIVE',
+      createdAt: ta.created_at
+    }));
 
-      mapped.forEach(ta => {
-        const idx = mockDb.transportAssignments.findIndex(mta => mta.id === ta.id);
-        if (idx === -1) mockDb.transportAssignments.push(ta);
-        else mockDb.transportAssignments[idx] = ta;
-      });
-      mockDb.transportAssignments = mockDb.transportAssignments.filter(mta => mta.schoolId !== schoolId || mapped.some(m => m.id === mta.id));
-      mockDb.saveAll();
+    const otherSchools = mockDb.transportAssignments.filter(ta => ta.schoolId !== schoolId);
+    mockDb.transportAssignments = [...otherSchools, ...mapped];
+    mockDb.saveAll();
 
-      return mapped;
-    }
-    return mockDb.transportAssignments.filter(ta => ta.schoolId === schoolId);
+    return mapped;
   },
 
   async createTransportAssignment(schoolId: string, studentId: string, routeId: string, busId: string, pickupPointId: string): Promise<void> {
-    await this.validateEnterpriseSubscription(schoolId, 'School Transit');
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const validPickupPointId = (pickupPointId && isUUID(pickupPointId)) ? pickupPointId : null;
 
-    // Save to local cache first
+    let fare = 0;
+    const route = mockDb.routes.find(r => r.id === routeId);
+    if (route) {
+      fare = Number(route.fare || 0);
+    } else {
+      const { data: routeData } = await supabaseAdmin.from('routes').select('fare').eq('id', routeId).single();
+      if (routeData) fare = Number(routeData.fare || 0);
+    }
+
+    const sessionId = await this.resolveActiveSessionId(schoolId);
+
     const localId = 'ta-' + Math.random().toString(36).substr(2, 9);
-    mockDb.transportAssignments.push({
+    const assignmentObj = {
       id: localId,
       schoolId,
       studentId,
       routeId,
       busId,
       pickupPointId,
-      status: 'ACTIVE',
+      status: 'ACTIVE' as 'ACTIVE' | 'INACTIVE',
       createdAt: new Date().toISOString()
-    });
+    };
+    mockDb.transportAssignments.push(assignmentObj);
     mockDb.saveAll();
 
-    const { error } = await supabaseAdmin.from('transport_assignments').insert({
+    const { data, error } = await supabaseAdmin.from('transport_assignments').insert({
       school_id: schoolId,
       student_id: studentId,
       route_id: routeId,
       bus_id: busId,
       pickup_point_id: validPickupPointId,
       status: 'ACTIVE'
-    });
+    }).select().single();
+
     if (error) {
-      // Resilient fallback: Retry inserting without pickup_point_id and status columns
-      await supabaseAdmin.from('transport_assignments').insert({
+      const { data: retryData } = await supabaseAdmin.from('transport_assignments').insert({
         school_id: schoolId,
         student_id: studentId,
         route_id: routeId,
         bus_id: busId
+      }).select().single();
+      
+      if (retryData) {
+        const idx = mockDb.transportAssignments.findIndex(t => t.id === localId);
+        if (idx !== -1) {
+          mockDb.transportAssignments[idx].id = retryData.id;
+          mockDb.saveAll();
+        }
+        await supabaseAdmin.from('transport_fee_records').insert({
+          school_id: schoolId,
+          academic_session_id: sessionId,
+          student_id: studentId,
+          route_id: routeId,
+          amount: fare,
+          status: 'UNPAID'
+        });
+      }
+    } else if (data) {
+      const idx = mockDb.transportAssignments.findIndex(t => t.id === localId);
+      if (idx !== -1) {
+        mockDb.transportAssignments[idx].id = data.id;
+        mockDb.saveAll();
+      }
+      await supabaseAdmin.from('transport_fee_records').insert({
+        school_id: schoolId,
+        academic_session_id: sessionId,
+        student_id: studentId,
+        route_id: routeId,
+        amount: fare,
+        status: 'UNPAID'
       });
     }
   },
 
   async deleteTransportAssignment(id: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('transport_assignments').delete().eq('id', id);
+    const ta = mockDb.transportAssignments.find(t => t.id === id);
+    if (ta) {
+      await this.validateSubscriptionFeature(ta.schoolId, 'School Transit', ['enterprise']);
+    }
+    await supabaseAdmin.from('transport_assignments').delete().eq('id', id);
     const idx = mockDb.transportAssignments.findIndex(ta => ta.id === id);
     if (idx !== -1) {
       mockDb.transportAssignments.splice(idx, 1);
@@ -8414,6 +8734,7 @@ export const mockApi = {
   },
 
   async fetchMaintenanceLogs(schoolId: string): Promise<any[]> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('maintenance_logs')
       .select('*')
@@ -8423,6 +8744,7 @@ export const mockApi = {
   },
 
   async createMaintenanceLog(schoolId: string, busId: string, logDate: string, description: string, cost: number): Promise<void> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { error } = await supabaseAdmin.from('maintenance_logs').insert({
       school_id: schoolId,
       bus_id: busId,
@@ -8445,6 +8767,7 @@ export const mockApi = {
   },
 
   async fetchDriverSalaryPayouts(schoolId: string): Promise<DriverSalaryPayout[]> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('driver_salary_payouts')
       .select('*')
@@ -8490,6 +8813,7 @@ export const mockApi = {
     paidByUserId?: string | null,
     notes?: string | null
   ): Promise<DriverSalaryPayout> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     await delay(600);
     // RBAC Validation
     const operators = mockDb.users.filter(u => u.schoolId === schoolId);
@@ -8574,6 +8898,7 @@ export const mockApi = {
   },
 
   async fetchDriverAttendance(schoolId: string): Promise<any[]> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('driver_attendance')
       .select('*')
@@ -8601,6 +8926,7 @@ export const mockApi = {
   },
 
   async markDriverAttendance(schoolId: string, driverId: string, date: string, status: string): Promise<void> {
+    await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { error } = await supabaseAdmin.from('driver_attendance').upsert({
       school_id: schoolId,
       driver_id: driverId,
@@ -8628,6 +8954,7 @@ export const mockApi = {
   // --- Admin Book CRUD ---
   async adminCreateBook(title: string, author: string, isbn: string, subject: string, totalCopies: number): Promise<void> {
     const schoolId = getAdminSchoolId();
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
     const newBook = {
       id: 'bk-' + Math.random().toString(36).substr(2, 9),
       schoolId,
@@ -8656,6 +8983,7 @@ export const mockApi = {
 
   // --- Dedicated Library CRUD ---
   async fetchBookCategories(schoolId: string): Promise<any[]> {
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
     const { data, error } = await supabaseAdmin
       .from('book_categories')
       .select('*')
@@ -8664,13 +8992,15 @@ export const mockApi = {
     return data;
   },
 
-  async createBookCategory(schoolId: string, name: string, code: string): Promise<void> {
+  async createBookCategory(schoolId: string, name: string, code: string, description?: string): Promise<void> {
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
     const id = 'bc-' + Math.random().toString(36).substr(2, 9);
-    const newCategory = {
+    const newCategory: any = {
       id,
       schoolId,
       name,
       code,
+      description: description || '',
       createdAt: new Date().toISOString()
     };
 
@@ -8678,7 +9008,8 @@ export const mockApi = {
       id,
       school_id: schoolId,
       name,
-      code
+      code,
+      description: description || ''
     }).select().single();
 
     if (data) {
@@ -8691,6 +9022,10 @@ export const mockApi = {
   },
 
   async deleteBookCategory(id: string): Promise<void> {
+    const bc = mockDb.bookCategories.find(c => c.id === id);
+    if (bc) {
+      await this.validateSubscriptionFeature(bc.schoolId, 'Library Books', ['enterprise']);
+    }
     await supabaseAdmin.from('book_categories').delete().eq('id', id);
     const idx = mockDb.bookCategories.findIndex(bc => bc.id === id);
     if (idx !== -1) {
@@ -8700,7 +9035,11 @@ export const mockApi = {
   },
 
   async fetchBookIssues(schoolId: string, studentId?: string): Promise<any[]> {
-    let query = supabaseAdmin.from('book_issues').select('*, book:books(*), student:students(*, userDetails:users(*))').eq('school_id', schoolId);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    let query = supabaseAdmin
+      .from('book_issues')
+      .select('*, book:book_inventory(*), student:students(*, userDetails:users(*))')
+      .eq('school_id', schoolId);
     if (studentId) query = query.eq('student_id', studentId);
     const { data, error } = await query;
     if (error || !data) {
@@ -8708,10 +9047,45 @@ export const mockApi = {
       if (studentId) return local.filter(bi => bi.studentId === studentId);
       return local;
     }
-    return data;
+    return data.map(bi => ({
+      id: bi.id,
+      schoolId: bi.school_id,
+      bookId: bi.book_id,
+      studentId: bi.student_id,
+      issueDate: bi.issue_date,
+      dueDate: bi.due_date,
+      returnDate: bi.return_date,
+      fineAmount: bi.fine_amount ? Number(bi.fine_amount) : 0,
+      status: bi.status,
+      createdAt: bi.created_at,
+      book: bi.book ? {
+        id: bi.book.id,
+        schoolId: bi.book.school_id,
+        title: bi.book.title,
+        author: bi.book.author,
+        isbn: bi.book.isbn,
+        subject: bi.book.subject,
+        totalCopies: bi.book.total_copies,
+        availableCopies: bi.book.available_copies
+      } : null,
+      student: bi.student
+    }));
   },
 
   async issueBook(schoolId: string, bookId: string, studentId: string, issueDate: string, dueDate: string): Promise<void> {
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    // Check availability - local mockDb check
+    const book = mockDb.books.find(b => b.id === bookId && b.schoolId === schoolId);
+    if (book && book.availableCopies <= 0) {
+      throw new Error('No copies available for this book. All copies are currently issued.');
+    }
+    // Prevent duplicate active issue for same student+book
+    const existingIssue = mockDb.bookIssues.find(
+      bi => bi.bookId === bookId && bi.studentId === studentId && bi.status === 'ISSUED'
+    );
+    if (existingIssue) {
+      throw new Error('This student already has an active issue for this book.');
+    }
     const { error } = await supabaseAdmin.from('book_issues').insert({
       school_id: schoolId,
       book_id: bookId,
@@ -8720,54 +9094,135 @@ export const mockApi = {
       due_date: dueDate,
       status: 'ISSUED'
     });
-    if (error) {
-      mockDb.bookIssues.push({
-        id: 'bi-' + Math.random().toString(36).substr(2, 9),
-        schoolId,
-        bookId,
-        studentId,
-        issueDate,
-        dueDate,
-        returnDate: null,
-        fineAmount: 0,
-        status: 'ISSUED',
-        createdAt: new Date().toISOString()
-      });
-      mockDb.saveAll();
+    // Decrement available copies in Supabase
+    if (!error) {
+      try {
+        await supabaseAdmin.rpc('decrement_available_copies', { p_book_id: bookId });
+      } catch (e) {}
     }
+    // Always update local mockDb
+    const newIssue = {
+      id: 'bi-' + Math.random().toString(36).substr(2, 9),
+      schoolId,
+      bookId,
+      studentId,
+      issueDate,
+      dueDate,
+      returnDate: null,
+      fineAmount: 0,
+      status: 'ISSUED' as const,
+      createdAt: new Date().toISOString()
+    };
+    mockDb.bookIssues.push(newIssue);
+    // Decrement local available copies
+    if (book) {
+      book.availableCopies = Math.max(0, book.availableCopies - 1);
+    }
+    mockDb.saveAll();
   },
 
   async returnBook(schoolId: string, issueId: string, returnDate: string, fineAmount: number, status: string): Promise<void> {
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    // Find the issue record
+    const issue = mockDb.bookIssues.find(bi => bi.id === issueId);
+    if (!issue) throw new Error('Book issue record not found.');
+    // Auto-calculate fine if overdue
+    let calculatedFine = fineAmount;
+    if (fineAmount === 0 && issue.dueDate) {
+      const dueMs = new Date(issue.dueDate).getTime();
+      const returnMs = new Date(returnDate).getTime();
+      if (returnMs > dueMs) {
+        const overdueDays = Math.ceil((returnMs - dueMs) / (24 * 3600 * 1000));
+        calculatedFine = overdueDays * 0.50; // $0.50 per day overdue
+      }
+    }
+    // Add penalty for DAMAGED or LOST
+    if (status === 'DAMAGED') calculatedFine += 5.00;
+    if (status === 'LOST') calculatedFine += 25.00;
+
+    // Insert return record in Supabase
     const { error } = await supabaseAdmin.from('book_returns').insert({
       school_id: schoolId,
       issue_id: issueId,
       return_date: returnDate,
-      fine_amount: fineAmount,
+      fine_amount: calculatedFine,
       status
     });
-    await supabaseAdmin.from('book_issues').update({ status: 'RETURNED', return_date: returnDate, fine_amount: fineAmount }).eq('id', issueId);
-    if (error) {
-      const idx = mockDb.bookIssues.findIndex(bi => bi.id === issueId);
-      if (idx !== -1) {
-        mockDb.bookIssues[idx].status = 'RETURNED';
-        mockDb.bookIssues[idx].returnDate = returnDate;
-        mockDb.bookIssues[idx].fineAmount = fineAmount;
+    // Update issue record in Supabase
+    await supabaseAdmin.from('book_issues').update({
+      status: 'RETURNED',
+      return_date: returnDate,
+      fine_amount: calculatedFine
+    }).eq('id', issueId);
+    // Increment available copies in Supabase (only for RETURNED, not LOST)
+    if (status !== 'LOST') {
+      try {
+        await supabaseAdmin.rpc('increment_available_copies', { p_book_id: issue.bookId });
+      } catch (e) {}
+    }
+
+    // Always update local mockDb
+    const idx = mockDb.bookIssues.findIndex(bi => bi.id === issueId);
+    if (idx !== -1) {
+      mockDb.bookIssues[idx].status = 'RETURNED';
+      mockDb.bookIssues[idx].returnDate = returnDate;
+      mockDb.bookIssues[idx].fineAmount = calculatedFine;
+    }
+    // Restore local inventory (except LOST)
+    if (status !== 'LOST') {
+      const book = mockDb.books.find(b => b.id === issue.bookId);
+      if (book) {
+        book.availableCopies = Math.min(book.totalCopies, book.availableCopies + 1);
       }
-      mockDb.bookReturns.push({
-        id: 'br-' + Math.random().toString(36).substr(2, 9),
+    }
+    // Create return record in local mockDb
+    mockDb.bookReturns.push({
+      id: 'br-' + Math.random().toString(36).substr(2, 9),
+      schoolId,
+      issueId,
+      returnDate,
+      fineAmount: calculatedFine,
+      status: status as any,
+      createdAt: new Date().toISOString()
+    });
+    // Auto-create fine record if there's a fine
+    if (calculatedFine > 0) {
+      const fineId = 'lf-' + Math.random().toString(36).substr(2, 9);
+      const fineRecord = {
+        id: fineId,
         schoolId,
         issueId,
-        returnDate,
-        fineAmount,
-        status: status as any,
+        studentId: issue.studentId,
+        amount: calculatedFine,
+        isPaid: false,
+        reason: status === 'LOST' ? 'Book Lost' : status === 'DAMAGED' ? 'Book Damaged' : 'Overdue Return',
+        status: 'UNPAID' as const,
         createdAt: new Date().toISOString()
-      });
-      mockDb.saveAll();
+      };
+      mockDb.libraryFines.push(fineRecord);
+      // Also insert into Supabase
+      try {
+        await supabaseAdmin.from('library_fines').insert({
+          id: fineId,
+          school_id: schoolId,
+          issue_id: issueId,
+          student_id: issue.studentId,
+          amount: calculatedFine,
+          is_paid: false,
+          reason: fineRecord.reason,
+          status: 'UNPAID'
+        });
+      } catch (e) {}
     }
+    mockDb.saveAll();
   },
 
   async fetchLibraryFines(schoolId: string, studentId?: string): Promise<any[]> {
-    let query = supabaseAdmin.from('library_fines').select('*, issue:book_issues(*, book:books(*)), student:students(*, userDetails:users(*))').eq('school_id', schoolId);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    let query = supabaseAdmin
+      .from('library_fines')
+      .select('*, issue:book_issues(*, book:book_inventory(*)), student:students(*, userDetails:users(*))')
+      .eq('school_id', schoolId);
     if (studentId) query = query.eq('student_id', studentId);
     const { data, error } = await query;
     if (error || !data) {
@@ -8775,22 +9230,66 @@ export const mockApi = {
       if (studentId) return local.filter(lf => lf.studentId === studentId);
       return local;
     }
-    return data;
+    return data.map(lf => ({
+      id: lf.id,
+      schoolId: lf.school_id,
+      issueId: lf.issue_id,
+      studentId: lf.student_id,
+      amount: Number(lf.amount),
+      isPaid: lf.is_paid,
+      reason: lf.reason,
+      status: lf.status,
+      createdAt: lf.created_at,
+      issue: lf.issue ? {
+        id: lf.issue.id,
+        schoolId: lf.issue.school_id,
+        bookId: lf.issue.book_id,
+        studentId: lf.issue.student_id,
+        issueDate: lf.issue.issue_date,
+        dueDate: lf.issue.due_date,
+        returnDate: lf.issue.return_date,
+        fineAmount: lf.issue.fine_amount ? Number(lf.issue.fine_amount) : 0,
+        status: lf.issue.status,
+        book: lf.issue.book ? {
+          id: lf.issue.book.id,
+          schoolId: lf.issue.book.school_id,
+          title: lf.issue.book.title,
+          author: lf.issue.book.author,
+          isbn: lf.issue.book.isbn,
+          subject: lf.issue.book.subject,
+          totalCopies: lf.issue.book.total_copies,
+          availableCopies: lf.issue.book.available_copies
+        } : null
+      } : null,
+      student: lf.student
+    }));
   },
 
   async payLibraryFine(schoolId: string, fineId: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('library_fines').update({ is_paid: true }).eq('id', fineId);
-    if (error) {
-      const idx = mockDb.libraryFines.findIndex(lf => lf.id === fineId);
-      if (idx !== -1) {
-        mockDb.libraryFines[idx].isPaid = true;
-        mockDb.saveAll();
-      }
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    const { error } = await supabaseAdmin.from('library_fines').update({ is_paid: true, status: 'PAID' }).eq('id', fineId);
+    // Always update local mockDb
+    const idx = mockDb.libraryFines.findIndex(lf => lf.id === fineId);
+    if (idx !== -1) {
+      mockDb.libraryFines[idx].isPaid = true;
+      (mockDb.libraryFines[idx] as any).status = 'PAID';
+      mockDb.saveAll();
+    }
+  },
+
+  async waiveLibraryFine(schoolId: string, fineId: string): Promise<void> {
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await supabaseAdmin.from('library_fines').update({ is_paid: true, status: 'WAIVED' }).eq('id', fineId);
+    const idx = mockDb.libraryFines.findIndex(lf => lf.id === fineId);
+    if (idx !== -1) {
+      mockDb.libraryFines[idx].isPaid = true;
+      (mockDb.libraryFines[idx] as any).status = 'WAIVED';
+      mockDb.saveAll();
     }
   },
 
   async createDigitalLibraryAsset(schoolId: string, title: string, author: string, fileUrl: string, fileType: string): Promise<void> {
-    await this.validateEnterpriseSubscription(schoolId, 'Digital Library Resources');
+    await this.validateSubscriptionFeature(schoolId, 'Digital Library Resources', ['enterprise']);
     const id = 'dla-' + Math.random().toString(36).substr(2, 9);
     const newAsset = {
       id,
@@ -8838,50 +9337,85 @@ export const mockApi = {
       .from('exams')
       .select('*')
       .eq('school_id', schoolId);
-    if (error || !data || data.length === 0) return mockDb.exams.filter(e => e.schoolId === schoolId);
-    return data;
+    if (error || !data) return mockDb.exams.filter(e => e.schoolId === schoolId);
+    
+    const mapped = data.map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id || 'session-1',
+      name: r.name,
+      term: r.term || '',
+      startDate: r.start_date,
+      endDate: r.end_date
+    }));
+
+    const otherSchools = mockDb.exams.filter(e => e.schoolId !== schoolId);
+    mockDb.exams = [...otherSchools, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   async createExam(schoolId: string, academicSessionId: string, name: string, term: string, startDate: string, endDate: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('exams').insert({
+    const { data, error } = await supabaseAdmin.from('exams').insert({
       school_id: schoolId,
       academic_session_id: academicSessionId,
       name,
       term,
       start_date: startDate,
       end_date: endDate
-    });
+    }).select().single();
+
+    let resolvedExam = data;
     if (error) {
       // Graceful fallback: Retry insert without 'term' column
-      const { error: retryErr } = await supabaseAdmin.from('exams').insert({
+      const { data: retryData, error: retryErr } = await supabaseAdmin.from('exams').insert({
         school_id: schoolId,
         academic_session_id: academicSessionId,
         name,
         start_date: startDate,
         end_date: endDate
-      });
+      }).select().single();
+      
       if (retryErr) {
-        mockDb.exams.push({
+        const localExam = {
           id: 'ex-' + Math.random().toString(36).substr(2, 9),
           schoolId,
           academicSessionId,
           name,
+          term,
           startDate,
           endDate
-        });
+        };
+        mockDb.exams.push(localExam);
         mockDb.saveAll();
+        return;
+      } else {
+        resolvedExam = retryData;
       }
+    }
+
+    if (resolvedExam) {
+      const ex: Exam = {
+        id: resolvedExam.id,
+        schoolId: resolvedExam.school_id,
+        academicSessionId: resolvedExam.academic_session_id || academicSessionId,
+        name: resolvedExam.name,
+        term: resolvedExam.term || term,
+        startDate: resolvedExam.start_date,
+        endDate: resolvedExam.end_date
+      };
+      mockDb.exams.push(ex);
+      mockDb.saveAll();
     }
   },
 
   async deleteExam(id: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('exams').delete().eq('id', id);
-    if (error) {
-      const idx = mockDb.exams.findIndex(e => e.id === id);
-      if (idx !== -1) {
-        mockDb.exams.splice(idx, 1);
-        mockDb.saveAll();
-      }
+    await supabaseAdmin.from('exams').delete().eq('id', id);
+    const idx = mockDb.exams.findIndex(e => e.id === id);
+    if (idx !== -1) {
+      mockDb.exams.splice(idx, 1);
+      mockDb.saveAll();
     }
   },
 
@@ -8892,17 +9426,34 @@ export const mockApi = {
       .eq('school_id', schoolId)
       .eq('exam_id', examId);
     if (error || !data) return mockDb.examSubjects.filter(es => es.schoolId === schoolId && es.examId === examId);
-    return data;
+    
+    const mapped = data.map(es => ({
+      id: es.id,
+      schoolId: es.school_id,
+      examId: es.exam_id,
+      subjectId: es.subject_id,
+      maxMarks: Number(es.max_marks || 100),
+      passingMarks: Number(es.passing_marks || 40),
+      createdAt: es.created_at,
+      subject: es.subject
+    }));
+
+    const others = mockDb.examSubjects.filter(es => es.schoolId !== schoolId || es.examId !== examId);
+    mockDb.examSubjects = [...others, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   async createExamSubject(schoolId: string, examId: string, subjectId: string, maxMarks: number, passingMarks: number): Promise<void> {
-    const { error } = await supabaseAdmin.from('exam_subjects').insert({
+    const { data, error } = await supabaseAdmin.from('exam_subjects').insert({
       school_id: schoolId,
       exam_id: examId,
       subject_id: subjectId,
       max_marks: maxMarks,
       passing_marks: passingMarks
-    });
+    }).select().single();
+
     if (error) {
       mockDb.examSubjects.push({
         id: 'es-' + Math.random().toString(36).substr(2, 9),
@@ -8912,6 +9463,17 @@ export const mockApi = {
         maxMarks,
         passingMarks,
         createdAt: new Date().toISOString()
+      });
+      mockDb.saveAll();
+    } else if (data) {
+      mockDb.examSubjects.push({
+        id: data.id,
+        schoolId: data.school_id,
+        examId: data.exam_id,
+        subjectId: data.subject_id,
+        maxMarks: Number(data.max_marks || 100),
+        passingMarks: Number(data.passing_marks || 40),
+        createdAt: data.created_at
       });
       mockDb.saveAll();
     }
@@ -8925,36 +9487,59 @@ export const mockApi = {
       .eq('exam_id', examId)
       .eq('subject_id', subjectId);
     if (error || !data) return mockDb.studentMarks.filter(sm => sm.schoolId === schoolId && sm.examId === examId && sm.subjectId === subjectId);
-    return data;
+    
+    const mapped = data.map(sm => ({
+      id: sm.id,
+      schoolId: sm.school_id,
+      examId: sm.exam_id,
+      subjectId: sm.subject_id,
+      studentId: sm.student_id,
+      marksObtained: Number(sm.marks_obtained || 0),
+      remarks: sm.remarks || '',
+      createdAt: sm.created_at,
+      student: sm.student
+    }));
+
+    const others = mockDb.studentMarks.filter(sm => sm.schoolId !== schoolId || sm.examId !== examId || sm.subjectId !== subjectId);
+    mockDb.studentMarks = [...others, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   async enterStudentMarks(schoolId: string, examId: string, subjectId: string, studentId: string, marksObtained: number, remarks: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('student_marks').upsert({
+    const { data, error } = await supabaseAdmin.from('student_marks').upsert({
       school_id: schoolId,
       exam_id: examId,
       subject_id: subjectId,
       student_id: studentId,
       marks_obtained: marksObtained,
       remarks
-    }, { onConflict: 'exam_id,subject_id,student_id' });
+    }, { onConflict: 'exam_id,subject_id,student_id' }).select().single();
+
+    const idx = mockDb.studentMarks.findIndex(sm => sm.examId === examId && sm.subjectId === subjectId && sm.studentId === studentId);
+    const resolvedId = data ? data.id : (idx >= 0 ? mockDb.studentMarks[idx].id : ('sm-' + Math.random().toString(36).substr(2, 9)));
+
+    const newMark = {
+      id: resolvedId,
+      schoolId,
+      examId,
+      subjectId,
+      studentId,
+      marksObtained,
+      remarks,
+      createdAt: data ? data.created_at : new Date().toISOString()
+    };
+
+    if (idx === -1) {
+      mockDb.studentMarks.push(newMark);
+    } else {
+      mockDb.studentMarks[idx] = newMark;
+    }
+    mockDb.saveAll();
+
     if (error) {
-      const idx = mockDb.studentMarks.findIndex(sm => sm.examId === examId && sm.subjectId === subjectId && sm.studentId === studentId);
-      if (idx === -1) {
-        mockDb.studentMarks.push({
-          id: 'sm-' + Math.random().toString(36).substr(2, 9),
-          schoolId,
-          examId,
-          subjectId,
-          studentId,
-          marksObtained,
-          remarks,
-          createdAt: new Date().toISOString()
-        });
-      } else {
-        mockDb.studentMarks[idx].marksObtained = marksObtained;
-        mockDb.studentMarks[idx].remarks = remarks;
-      }
-      mockDb.saveAll();
+      throw new Error('Failed to enter student marks: ' + error.message);
     }
   },
 
@@ -8963,17 +9548,40 @@ export const mockApi = {
     if (examId) query = query.eq('exam_id', examId);
     if (studentId) query = query.eq('student_id', studentId);
     const { data, error } = await query;
-    if (error || !data || data.length === 0) {
+    if (error || !data) {
       let local = mockDb.examResults.filter(er => er.schoolId === schoolId);
       if (examId) local = local.filter(er => er.examId === examId);
       if (studentId) local = local.filter(er => er.studentId === studentId);
       return local;
     }
-    return data;
+
+    const mapped = data.map(er => ({
+      id: er.id,
+      schoolId: er.school_id,
+      studentId: er.student_id,
+      examId: er.exam_id,
+      totalMarks: Number(er.total_marks || 0),
+      marksObtained: Number(er.marks_obtained || 0),
+      percentage: Number(er.percentage || 0),
+      grade: er.grade,
+      status: er.status,
+      createdAt: er.created_at,
+      student: er.student,
+      exam: er.exam
+    }));
+
+    mapped.forEach(er => {
+      const idx = mockDb.examResults.findIndex(mer => mer.id === er.id);
+      if (idx === -1) mockDb.examResults.push(er);
+      else mockDb.examResults[idx] = er;
+    });
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   async publishExamResults(schoolId: string, examId: string, studentId: string, totalMarks: number, marksObtained: number, percentage: number, grade: string, status: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('exam_results').upsert({
+    const { data, error } = await supabaseAdmin.from('exam_results').upsert({
       school_id: schoolId,
       student_id: studentId,
       exam_id: examId,
@@ -8982,30 +9590,33 @@ export const mockApi = {
       percentage,
       grade,
       status
-    }, { onConflict: 'student_id,exam_id' });
+    }, { onConflict: 'student_id,exam_id' }).select().single();
+
+    const idx = mockDb.examResults.findIndex(er => er.examId === examId && er.studentId === studentId);
+    const resolvedId = data ? data.id : (idx >= 0 ? mockDb.examResults[idx].id : ('er-' + Math.random().toString(36).substr(2, 9)));
+
+    const resultObj = {
+      id: resolvedId,
+      schoolId,
+      studentId,
+      examId,
+      totalMarks,
+      marksObtained,
+      percentage,
+      grade,
+      status: status as any,
+      createdAt: data ? data.created_at : new Date().toISOString()
+    };
+
+    if (idx === -1) {
+      mockDb.examResults.push(resultObj);
+    } else {
+      mockDb.examResults[idx] = resultObj;
+    }
+    mockDb.saveAll();
+
     if (error) {
-      const idx = mockDb.examResults.findIndex(er => er.examId === examId && er.studentId === studentId);
-      if (idx === -1) {
-        mockDb.examResults.push({
-          id: 'er-' + Math.random().toString(36).substr(2, 9),
-          schoolId,
-          studentId,
-          examId,
-          totalMarks,
-          marksObtained,
-          percentage,
-          grade,
-          status: status as any,
-          createdAt: new Date().toISOString()
-        });
-      } else {
-        mockDb.examResults[idx].totalMarks = totalMarks;
-        mockDb.examResults[idx].marksObtained = marksObtained;
-        mockDb.examResults[idx].percentage = percentage;
-        mockDb.examResults[idx].grade = grade;
-        mockDb.examResults[idx].status = status as any;
-      }
-      mockDb.saveAll();
+      throw new Error('Failed to publish exam results: ' + error.message);
     }
   },
 
@@ -9064,7 +9675,24 @@ export const mockApi = {
       .select('*, student:students(*, userDetails:users(*))')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.studentMarks.filter(sm => sm.schoolId === schoolId);
-    return data;
+    
+    const mapped = data.map(sm => ({
+      id: sm.id,
+      schoolId: sm.school_id,
+      examId: sm.exam_id,
+      subjectId: sm.subject_id,
+      studentId: sm.student_id,
+      marksObtained: Number(sm.marks_obtained || 0),
+      remarks: sm.remarks || '',
+      createdAt: sm.created_at,
+      student: sm.student
+    }));
+
+    const otherSchools = mockDb.studentMarks.filter(sm => sm.schoolId !== schoolId);
+    mockDb.studentMarks = [...otherSchools, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   async fetchAllExamSubjects(schoolId: string): Promise<any[]> {
@@ -9073,7 +9701,23 @@ export const mockApi = {
       .select('*, subject:subjects(*)')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.examSubjects.filter(es => es.schoolId === schoolId);
-    return data;
+    
+    const mapped = data.map(es => ({
+      id: es.id,
+      schoolId: es.school_id,
+      examId: es.exam_id,
+      subjectId: es.subject_id,
+      maxMarks: Number(es.max_marks || 100),
+      passingMarks: Number(es.passing_marks || 40),
+      createdAt: es.created_at,
+      subject: es.subject
+    }));
+
+    const otherSchools = mockDb.examSubjects.filter(es => es.schoolId !== schoolId);
+    mockDb.examSubjects = [...otherSchools, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
   }
 };
 

@@ -166,17 +166,17 @@ const SEED_QUIZ_ATTEMPTS: QuizAttempt[] = [
   { id: 'qa-1', quizId: 'q-1', studentId: 'st-1', answers: { 'qq-1': 1, 'qq-2': 0, 'qq-3': 2 }, score: 10, attemptedAt: '2026-05-24T16:20:00Z' }
 ];
 
-const SEED_EXAMS: Exam[] = [
+export const SEED_EXAMS: Exam[] = [
   { id: 'ex-1', schoolId: 'school-1', academicSessionId: 'session-1', name: 'Midterm Assessments 2026', startDate: '2026-03-10', endDate: '2026-03-20' }
 ];
 
-const SEED_EXAM_SCHEDULES: ExamSchedule[] = [
+export const SEED_EXAM_SCHEDULES: ExamSchedule[] = [
   { id: 'es-1', examId: 'ex-1', classId: 'c-10a', subjectId: 's-math', examDate: '2026-03-11', startTime: '09:00', endTime: '12:00', classroom: 'Main Exam Hall', maxMarks: 100 },
   { id: 'es-2', examId: 'ex-1', classId: 'c-10a', subjectId: 's-phys', examDate: '2026-03-13', startTime: '09:00', endTime: '12:00', classroom: 'Lab B', maxMarks: 100 },
   { id: 'es-3', examId: 'ex-1', classId: 'c-10a', subjectId: 's-comp', examDate: '2026-03-15', startTime: '13:00', endTime: '16:00', classroom: 'Main Exam Hall', maxMarks: 100 }
 ];
 
-const SEED_EXAM_MARKS: ExamMark[] = [
+export const SEED_EXAM_MARKS: ExamMark[] = [
   // Leo (Student 1) Midterm grades
   { id: 'em-1', examScheduleId: 'es-1', studentId: 'st-1', marksObtained: 88, remarks: 'Excellent performance in Algebra', gradedBy: 't-1', createdAt: new Date('2026-03-12').toISOString() },
   { id: 'em-2', examScheduleId: 'es-2', studentId: 'st-1', marksObtained: 92, remarks: 'Superb conceptual understanding of Mechanics', gradedBy: 't-1', createdAt: new Date('2026-03-14').toISOString() },
@@ -322,9 +322,9 @@ const SEED_DRIVER_ATTENDANCE: DriverAttendance[] = [
 ];
 
 const SEED_BOOK_CATEGORIES: BookCategory[] = [
-  { id: 'bc-1', schoolId: 'school-1', name: 'Mathematics & Algebra', code: 'MATH', createdAt: new Date().toISOString() },
-  { id: 'bc-2', schoolId: 'school-1', name: 'Physics & Thermodynamics', code: 'PHYS', createdAt: new Date().toISOString() },
-  { id: 'bc-3', schoolId: 'school-1', name: 'Computer Coding', code: 'CS', createdAt: new Date().toISOString() }
+  { id: 'bc-1', schoolId: 'school-1', name: 'Mathematics & Algebra', code: 'MATH', description: 'Textbooks and reference materials for mathematics, algebra, calculus and statistics.', createdAt: new Date().toISOString() },
+  { id: 'bc-2', schoolId: 'school-1', name: 'Physics & Thermodynamics', code: 'PHYS', description: 'Physics, mechanics, thermodynamics and quantum theory references.', createdAt: new Date().toISOString() },
+  { id: 'bc-3', schoolId: 'school-1', name: 'Computer Coding', code: 'CS', description: 'Programming languages, algorithms, data structures and software engineering.', createdAt: new Date().toISOString() }
 ];
 
 const SEED_BOOK_ISSUES: BookIssue[] = [
@@ -606,6 +606,17 @@ class MockDatabase {
     };
     this.notifications.unshift(notify);
     this.saveAll();
+  }
+
+  getSchoolTeachers(schoolId: string): Teacher[] {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    return this.teachers.filter(t => {
+      if (!isUUID(t.id)) return false; // Exclude seed teachers
+      if (t.schoolId !== schoolId) return false;
+      const user = this.users.find(u => u.id === t.userId);
+      if (!user || !user.isActive) return false;
+      return true;
+    });
   }
 }
 
