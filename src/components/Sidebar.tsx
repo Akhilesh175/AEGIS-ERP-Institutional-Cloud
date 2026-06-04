@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare, 
   Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList, ShieldAlert, X,
-  Mail, Database, Key, Terminal
+  Mail, Database, Key, Terminal, Home
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -24,7 +24,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
     grading: false,
     security: false,
     books: false,
-    transport: false
+    transport: false,
+    hostel: false
   });
 
   React.useEffect(() => {
@@ -89,7 +90,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
           { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName !== 'enterprise' },
           { id: 'transit', label: 'School Transit', icon: Layers, locked: planName !== 'enterprise' },
-          { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: planName === 'freemium' }
+          { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: planName !== 'enterprise' },
+          { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: planName === 'freemium' },
+          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: false }
         ];
       }
       case 'PARENT': {
@@ -103,6 +106,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
           { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName !== 'enterprise' },
           { id: 'transit', label: 'School Transit', icon: Layers, locked: planName !== 'enterprise' },
+          { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: planName !== 'enterprise' },
           { id: 'forums', label: 'Forums', icon: MessageSquare, locked: planName === 'freemium' }
         ];
       }
@@ -132,6 +136,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'academicsessions', label: 'Academic Sessions', icon: Calendar },
           { id: 'attendance', label: 'Student Attendance', icon: Layers },
           { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: false },
+          { id: 'hostel', label: 'Hostel Registry', icon: Home, locked: planName !== 'enterprise' },
           { id: 'communications', label: 'Communication Center', icon: Mail, locked: planName === 'freemium' },
           { id: 'analytics', label: 'Institutional Analytics', icon: Activity, locked: planName === 'freemium' || planName === 'basic' },
           { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: planName !== 'enterprise' },
@@ -145,6 +150,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       case 'EXAM_CONTROLLER':
       case 'LIBRARIAN':
       case 'TRANSPORT_MANAGER':
+      case 'HOSTEL_ADMIN':
+      case 'WARDEN':
       case 'CUSTOM_SUB_ADMIN': {
         const isEnterprise = planName === 'enterprise';
         const subAdminTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
@@ -192,6 +199,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         if (permissions.transport) {
           subAdminTabs.push({ id: 'transport', label: 'Transit Registry', icon: Layers, locked: !isEnterprise });
         }
+
+        // Hostel tab for hostel admin, warden, or dynamic permission
+        if (role === 'HOSTEL_ADMIN' || role === 'WARDEN' || (permissions as any).hostel) {
+          subAdminTabs.push({ id: 'hostel', label: 'Hostel Registry', icon: Home, locked: !isEnterprise });
+        }
         
         // If security is allowed (Sub-Admin backups / telemetry access)
         if (permissions.security) {
@@ -228,7 +240,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
             {role === 'TEACHER' && 'Teacher Portal'}
             {role === 'ADMIN' && 'Head Administrative Portal'}
             {role === 'SUPER_ADMIN' && 'Super Admin Engine'}
-            {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'].includes(role) && 'Sub-Admin Portal'}
+            {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN'].includes(role) && 'Sub-Admin Portal'}
           </p>
         </div>
 

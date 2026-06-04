@@ -162,6 +162,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
   // Edit Quiz modal
   const [editingQuiz, setEditingQuiz] = useState<any | null>(null);
+  const [selectedQuizForAttempts, setSelectedQuizForAttempts] = useState<any | null>(null);
   const [editQuizTitle, setEditQuizTitle] = useState('');
   const [editQuizDuration, setEditQuizDuration] = useState(15);
 
@@ -264,10 +265,13 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       await mockApi.syncForumRepliesData(session.user.schoolId);
 
       const cats = mockDb.forumCategories.filter(c => c.schoolId === session.user.schoolId);
-      setForumCategories(cats);
+      // Deduplicate forum categories by id
+      setForumCategories(Array.from(new Map(cats.map(c => [c.id, c])).values()));
 
       const posts = await mockApi.getForumPosts();
-      setForumPosts(posts.filter(p => p.schoolId === session.user.schoolId));
+      const filteredPosts = posts.filter(p => p.schoolId === session.user.schoolId);
+      // Deduplicate forum posts by id
+      setForumPosts(Array.from(new Map(filteredPosts.map(p => [p.id, p])).values()));
     } catch (err) {
       console.error('Failed to load forums:', err);
     }
@@ -380,7 +384,12 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       const data = await mockApi.classTeacherGetManagedClasses(teacherId);
       setManagedClasses(data);
       if (data.length > 0) {
-        setSelectedManagedClass(data[0].id);
+        setSelectedManagedClass(prev => {
+          if (prev && data.some(c => c.id === prev)) {
+            return prev;
+          }
+          return data[0].id;
+        });
       }
     } catch (err) {
       console.error(err);
@@ -393,7 +402,12 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       const data = await mockApi.teacherGetClassSubjectMappings(teacherId);
       setClassMappings(data);
       if (data.length > 0) {
-        setSelectedMapping(data[0].id);
+        setSelectedMapping(prev => {
+          if (prev && data.some(m => m.id === prev)) {
+            return prev;
+          }
+          return data[0].id;
+        });
       }
     } catch (err) {
       console.error(err);
@@ -547,7 +561,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     setAssignmentsLoading(true);
     try {
       const data = await mockApi.teacherGetAssignments(teacherId);
-      setAssignmentsList(data);
+      // Deduplicate assignments by id
+      setAssignmentsList(Array.from(new Map(data.map(a => [a.id, a])).values()));
     } catch (err) {
       console.error(err);
     } finally {
@@ -560,7 +575,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     setMaterialsLoading(true);
     try {
       const data = await mockApi.teacherGetStudyMaterials(teacherId);
-      setMaterialsList(data);
+      // Deduplicate study materials by id
+      setMaterialsList(Array.from(new Map(data.map(m => [m.id, m])).values()));
     } catch (err) {
       console.error(err);
     } finally {
@@ -573,7 +589,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     setQuizzesLoading(true);
     try {
       const data = await mockApi.teacherGetQuizzes(teacherId);
-      setQuizzesList(data);
+      // Deduplicate quizzes by id
+      setQuizzesList(Array.from(new Map(data.map(q => [q.id, q])).values()));
     } catch (err) {
       console.error(err);
     } finally {
@@ -2747,64 +2764,76 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             ) : assignmentsList.length === 0 ? (
               <p className="text-xs text-slate-500 italic border border-slate-850/50 bg-slate-900/20 p-4 rounded-xl text-center">No assignments published yet.</p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {assignmentsList.map(a => (
-                  <GlassCard key={a.id} className="p-4 flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-bold text-slate-100 text-sm">{a.title}</h4>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${a.isHomework ? 'bg-blue-500/20 text-blue-400 border border-blue-500/30' : 'bg-purple-500/20 text-purple-400 border border-purple-500/30'}`}>
-                          {a.isHomework ? 'Homework' : 'Assignment'}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 line-clamp-2 mb-3">{a.description}</p>
-                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-500 mb-3">
-                        <span className="flex items-center gap-1"><Calendar size={12} /> Due: {new Date(a.dueDate).toLocaleDateString()}</span>
-                        <span className="flex items-center gap-1"><Layers size={12} /> {a.className}</span>
-                        <span className="flex items-center gap-1"><FileText size={12} /> {a.subjectName}</span>
-                      </div>
-                      {a.attachments && a.attachments.length > 0 && (
-                        <div className="flex flex-wrap gap-1.5 mb-4 pt-2 border-t border-slate-850/40">
-                          {a.attachments.map((att) => (
-                            <a 
-                              key={att.id}
-                              href={att.fileUrl} 
-                              target="_blank" 
-                              rel="noopener noreferrer" 
-                              className="text-[9.5px] text-slate-400 hover:text-brand-400 font-mono bg-slate-900/50 hover:bg-brand-500/5 px-2 py-0.5 rounded border border-slate-850 hover:border-brand-500/20 transition-all flex items-center gap-1 shrink-0"
-                            >
-                              <Paperclip size={10} className="shrink-0 text-slate-500" />
-                              <span className="truncate max-w-[120px]">{att.fileName}</span>
-                            </a>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                    
-                    <div className="flex gap-2 border-t border-slate-850 pt-3">
-                      <button 
-                        onClick={() => {
-                          setEditingAssignment(a);
-                          setEditAssignTitle(a.title);
-                          setEditAssignDesc(a.description);
-                          setEditAssignDueDate(new Date(a.dueDate).toISOString().slice(0, 16));
-                          setEditAssignIsHomework(a.isHomework);
-                          setEditAssignSectionId(a.sectionId || '');
-                          setAttachmentsList(a.attachments || []);
-                        }}
-                        className="flex-1 glass-btn-secondary text-xs flex items-center justify-center gap-1"
-                      >
-                        <Edit3 size={12} /> Edit
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteAssignment(a.id)}
-                        className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
-                      >
-                        <Trash2 size={12} /> Delete
-                      </button>
-                    </div>
-                  </GlassCard>
-                ))}
+              <div className="overflow-x-auto bg-slate-900/10 border border-slate-850/50 rounded-2xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-850 text-slate-400 font-bold">
+                      <th className="py-3 px-4">Title</th>
+                      <th className="py-3 px-4">Class</th>
+                      <th className="py-3 px-4">Subject</th>
+                      <th className="py-3 px-4">Due Date</th>
+                      <th className="py-3 px-4">Type</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850/60">
+                    {assignmentsList.map(a => (
+                      <tr key={a.id} className="hover:bg-slate-900/10 text-slate-200">
+                        <td className="py-3 px-4 font-semibold">
+                          <div>
+                            <p>{a.title}</p>
+                            {a.attachments && a.attachments.length > 0 && (
+                              <div className="flex flex-wrap gap-1 mt-1">
+                                {a.attachments.map((att) => (
+                                  <a 
+                                    key={att.id}
+                                    href={att.fileUrl} 
+                                    target="_blank" 
+                                    rel="noopener noreferrer" 
+                                    className="text-[9px] text-slate-400 hover:text-brand-400 font-mono bg-slate-900/40 px-1.5 py-0.2 rounded border border-slate-800 flex items-center gap-0.5 shrink-0"
+                                  >
+                                    <Paperclip size={8} />
+                                    <span className="truncate max-w-[80px]">{att.fileName}</span>
+                                  </a>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-slate-400">{a.className}</td>
+                        <td className="py-3 px-4 text-slate-400">{a.subjectName}</td>
+                        <td className="py-3 px-4 text-slate-400">{new Date(a.dueDate).toLocaleDateString()}</td>
+                        <td className="py-3 px-4">
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full ${a.isHomework ? 'bg-blue-500/10 text-blue-400 border border-blue-500/20' : 'bg-purple-500/10 text-purple-400 border border-purple-500/20'}`}>
+                            {a.isHomework ? 'Homework' : 'Assignment'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 text-right space-x-2">
+                          <button 
+                            onClick={() => {
+                              setEditingAssignment(a);
+                              setEditAssignTitle(a.title);
+                              setEditAssignDesc(a.description);
+                              setEditAssignDueDate(new Date(a.dueDate).toISOString().slice(0, 16));
+                              setEditAssignIsHomework(a.isHomework);
+                              setEditAssignSectionId(a.sectionId || '');
+                              setAttachmentsList(a.attachments || []);
+                            }}
+                            className="px-2 py-1 bg-brand-500/10 hover:bg-brand-500/25 border border-brand-500/30 text-brand-400 rounded-md font-semibold inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Edit3 size={11} /> Edit
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteAssignment(a.id)}
+                            className="px-2 py-1 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-md font-semibold inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Trash2 size={11} /> Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -2941,92 +2970,56 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                       No quizzes published by you yet. Use the creator form on the left.
                     </div>
                   ) : (
-                    <div className="space-y-6">
-                      {quizzesList.map(quiz => {
-                        const quizAttempts = mockDb.quizAttempts.filter(a => a.quizId === quiz.id);
-                        
-                        return (
-                          <div key={quiz.id} className="p-4 bg-slate-950/20 border border-slate-850 rounded-2xl space-y-4">
-                            <div className="flex justify-between items-start border-b border-slate-850 pb-2">
-                              <div>
-                                <h4 className="font-bold text-slate-200 text-sm">{quiz.title}</h4>
-                                <p className="text-[10px] text-slate-400">Duration: {quiz.durationMinutes}m | Total Marks: {quiz.totalMarks}</p>
-                              </div>
-                              <div className="flex items-center gap-2">
-                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-brand-500/10 text-brand-400 border border-brand-500/20">
-                                  {quizAttempts.length} Attempts
-                                </span>
-                                <button
-                                  onClick={() => {
-                                    setEditingQuiz(quiz);
-                                    setEditQuizTitle(quiz.title);
-                                    setEditQuizDuration(quiz.durationMinutes);
-                                  }}
-                                  className="text-slate-400 hover:text-brand-400 transition-colors p-1"
-                                >
-                                  <Edit3 size={14} />
-                                </button>
-                                <button
-                                  onClick={() => handleDeleteQuiz(quiz.id)}
-                                  className="text-slate-400 hover:text-red-400 transition-colors p-1"
-                                >
-                                  <Trash2 size={14} />
-                                </button>
-                              </div>
-                            </div>
-
-                            <div className="space-y-2">
-                              {quizAttempts.length === 0 ? (
-                                <p className="text-[10px] text-slate-500 italic">No student has attempted this quiz yet.</p>
-                              ) : (
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-left text-[11px] border-collapse">
-                                    <thead>
-                                      <tr className="border-b border-slate-850 text-slate-500 font-bold uppercase tracking-wider">
-                                        <th className="py-2 px-1">Student Name</th>
-                                        <th className="py-2 px-1">Marks Scored</th>
-                                        <th className="py-2 px-1">Correct Ans</th>
-                                        <th className="py-2 px-1">Incorrect Ans</th>
-                                        <th className="py-2 px-1">Attempt Date</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-850 text-slate-300">
-                                      {quizAttempts.map(attempt => {
-                                        const student = mockDb.students.find(s => s.id === attempt.studentId);
-                                        const studentUser = student ? mockDb.users.find(u => u.id === student.userId) : null;
-                                        const name = studentUser ? `${studentUser.firstName} ${studentUser.lastName}` : 'Unknown Student';
-
-                                        // Calculate correct/incorrect counts
-                                        const questions = mockDb.quizQuestions.filter(q => q.quizId === quiz.id);
-                                        let correctCount = 0;
-                                        let incorrectCount = 0;
-                                        questions.forEach(q => {
-                                          const ans = attempt.answers ? attempt.answers[q.id] : undefined;
-                                          if (ans !== undefined && ans === q.correctOption) {
-                                            correctCount++;
-                                          } else {
-                                            incorrectCount++;
-                                          }
-                                        });
-
-                                        return (
-                                          <tr key={attempt.id} className="hover:bg-slate-900/15">
-                                            <td className="py-2 px-1 font-semibold text-slate-200">{name}</td>
-                                            <td className="py-2 px-1 font-bold text-slate-100">{attempt.score} / {quiz.totalMarks}</td>
-                                            <td className="py-2 px-1 text-green-400 font-bold">{correctCount}</td>
-                                            <td className="py-2 px-1 text-red-400 font-bold">{incorrectCount}</td>
-                                            <td className="py-2 px-1 text-slate-500 font-mono">{new Date(attempt.attemptedAt).toLocaleDateString()}</td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
+                    <div className="overflow-x-auto bg-slate-900/10 border border-slate-850/50 rounded-2xl">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-850 text-slate-400 font-bold">
+                            <th className="py-3 px-4">Quiz Title</th>
+                            <th className="py-3 px-4">Duration</th>
+                            <th className="py-3 px-4">Total Marks</th>
+                            <th className="py-3 px-4">Attempts</th>
+                            <th className="py-3 px-4 text-right">Actions</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850/60">
+                          {quizzesList.map(quiz => {
+                            const quizAttempts = mockDb.quizAttempts.filter(a => a.quizId === quiz.id);
+                            return (
+                              <tr key={quiz.id} className="hover:bg-slate-900/10 text-slate-200">
+                                <td className="py-3 px-4 font-semibold">{quiz.title}</td>
+                                <td className="py-3 px-4 text-slate-400">{quiz.durationMinutes} mins</td>
+                                <td className="py-3 px-4 text-slate-400">{quiz.totalMarks} pts</td>
+                                <td className="py-3 px-4">
+                                  <button
+                                    onClick={() => setSelectedQuizForAttempts(quiz)}
+                                    className="px-2 py-0.5 rounded-full bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/20 font-bold active:scale-95 transition-all cursor-pointer text-[10px]"
+                                  >
+                                    {quizAttempts.length} Attempts
+                                  </button>
+                                </td>
+                                <td className="py-3 px-4 text-right space-x-2">
+                                  <button
+                                    onClick={() => {
+                                      setEditingQuiz(quiz);
+                                      setEditQuizTitle(quiz.title);
+                                      setEditQuizDuration(quiz.durationMinutes);
+                                    }}
+                                    className="px-2 py-1 bg-brand-500/10 hover:bg-brand-500/25 border border-brand-500/30 text-brand-400 rounded-md font-semibold inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                                  >
+                                    <Edit3 size={11} /> Edit
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteQuiz(quiz.id)}
+                                    className="px-2 py-1 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-md font-semibold inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                                  >
+                                    <Trash2 size={11} /> Delete
+                                  </button>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
                     </div>
                   )}
                 </GlassCard>
@@ -3170,58 +3163,78 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             ) : materialsList.length === 0 ? (
               <p className="text-xs text-slate-500 italic border border-slate-850/50 bg-slate-900/20 p-4 rounded-xl text-center">No study materials uploaded yet.</p>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                {materialsList.map(m => (
-                  <GlassCard key={m.id} className="p-4 flex flex-col justify-between">
-                    <div>
-                      <div className="flex justify-between items-start mb-2">
-                        <h4 className="font-bold text-slate-100 text-sm">{m.title}</h4>
-                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold uppercase tracking-wider ${
-                          m.fileType === 'pdf' ? 'bg-red-500/20 text-red-400 border border-red-500/30' : 
-                          m.fileType === 'mp4' ? 'bg-brand-500/20 text-brand-400 border border-brand-500/30' : 
-                          'bg-blue-500/20 text-blue-400 border border-blue-500/30'
-                        }`}>
-                          {m.fileType}
-                        </span>
-                      </div>
-                      <p className="text-xs text-slate-400 line-clamp-2 mb-3">{m.description}</p>
-                      <div className="flex flex-wrap gap-2 text-[10px] text-slate-500 mb-4">
-                        <span className="flex items-center gap-1"><FileText size={12} /> {m.subjectName}</span>
-                        {m.isVideoStreamable && <span className="flex items-center gap-1 text-green-400"><Video size={12} /> Streamable</span>}
-                      </div>
-                    </div>
-                    
-                    <div className="flex gap-2 border-t border-slate-850 pt-3">
-                      <a 
-                        href={m.fileUrl} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="flex-1 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
-                      >
-                        <Eye size={12} /> View
-                      </a>
-                      <button 
-                        onClick={() => {
-                          setEditingMaterial(m);
-                          setEditMatTitle(m.title);
-                          setEditMatDesc(m.description || '');
-                          setEditMatUrl(m.fileUrl);
-                          setEditMatType(m.fileType);
-                          setEditMatStreamable(m.isVideoStreamable);
-                        }}
-                        className="flex-1 glass-btn-secondary text-xs flex items-center justify-center gap-1"
-                      >
-                        <Edit3 size={12} /> Edit
-                      </button>
-                      <button 
-                        onClick={() => handleDeleteMaterial(m.id)}
-                        className="flex-1 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition-colors"
-                      >
-                        <Trash2 size={12} /> Delete
-                      </button>
-                    </div>
-                  </GlassCard>
-                ))}
+              <div className="overflow-x-auto bg-slate-900/10 border border-slate-850/50 rounded-2xl">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-850 text-slate-400 font-bold">
+                      <th className="py-3 px-4">Title</th>
+                      <th className="py-3 px-4">Subject</th>
+                      <th className="py-3 px-4">File Type</th>
+                      <th className="py-3 px-4">Status</th>
+                      <th className="py-3 px-4 text-right">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850/60">
+                    {materialsList.map(m => (
+                      <tr key={m.id} className="hover:bg-slate-900/10 text-slate-200">
+                        <td className="py-3 px-4 font-semibold">
+                          <div>
+                            <p>{m.title}</p>
+                            <p className="text-[10px] text-slate-500 font-normal line-clamp-1">{m.description}</p>
+                          </div>
+                        </td>
+                        <td className="py-3 px-4 text-slate-400">{m.subjectName}</td>
+                        <td className="py-3 px-4">
+                          <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase ${
+                            m.fileType === 'pdf' ? 'bg-red-500/10 text-red-400 border border-red-500/20' : 
+                            m.fileType === 'mp4' ? 'bg-brand-500/10 text-brand-400 border border-brand-500/20' : 
+                            'bg-blue-500/10 text-blue-400 border border-blue-500/20'
+                          }`}>
+                            {m.fileType}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {m.isVideoStreamable ? (
+                            <span className="inline-flex items-center gap-1 text-[9px] font-semibold text-emerald-450">
+                              <Video size={10} /> Streamable
+                            </span>
+                          ) : (
+                            <span className="text-[9px] text-slate-500">Standard File</span>
+                          )}
+                        </td>
+                        <td className="py-3 px-4 text-right space-x-2">
+                          <a 
+                            href={m.fileUrl} 
+                            target="_blank" 
+                            rel="noopener noreferrer"
+                            className="px-2 py-1 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 rounded-md font-semibold inline-flex items-center gap-1 active:scale-95 transition-all text-[11px]"
+                          >
+                            <Eye size={11} /> View
+                          </a>
+                          <button 
+                            onClick={() => {
+                              setEditingMaterial(m);
+                              setEditMatTitle(m.title);
+                              setEditMatDesc(m.description || '');
+                              setEditMatUrl(m.fileUrl);
+                              setEditMatType(m.fileType);
+                              setEditMatStreamable(m.isVideoStreamable);
+                            }}
+                            className="px-2 py-1 bg-brand-500/10 hover:bg-brand-500/25 border border-brand-500/30 text-brand-400 rounded-md font-semibold inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Edit3 size={11} /> Edit
+                          </button>
+                          <button 
+                            onClick={() => handleDeleteMaterial(m.id)}
+                            className="px-2 py-1 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 text-red-400 rounded-md font-semibold inline-flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                          >
+                            <Trash2 size={11} /> Delete
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             )}
           </div>
@@ -3259,71 +3272,78 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                   </button>
                 </div>
 
-                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                <div className="overflow-x-auto bg-slate-900/10 border border-slate-850/50 rounded-xl">
                   {forumCategories.length === 0 ? (
                     <div className="text-center py-8 text-slate-500 text-xs">No active boards. Create one to begin!</div>
                   ) : (
-                    forumCategories.map(cat => {
-                      const classObj = mockDb.classes.find(c => c.id === cat.classId);
-                      const subObj = mockDb.subjects.find(s => s.id === cat.subjectId);
-                      const isSelected = selectedCategory?.id === cat.id;
-                      return (
-                        <div 
-                          key={cat.id}
-                          onClick={() => {
-                            setSelectedCategory(cat);
-                            setSelectedPost(null);
-                          }}
-                          className={`p-3 border rounded-xl cursor-pointer transition-all ${
-                            isSelected 
-                              ? 'bg-brand-600/10 border-brand-500/50 shadow-md' 
-                              : 'bg-slate-900/20 border-slate-850 hover:border-slate-800'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between">
-                            <div>
-                              <h4 className="font-semibold text-slate-200 text-xs">{cat.name}</h4>
-                              <p className="text-[10px] text-slate-400 mt-1 line-clamp-2 leading-relaxed">{cat.description}</p>
-                            </div>
-                            <div className="flex items-center gap-1 ml-2">
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleEditCategory(cat);
-                                }}
-                                className="p-1 hover:bg-slate-800 text-slate-400 hover:text-slate-200 rounded transition-colors"
-                              >
-                                <Edit3 size={12} />
-                              </button>
-                              <button 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  handleDeleteCategory(cat.id);
-                                }}
-                                className="p-1 hover:bg-slate-800 text-red-400 hover:text-red-300 rounded transition-colors"
-                              >
-                                <Trash2 size={12} />
-                              </button>
-                            </div>
-                          </div>
-
-                          {(classObj || subObj) && (
-                            <div className="flex flex-wrap gap-1 mt-2.5">
-                              {classObj && (
-                                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-indigo-500/10 text-indigo-400 border border-indigo-500/20">
-                                  {classObj.name}
-                                </span>
-                              )}
-                              {subObj && (
-                                <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                  {subObj.name}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })
+                    <table className="w-full text-left text-[11px] border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-850 text-slate-400 font-bold">
+                          <th className="py-2.5 px-3">Board</th>
+                          <th className="py-2.5 px-3">Scope</th>
+                          <th className="py-2.5 px-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850/60">
+                        {forumCategories.map(cat => {
+                          const classObj = mockDb.classes.find(c => c.id === cat.classId);
+                          const subObj = mockDb.subjects.find(s => s.id === cat.subjectId);
+                          const isSelected = selectedCategory?.id === cat.id;
+                          return (
+                            <tr 
+                              key={cat.id} 
+                              onClick={() => {
+                                setSelectedCategory(cat);
+                                setSelectedPost(null);
+                              }}
+                              className={`hover:bg-slate-900/10 cursor-pointer transition-colors ${
+                                isSelected ? 'bg-brand-600/10 text-brand-400 font-semibold' : 'text-slate-200'
+                              }`}
+                            >
+                              <td className="py-2.5 px-3">
+                                <div>
+                                  <p className="font-bold">{cat.name}</p>
+                                  <p className="text-[9px] text-slate-500 line-clamp-1 font-normal">{cat.description}</p>
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3">
+                                <div className="flex flex-col gap-0.5">
+                                  {classObj && (
+                                    <span className="text-[8px] font-bold text-indigo-400">
+                                      {classObj.name}
+                                    </span>
+                                  )}
+                                  {subObj && (
+                                    <span className="text-[8px] font-bold text-emerald-450">
+                                      {subObj.name}
+                                    </span>
+                                  )}
+                                  {!classObj && !subObj && (
+                                    <span className="text-[8px] font-bold text-slate-500">General</span>
+                                  )}
+                                </div>
+                              </td>
+                              <td className="py-2.5 px-3 text-right space-x-1" onClick={(e) => e.stopPropagation()}>
+                                <button 
+                                  onClick={() => handleEditCategory(cat)}
+                                  className="p-1 hover:bg-slate-850 text-slate-400 hover:text-slate-200 rounded transition-colors cursor-pointer"
+                                  title="Edit Board"
+                                >
+                                  <Edit3 size={11} />
+                                </button>
+                                <button 
+                                  onClick={() => handleDeleteCategory(cat.id)}
+                                  className="p-1 hover:bg-slate-800 text-red-400 hover:text-red-300 rounded transition-colors cursor-pointer"
+                                  title="Delete Board"
+                                >
+                                  <Trash2 size={11} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
                   )}
                 </div>
               </GlassCard>
@@ -4128,6 +4148,80 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
           </GlassCard>
         </div>
       )}
+
+      {/* Quiz Attempts Modal Overlay */}
+      {selectedQuizForAttempts && (() => {
+        const quizAttempts = mockDb.quizAttempts.filter(a => a.quizId === selectedQuizForAttempts.id);
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+            <GlassCard className="w-full max-w-2xl space-y-6 border-brand-500/25">
+              <div className="border-b border-slate-850 pb-3 flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-slate-100">Student Attempts & Performance</h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Quiz: {selectedQuizForAttempts.title} | {quizAttempts.length} Total Attempts</p>
+                </div>
+                <button onClick={() => setSelectedQuizForAttempts(null)} className="text-xs text-slate-400 hover:text-slate-200">
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="space-y-4">
+                {quizAttempts.length === 0 ? (
+                  <p className="text-xs text-slate-500 italic py-6 text-center">No student has attempted this quiz yet.</p>
+                ) : (
+                  <div className="overflow-x-auto bg-slate-900/20 border border-slate-850/60 rounded-xl">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-850 text-slate-400 font-bold uppercase tracking-wider">
+                          <th className="py-2.5 px-3">Student Name</th>
+                          <th className="py-2.5 px-3">Marks Scored</th>
+                          <th className="py-2.5 px-3">Correct Ans</th>
+                          <th className="py-2.5 px-3">Incorrect Ans</th>
+                          <th className="py-2.5 px-3">Attempt Date</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850 text-slate-300">
+                        {quizAttempts.map(attempt => {
+                          const student = mockDb.students.find(s => s.id === attempt.studentId);
+                          const studentUser = student ? mockDb.users.find(u => u.id === student.userId) : null;
+                          const name = studentUser ? `${studentUser.firstName} ${studentUser.lastName}` : 'Unknown Student';
+
+                          // Calculate correct/incorrect counts
+                          const questions = mockDb.quizQuestions.filter(q => q.quizId === selectedQuizForAttempts.id);
+                          let correctCount = 0;
+                          let incorrectCount = 0;
+                          questions.forEach(q => {
+                            const ans = attempt.answers ? attempt.answers[q.id] : undefined;
+                            if (ans !== undefined && ans === q.correctOption) {
+                              correctCount++;
+                            } else {
+                              incorrectCount++;
+                            }
+                          });
+
+                          return (
+                            <tr key={attempt.id} className="hover:bg-slate-900/15">
+                              <td className="py-2.5 px-3 font-semibold text-slate-200">{name}</td>
+                              <td className="py-2.5 px-3 font-bold text-slate-100">{attempt.score} / {selectedQuizForAttempts.totalMarks}</td>
+                              <td className="py-2.5 px-3 text-green-400 font-bold">{correctCount}</td>
+                              <td className="py-2.5 px-3 text-red-400 font-bold">{incorrectCount}</td>
+                              <td className="py-2.5 px-3 text-slate-500 font-mono">{new Date(attempt.attemptedAt).toLocaleDateString()}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button type="button" onClick={() => setSelectedQuizForAttempts(null)} className="glass-btn-secondary text-xs cursor-pointer">Close</button>
+              </div>
+            </GlassCard>
+          </div>
+        );
+      })()}
 
       {/* Class Timetable Edit Modal Overlay */}
       {isEditingManagedTt && (

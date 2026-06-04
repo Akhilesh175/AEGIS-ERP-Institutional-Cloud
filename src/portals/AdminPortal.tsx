@@ -9,13 +9,14 @@ import {
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
   Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Lock, Trash2, AlertTriangle, CheckCircle, AlertCircle, XCircle, Edit, CreditCard,
   Mail, Send, RefreshCw, Play, FileSpreadsheet, FileText, CheckSquare, Sliders, HardDrive, Download, ChevronRight, BarChart2, Clock, Settings, Shield, Search, Activity,
-  Award, BookOpen
+  Award, BookOpen, Home, UserCheck, UserX
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 import { OfflineSyncManager } from '../components/OfflineSyncManager';
 
-export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
+export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawActiveTab }) => {
+  const activeTab = rawActiveTab.split('/')[0];
   const { session, setSession, syncSubscriptionPlan } = useStore();
   const adminId = session?.user.id;
   const isAcademicOrSchoolAdmin = session?.user.role === 'ADMIN' || session?.user.role === 'ACADEMIC_ADMIN';
@@ -57,6 +58,117 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [examSubjects, setExamSubjects] = useState<any[]>([]);
   const [driverSalaryPayouts, setDriverSalaryPayouts] = useState<DriverSalaryPayout[]>([]);
   const [disbursingDriverId, setDisbursingDriverId] = useState<string | null>(null);
+
+  // Hostel Module state variables
+  const [hostels, setHostels] = useState<any[]>([]);
+  const [hostelBlocks, setHostelBlocks] = useState<any[]>([]);
+  const [hostelRooms, setHostelRooms] = useState<any[]>([]);
+  const [hostelBeds, setHostelBeds] = useState<any[]>([]);
+  const [hostelWardens, setHostelWardens] = useState<any[]>([]);
+  const [hostelAdmissions, setHostelAdmissions] = useState<any[]>([]);
+  const [hostelAttendance, setHostelAttendance] = useState<any[]>([]);
+  const [hostelFees, setHostelFees] = useState<any[]>([]);
+  const [hostelPayments, setHostelPayments] = useState<any[]>([]);
+  const [hostelLeaveRequests, setHostelLeaveRequests] = useState<any[]>([]);
+  const [hostelVisitors, setHostelVisitors] = useState<any[]>([]);
+  const [hostelComplaints, setHostelComplaints] = useState<any[]>([]);
+  const [hostelMessMenus, setHostelMessMenus] = useState<any[]>([]);
+
+  // Hostel Tab Selection derived from rawActiveTab
+  const activeTabParts = rawActiveTab.split('/');
+  const derivedSubTab = activeTabParts[1] || '';
+  const isWarden = session?.user.role === 'WARDEN';
+  const defaultSubTab = isWarden ? 'attendance' : 'structures';
+  const hostelSubTab = activeTab === 'hostel' ? (derivedSubTab || defaultSubTab) : '';
+
+  const setHostelSubTab = (subTab: string) => {
+    window.location.hash = `hostel/${subTab}`;
+  };
+
+  useEffect(() => {
+    if (activeTab === 'hostel' && !rawActiveTab.includes('/')) {
+      const isWarden = session?.user.role === 'WARDEN';
+      const defaultSubTab = isWarden ? 'attendance' : 'structures';
+      window.location.hash = `hostel/${defaultSubTab}`;
+    }
+  }, [activeTab, rawActiveTab, session?.user.role]);
+  useEffect(() => {
+    if (hostelSubTab) {
+      loadData();
+    }
+  }, [hostelSubTab]);
+  // Hostel Form Inputs
+  const [hName, setHName] = useState('');
+  const [hType, setHType] = useState<'BOYS' | 'GIRLS' | 'MIXED'>('MIXED');
+  const [hStatus, setHStatus] = useState<'ACTIVE' | 'INACTIVE'>('ACTIVE');
+  
+  const [hbHostelId, setHbHostelId] = useState('');
+  const [hbName, setHbName] = useState('');
+  
+  const [hrBlockId, setHrBlockId] = useState('');
+  const [hrFloor, setHrFloor] = useState(1);
+  const [hrRoomNumber, setHrRoomNumber] = useState('');
+  const [hrCapacity, setHrCapacity] = useState(2);
+  
+  const [hbedRoomId, setHbedRoomId] = useState('');
+  const [hbedName, setHbedName] = useState('');
+  
+  const [editWardenId, setEditWardenId] = useState<string | null>(null);
+
+  // Warden Creation Form States
+  const [wFirstName, setWFirstName] = useState('');
+  const [wLastName, setWLastName] = useState('');
+  const [wEmail, setWEmail] = useState('');
+  const [wPhone, setWPhone] = useState('');
+  const [wEmployeeId, setWEmployeeId] = useState('');
+  const [wGender, setWGender] = useState('MALE');
+  const [wAddress, setWAddress] = useState('');
+  const [wUsername, setWUsername] = useState('');
+  const [wPassword, setWPassword] = useState('');
+  const [wIsActive, setWIsActive] = useState(true);
+  const [wAssignedLocations, setWAssignedLocations] = useState<any[]>([]);
+
+  // Assigned Locations Selector States
+  const [wlHostelId, setWlHostelId] = useState('');
+  const [wlBlockId, setWlBlockId] = useState('');
+  const [wlFloor, setWlFloor] = useState<number | ''>('');
+  const [wlSection, setWlSection] = useState('');
+  
+  const [hadmStudentId, setHadmStudentId] = useState('');
+  const [hadmHostelId, setHadmHostelId] = useState('');
+  const [hadmRoomId, setHadmRoomId] = useState('');
+  const [hadmBedId, setHadmBedId] = useState('');
+  const [hadmAdmissionDate, setHadmAdmissionDate] = useState(new Date().toISOString().split('T')[0]);
+  
+  const [hvisName, setHvisName] = useState('');
+  const [hvisRelation, setHvisRelation] = useState('');
+  const [hvisStudentId, setHvisStudentId] = useState('');
+  const [hvisPurpose, setHvisPurpose] = useState('');
+  
+  const [hfeeName, setHfeeName] = useState('');
+  const [hfeeAmount, setHfeeAmount] = useState(0);
+  const [hfeeType, setHfeeType] = useState<'MONTHLY' | 'ANNUAL' | 'ONE_TIME' | 'MESS'>('MONTHLY');
+  const [hfeeDesc, setHfeeDesc] = useState('');
+  
+  const [hpayStudentId, setHpayStudentId] = useState('');
+  const [hpayFeeId, setHpayFeeId] = useState('');
+  const [hpayAmount, setHpayAmount] = useState(0);
+  const [hpayMethod, setHpayMethod] = useState<'CASH' | 'CARD' | 'ONLINE' | 'BANK_TRANSFER'>('CASH');
+  const [hpayTxId, setHpayTxId] = useState('');
+  
+  const [hmessHostelId, setHmessHostelId] = useState('');
+  const [hmessDay, setHmessDay] = useState(1);
+  const [hmessBreakfast, setHmessBreakfast] = useState('');
+  const [hmessLunch, setHmessLunch] = useState('');
+  const [hmessDinner, setHmessDinner] = useState('');
+  const [hmessSpecial, setHmessSpecial] = useState('');
+
+  // Warden specific attendance logger state
+  const [attSelectedRoomId, setAttSelectedRoomId] = useState('');
+  const [attSelectedSlot, setAttSelectedSlot] = useState<'MORNING' | 'EVENING'>('MORNING');
+  const [attSelectedDate, setAttSelectedDate] = useState(new Date().toISOString().split('T')[0]);
+  const [attStatusMap, setAttStatusMap] = useState<Record<string, 'PRESENT' | 'ABSENT' | 'LEAVE'>>({});
+
 
   // Directory Search states
   const [studentSearch, setStudentSearch] = useState('');
@@ -216,6 +328,60 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [editSubCode, setEditSubCode] = useState('');
   const [editSubDesc, setEditSubDesc] = useState('');
 
+  // Books Edit State
+  const [editingBook, setEditingBook] = useState<any | null>(null);
+  const [editBkTitle, setEditBkTitle] = useState('');
+  const [editBkAuthor, setEditBkAuthor] = useState('');
+  const [editBkIsbn, setEditBkIsbn] = useState('');
+  const [editBkSubject, setEditBkSubject] = useState('');
+  const [editBkCopies, setEditBkCopies] = useState(5);
+
+  // Categories Edit State
+  const [editingBookCategory, setEditingBookCategory] = useState<any | null>(null);
+  const [editBcName, setEditBcName] = useState('');
+  const [editBcCode, setEditBcCode] = useState('');
+  const [editBcDesc, setEditBcDesc] = useState('');
+
+  // Book Issues Edit State
+  const [editingBookIssue, setEditingBookIssue] = useState<any | null>(null);
+  const [editBiDueDate, setEditBiDueDate] = useState('');
+  const [editBiFineAmount, setEditBiFineAmount] = useState(0);
+  const [editBiStatus, setEditBiStatus] = useState('ISSUED');
+  const [editBiReturnDate, setEditBiReturnDate] = useState('');
+
+  // Digital Library Edit State
+  const [editingDigitalAsset, setEditingDigitalAsset] = useState<any | null>(null);
+  const [editDaTitle, setEditDaTitle] = useState('');
+  const [editDaAuthor, setEditDaAuthor] = useState('');
+  const [editDaType, setEditDaType] = useState('pdf');
+  const [editDaUrl, setEditDaUrl] = useState('');
+
+  // Transport Assignments Edit State
+  const [editingTransportAssignment, setEditingTransportAssignment] = useState<any | null>(null);
+  const [editTaBusId, setEditTaBusId] = useState('');
+  const [editTaRouteId, setEditTaRouteId] = useState('');
+  const [editTaPickupPointId, setEditTaPickupPointId] = useState('');
+
+  // Exams Edit State
+  const [editingExam, setEditingExam] = useState<any | null>(null);
+  const [editExName, setEditExName] = useState('');
+  const [editExTerm, setEditExTerm] = useState('TERM 1');
+  const [editExStart, setEditExStart] = useState('');
+  const [editExEnd, setEditExEnd] = useState('');
+
+  // Criteria Edit State
+  const [editingExamSubject, setEditingExamSubject] = useState<any | null>(null);
+  const [editEsMax, setEditEsMax] = useState(100);
+  const [editEsPass, setEditEsPass] = useState(40);
+
+  // Report Cards Edit State
+  const [editingReportCard, setEditingReportCard] = useState<any | null>(null);
+  const [editRcTerm, setEditRcTerm] = useState('TERM 1');
+  const [editRcAttendance, setEditRcAttendance] = useState(90);
+  const [editRcGpa, setEditRcGpa] = useState(0);
+  const [editRcRemarks, setEditRcRemarks] = useState('');
+  const [reportCards, setReportCards] = useState<any[]>([]);
+
   // Realtime Attendance Dashboard States
   const [attendanceSectionId, setAttendanceSectionId] = useState('');
   const [attendanceSessionId, setAttendanceSessionId] = useState('');
@@ -232,16 +398,18 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     { key: 'billing', label: 'Billing, Invoices & Driver Ledger' },
     { key: 'books', label: 'Library Catalog Management' },
     { key: 'transport', label: 'Transport Vehicles & Routes' },
+    { key: 'hostel', label: 'Hostel & Mess Management' },
     { key: 'security', label: 'System Audits & Backup Panels' }
   ];
 
   const [rbacPermissions, setRbacPermissions] = useState<Record<string, Record<string, boolean>>>({
-    FINANCE_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
-    ACADEMIC_ADMIN: { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true },
-    EXAM_CONTROLLER: { billing: false, directory: false, academics: true, grading: true, security: false, books: false, transport: false },
-    LIBRARIAN: { billing: false, directory: false, academics: true, grading: false, security: false, books: true, transport: false },
-    TRANSPORT_MANAGER: { billing: true, directory: false, academics: false, grading: false, security: false, books: false, transport: true },
-    CUSTOM_SUB_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false }
+    FINANCE_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
+    ACADEMIC_ADMIN: { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true, hostel: false },
+    EXAM_CONTROLLER: { billing: false, directory: false, academics: true, grading: true, security: false, books: false, transport: false, hostel: false },
+    LIBRARIAN: { billing: false, directory: false, academics: true, grading: false, security: false, books: true, transport: false, hostel: false },
+    TRANSPORT_MANAGER: { billing: true, directory: false, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
+    HOSTEL_ADMIN: { billing: false, directory: false, academics: false, grading: false, security: false, books: false, transport: false, hostel: true },
+    CUSTOM_SUB_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false, hostel: false }
   });
   const [rbacLoading, setRbacLoading] = useState(false);
   const [showAddSubAdmin, setShowAddSubAdmin] = useState(false);
@@ -249,7 +417,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [saFirst, setSaFirst] = useState('');
   const [saLast, setSaLast] = useState('');
   const [saPhone, setSaPhone] = useState('');
-  const [saRole, setSaRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER'>('FINANCE_ADMIN');
+  const [saRole, setSaRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN'>('FINANCE_ADMIN');
   const [saPassword, setSaPassword] = useState('password');
   const [saEmployeeId, setSaEmployeeId] = useState('');
 
@@ -259,7 +427,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [editFirst, setEditFirst] = useState('');
   const [editLast, setEditLast] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editRole, setEditRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN'>('FINANCE_ADMIN');
+  const [editRole, setEditRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN' | 'HOSTEL_ADMIN' | 'WARDEN'>('FINANCE_ADMIN');
   const [editEmployeeId, setEditEmployeeId] = useState('');
   const [editIsActive, setEditIsActive] = useState(true);
 
@@ -270,6 +438,49 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const [auditSearch, setAuditSearch] = useState('');
   const [auditModuleFilter, setAuditModuleFilter] = useState('all');
   const [expandedAuditLogId, setExpandedAuditLogId] = useState<string | null>(null);
+
+  const subAdminRoleDetails: Record<string, { name: string; description: string; permissions: string[] }> = {
+    FINANCE_ADMIN: {
+      name: 'Finance Admin',
+      description: 'Responsible for billing, invoices, payment structures, and fee tracking.',
+      permissions: ['billing', 'directory', 'transport']
+    },
+    ACADEMIC_ADMIN: {
+      name: 'Academic Admin',
+      description: 'Manages classes, sections, timetables, subjects, and study structures.',
+      permissions: ['directory', 'academics', 'grading', 'books', 'transport']
+    },
+    EXAM_CONTROLLER: {
+      name: 'Exam Controller',
+      description: 'Administers examinations, quiz configurations, marksheets, and grading books.',
+      permissions: ['directory', 'academics', 'grading']
+    },
+    LIBRARIAN: {
+      name: 'Librarian',
+      description: 'Manages library book inventory, issue/return logs, and late fee tracking.',
+      permissions: ['directory', 'academics', 'books']
+    },
+    TRANSPORT_MANAGER: {
+      name: 'Transport Manager',
+      description: 'Administers school buses, routes, driver information, and passenger maps.',
+      permissions: ['billing', 'directory', 'transport']
+    },
+    HOSTEL_ADMIN: {
+      name: 'Hostel Admin',
+      description: 'Responsible for hostels, blocks, floors, rooms, beds, admissions, leave requests, visitor logs, complaints, and mess menus.',
+      permissions: ['hostel']
+    },
+    WARDEN: {
+      name: 'Hostel Warden',
+      description: 'Responsible for daily hostel operations, attendance logging, and initial leave requests.',
+      permissions: ['hostel']
+    },
+    CUSTOM_SUB_ADMIN: {
+      name: 'Custom Operator',
+      description: 'Customizable operator role with custom-assigned modular access tags.',
+      permissions: ['billing', 'directory']
+    }
+  };
 
   const handleSaveRbacMatrix = async () => {
     if (!overview?.schoolId) return;
@@ -854,13 +1065,14 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
         mockApi.adminGetFeePayments()
       ]);
       setOverview(over);
-      setStudents(st);
-      setTeachers(tc);
-      setParents(pr);
-      setClasses(cls);
-      setSubjects(sub);
-      setFeeStructures(fees);
-      setFeePayments(pays);
+      setStudents(Array.from(new Map((st || []).map((s: any) => [s.id, s])).values()));
+      setTeachers(Array.from(new Map((tc || []).map((t: any) => [t.id, t])).values()));
+      setParents(Array.from(new Map((pr || []).map((p: any) => [p.id, p])).values()));
+      setClasses(Array.from(new Map((cls || []).map((c: any) => [c.id, c])).values()));
+      setSubjects(Array.from(new Map((sub || []).map((s: any) => [s.id, s])).values()));
+      setFeeStructures(Array.from(new Map((fees || []).map((f: any) => [f.id, f])).values()));
+      setFeePayments(Array.from(new Map((pays || []).map((p: any) => [p.id, p])).values()));
+      loadAcademicSessions();
 
       // Load RBAC dynamic permissions, operators, and audit logs from Supabase
       if (session?.user.schoolId) {
@@ -869,7 +1081,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             perms, ops, logs, inv, rc, dr, pk, da,
             busList, routeList, assignmentList, maintList, drAttList,
             categoryList, issueList, fineList, exList, exResList, qResList,
-            marksList, examSubList, payoutList, booksList
+            marksList, examSubList, payoutList, booksList,
+            hList, hbList, hrList, hbedList, hwList, hadmList, hattList, hfeeList, hpayList, hleaveList, hvisList, hcompList, hmenuList
           ] = await Promise.all([
             mockApi.fetchSchoolRolePermissions(session.user.schoolId),
             mockApi.fetchOperators(session.user.schoolId),
@@ -893,39 +1106,97 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             mockApi.fetchAllStudentMarks(session.user.schoolId),
             mockApi.fetchAllExamSubjects(session.user.schoolId),
             mockApi.fetchDriverSalaryPayouts(session.user.schoolId),
-            mockApi.fetchBookInventory(session.user.schoolId)
+            mockApi.fetchBookInventory(session.user.schoolId),
+            mockApi.fetchHostels(session.user.schoolId),
+            mockApi.fetchHostelBlocks(session.user.schoolId),
+            mockApi.fetchHostelRooms(session.user.schoolId),
+            mockApi.fetchHostelBeds(session.user.schoolId),
+            mockApi.fetchHostelWardens(session.user.schoolId),
+            mockApi.fetchHostelAdmissions(session.user.schoolId),
+            mockApi.fetchHostelAttendance(session.user.schoolId),
+            mockApi.fetchHostelFees(session.user.schoolId),
+            mockApi.fetchHostelPayments(session.user.schoolId),
+            mockApi.fetchHostelLeaveRequests(session.user.schoolId),
+            mockApi.fetchHostelVisitors(session.user.schoolId),
+            mockApi.fetchHostelComplaints(session.user.schoolId),
+            mockApi.fetchHostelMessMenus(session.user.schoolId)
           ]);
+
+          const uniqueOps = Array.from(new Map((ops || []).map((o: any) => [o.id, o])).values());
+          const uniqueLogs = Array.from(new Map((logs || []).map((l: any) => [l.id, l])).values());
+          const uniqueInv = Array.from(new Map((inv || []).map((i: any) => [i.id, i])).values());
+          const uniqueRc = Array.from(new Map((rc || []).map((r: any) => [r.id, r])).values());
+          const uniqueDr = Array.from(new Map((dr || []).map((d: any) => [d.id, d])).values());
+          const uniquePk = Array.from(new Map((pk || []).map((p: any) => [p.id, p])).values());
+          const uniqueDa = Array.from(new Map((da || []).map((d: any) => [d.id, d])).values());
+          
+          const uniqueBuses = Array.from(new Map((busList || []).map((b: any) => [b.id, b])).values());
+          const uniqueRoutes = Array.from(new Map((routeList || []).map((r: any) => [r.id, r])).values());
+          const uniqueAssignments = Array.from(new Map((assignmentList || []).map((a: any) => [a.id, a])).values());
+          const uniqueMaint = Array.from(new Map((maintList || []).map((m: any) => [m.id, m])).values());
+          const uniqueDrAtt = Array.from(new Map((drAttList || []).map((da: any) => [da.id, da])).values());
+          const uniquePayouts = Array.from(new Map((payoutList || []).map((p: any) => [p.id, p])).values());
+          
+          const uniqueCategories = Array.from(new Map((categoryList || []).map((c: any) => [c.id, c])).values());
+          const uniqueIssues = Array.from(new Map((issueList || []).map((i: any) => [i.id, i])).values());
+          const uniqueFines = Array.from(new Map((fineList || []).map((f: any) => [f.id, f])).values());
+          
+          const uniqueExams = Array.from(new Map((exList || []).map((e: any) => [e.id, e])).values());
+          const uniqueExamResults = Array.from(new Map((exResList || []).map((er: any) => [er.id, er])).values());
+          const uniqueQuizResults = Array.from(new Map((qResList || []).map((qr: any) => [qr.id, qr])).values());
+          const uniqueMarks = Array.from(new Map((marksList || []).map((m: any) => [m.id, m])).values());
+          const uniqueExamSubjects = Array.from(new Map((examSubList || []).map((es: any) => [es.id, es])).values());
+          const uniqueBooks = Array.from(new Map((booksList || []).map((b: any) => [b.id, b])).values());
+
           setRbacPermissions(perms);
-          setOperators(ops);
-          setAuditLogs(logs);
-          setInvoicesCount(inv.length);
-          setInvoicesAmount(inv.reduce((sum, i) => sum + Number(i.amount || 0), 0));
-          setReportCardsCount(rc.length);
-          setDriversCount(dr.length);
-          setPickupPointsCount(pk.length);
-          setDigitalAssetsCount(da.length);
-          setDriversList(dr);
-          setPickupPointsList(pk);
-          setDigitalAssetsList(da);
-          setBuses(busList);
-          setRoutes(routeList);
-          setTransportAssignments(assignmentList);
-          setMaintenanceLogs(maintList);
-          setDriverAttendanceList(drAttList);
-          setDriverSalaryPayouts(payoutList);
-          setBookCategories(categoryList);
-          setBookIssues(issueList);
-          setLibraryFines(fineList);
-          setExamsList(exList);
-          setExamResults(exResList);
-          setQuizResults(qResList);
-          setStudentMarks(marksList);
-          setExamSubjects(examSubList);
-          setBooks(booksList || []);
+          setOperators(uniqueOps);
+          setAuditLogs(uniqueLogs);
+          setInvoicesCount(uniqueInv.length);
+          setInvoicesAmount(uniqueInv.reduce((sum, i) => sum + Number(i.amount || 0), 0));
+          setReportCardsCount(uniqueRc.length);
+          setReportCards(uniqueRc);
+          setDriversCount(uniqueDr.length);
+          setPickupPointsCount(uniquePk.length);
+          setDigitalAssetsCount(uniqueDa.length);
+          setDriversList(uniqueDr);
+          setPickupPointsList(uniquePk);
+          setDigitalAssetsList(uniqueDa);
+          setBuses(uniqueBuses);
+          setRoutes(uniqueRoutes);
+          setTransportAssignments(uniqueAssignments);
+          setMaintenanceLogs(uniqueMaint);
+          setDriverAttendanceList(uniqueDrAtt);
+          setDriverSalaryPayouts(uniquePayouts);
+          setBookCategories(uniqueCategories);
+          setBookIssues(uniqueIssues);
+          setLibraryFines(uniqueFines);
+          setExamsList(uniqueExams);
+          setExamResults(uniqueExamResults);
+          setQuizResults(uniqueQuizResults);
+          setStudentMarks(uniqueMarks);
+          setExamSubjects(uniqueExamSubjects);
+          setBooks(uniqueBooks);
+
+          setHostels(hList || []);
+          setHostelBlocks(hbList || []);
+          setHostelRooms(hrList || []);
+          setHostelBeds(hbedList || []);
+          setHostelWardens(hwList || []);
+          setHostelAdmissions(hadmList || []);
+          setHostelAttendance(hattList || []);
+          setHostelFees(hfeeList || []);
+          setHostelPayments(hpayList || []);
+          setHostelLeaveRequests(hleaveList || []);
+          setHostelVisitors(hvisList || []);
+          setHostelComplaints(hcompList || []);
+          setHostelMessMenus(hmenuList || []);
         } catch (err) {
           console.error("Failed to load RBAC data from Supabase:", err);
         }
       }
+
+
+
 
 
       // Dynamically load only this school's user emails if bulkEmails is currently empty or default
@@ -1004,6 +1275,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
     const handleAdminSync = () => {
       console.log('Realtime administration update detected, refreshing admin portal directories...');
+      if (session?.user.schoolId) {
+        mockApi.clearHostelCache(session.user.schoolId);
+      }
       syncSubscriptionPlan();
       loadData();
       loadAcademicSessions();
@@ -1041,13 +1315,397 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exams' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'report_cards' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostels' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_blocks' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_rooms' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_beds' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_wardens' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_admissions' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_attendance' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_leave_requests' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_visitors' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_complaints' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_mess_menu' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_fees' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_payments' }, handleAdminSync)
       .subscribe();
-
 
     return () => {
       supabase.removeChannel(channel);
     };
   }, [adminId]);
+
+
+  // --- Hostel Handlers ---
+  const handleCreateHostel = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !hName) return;
+    try {
+      await mockApi.createHostel(session.user.schoolId, hName, hType, hStatus);
+      setHName('');
+      loadData();
+      alert('Hostel building created successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create hostel');
+    }
+  };
+
+  const handleDeleteHostel = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this hostel? All associated blocks, rooms, and beds will be removed.')) return;
+    try {
+      await mockApi.deleteHostel(id);
+      loadData();
+      alert('Hostel deleted successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete hostel');
+    }
+  };
+
+  const handleCreateBlock = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !hbHostelId || !hbName) return;
+    try {
+      await mockApi.createHostelBlock(session.user.schoolId, hbHostelId, hbName, 'ACTIVE');
+      setHbName('');
+      loadData();
+      alert('Hostel block created successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create block');
+    }
+  };
+
+  const handleDeleteBlock = async (id: string) => {
+    if (!window.confirm('Delete this block and all its rooms/beds?')) return;
+    try {
+      await mockApi.deleteHostelBlock(id);
+      loadData();
+      alert('Block deleted successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete block');
+    }
+  };
+
+  const handleCreateRoom = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !hrBlockId || !hrRoomNumber) return;
+    try {
+      await mockApi.createHostelRoom(session.user.schoolId, hrBlockId, hrFloor, hrRoomNumber, hrCapacity, 'ACTIVE');
+      setHrRoomNumber('');
+      loadData();
+      alert('Hostel room configured successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to configure room');
+    }
+  };
+
+  const handleDeleteRoom = async (id: string) => {
+    if (!window.confirm('Delete this room and its bed allocations?')) return;
+    try {
+      await mockApi.deleteHostelRoom(id);
+      loadData();
+      alert('Room deleted successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete room');
+    }
+  };
+
+  const handleCreateBed = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !hbedRoomId || !hbedName) return;
+    try {
+      await mockApi.createHostelBed(session.user.schoolId, hbedRoomId, hbedName);
+      setHbedName('');
+      loadData();
+      alert('Hostel bed created successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create bed');
+    }
+  };
+
+  const handleDeleteBed = async (id: string) => {
+    if (!window.confirm('Delete this bed?')) return;
+    try {
+      await mockApi.deleteHostelBed(id);
+      loadData();
+      alert('Bed deleted successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete bed');
+    }
+  };
+
+  const clearWardenForm = () => {
+    setEditWardenId(null);
+    setWFirstName('');
+    setWLastName('');
+    setWEmail('');
+    setWPhone('');
+    setWEmployeeId('');
+    setWGender('MALE');
+    setWAddress('');
+    setWUsername('');
+    setWPassword('');
+    setWIsActive(true);
+    setWAssignedLocations([]);
+    setWlHostelId('');
+    setWlBlockId('');
+    setWlFloor('');
+    setWlSection('');
+  };
+
+  const handleSaveWarden = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId) return;
+    try {
+      if (editWardenId) {
+        await mockApi.updateHostelWarden(editWardenId, {
+          firstName: wFirstName,
+          lastName: wLastName,
+          email: wEmail,
+          phone: wPhone,
+          employeeId: wEmployeeId,
+          username: wUsername,
+          gender: wGender,
+          address: wAddress,
+          isActive: wIsActive,
+          assignedLocations: wAssignedLocations
+        });
+        alert('Warden profile updated successfully!');
+      } else {
+        if (!wPassword) {
+          alert('Password is required when creating a new warden account.');
+          return;
+        }
+        await mockApi.adminCreateSubAdmin(
+          session.user.id,
+          wEmail,
+          wFirstName,
+          wLastName,
+          wPhone,
+          'WARDEN',
+          wPassword,
+          wEmployeeId || undefined,
+          wUsername || undefined,
+          wGender,
+          wAddress || undefined,
+          wAssignedLocations,
+          wIsActive
+        );
+        alert('Warden account created successfully!');
+      }
+      clearWardenForm();
+      loadData();
+    } catch (err: any) {
+      alert(err.message || 'Failed to save warden');
+    }
+  };
+
+  const handleAddAssignedLocation = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!wlHostelId) {
+      alert('Please select a building.');
+      return;
+    }
+    const bld = hostels.find(h => h.id === wlHostelId);
+    const blk = hostelBlocks.find(b => b.id === wlBlockId);
+    
+    const dup = wAssignedLocations.some(
+      loc =>
+        loc.buildingId === wlHostelId &&
+        loc.blockId === (wlBlockId || null) &&
+        loc.floor === (wlFloor !== '' ? Number(wlFloor) : null) &&
+        loc.section === (wlSection || null)
+    );
+    if (dup) {
+      alert('This location assignment already exists.');
+      return;
+    }
+    
+    const newLoc = {
+      buildingId: wlHostelId,
+      buildingName: bld ? bld.name : 'Unknown Building',
+      blockId: wlBlockId || null,
+      blockName: blk ? blk.name : null,
+      floor: wlFloor !== '' ? Number(wlFloor) : null,
+      section: wlSection || null
+    };
+    
+    setWAssignedLocations([...wAssignedLocations, newLoc]);
+    setWlHostelId('');
+    setWlBlockId('');
+    setWlFloor('');
+    setWlSection('');
+  };
+
+  const handleRemoveAssignedLocation = (index: number) => {
+    setWAssignedLocations(wAssignedLocations.filter((_, idx) => idx !== index));
+  };
+
+  const handleDeleteWarden = async (id: string) => {
+    if (!window.confirm('Delete this warden and their login account permanently?')) return;
+    try {
+      await mockApi.deleteHostelWarden(id);
+      loadData();
+      alert('Warden deleted successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove warden');
+    }
+  };
+
+  const handleEditWardenClick = (w: any) => {
+    setEditWardenId(w.id);
+    const usrObj = mockDb.users.find(u => u.id === w.userId) || w.userDetails || null;
+    setWFirstName(usrObj?.firstName || '');
+    setWLastName(usrObj?.lastName || '');
+    setWEmail(usrObj?.email || '');
+    setWPhone(w.phone || usrObj?.phone || '');
+    setWEmployeeId(usrObj?.employeeId || '');
+    setWGender(w.gender || 'MALE');
+    setWAddress(w.address || '');
+    setWUsername(w.username || '');
+    setWPassword('');
+    setWIsActive(usrObj?.isActive !== false);
+    setWAssignedLocations(w.assignedLocations || []);
+  };
+
+  const handleAdmitStudent = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !hadmStudentId || !hadmHostelId || !hadmRoomId || !hadmBedId) return;
+    try {
+      await mockApi.admitStudentToHostel(session.user.schoolId, hadmStudentId, hadmHostelId, hadmRoomId, hadmBedId, hadmAdmissionDate);
+      setHadmStudentId('');
+      setHadmBedId('');
+      loadData();
+      alert('Student hostel admission recorded successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to record admission');
+    }
+  };
+
+  const handleCheckoutAdmission = async (id: string) => {
+    if (!window.confirm('Confirm check-out for this student? This will vacate the assigned bed.')) return;
+    try {
+      await mockApi.checkoutStudentFromHostel(id, new Date().toISOString().split('T')[0]);
+      loadData();
+      alert('Student checked out successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to check-out');
+    }
+  };
+
+  const handleDeleteHostelAdmission = async (id: string) => {
+    if (!window.confirm('Delete this admission record completely?')) return;
+    try {
+      await mockApi.deleteHostelAdmission(id);
+      loadData();
+      alert('Record deleted.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete record');
+    }
+  };
+
+  const handleSaveHostelAttendance = async () => {
+    if (!session?.user.schoolId || !attSelectedRoomId || !attSelectedDate) return;
+    try {
+      const roomAdms = hostelAdmissions.filter(a => a.roomId === attSelectedRoomId && a.status === 'ACTIVE');
+      for (const adm of roomAdms) {
+        const status = attStatusMap[adm.studentId] || 'PRESENT';
+        await mockApi.recordHostelAttendance(session.user.schoolId, adm.studentId, attSelectedDate, attSelectedSlot, status, session.user.id);
+      }
+      loadData();
+      alert('Hostel attendance logged successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to log attendance');
+    }
+  };
+
+  const handleApproveLeave = async (id: string, role: 'PARENT' | 'WARDEN' | 'HOSTEL_ADMIN' | 'SCHOOL_ADMIN', status: 'APPROVED' | 'REJECTED' | 'HOLD') => {
+    try {
+      await mockApi.approveHostelLeaveRequest(id, role, status, session?.user.id || '');
+      loadData();
+      alert(`Leave request updated: ${role.replace('_', ' ')} status is now ${status}`);
+    } catch (err: any) {
+      alert(err.message || 'Error processing leave request');
+    }
+  };
+
+  const handleCreateVisitor = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !hvisName || !hvisRelation || !hvisStudentId || !hvisPurpose) return;
+    try {
+      await mockApi.createHostelVisitor(session.user.schoolId, hvisName, hvisRelation, hvisStudentId, hvisPurpose);
+      setHvisName('');
+      setHvisRelation('');
+      setHvisStudentId('');
+      setHvisPurpose('');
+      loadData();
+      alert('Visitor log recorded successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create visitor entry');
+    }
+  };
+
+  const handleCheckoutVisitor = async (id: string) => {
+    try {
+      await mockApi.checkoutHostelVisitor(id);
+      loadData();
+      alert('Visitor checked out.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to checkout visitor');
+    }
+  };
+
+  const handleUpdateComplaint = async (id: string, status: 'ASSIGNED' | 'RESOLVED' | 'CLOSED', staff?: string, notes?: string) => {
+    try {
+      await mockApi.updateHostelComplaint(id, status, staff, notes);
+      loadData();
+      alert(`Complaint status updated to ${status.toLowerCase()}!`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update complaint');
+    }
+  };
+
+  const handleSaveMessMenu = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !hmessHostelId || !hmessBreakfast || !hmessLunch || !hmessDinner) return;
+    try {
+      await mockApi.saveHostelMessMenu(session.user.schoolId, hmessHostelId, hmessDay, hmessBreakfast, hmessLunch, hmessDinner, hmessSpecial);
+      loadData();
+      alert('Mess menu saved successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to save mess menu');
+    }
+  };
+
+  const handleCreateHostelFee = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !hfeeName || hfeeAmount <= 0) return;
+    try {
+      await mockApi.createHostelFee(session.user.schoolId, hfeeName, hfeeAmount, hfeeType, hfeeDesc);
+      setHfeeName('');
+      setHfeeAmount(0);
+      setHfeeDesc('');
+      loadData();
+      alert('Hostel fee structure created successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create fee structure');
+    }
+  };
+
+  const handleRecordHostelPayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId || !hpayStudentId || !hpayFeeId || hpayAmount <= 0) return;
+    try {
+      await mockApi.recordHostelPayment(session.user.schoolId, hpayStudentId, hpayFeeId, hpayAmount, hpayMethod, hpayTxId);
+      setHpayStudentId('');
+      setHpayFeeId('');
+      setHpayAmount(0);
+      setHpayTxId('');
+      loadData();
+      alert('Hostel payment recorded successfully, synced with financial invoicing.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to record payment');
+    }
+  };
 
   // --- Transport Handlers ---
   const handleCreateBus = async (e: React.FormEvent) => {
@@ -1199,6 +1857,177 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       loadData();
     } catch (err: any) {
       alert(err.message || 'Failed to save attendance');
+    }
+  };
+
+  // --- Library & Exam CRUD Handlers ---
+  const handleUpdateBook = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBook) return;
+    try {
+      await mockApi.updateBook(editingBook.id, editBkTitle.trim(), editBkAuthor.trim(), editBkIsbn.trim(), editBkSubject.trim(), editBkCopies);
+      setEditingBook(null);
+      loadData();
+      alert('Book catalog updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update book');
+    }
+  };
+
+  const handleDeleteBook = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this book?')) return;
+    try {
+      await mockApi.deleteBook(id);
+      loadData();
+      alert('Book deleted successfully.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete book');
+    }
+  };
+
+  const handleUpdateBookCategory = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBookCategory) return;
+    try {
+      await mockApi.updateBookCategory(editingBookCategory.id, editBcName.trim(), editBcCode.trim(), editBcDesc.trim());
+      setEditingBookCategory(null);
+      loadData();
+      alert('Category updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update category');
+    }
+  };
+
+  const handleUpdateBookIssue = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingBookIssue) return;
+    try {
+      await mockApi.updateBookIssue(editingBookIssue.id, editBiDueDate, editBiFineAmount, editBiStatus, editBiReturnDate || undefined);
+      setEditingBookIssue(null);
+      loadData();
+      alert('Book issue details updated!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update book issue');
+    }
+  };
+
+  const handleDeleteBookIssue = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this book issue record?')) return;
+    try {
+      await mockApi.deleteBookIssue(id);
+      loadData();
+      alert('Book issue record deleted.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete record');
+    }
+  };
+
+  const handleUpdateDigitalAsset = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingDigitalAsset) return;
+    try {
+      await mockApi.updateDigitalLibraryAsset(editingDigitalAsset.id, editDaTitle.trim(), editDaAuthor.trim(), editDaUrl.trim(), editDaType);
+      setEditingDigitalAsset(null);
+      loadData();
+      alert('Digital asset metadata updated!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update asset');
+    }
+  };
+
+  const handleDeleteDigitalAsset = async (id: string) => {
+    if (!window.confirm('Delete this digital asset?')) return;
+    try {
+      await mockApi.deleteDigitalLibraryAsset(id);
+      loadData();
+      alert('Digital asset deleted.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete asset');
+    }
+  };
+
+  const handleUpdateTransportAssignment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingTransportAssignment) return;
+    try {
+      await mockApi.updateTransportAssignment(editingTransportAssignment.id, editTaBusId, editTaRouteId, editTaPickupPointId);
+      setEditingTransportAssignment(null);
+      loadData();
+      alert('Transport assignment updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update transport assignment');
+    }
+  };
+
+  const handleUpdateExam = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingExam) return;
+    try {
+      await mockApi.updateExam(editingExam.id, editExName.trim(), editExTerm, editExStart, editExEnd);
+      setEditingExam(null);
+      loadData();
+      alert('Exam details updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update exam');
+    }
+  };
+
+  const handleUpdateExamSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingExamSubject) return;
+    try {
+      await mockApi.updateExamSubject(editingExamSubject.id, editEsMax, editEsPass);
+      setEditingExamSubject(null);
+      loadData();
+      alert('Subject criteria updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update criteria');
+    }
+  };
+
+  const handleDeleteExamSubject = async (id: string) => {
+    if (!window.confirm('Delete subject criteria mapping?')) return;
+    try {
+      await mockApi.deleteExamSubject(id);
+      loadData();
+      alert('Subject criteria mapping removed.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete criteria');
+    }
+  };
+
+  const handleDeleteStudentMark = async (id: string) => {
+    if (!window.confirm('Remove student mark record?')) return;
+    try {
+      await mockApi.deleteStudentMark(id);
+      loadData();
+      alert('Student mark record removed.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete student mark');
+    }
+  };
+
+  const handleUpdateReportCard = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingReportCard) return;
+    try {
+      await mockApi.updateReportCard(editingReportCard.id, editRcTerm, editRcAttendance, editRcGpa, editRcRemarks.trim());
+      setEditingReportCard(null);
+      loadData();
+      alert('Report card updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update report card');
+    }
+  };
+
+  const handleDeleteReportCard = async (id: string) => {
+    if (!window.confirm('Are you sure you want to delete this report card?')) return;
+    try {
+      await mockApi.deleteReportCard(id);
+      loadData();
+      alert('Report card deleted.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete report card');
     }
   };
 
@@ -1359,7 +2188,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
     e.preventDefault();
     if (!session?.user.schoolId || !exName.trim() || !exStart || !exEnd) return;
     try {
-      await mockApi.createExam(session.user.schoolId, session.user.academicSessionId || '', exName.trim(), exTerm, exStart, exEnd);
+      const activeSess = academicSessionsList.find(s => s.isCurrent) || academicSessionsList[0];
+      const activeSessId = activeSess?.id || session.user.academicSessionId || '';
+      await mockApi.createExam(session.user.schoolId, activeSessId, exName.trim(), exTerm, exStart, exEnd);
       setExName('');
       setExStart('');
       setExEnd('');
@@ -1395,17 +2226,21 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
   const handleSaveStudentMarks = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!session?.user.schoolId || !meExamId || !meSubjectId) return;
+    if (!session?.user.schoolId || !meExamId || !meSubjectId || !meClassId) return;
     try {
-      const studentIds = Object.keys(meMarks);
-      for (const stId of studentIds) {
+      const filteredStudents = students.filter(s => s.classId === meClassId);
+      for (const s of filteredStudents) {
+        const existingMark = studentMarks.find(sm => sm.studentId === s.id && sm.examId === meExamId && sm.subjectId === meSubjectId);
+        const marksObtained = meMarks[s.id] ?? existingMark?.marksObtained ?? 0;
+        const remarks = meRemarks[s.id] ?? existingMark?.remarks ?? '';
+        
         await mockApi.enterStudentMarks(
           session.user.schoolId,
           meExamId,
           meSubjectId,
-          stId,
-          meMarks[stId] || 0,
-          meRemarks[stId] || ''
+          s.id,
+          marksObtained,
+          remarks
         );
       }
       alert('Student marks saved successfully!');
@@ -1915,6 +2750,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
     if (activeTab === 'books') return rolePerms.books;
     if (activeTab === 'transport') return rolePerms.transport;
+    if (activeTab === 'hostel') {
+      if (session?.user.role === 'HOSTEL_ADMIN' || session?.user.role === 'WARDEN') return true;
+      return (rolePerms as any)?.hostel || false;
+    }
     
     return true;
   };
@@ -1940,7 +2779,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
 
 
 
-  const isSubAdmin = ['FINANCE_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'ACADEMIC_ADMIN', 'CUSTOM_SUB_ADMIN'].includes(session?.user.role || '');
+  const isSubAdmin = ['FINANCE_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'ACADEMIC_ADMIN', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN'].includes(session?.user.role || '');
 
   if (isSubAdmin && currentPlanName !== 'enterprise') {
     return (
@@ -2500,12 +3339,14 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 onChange={(e) => setTeacherSearch(e.target.value)}
                 className="bg-slate-950 border border-slate-800 text-slate-200 rounded-xl px-3 py-1.5 text-xs focus:outline-none w-full sm:w-48"
               />
-              <button 
-                onClick={() => setShowMapTeacher(true)}
-                className="glass-btn-primary text-xs flex items-center gap-1 shrink-0"
-              >
-                <Link size={14} /> Map Faculty
-              </button>
+              {(session?.user.role === 'ADMIN' || session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'ACADEMIC_ADMIN') && (
+                <button 
+                  onClick={() => setShowMapTeacher(true)}
+                  className="glass-btn-primary text-xs flex items-center gap-1 shrink-0"
+                >
+                  <Link size={14} /> Map Faculty
+                </button>
+              )}
               <button 
                 onClick={() => setShowAddTeacher(true)}
                 disabled={overview?.totalTeachers >= overview?.subscription.limits.maxTeachers}
@@ -4003,7 +4844,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
       )}
 
       {/* Assign Class Teacher Drawer overlay */}
-      {showMapTeacher && (
+      {showMapTeacher && (session?.user.role === 'ADMIN' || session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'ACADEMIC_ADMIN') && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
           <GlassCard className="w-full max-w-md space-y-4">
             <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
@@ -5576,7 +6417,28 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   <option value="EXAM_CONTROLLER">Exam Controller & Grader</option>
                   <option value="LIBRARIAN">School Librarian</option>
                   <option value="TRANSPORT_MANAGER">Transport Fleet Manager</option>
+                  <option value="HOSTEL_ADMIN">Hostel Administrator</option>
+                  <option value="WARDEN">Hostel Warden</option>
                 </select>
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2 mt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-brand-400 font-mono">ROLE PROFILE: {subAdminRoleDetails[saRole]?.name}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-900 border border-brand-500/10 text-[8px] font-bold text-slate-400">Default Access Card</span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 font-medium">{subAdminRoleDetails[saRole]?.description}</p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {rbacModules.map(m => {
+                      const isAllowed = subAdminRoleDetails[saRole]?.permissions.includes(m.key);
+                      return (
+                        <span key={m.key} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase ${isAllowed ? 'bg-green-500/10 text-green-400 border border-green-500/25' : 'bg-red-500/10 text-red-400 border border-red-500/25'}`}>
+                          {m.label.split(' ')[0]}: {isAllowed ? 'Allowed' : 'Blocked'}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">First Name</label>
@@ -5661,8 +6523,29 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   <option value="EXAM_CONTROLLER">Exam Controller & Grader</option>
                   <option value="LIBRARIAN">School Librarian</option>
                   <option value="TRANSPORT_MANAGER">Transport Fleet Manager</option>
+                  <option value="HOSTEL_ADMIN">Hostel Administrator</option>
+                  <option value="WARDEN">Hostel Warden</option>
                   <option value="CUSTOM_SUB_ADMIN">Custom Operator</option>
                 </select>
+              </div>
+              <div className="space-y-1 sm:col-span-2">
+                <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-xl space-y-2 mt-1">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-bold text-brand-400 font-mono">ROLE PROFILE: {subAdminRoleDetails[editRole]?.name}</span>
+                    <span className="px-2 py-0.5 rounded-full bg-slate-900 border border-brand-500/10 text-[8px] font-bold text-slate-400">Default Access Card</span>
+                  </div>
+                  <p className="text-[10px] text-slate-300 font-medium">{subAdminRoleDetails[editRole]?.description}</p>
+                  <div className="flex flex-wrap gap-1.5 pt-1">
+                    {rbacModules.map(m => {
+                      const isAllowed = subAdminRoleDetails[editRole]?.permissions.includes(m.key);
+                      return (
+                        <span key={m.key} className={`px-2 py-0.5 rounded text-[8px] font-bold uppercase ${isAllowed ? 'bg-green-500/10 text-green-400 border border-green-500/25' : 'bg-red-500/10 text-red-400 border border-red-500/25'}`}>
+                          {m.label.split(' ')[0]}: {isAllowed ? 'Allowed' : 'Blocked'}
+                        </span>
+                      );
+                    })}
+                  </div>
+                </div>
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">First Name</label>
@@ -6116,7 +6999,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                             <span className="text-brand-400 font-bold">[{route ? route.routeCode : 'N/A'}]</span> {pp ? pp.name : 'N/A'}
                           </td>
                           <td className="py-2 px-3 text-right">
-                            <button onClick={() => handleDeleteTransportAssignment(ta.id)} className="text-slate-500 hover:text-red-400 p-1"><Trash2 size={12} /></button>
+                            <div className="flex items-center justify-end gap-1.5">
+                              <button type="button" onClick={() => { setEditingTransportAssignment(ta); setEditTaBusId(ta.busId); setEditTaRouteId(ta.routeId); setEditTaPickupPointId(ta.pickupPointId || ''); }} className="text-brand-400 hover:text-brand-300 p-0.5" title="Edit"><Edit size={11} /></button>
+                              <button type="button" onClick={() => handleDeleteTransportAssignment(ta.id)} className="text-slate-550 hover:text-red-400 p-1" title="Delete"><Trash2 size={12} /></button>
+                            </div>
                           </td>
                         </tr>
                       );
@@ -6127,6 +7013,1335 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
             </GlassCard>
           </div>
         </div>
+        </PremiumLock>
+      )}
+
+      {activeTab === 'hostel' && (
+        <PremiumLock 
+          isLocked={currentPlanName !== 'enterprise'} 
+          requiredTier="Enterprise" 
+          featureName="Granular Hostel & Roster Management"
+        >
+          <div className="space-y-6 animate-fade-in text-xs">
+            {/* Header */}
+            <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                  <Home className="text-brand-400" size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-100 text-sm">Hostel & Housing Roster Registry</h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Manage building layouts, room capacities, warden mappings, student check-ins, visitor entries, complaint files, and weekly menus.</p>
+                </div>
+              </div>
+            </GlassCard>
+
+            {/* Sub Tabs Selection */}
+            {(() => {
+              const isWarden = session?.user.role === 'WARDEN';
+              const hostelTabs = isWarden 
+                ? [
+                    { id: 'attendance', label: 'Warden Attendance Roll' },
+                    { id: 'admissions', label: 'Admissions & Vacancies' },
+                    { id: 'leaves', label: 'Student Leave Requests' },
+                    { id: 'visitors', label: 'Visitor Check-in Log' },
+                    { id: 'complaints', label: 'Complaint Files' },
+                    { id: 'menu', label: 'Weekly Mess Menu' }
+                  ]
+                : [
+                    { id: 'structures', label: 'Hostel Structures' },
+                    { id: 'wardens', label: 'Warden Assignment' },
+                    { id: 'admissions', label: 'Admissions & Vacancies' },
+                    { id: 'attendance', label: 'Daily Attendance' },
+                    { id: 'leaves', label: 'Leave Workflows' },
+                    { id: 'visitors', label: 'Visitors Log' },
+                    { id: 'complaints', label: 'Complaints Office' },
+                    { id: 'menu', label: 'Mess Planners' },
+                    { id: 'fees', label: 'Fees & Invoicing' }
+                  ];
+
+              return (
+                <div className="space-y-6">
+                  {/* Sub tab nav */}
+                  <div className="flex flex-wrap gap-2 border-b border-slate-850 pb-3">
+                    {hostelTabs.map(t => (
+                      <button
+                        key={t.id}
+                        onClick={() => setHostelSubTab(t.id)}
+                        className={`px-3 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                          hostelSubTab === t.id 
+                            ? 'bg-brand-500 text-white shadow-lg shadow-brand-500/20' 
+                            : 'bg-slate-900/50 hover:bg-slate-900 text-slate-400 hover:text-slate-200 border border-slate-850'
+                        }`}
+                      >
+                        {t.label}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 1. Hostel Structures Sub-tab */}
+                  {hostelSubTab === 'structures' && !isWarden && (
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                      {/* Left: Building & Blocks */}
+                      <div className="lg:col-span-2 space-y-6">
+                        <GlassCard className="space-y-4">
+                          <h4 className="font-bold text-slate-200 text-xs">Register Building</h4>
+                          <form onSubmit={handleCreateHostel} className="space-y-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Building Name</label>
+                              <input type="text" value={hName} onChange={e => setHName(e.target.value)} placeholder="e.g. Einstein Block" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500" required />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Gender Housing Type</label>
+                                <select value={hType} onChange={e => setHType(e.target.value as any)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500">
+                                  <option value="BOYS">BOYS</option>
+                                  <option value="GIRLS">GIRLS</option>
+                                  <option value="MIXED">MIXED</option>
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Status</label>
+                                <select value={hStatus} onChange={e => setHStatus(e.target.value as any)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500">
+                                  <option value="ACTIVE">ACTIVE</option>
+                                  <option value="INACTIVE">INACTIVE</option>
+                                </select>
+                              </div>
+                            </div>
+                            <button type="submit" className="glass-btn-primary w-full text-xs">Create Building</button>
+                          </form>
+                        </GlassCard>
+
+                        <GlassCard className="space-y-4">
+                          <h4 className="font-bold text-slate-200 text-xs">Register Block/Wing</h4>
+                          <form onSubmit={handleCreateBlock} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Select Building</label>
+                                <select value={hbHostelId} onChange={e => setHbHostelId(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none" required>
+                                  <option value="">-- Choose --</option>
+                                  {hostels.map(h => (
+                                    <option key={h.id} value={h.id}>{h.name} ({h.type})</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Block Name</label>
+                                <input type="text" value={hbName} onChange={e => setHbName(e.target.value)} placeholder="e.g. North Wing" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none" required />
+                              </div>
+                            </div>
+                            <button type="submit" className="glass-btn-primary w-full text-xs">Create Block</button>
+                          </form>
+                        </GlassCard>
+                      </div>
+
+                      {/* Right: Floors, Rooms & Beds */}
+                      <div className="lg:col-span-2 space-y-6">
+                        <GlassCard className="space-y-4">
+                          <h4 className="font-bold text-slate-200 text-xs">Register Room</h4>
+                          <form onSubmit={handleCreateRoom} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Select Block</label>
+                                <select value={hrBlockId} onChange={e => setHrBlockId(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none" required>
+                                  <option value="">-- Choose --</option>
+                                  {hostelBlocks.map(b => {
+                                    const h = hostels.find(x => x.id === b.hostelId);
+                                    return <option key={b.id} value={b.id}>{h ? `${h.name} - ` : ''}{b.name}</option>;
+                                  })}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Room Number / ID</label>
+                                <input type="text" value={hrRoomNumber} onChange={e => setHrRoomNumber(e.target.value)} placeholder="e.g. 101" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none" required />
+                              </div>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Floor Level</label>
+                                <input type="number" value={hrFloor} onChange={e => setHrFloor(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Room Bed Capacity</label>
+                                <input type="number" value={hrCapacity} onChange={e => setHrCapacity(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                              </div>
+                            </div>
+                            <button type="submit" className="glass-btn-primary w-full text-xs">Configure Room</button>
+                          </form>
+                        </GlassCard>
+
+                        <GlassCard className="space-y-4">
+                          <h4 className="font-bold text-slate-200 text-xs">Configure Beds</h4>
+                          <form onSubmit={handleCreateBed} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Select Room</label>
+                                <select value={hbedRoomId} onChange={e => setHbedRoomId(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none" required>
+                                  <option value="">-- Choose Room --</option>
+                                  {hostelRooms.map(r => {
+                                    const b = hostelBlocks.find(x => x.id === r.blockId);
+                                    const h = b ? hostels.find(x => x.id === b.hostelId) : null;
+                                    return <option key={r.id} value={r.id}>{h ? `${h.name} - ` : ''}Room {r.roomNumber}</option>;
+                                  })}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Bed Designation / Name</label>
+                                <input type="text" value={hbedName} onChange={e => setHbedName(e.target.value)} placeholder="e.g. Bed A" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none" required />
+                              </div>
+                            </div>
+                            <button type="submit" className="glass-btn-primary w-full text-xs">Add Bed</button>
+                          </form>
+                        </GlassCard>
+                      </div>
+
+                      {/* Display lists */}
+                      <div className="lg:col-span-4 space-y-6">
+                        <GlassCard className="space-y-3">
+                          <h4 className="font-bold text-slate-200 text-xs">Registered Housing Buildings</h4>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[11px] text-left text-slate-400">
+                              <thead className="bg-slate-900/60 uppercase font-bold text-slate-300">
+                                <tr>
+                                  <th className="p-3">Building Name</th>
+                                  <th className="p-3">Gender Type</th>
+                                  <th className="p-3">Blocks Counts</th>
+                                  <th className="p-3">Status</th>
+                                  <th className="p-3 text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {hostels.length === 0 ? (
+                                  <tr><td colSpan={5} className="p-4 text-center">No buildings configured.</td></tr>
+                                ) : hostels.map(h => {
+                                  const blkCount = hostelBlocks.filter(b => b.hostelId === h.id).length;
+                                  return (
+                                    <tr key={h.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                                      <td className="p-3 font-semibold text-slate-200">{h.name}</td>
+                                      <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-900 text-brand-400 font-bold border border-slate-800">{h.type}</span></td>
+                                      <td className="p-3">{blkCount} Blocks</td>
+                                      <td className="p-3"><span className={`px-2 py-0.5 rounded text-[9px] font-bold ${h.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'}`}>{h.status}</span></td>
+                                      <td className="p-3 text-right">
+                                        <button onClick={() => handleDeleteHostel(h.id)} className="text-slate-500 hover:text-red-400 p-1"><Trash2 size={12} /></button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </GlassCard>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                          <GlassCard className="space-y-3">
+                            <h4 className="font-bold text-slate-200 text-xs">Configure Wings/Blocks</h4>
+                            <div className="max-h-[300px] overflow-y-auto">
+                              <table className="w-full text-[11px] text-left">
+                                <thead className="bg-slate-900/60 font-bold">
+                                  <tr>
+                                    <th className="p-2">Block Name</th>
+                                    <th className="p-2">Building</th>
+                                    <th className="p-2 text-right">Action</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {hostelBlocks.map(b => {
+                                    const h = hostels.find(x => x.id === b.hostelId);
+                                    return (
+                                      <tr key={b.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                                        <td className="p-2 text-slate-200 font-semibold">{b.name}</td>
+                                        <td className="p-2">{h ? h.name : 'Unknown'}</td>
+                                        <td className="p-2 text-right">
+                                          <button onClick={() => handleDeleteBlock(b.id)} className="text-slate-500 hover:text-red-400 p-1"><Trash2 size={11} /></button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </GlassCard>
+
+                          <GlassCard className="space-y-3">
+                            <h4 className="font-bold text-slate-200 text-xs">Configured Bed Spaces</h4>
+                            <div className="max-h-[300px] overflow-y-auto">
+                              <table className="w-full text-[11px] text-left">
+                                <thead className="bg-slate-900/60 font-bold">
+                                  <tr>
+                                    <th className="p-2">Bed Designation</th>
+                                    <th className="p-2">Room (Building)</th>
+                                    <th className="p-2">Current Status</th>
+                                    <th className="p-2 text-right">Action</th>
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {hostelBeds.map(bd => {
+                                    const rm = hostelRooms.find(x => x.id === bd.roomId);
+                                    const bk = rm ? hostelBlocks.find(x => x.id === rm.blockId) : null;
+                                    const h = bk ? hostels.find(x => x.id === bk.hostelId) : null;
+                                    return (
+                                      <tr key={bd.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                                        <td className="p-2 text-slate-200 font-semibold">{bd.bedName}</td>
+                                        <td className="p-2">{rm ? `Room ${rm.roomNumber}` : 'Unknown'} ({h ? h.name : ''})</td>
+                                        <td className="p-2">
+                                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${bd.status === 'VACANT' ? 'bg-green-500/10 text-green-400' : bd.status === 'OCCUPIED' ? 'bg-brand-500/10 text-brand-400' : 'bg-amber-500/10 text-amber-400'}`}>{bd.status}</span>
+                                        </td>
+                                        <td className="p-2 text-right">
+                                          <button onClick={() => handleDeleteBed(bd.id)} className="text-slate-500 hover:text-red-400 p-1"><Trash2 size={11} /></button>
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          </GlassCard>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 2. Wardens Assignment Sub-tab */}
+                  {hostelSubTab === 'wardens' && !isWarden && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      <GlassCard className="space-y-4 h-fit">
+                        <h4 className="font-bold text-slate-200 text-xs">
+                          {editWardenId ? 'Edit Warden Profile & Responsibilities' : 'Create & Register New Warden'}
+                        </h4>
+                        <form onSubmit={handleSaveWarden} className="space-y-3">
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">First Name</label>
+                              <input type="text" value={wFirstName} onChange={e => setWFirstName(e.target.value)} placeholder="John" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Last Name</label>
+                              <input type="text" value={wLastName} onChange={e => setWLastName(e.target.value)} placeholder="Doe" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Email Address</label>
+                              <input type="email" value={wEmail} onChange={e => setWEmail(e.target.value)} placeholder="warden@school.com" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Phone Number</label>
+                              <input type="text" value={wPhone} onChange={e => setWPhone(e.target.value)} placeholder="+1 (555) 019-2834" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Employee ID</label>
+                              <input type="text" value={wEmployeeId} onChange={e => setWEmployeeId(e.target.value)} placeholder="EMP-WRD-01" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Gender</label>
+                              <select value={wGender} onChange={e => setWGender(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs">
+                                <option value="MALE">MALE</option>
+                                <option value="FEMALE">FEMALE</option>
+                                <option value="OTHER">OTHER</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Username</label>
+                              <input type="text" value={wUsername} onChange={e => setWUsername(e.target.value)} placeholder="johndoe_warden" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Account Status</label>
+                              <select value={String(wIsActive)} onChange={e => setWIsActive(e.target.value === 'true')} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs">
+                                <option value="true">Active</option>
+                                <option value="false">Inactive</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          {!editWardenId && (
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Login Password</label>
+                              <input type="password" value={wPassword} onChange={e => setWPassword(e.target.value)} placeholder="••••••••" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                          )}
+
+                          <div>
+                            <label className="text-[9px] font-bold text-slate-500 uppercase">Residential Address</label>
+                            <textarea value={wAddress} onChange={e => setWAddress(e.target.value)} placeholder="Address line..." className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs h-12 resize-none" required></textarea>
+                          </div>
+
+                          {/* Location Assigner Section */}
+                          <div className="border-t border-slate-850 pt-3 mt-2">
+                            <span className="text-[10px] font-bold text-slate-400 block mb-2">Assign Housing Locations</span>
+                            
+                            <div className="grid grid-cols-2 gap-2 mb-2">
+                              <div>
+                                <label className="text-[8px] font-bold text-slate-550 uppercase">Building</label>
+                                <select value={wlHostelId} onChange={e => { setWlHostelId(e.target.value); setWlBlockId(''); }} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-2 py-1.5 text-[10px]">
+                                  <option value="">-- Choose --</option>
+                                  {hostels.map(h => (
+                                    <option key={h.id} value={h.id}>{h.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-bold text-slate-550 uppercase">Block / Wing</label>
+                                <select value={wlBlockId} onChange={e => setWlBlockId(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-2 py-1.5 text-[10px]" disabled={!wlHostelId}>
+                                  <option value="">-- Optional --</option>
+                                  {hostelBlocks.filter(b => b.hostelId === wlHostelId).map(b => (
+                                    <option key={b.id} value={b.id}>{b.name}</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-2 mb-2">
+                              <div>
+                                <label className="text-[8px] font-bold text-slate-550 uppercase">Floor</label>
+                                <input type="number" value={wlFloor} onChange={e => setWlFloor(e.target.value !== '' ? Number(e.target.value) : '')} placeholder="e.g. 1" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-2 py-1.5 text-[10px]" />
+                              </div>
+                              <div>
+                                <label className="text-[8px] font-bold text-slate-550 uppercase">Section Name</label>
+                                <input type="text" value={wlSection} onChange={e => setWlSection(e.target.value)} placeholder="e.g. Wing A" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-2 py-1.5 text-[10px]" />
+                              </div>
+                            </div>
+
+                            <button type="button" onClick={handleAddAssignedLocation} className="glass-btn-secondary text-[10px] w-full py-1 text-brand-400 font-bold hover:bg-slate-850">+ Add Assignment Location</button>
+
+                            {/* List of current assignments */}
+                            <div className="mt-2 space-y-1.5 max-h-[120px] overflow-y-auto">
+                              {wAssignedLocations.length === 0 ? (
+                                <p className="text-[9px] text-slate-500 italic">No locations assigned yet.</p>
+                              ) : (
+                                wAssignedLocations.map((loc, idx) => (
+                                  <div key={idx} className="flex justify-between items-center bg-slate-900/60 border border-slate-850 px-2 py-1 rounded-lg text-[9px]">
+                                    <span className="text-slate-300">
+                                      {loc.buildingName} 
+                                      {loc.blockName ? ` • ${loc.blockName}` : ''}
+                                      {loc.floor !== null ? ` • Floor ${loc.floor}` : ''}
+                                      {loc.section ? ` • Sec ${loc.section}` : ''}
+                                    </span>
+                                    <button type="button" onClick={() => handleRemoveAssignedLocation(idx)} className="text-red-400 hover:text-red-300 font-bold px-1">✕</button>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="flex gap-2 pt-2">
+                            <button type="submit" className="glass-btn-primary flex-1 text-xs">
+                              {editWardenId ? 'Update Warden' : 'Register Warden'}
+                            </button>
+                            <button 
+                              type="button" 
+                              onClick={clearWardenForm} 
+                              className="bg-slate-800 hover:bg-slate-750 text-slate-300 px-3 py-2 rounded-xl text-xs"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                        </form>
+                      </GlassCard>
+
+                      <div className="lg:col-span-2">
+                        <GlassCard className="space-y-3">
+                          <h4 className="font-bold text-slate-200 text-xs">Active Wardens & Housing Overseers</h4>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[11px] text-left">
+                              <thead className="bg-slate-900/60 uppercase font-bold text-slate-300">
+                                <tr>
+                                  <th className="p-3">Warden Profile</th>
+                                  <th className="p-3">Contact details</th>
+                                  <th className="p-3">Assigned Locations</th>
+                                  <th className="p-3 text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {hostelWardens.length === 0 ? (
+                                  <tr><td colSpan={4} className="p-4 text-center">No wardens registered.</td></tr>
+                                ) : hostelWardens.map(w => {
+                                  const usrObj = mockDb.users.find(u => u.id === w.userId) || w.userDetails || null;
+                                  const isActive = usrObj?.isActive !== false;
+                                  return (
+                                    <tr key={w.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                                      <td className="p-3">
+                                        <div className="font-semibold text-slate-200">
+                                          {usrObj ? `${usrObj.firstName} ${usrObj.lastName}` : 'Warden'}
+                                        </div>
+                                        <div className="text-[9px] text-slate-500">Username: @{w.username || usrObj?.email?.split('@')[0]}</div>
+                                        <span className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-bold mt-1 ${isActive ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
+                                          {isActive ? 'Active' : 'Inactive'}
+                                        </span>
+                                      </td>
+                                      <td className="p-3">
+                                        <div className="font-mono text-slate-300">{w.phone || usrObj?.phone || 'No Phone'}</div>
+                                        <div className="text-[10px] text-slate-400">{usrObj?.email}</div>
+                                        <div className="text-[9px] text-slate-500">Emp ID: {usrObj?.employeeId || 'N/A'}</div>
+                                      </td>
+                                      <td className="p-3">
+                                        {(!w.assignedLocations || w.assignedLocations.length === 0) ? (
+                                          <span className="text-amber-500 italic">Unassigned / General</span>
+                                        ) : (
+                                          <div className="space-y-0.5 max-h-[80px] overflow-y-auto">
+                                            {w.assignedLocations.map((loc: any, lIdx: number) => (
+                                              <div key={lIdx} className="text-[9px] text-slate-300 bg-slate-900/40 px-1.5 py-0.5 rounded border border-slate-850 w-fit">
+                                                {loc.buildingName}
+                                                {loc.blockName ? ` • ${loc.blockName}` : ''}
+                                                {loc.floor !== null ? ` • Flr ${loc.floor}` : ''}
+                                                {loc.section ? ` • Sec ${loc.section}` : ''}
+                                              </div>
+                                            ))}
+                                          </div>
+                                        )}
+                                      </td>
+                                      <td className="p-3 text-right">
+                                        <div className="flex justify-end gap-1.5 items-center">
+                                          <button 
+                                            onClick={() => handleEditWardenClick(w)} 
+                                            className="text-slate-500 hover:text-brand-400 p-1" 
+                                            title="Edit Profile"
+                                          >
+                                            <Edit size={13} />
+                                          </button>
+                                          <button 
+                                            onClick={async () => {
+                                              const newStatus = !isActive;
+                                              if (window.confirm(`Are you sure you want to ${newStatus ? 'activate' : 'deactivate'} this warden?`)) {
+                                                try {
+                                                  await mockApi.updateHostelWarden(w.id, { isActive: newStatus });
+                                                  loadData();
+                                                  alert(`Warden ${newStatus ? 'activated' : 'deactivated'} successfully!`);
+                                                } catch (e: any) {
+                                                  alert(e.message || 'Failed to toggle status');
+                                                }
+                                              }
+                                            }} 
+                                            className={`p-1 ${isActive ? 'text-green-500 hover:text-amber-400' : 'text-slate-550 hover:text-green-400'}`} 
+                                            title={isActive ? 'Deactivate Warden' : 'Activate Warden'}
+                                          >
+                                            {isActive ? <UserCheck size={13} /> : <UserX size={13} />}
+                                          </button>
+                                          <button onClick={() => handleDeleteWarden(w.id)} className="text-slate-500 hover:text-red-400 p-1" title="Delete Warden"><Trash2 size={13} /></button>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </GlassCard>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 3. Admissions & Vacancies Sub-tab */}
+                  {hostelSubTab === 'admissions' && (
+                    <div className="space-y-6">
+                      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                        {/* Admit student Form */}
+                        <div className="lg:col-span-2">
+                          <GlassCard className="space-y-4">
+                            <h4 className="font-bold text-slate-200 text-xs">Record Student Check-in / Admission</h4>
+                            <form onSubmit={handleAdmitStudent} className="space-y-3">
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Select Student</label>
+                                  <select value={hadmStudentId} onChange={e => setHadmStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required>
+                                    <option value="">-- Choose Student --</option>
+                                    {students
+                                      .filter(s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id))
+                                      .map(s => {
+                                        const u = mockDb.users.find(x => x.id === s.userId);
+                                        return <option key={s.id} value={s.id}>{u ? `${u.firstName} ${u.lastName}` : s.admissionNumber}</option>;
+                                      })}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Select Building</label>
+                                  <select value={hadmHostelId} onChange={e => { setHadmHostelId(e.target.value); setHadmRoomId(''); setHadmBedId(''); }} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required>
+                                    <option value="">-- Choose Building --</option>
+                                    {hostels.filter(h => h.status === 'ACTIVE').map(h => (
+                                      <option key={h.id} value={h.id}>{h.name} ({h.type})</option>
+                                    ))}
+                                  </select>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Select Room</label>
+                                  <select value={hadmRoomId} onChange={e => { setHadmRoomId(e.target.value); setHadmBedId(''); }} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required>
+                                    <option value="">-- Choose Room --</option>
+                                    {hostelRooms
+                                      .filter(r => {
+                                        const b = hostelBlocks.find(x => x.id === r.blockId);
+                                        return b && b.hostelId === hadmHostelId && r.status === 'ACTIVE';
+                                      })
+                                      .map(r => (
+                                        <option key={r.id} value={r.id}>Room {r.roomNumber} (Cap: {r.capacity})</option>
+                                      ))}
+                                  </select>
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase">Select Bed (Vacant Only)</label>
+                                  <select value={hadmBedId} onChange={e => setHadmBedId(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required>
+                                    <option value="">-- Choose Bed Space --</option>
+                                    {hostelBeds
+                                      .filter(bd => {
+                                        if (bd.roomId !== hadmRoomId || bd.status === 'MAINTENANCE') return false;
+                                        const isOccupied = hostelAdmissions.some(a => a.bedId === bd.id && a.status === 'ACTIVE');
+                                        return !isOccupied;
+                                      })
+                                      .map(bd => (
+                                        <option key={bd.id} value={bd.id}>{bd.bedName}</option>
+                                      ))}
+                                  </select>
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Admission / Check-in Date</label>
+                                <input type="date" value={hadmAdmissionDate} onChange={e => setHadmAdmissionDate(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                              </div>
+
+                              <button type="submit" className="glass-btn-primary w-full text-xs">Record Check-in & Allocate Bed</button>
+                            </form>
+                          </GlassCard>
+                        </div>
+
+                        {/* Room Occupancy Matrix */}
+                        <div className="lg:col-span-2">
+                          <GlassCard className="space-y-3 h-full">
+                            <h4 className="font-bold text-slate-200 text-xs">Real-Time Occupancy Analytics</h4>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                              <div className="p-3 bg-slate-900/50 rounded-xl border border-slate-850">
+                                <p className="text-[9px] font-bold text-slate-500 uppercase">Total Beds</p>
+                                <p className="text-xl font-bold text-slate-200 mt-1">{hostelBeds.length}</p>
+                              </div>
+                              <div className="p-3 bg-slate-900/50 rounded-xl border border-slate-850">
+                                <p className="text-[9px] font-bold text-slate-500 uppercase">Occupied Beds</p>
+                                <p className="text-xl font-bold text-brand-400 mt-1">{hostelBeds.filter(b => b.status === 'OCCUPIED').length}</p>
+                              </div>
+                              <div className="p-3 bg-slate-900/50 rounded-xl border border-slate-850">
+                                <p className="text-[9px] font-bold text-slate-500 uppercase">Available Spots</p>
+                                <p className="text-xl font-bold text-green-400 mt-1">{hostelBeds.filter(b => b.status === 'VACANT').length}</p>
+                              </div>
+                            </div>
+
+                            <div className="space-y-2 mt-4 pt-3 border-t border-slate-850 max-h-[150px] overflow-y-auto">
+                              <p className="text-[10px] font-bold text-slate-400">Housing Allocation Summary</p>
+                              {hostels.map(h => {
+                                const hBeds = hostelBeds.filter(bd => {
+                                  const r = hostelRooms.find(x => x.id === bd.roomId);
+                                  const b = r ? hostelBlocks.find(x => x.id === r.blockId) : null;
+                                  return b && b.hostelId === h.id;
+                                });
+                                const occ = hBeds.filter(b => b.status === 'OCCUPIED').length;
+                                const tot = hBeds.length;
+                                return (
+                                  <div key={h.id} className="flex justify-between items-center text-[10px] py-1">
+                                    <span className="text-slate-300 font-semibold">{h.name} ({h.type})</span>
+                                    <span className="text-slate-400">{occ} / {tot} occupied ({tot > 0 ? Math.round((occ / tot) * 100) : 0}%)</span>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </GlassCard>
+                        </div>
+                      </div>
+
+                      {/* Active Admissions History Table */}
+                      <GlassCard className="space-y-3">
+                        <h4 className="font-bold text-slate-200 text-xs">Active Housing Residents & Bed Assignments</h4>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-[11px] text-left">
+                            <thead className="bg-slate-900/60 uppercase font-bold text-slate-300">
+                              <tr>
+                                <th className="p-3">Student Name</th>
+                                <th className="p-3">Hostel</th>
+                                <th className="p-3">Room / Floor</th>
+                                <th className="p-3">Bed Space</th>
+                                <th className="p-3">Check-in Date</th>
+                                <th className="p-3">Status</th>
+                                <th className="p-3 text-right">Actions</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {hostelAdmissions.length === 0 ? (
+                                  <tr><td colSpan={7} className="p-4 text-center">No student admissions recorded.</td></tr>
+                              ) : hostelAdmissions.map(adm => {
+                                const stObj = mockDb.students.find(s => s.id === adm.studentId);
+                                const stUser = stObj ? mockDb.users.find(u => u.id === stObj.userId) : null;
+                                const hostObj = hostels.find(h => h.id === adm.hostelId);
+                                const rmObj = hostelRooms.find(r => r.id === adm.roomId);
+                                const bedObj = hostelBeds.find(b => b.id === adm.bedId);
+
+                                return (
+                                  <tr key={adm.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                                    <td className="p-3">
+                                      <p className="font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Student'}</p>
+                                      <p className="text-[9px] text-slate-500 font-mono">{stObj?.admissionNumber}</p>
+                                    </td>
+                                    <td className="p-3">{hostObj ? hostObj.name : 'Unknown'}</td>
+                                    <td className="p-3">Room {rmObj ? rmObj.roomNumber : '?'}{rmObj ? ` (Floor ${rmObj.floor})` : ''}</td>
+                                    <td className="p-3"><span className="px-2 py-0.5 rounded bg-slate-900 text-brand-400 font-bold border border-slate-800">{bedObj ? bedObj.bedName : 'Bed'}</span></td>
+                                    <td className="p-3 font-mono">{adm.admissionDate || adm.checkInDate}</td>
+                                    <td className="p-3">
+                                      <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${adm.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 'bg-slate-500/10 text-slate-400'}`}>
+                                        {adm.status}
+                                      </span>
+                                    </td>
+                                    <td className="p-3 text-right">
+                                      {adm.status === 'ACTIVE' && (
+                                        <button onClick={() => handleCheckoutAdmission(adm.id)} className="glass-btn-secondary text-[9px] text-amber-400 hover:text-amber-300 font-bold py-1 px-2.5">
+                                          Check Out
+                                        </button>
+                                      )}
+                                      <button onClick={() => handleDeleteHostelAdmission(adm.id)} className="text-slate-500 hover:text-red-400 p-1.5 ml-2"><Trash2 size={12} /></button>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                      </GlassCard>
+                    </div>
+                  )}
+
+                  {/* 4. Attendance Logger Sub-tab */}
+                  {hostelSubTab === 'attendance' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      {/* Left side: select criteria */}
+                      <div className="space-y-6">
+                        <GlassCard className="space-y-4">
+                          <h4 className="font-bold text-slate-200 text-xs">Record Daily Attendance Roll</h4>
+                          <div className="space-y-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Select Room to Roll</label>
+                              <select value={attSelectedRoomId} onChange={e => { setAttSelectedRoomId(e.target.value); setAttStatusMap({}); }} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs">
+                                <option value="">-- Choose Room --</option>
+                                {hostelRooms.map(r => {
+                                  const b = hostelBlocks.find(x => x.id === r.blockId);
+                                  const h = b ? hostels.find(x => x.id === b.hostelId) : null;
+                                  return <option key={r.id} value={r.id}>{h ? `${h.name} - ` : ''}Room {r.roomNumber}</option>;
+                                })}
+                              </select>
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Log Date</label>
+                                <input type="date" value={attSelectedDate} onChange={e => setAttSelectedDate(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Time Slot</label>
+                                <select value={attSelectedSlot} onChange={e => setAttSelectedSlot(e.target.value as any)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs">
+                                  <option value="MORNING">MORNING (6-8 AM)</option>
+                                  <option value="EVENING">EVENING (8-10 PM)</option>
+                                </select>
+                              </div>
+                            </div>
+                          </div>
+                        </GlassCard>
+
+                                         {/* List of students in selected room to check */}
+                        {attSelectedRoomId && (
+                          <GlassCard className="space-y-3">
+                            <h4 className="font-bold text-slate-200 text-xs">Mark Statuses</h4>
+                            {(() => {
+                              const activeResidents = hostelAdmissions.filter(a => a.roomId === attSelectedRoomId && a.status === 'ACTIVE');
+                              if (activeResidents.length === 0) return <p className="text-center text-slate-500 text-xs py-4">No active students admitted to this room.</p>;
+                              return (
+                                <div className="space-y-3">
+                                  {activeResidents.map(adm => {
+                                    const stObj = mockDb.students.find(s => s.id === adm.studentId) || adm.student || null;
+                                    const stUser = stObj ? (mockDb.users.find(u => u.id === stObj.userId) || stObj.userDetails || null) : null;
+                                    
+                                    const existingAtt = hostelAttendance.find(
+                                      att => att.studentId === adm.studentId && att.date === attSelectedDate && att.timeSlot === attSelectedSlot
+                                    );
+                                    const currentStatus = attStatusMap[adm.studentId] || (existingAtt ? existingAtt.status : 'PRESENT');
+
+                                    return (
+                                      <div key={adm.id} className="flex justify-between items-center py-2 border-b border-slate-850 last:border-0">
+                                        <div>
+                                          <p className="font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</p>
+                                          <p className="text-[9px] text-slate-500">{adm.bed?.bedName || 'Allocated Bed'}</p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                          {['PRESENT', 'ABSENT', 'LEAVE'].map(st => (
+                                            <button
+                                              key={st}
+                                              type="button"
+                                              onClick={() => setAttStatusMap(prev => ({ ...prev, [adm.studentId]: st as any }))}
+                                              className={`px-2 py-1 rounded text-[9px] font-bold border transition-colors ${
+                                                currentStatus === st 
+                                                  ? st === 'PRESENT' ? 'bg-green-500/10 text-green-400 border-green-500/30' : st === 'ABSENT' ? 'bg-red-500/10 text-red-400 border-red-500/30' : 'bg-amber-500/10 text-amber-400 border-amber-500/30'
+                                                  : 'bg-slate-900 text-slate-500 border-slate-800 hover:text-slate-400'
+                                              }`}
+                                            >
+                                              {st}
+                                            </button>
+                                          ))}
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
+                                  <button onClick={handleSaveHostelAttendance} type="button" className="glass-btn-primary w-full text-xs font-bold py-2 mt-2">
+                                    Save Attendance Register
+                                  </button>
+                                </div>
+                              );
+                            })()}
+                          </GlassCard>
+                        )}
+                      </div>
+ 
+                      {/* Right side: attendance rolls log */}
+                      <div className="lg:col-span-2">
+                        <GlassCard className="space-y-3">
+                          <h4 className="font-bold text-slate-200 text-xs">Logged Daily Attendance History</h4>
+                          <div className="overflow-x-auto max-h-[500px]">
+                            <table className="w-full text-[11px] text-left">
+                              <thead className="bg-slate-900/60 uppercase font-bold text-slate-300">
+                                <tr>
+                                  <th className="p-2.5">Date / Slot</th>
+                                  <th className="p-2.5">Student Name</th>
+                                  <th className="p-2.5">Status</th>
+                                  <th className="p-2.5">Recorded By</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {hostelAttendance.length === 0 ? (
+                                  <tr><td colSpan={4} className="p-4 text-center">No attendance logged yet.</td></tr>
+                                ) : hostelAttendance.map(att => {
+                                  const stObj = mockDb.students.find(s => s.id === att.studentId) || att.student || null;
+                                  const stUser = stObj ? (mockDb.users.find(u => u.id === stObj.userId) || stObj.userDetails || null) : null;
+                                  const recorderObj = mockDb.users.find(u => u.id === att.recordedBy) || att.recordedByDetails || null;
+                                  return (
+                                    <tr key={att.id} className="border-b border-slate-850 hover:bg-slate-900/30 text-[10px]">
+                                      <td className="p-2.5 font-mono">
+                                        <p>{att.date}</p>
+                                        <p className="text-[9px] text-slate-500 font-bold">{att.timeSlot}</p>
+                                      </td>
+                                      <td className="p-2.5 font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</td>
+                                      <td className="p-2.5">
+                                        <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${att.status === 'PRESENT' ? 'bg-green-500/10 text-green-400' : att.status === 'ABSENT' ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                                          {att.status}
+                                        </span>
+                                      </td>
+                                      <td className="p-2.5 text-slate-400">{recorderObj ? `${recorderObj.firstName} ${recorderObj.lastName}` : 'Warden'}</td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </GlassCard>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 5. Leave Requests Sub-tab */}
+                  {hostelSubTab === 'leaves' && (
+                    <GlassCard className="space-y-3">
+                      <h4 className="font-bold text-slate-200 text-xs">Leave Requests Approval Workflow</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[11px] text-left">
+                          <thead className="bg-slate-900/60 uppercase font-bold text-slate-300">
+                            <tr>
+                              <th className="p-3">Student Name</th>
+                              <th className="p-3">Duration (Dates)</th>
+                              <th className="p-3">Reason</th>
+                              <th className="p-3">Parent</th>
+                              <th className="p-3">Warden</th>
+                              <th className="p-3">Hostel Admin</th>
+                              <th className="p-3">School Admin</th>
+                              <th className="p-3">Overall</th>
+                              <th className="p-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {hostelLeaveRequests.length === 0 ? (
+                              <tr><td colSpan={9} className="p-4 text-center">No leave requests logged.</td></tr>
+                            ) : hostelLeaveRequests.map(lv => {
+                              const stObj = mockDb.students.find(s => s.id === lv.studentId) || lv.student || null;
+                              const stUser = stObj ? (mockDb.users.find(u => u.id === stObj.userId) || stObj.userDetails || null) : null;
+                              
+                              const userRole = session?.user.role;
+                              const isWardenApprovalPhase = lv.parentApproval === 'APPROVED' && lv.wardenApproval === 'PENDING';
+                              const isHostelAdminApprovalPhase = lv.wardenApproval === 'APPROVED' && (lv.hostelAdminApproval || 'PENDING') === 'PENDING';
+                              const isSchoolAdminApprovalPhase = (lv.hostelAdminApproval || 'PENDING') === 'APPROVED' && lv.adminApproval === 'PENDING';
+
+                              // Actions visibility determination
+                              const canWardenAct = isWarden && lv.wardenApproval === 'PENDING';
+                              const canHostelAdminAct = userRole === 'HOSTEL_ADMIN' && (lv.hostelAdminApproval || 'PENDING') === 'PENDING';
+                              const canSchoolAdminAct = (userRole === 'ADMIN' || userRole === 'SUPER_ADMIN' || (userRole === 'ACADEMIC_ADMIN' && rbacPermissions[userRole]?.hostel)) && lv.adminApproval === 'PENDING';
+
+                              // Descriptive Routing Status
+                              let routingText = 'Awaiting routing...';
+                              if (lv.parentApproval === 'PENDING') routingText = 'Awaiting Parent';
+                              else if (lv.parentApproval === 'APPROVED' && lv.wardenApproval === 'PENDING') routingText = 'Awaiting Warden';
+                              else if (lv.wardenApproval === 'APPROVED' && (lv.hostelAdminApproval || 'PENDING') === 'PENDING') routingText = 'Awaiting Hostel Admin';
+                              else if ((lv.hostelAdminApproval || 'PENDING') === 'APPROVED' && lv.adminApproval === 'PENDING') routingText = 'Awaiting School Admin';
+
+                              const getApprovalBadge = (val: string) => {
+                                const colorMap: Record<string, string> = {
+                                  'APPROVED': 'bg-green-500/10 text-green-400',
+                                  'REJECTED': 'bg-red-500/10 text-red-400',
+                                  'HOLD': 'bg-amber-500/10 text-amber-400',
+                                  'PENDING': 'bg-slate-500/10 text-slate-400'
+                                };
+                                return (
+                                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${colorMap[val] || 'bg-slate-500/10 text-slate-400'}`}>
+                                    {val}
+                                  </span>
+                                );
+                              };
+
+                              return (
+                                <tr key={lv.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                                  <td className="p-3 font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Student'}</td>
+                                  <td className="p-3 font-mono text-[10px]">
+                                    <p>{lv.fromDate} to</p>
+                                    <p>{lv.toDate}</p>
+                                  </td>
+                                  <td className="p-3 max-w-[150px] truncate" title={lv.reason}>{lv.reason}</td>
+                                  <td className="p-3">{getApprovalBadge(lv.parentApproval)}</td>
+                                  <td className="p-3">{getApprovalBadge(lv.wardenApproval)}</td>
+                                  <td className="p-3">{getApprovalBadge(lv.hostelAdminApproval || 'PENDING')}</td>
+                                  <td className="p-3">{getApprovalBadge(lv.adminApproval)}</td>
+                                  <td className="p-3">
+                                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${
+                                      lv.status === 'APPROVED' ? 'bg-green-500/20 text-green-400' : 
+                                      lv.status === 'REJECTED' ? 'bg-red-500/20 text-red-400' : 
+                                      lv.status === 'HOLD' ? 'bg-amber-500/20 text-amber-400' : 
+                                      'bg-blue-500/20 text-blue-400'
+                                    }`}>
+                                      {lv.status}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-right">
+                                    {canWardenAct && (
+                                      <div className="flex gap-1 justify-end">
+                                        <button onClick={() => handleApproveLeave(lv.id, 'WARDEN', 'APPROVED')} className="bg-green-600 hover:bg-green-500 text-white font-bold text-[9px] py-1 px-1.5 rounded">Approve</button>
+                                        <button onClick={() => handleApproveLeave(lv.id, 'WARDEN', 'REJECTED')} className="bg-red-600 hover:bg-red-500 text-white font-bold text-[9px] py-1 px-1.5 rounded">Reject</button>
+                                        <button onClick={() => handleApproveLeave(lv.id, 'WARDEN', 'HOLD')} className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-[9px] py-1 px-1.5 rounded">Hold</button>
+                                      </div>
+                                    )}
+                                    {canHostelAdminAct && (
+                                      <div className="flex gap-1 justify-end">
+                                        <button onClick={() => handleApproveLeave(lv.id, 'HOSTEL_ADMIN', 'APPROVED')} className="bg-green-600 hover:bg-green-500 text-white font-bold text-[9px] py-1 px-1.5 rounded">Approve</button>
+                                        <button onClick={() => handleApproveLeave(lv.id, 'HOSTEL_ADMIN', 'REJECTED')} className="bg-red-600 hover:bg-red-500 text-white font-bold text-[9px] py-1 px-1.5 rounded">Reject</button>
+                                        <button onClick={() => handleApproveLeave(lv.id, 'HOSTEL_ADMIN', 'HOLD')} className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-[9px] py-1 px-1.5 rounded">Hold</button>
+                                      </div>
+                                    )}
+                                    {canSchoolAdminAct && (
+                                      <div className="flex gap-1 justify-end">
+                                        <button onClick={() => handleApproveLeave(lv.id, 'SCHOOL_ADMIN', 'APPROVED')} className="bg-green-600 hover:bg-green-500 text-white font-bold text-[9px] py-1 px-1.5 rounded">Approve</button>
+                                        <button onClick={() => handleApproveLeave(lv.id, 'SCHOOL_ADMIN', 'REJECTED')} className="bg-red-600 hover:bg-red-500 text-white font-bold text-[9px] py-1 px-1.5 rounded">Reject</button>
+                                        <button onClick={() => handleApproveLeave(lv.id, 'SCHOOL_ADMIN', 'HOLD')} className="bg-amber-600 hover:bg-amber-500 text-white font-bold text-[9px] py-1 px-1.5 rounded">Hold</button>
+                                      </div>
+                                    )}
+                                    {lv.status === 'PENDING' && !canWardenAct && !canHostelAdminAct && !canSchoolAdminAct && (
+                                      <span className="text-[10px] text-slate-500 italic">{routingText}</span>
+                                    )}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </GlassCard>
+                  )}
+
+                  {/* 6. Visitor Logs Sub-tab */}
+                  {hostelSubTab === 'visitors' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      <GlassCard className="space-y-4 h-fit">
+                        <h4 className="font-bold text-slate-200 text-xs">Log Visitor Entry Check-in</h4>
+                        <form onSubmit={handleCreateVisitor} className="space-y-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Visitor Name</label>
+                            <input type="text" value={hvisName} onChange={e => setHvisName(e.target.value)} placeholder="e.g. John Doe Sr." className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                          </div>
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Relation to Resident</label>
+                              <input type="text" value={hvisRelation} onChange={e => setHvisRelation(e.target.value)} placeholder="e.g. Father" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Select Resident Student</label>
+                              <select value={hvisStudentId} onChange={e => setHvisStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs focus:outline-none" required>
+                                <option value="">-- Choose Resident --</option>
+                                {hostelAdmissions.filter(a => a.status === 'ACTIVE' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(a.studentId)).map(a => {
+                                  const stObj = mockDb.students.find(s => s.id === a.studentId) || a.student || null;
+                                  const stUser = stObj ? (mockDb.users.find(u => u.id === stObj.userId) || stObj.userDetails || null) : null;
+                                  return <option key={a.id} value={a.studentId}>{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</option>;
+                                })}
+                              </select>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Purpose of Visit</label>
+                            <textarea value={hvisPurpose} onChange={e => setHvisPurpose(e.target.value)} placeholder="e.g. Deliver textbooks, luggage dropping" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs h-16 resize-none" required></textarea>
+                          </div>
+                          <button type="submit" className="glass-btn-primary w-full text-xs">Record Visitor Entry</button>
+                        </form>
+                      </GlassCard>
+
+                      <div className="lg:col-span-2">
+                        <GlassCard className="space-y-3">
+                          <h4 className="font-bold text-slate-200 text-xs">Visitor Check-in Log Ledger</h4>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[11px] text-left">
+                              <thead className="bg-slate-900/60 uppercase font-bold text-slate-300">
+                                <tr>
+                                  <th className="p-3">Visitor Info</th>
+                                  <th className="p-3">Resident Student</th>
+                                  <th className="p-3">Entry Time</th>
+                                  <th className="p-3">Exit Time</th>
+                                  <th className="p-3 text-right">Actions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {hostelVisitors.length === 0 ? (
+                                  <tr><td colSpan={5} className="p-4 text-center">No visitors recorded.</td></tr>
+                                ) : hostelVisitors.map(v => {
+                                  const stObj = mockDb.students.find(s => s.id === v.studentId) || v.student || null;
+                                  const stUser = stObj ? (mockDb.users.find(u => u.id === stObj.userId) || stObj.userDetails || null) : null;
+                                  return (
+                                    <tr key={v.id} className="border-b border-slate-850 hover:bg-slate-900/30 text-[10px]">
+                                      <td className="p-3">
+                                        <p className="font-semibold text-slate-200">{v.visitorName}</p>
+                                        <p className="text-[9px] text-slate-500">Relation: {v.relation}</p>
+                                      </td>
+                                      <td className="p-3">
+                                        <p>{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</p>
+                                        <p className="text-[9px] text-slate-500 font-mono">{stObj?.admissionNumber}</p>
+                                      </td>
+                                      <td className="p-3 font-mono text-[9px]">{new Date(v.entryTime).toLocaleString()}</td>
+                                      <td className="p-3 font-mono text-[9px]">{v.exitTime ? new Date(v.exitTime).toLocaleString() : <span className="text-brand-400 font-bold">INSIDE HOSTEL</span>}</td>
+                                      <td className="p-3 text-right">
+                                        {!v.exitTime && (
+                                          <button onClick={() => handleCheckoutVisitor(v.id)} className="glass-btn-secondary text-[9px] text-amber-400 hover:text-amber-300 py-1 px-2 font-bold">
+                                            Log Exit
+                                          </button>
+                                        )}
+                                        <button onClick={async () => { if (window.confirm('Delete log entry?')) { await mockApi.deleteHostelVisitor(v.id); loadData(); } }} className="text-slate-550 hover:text-red-400 p-1.5 ml-2"><Trash2 size={12} /></button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </GlassCard>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 7. Complaints Office Sub-tab */}
+                  {hostelSubTab === 'complaints' && (
+                    <GlassCard className="space-y-3">
+                      <h4 className="font-bold text-slate-200 text-xs">Hostel Maintenance & Complaint Tickets</h4>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[11px] text-left">
+                          <thead className="bg-slate-900/60 uppercase font-bold text-slate-300">
+                            <tr>
+                              <th className="p-3">Student Name</th>
+                              <th className="p-3">Category</th>
+                              <th className="p-3">Description</th>
+                              <th className="p-3">Assigned Staff</th>
+                              <th className="p-3">Resolution Notes</th>
+                              <th className="p-3">Status</th>
+                              <th className="p-3 text-right">Actions</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {hostelComplaints.length === 0 ? (
+                              <tr><td colSpan={7} className="p-4 text-center">No complaints submitted.</td></tr>
+                            ) : hostelComplaints.map(c => {
+                              const stObj = mockDb.students.find(s => s.id === c.studentId) || c.student || null;
+                              const stUser = stObj ? (mockDb.users.find(u => u.id === stObj.userId) || stObj.userDetails || null) : null;
+                              return (
+                                <tr key={c.id} className="border-b border-slate-850 hover:bg-slate-900/30">
+                                  <td className="p-3 font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</td>
+                                  <td className="p-3 font-semibold"><span className="px-2 py-0.5 rounded bg-slate-900 text-brand-400 border border-slate-800">{c.category}</span></td>
+                                  <td className="p-3 max-w-[200px] truncate" title={c.description}>{c.description}</td>
+                                  <td className="p-3 text-slate-300">{c.assignedStaff || <span className="text-slate-500 italic">Unassigned</span>}</td>
+                                  <td className="p-3 text-slate-400">{c.resolutionNotes || <span className="text-slate-500 italic">Pending resolution</span>}</td>
+                                  <td className="p-3">
+                                    <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${c.status === 'RESOLVED' ? 'bg-green-500/10 text-green-400' : c.status === 'ASSIGNED' ? 'bg-brand-500/10 text-brand-400' : 'bg-red-500/10 text-red-400'}`}>
+                                      {c.status}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-right space-y-1">
+                                    {c.status === 'SUBMITTED' && (
+                                      <button onClick={() => { const s = prompt('Enter staff name to assign:'); if (s) handleUpdateComplaint(c.id, 'ASSIGNED', s); }} className="glass-btn-secondary text-[9px] py-1 px-2 mr-1">Assign Staff</button>
+                                    )}
+                                    {c.status !== 'RESOLVED' && c.status !== 'CLOSED' && (
+                                      <button onClick={() => { const n = prompt('Enter resolution notes:'); if (n) handleUpdateComplaint(c.id, 'RESOLVED', c.assignedStaff || 'Maintenance Staff', n); }} className="glass-btn-primary bg-green-600 text-white text-[9px] py-1 px-2 font-bold">Mark Resolved</button>
+                                    )}
+                                    <button onClick={async () => { if (window.confirm('Delete ticket?')) { await mockApi.deleteHostelComplaint(c.id); loadData(); } }} className="text-slate-550 hover:text-red-400 p-1.5 ml-2"><Trash2 size={12} /></button>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    </GlassCard>
+                  )}
+
+                  {/* 8. Mess Menu Planner Sub-tab */}
+                  {hostelSubTab === 'menu' && (
+                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                      <GlassCard className="space-y-4 h-fit">
+                        <h4 className="font-bold text-slate-200 text-xs">Configure Mess Planners</h4>
+                        <form onSubmit={handleSaveMessMenu} className="space-y-3">
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Select Hostel Building</label>
+                            <select value={hmessHostelId} onChange={e => setHmessHostelId(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required>
+                              <option value="">-- Choose Hostel --</option>
+                              {hostels.map(h => (
+                                <option key={h.id} value={h.id}>{h.name}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Day of the Week</label>
+                            <select value={hmessDay} onChange={e => setHmessDay(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs">
+                              {['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'].map((day, idx) => (
+                                <option key={idx} value={idx + 1}>{day}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Breakfast Menu</label>
+                            <input type="text" value={hmessBreakfast} onChange={e => setHmessBreakfast(e.target.value)} placeholder="e.g. Oatmeal & Eggs, Tea" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Lunch Menu</label>
+                            <input type="text" value={hmessLunch} onChange={e => setHmessLunch(e.target.value)} placeholder="e.g. Grilled Chicken Salad, Rice" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Dinner Menu</label>
+                            <input type="text" value={hmessDinner} onChange={e => setHmessDinner(e.target.value)} placeholder="e.g. Baked Fish with Broccoli" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                          </div>
+                          <div>
+                            <label className="text-[10px] font-bold text-slate-500 uppercase">Special item (Optional)</label>
+                            <input type="text" value={hmessSpecial} onChange={e => setHmessSpecial(e.target.value)} placeholder="e.g. Chocolate Ice Cream" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" />
+                          </div>
+                          <button type="submit" className="glass-btn-primary w-full text-xs">Save Planners Menu</button>
+                        </form>
+                      </GlassCard>
+
+                      <div className="lg:col-span-2">
+                        <GlassCard className="space-y-3">
+                          <h4 className="font-bold text-slate-200 text-xs">Weekly Mess Planners Display</h4>
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-[11px] text-left">
+                              <thead className="bg-slate-900/60 uppercase font-bold text-slate-300">
+                                <tr>
+                                  <th className="p-3">Day</th>
+                                  <th className="p-3">Breakfast</th>
+                                  <th className="p-3">Lunch</th>
+                                  <th className="p-3">Dinner</th>
+                                  <th className="p-3">Special Item</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {(() => {
+                                  const days = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+                                  const items = days.map((day, idx) => {
+                                    // filter messMenus
+                                    const match = hostelMessMenus.find(m => m.dayOfWeek === idx + 1 && (hmessHostelId ? m.hostelId === hmessHostelId : true));
+                                    return { day, match };
+                                  });
+
+                                  return items.map((item, idx) => (
+                                    <tr key={idx} className="border-b border-slate-850 hover:bg-slate-900/30 text-[10.5px]">
+                                      <td className="p-3 font-semibold text-slate-200">{item.day}</td>
+                                      <td className="p-3">{item.match ? item.match.breakfast : <span className="text-slate-500 italic">Not set</span>}</td>
+                                      <td className="p-3">{item.match ? item.match.lunch : <span className="text-slate-500 italic">Not set</span>}</td>
+                                      <td className="p-3">{item.match ? item.match.dinner : <span className="text-slate-500 italic">Not set</span>}</td>
+                                      <td className="p-3 font-bold text-brand-400">{item.match && item.match.specialMenu ? item.match.specialMenu : '-'}</td>
+                                    </tr>
+                                  ));
+                                })()}
+                              </tbody>
+                            </table>
+                          </div>
+                        </GlassCard>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 9. Fees & Billing Invoices Sub-tab */}
+                  {hostelSubTab === 'fees' && !isWarden && (
+                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                      {/* Configure structure */}
+                      <div className="lg:col-span-2 space-y-6">
+                        <GlassCard className="space-y-4">
+                          <h4 className="font-bold text-slate-200 text-xs">Configure Hostel Fee Structures</h4>
+                          <form onSubmit={handleCreateHostelFee} className="space-y-3">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Fee Name / Designation</label>
+                              <input type="text" value={hfeeName} onChange={e => setHfeeName(e.target.value)} placeholder="e.g. Monthly Premium Double Room Fee" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Amount Due</label>
+                                <input type="number" value={hfeeAmount} onChange={e => setHfeeAmount(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Fee billing cycle</label>
+                                <select value={hfeeType} onChange={e => setHfeeType(e.target.value as any)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs">
+                                  <option value="MONTHLY">MONTHLY</option>
+                                  <option value="ANNUAL">ANNUAL</option>
+                                  <option value="MESS">MESS FEE</option>
+                                  <option value="ONE_TIME">ONE-TIME DEPOSIT</option>
+                                </select>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Description</label>
+                              <textarea value={hfeeDesc} onChange={e => setHfeeDesc(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs h-12" placeholder="Structure billing limits details..."></textarea>
+                            </div>
+                            <button type="submit" className="glass-btn-primary w-full text-xs">Create Structure</button>
+                          </form>
+                        </GlassCard>
+
+                        {/* List structures */}
+                        <GlassCard className="space-y-3">
+                          <h4 className="font-bold text-slate-200 text-xs">Configured Fee Rates</h4>
+                          <div className="max-h-[200px] overflow-y-auto">
+                            <table className="w-full text-[11px] text-left">
+                              <thead className="bg-slate-900/60 font-bold">
+                                <tr>
+                                  <th className="p-2">Fee Name</th>
+                                  <th className="p-2">Amount</th>
+                                  <th className="p-2">Cycle</th>
+                                  <th className="p-2 text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {hostelFees.map(f => (
+                                  <tr key={f.id} className="border-b border-slate-850 hover:bg-slate-900/30 text-[10px]">
+                                    <td className="p-2 text-slate-200 font-semibold">{f.name}</td>
+                                    <td className="p-2 font-mono font-bold text-brand-400">{overview?.currencySymbol || '$'}{Number(f.amount).toFixed(2)}</td>
+                                    <td className="p-2 text-slate-400">{f.feeType}</td>
+                                    <td className="p-2 text-right">
+                                      <button onClick={() => { if (window.confirm('Delete structure?')) { mockApi.deleteHostelFee(f.id).then(() => loadData()); } }} className="text-slate-550 hover:text-red-400 p-1"><Trash2 size={11} /></button>
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </GlassCard>
+                      </div>
+
+                      {/* Pay invoice receipts */}
+                      <div className="lg:col-span-2 space-y-6">
+                        <GlassCard className="space-y-4">
+                          <h4 className="font-bold text-slate-200 text-xs">Record Hostel Payment Receipt</h4>
+                          <form onSubmit={handleRecordHostelPayment} className="space-y-3">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Select Student</label>
+                                <select value={hpayStudentId} onChange={e => setHpayStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required>
+                                  <option value="">-- Choose Resident --</option>
+                                  {hostelAdmissions.filter(a => a.status === 'ACTIVE' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(a.studentId)).map(a => {
+                                    const stObj = mockDb.students.find(s => s.id === a.studentId);
+                                    const stUser = stObj ? mockDb.users.find(u => u.id === stObj.userId) : null;
+                                    return <option key={a.id} value={a.studentId}>{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</option>;
+                                  })}
+                                </select>
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Select Fee Structure</label>
+                                <select value={hpayFeeId} onChange={e => { setHpayFeeId(e.target.value); const f = hostelFees.find(x => x.id === e.target.value); if (f) setHpayAmount(f.amount); }} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required>
+                                  <option value="">-- Choose Fee --</option>
+                                  {hostelFees.map(f => (
+                                    <option key={f.id} value={f.id}>{f.name} ({overview?.currencySymbol || '$'}{f.amount})</option>
+                                  ))}
+                                </select>
+                              </div>
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-3">
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Amount Paid</label>
+                                <input type="number" value={hpayAmount} onChange={e => setHpayAmount(Number(e.target.value))} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                              </div>
+                              <div>
+                                <label className="text-[10px] font-bold text-slate-500 uppercase">Payment Method</label>
+                                <select value={hpayMethod} onChange={e => setHpayMethod(e.target.value as any)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs">
+                                  <option value="CASH">CASH</option>
+                                  <option value="CARD">CARD</option>
+                                  <option value="ONLINE">ONLINE PORTAL</option>
+                                  <option value="BANK_TRANSFER">BANK TRANSFER</option>
+                                </select>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-500 uppercase">Reference Transaction ID / Memo</label>
+                              <input type="text" value={hpayTxId} onChange={e => setHpayTxId(e.target.value)} placeholder="e.g. TXN-123456" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" />
+                            </div>
+
+                            <button type="submit" className="glass-btn-primary w-full text-xs">Record Receipt & Sync Ledger</button>
+                          </form>
+                        </GlassCard>
+
+                        {/* List payments */}
+                        <GlassCard className="space-y-3">
+                          <h4 className="font-bold text-slate-200 text-xs">Hostel Payment Ledger Receipts</h4>
+                          <div className="max-h-[200px] overflow-y-auto">
+                            <table className="w-full text-[11px] text-left">
+                              <thead className="bg-slate-900/60 font-bold">
+                                <tr>
+                                  <th className="p-2">Student</th>
+                                  <th className="p-2">Structure</th>
+                                  <th className="p-2">Paid</th>
+                                  <th className="p-2">Method</th>
+                                  <th className="p-2 text-right">Action</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {hostelPayments.map(p => {
+                                  const stObj = mockDb.students.find(s => s.id === p.studentId);
+                                  const stUser = stObj ? mockDb.users.find(u => u.id === stObj.userId) : null;
+                                  return (
+                                    <tr key={p.id} className="border-b border-slate-850 hover:bg-slate-900/30 text-[10px]">
+                                      <td className="p-2 font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</td>
+                                      <td className="p-2 text-slate-400">{p.fee ? p.fee.name : 'Hostel Fee'}</td>
+                                      <td className="p-2 font-mono font-bold text-green-400">{overview?.currencySymbol || '$'}{Number(p.amountPaid).toFixed(2)}</td>
+                                      <td className="p-2 font-mono text-[9px]">{p.paymentMethod}</td>
+                                      <td className="p-2 text-right">
+                                        <button onClick={() => { if (window.confirm('Delete payment record?')) { mockApi.deleteHostelPayment(p.id).then(() => loadData()); } }} className="text-slate-550 hover:text-red-400 p-1"><Trash2 size={11} /></button>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        </GlassCard>
+                      </div>
+                    </div>
+                  )}
+
+                </div>
+              );
+            })()}
+          </div>
         </PremiumLock>
       )}
 
@@ -6191,16 +8406,48 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Add Book to Catalog</button>
                 </form>
 
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {mockDb.books.map(b => (
-                    <div key={b.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
-                      <div>
-                        <p className="font-bold text-slate-200">{b.title}</p>
-                        <p className="text-[9px] text-slate-400">Author: {b.author} | Copies: {b.availableCopies}/{b.totalCopies}</p>
-                      </div>
-                      <span className="px-1.5 py-0.5 rounded text-[8px] font-bold bg-brand-500/10 text-brand-400 font-mono">{b.subject}</span>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-56">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 text-slate-400 text-[9px] font-bold uppercase tracking-wider bg-slate-900/40">
+                        <th className="py-2 px-3">Book Title</th>
+                        <th className="py-2 px-3">Author</th>
+                        <th className="py-2 px-3">ISBN</th>
+                        <th className="py-2 px-3">Category</th>
+                        <th className="py-2.5 px-2 text-center">Copies</th>
+                        <th className="py-2.5 px-2 text-center">Avail</th>
+                        <th className="py-2 px-3">Created</th>
+                        <th className="py-2 px-3 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/40 text-slate-300">
+                      {books.length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="text-center py-4 text-slate-500 font-mono text-[9px]">NO BOOKS REGISTERED</td>
+                        </tr>
+                      ) : (
+                        books.map(b => (
+                          <tr key={b.id} className="hover:bg-slate-900/10 text-[10px]">
+                            <td className="py-2 px-3 font-semibold text-slate-200">{b.title}</td>
+                            <td className="py-2 px-3">{b.author}</td>
+                            <td className="py-2 px-3 font-mono">{b.isbn}</td>
+                            <td className="py-2 px-3">
+                              <span className="px-1 py-0.5 rounded text-[8px] font-bold bg-brand-500/10 text-brand-400 font-mono">{b.subject}</span>
+                            </td>
+                            <td className="py-2 px-2 text-center font-mono">{b.totalCopies}</td>
+                            <td className="py-2 px-2 text-center font-mono">{b.availableCopies}</td>
+                            <td className="py-2 px-3 font-mono text-[9px]">{b.createdAt ? new Date(b.createdAt).toLocaleDateString() : 'N/A'}</td>
+                            <td className="py-2 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button type="button" onClick={() => { setEditingBook(b); setEditBkTitle(b.title); setEditBkAuthor(b.author); setEditBkIsbn(b.isbn); setEditBkSubject(b.subject); setEditBkCopies(b.totalCopies); }} className="text-brand-400 hover:text-brand-300 p-0.5" title="Edit"><Edit size={11} /></button>
+                                <button type="button" onClick={() => handleDeleteBook(b.id)} className="text-red-400 hover:text-red-300 p-0.5" title="Delete"><Trash2 size={11} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </GlassCard>
 
@@ -6248,26 +8495,38 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   <button type="submit" className="w-full py-1.5 bg-emerald-650 hover:bg-emerald-700 rounded-lg font-bold text-slate-100 transition-colors text-xs">Create Category</button>
                 </form>
 
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {bookCategories.length === 0 ? (
-                    <p className="text-[10px] text-slate-500 text-center py-2 font-mono">NO ACTIVE CATEGORIES FOUND</p>
-                  ) : (
-                    bookCategories.map(bc => (
-                      <div key={bc.id} className="p-2 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-slate-200 text-xs">{bc.name}</p>
-                          <p className="text-[9px] text-slate-500 font-mono">{bc.code}</p>
-                          {bc.description && <p className="text-[8px] text-slate-500 mt-0.5 line-clamp-1">{bc.description}</p>}
-                        </div>
-                        <button 
-                          onClick={() => handleDeleteBookCategory(bc.id)}
-                          className="p-1 text-red-400 hover:bg-red-500/10 rounded-lg transition-colors"
-                        >
-                          <Trash2 size={12} />
-                        </button>
-                      </div>
-                    ))
-                  )}
+                <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-40">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 text-slate-400 text-[9px] font-bold uppercase tracking-wider bg-slate-900/40">
+                        <th className="py-2 px-3">Name</th>
+                        <th className="py-2 px-3">Code</th>
+                        <th className="py-2 px-3">Description</th>
+                        <th className="py-2 px-3 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/40 text-slate-300">
+                      {bookCategories.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="text-center py-4 text-slate-500 font-mono text-[9px]">NO ACTIVE CATEGORIES</td>
+                        </tr>
+                      ) : (
+                        bookCategories.map(bc => (
+                          <tr key={bc.id} className="hover:bg-slate-900/10 text-[10px]">
+                            <td className="py-2 px-3 font-semibold text-slate-200">{bc.name}</td>
+                            <td className="py-2 px-3 font-mono text-brand-400">{bc.code}</td>
+                            <td className="py-2 px-3 truncate max-w-[100px]">{bc.description || '—'}</td>
+                            <td className="py-2 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button type="button" onClick={() => { setEditingBookCategory(bc); setEditBcName(bc.name); setEditBcCode(bc.code); setEditBcDesc(bc.description || ''); }} className="text-brand-400 hover:text-brand-300 p-0.5" title="Edit"><Edit size={11} /></button>
+                                <button type="button" onClick={() => handleDeleteBookCategory(bc.id)} className="text-red-400 hover:text-red-300 p-0.5" title="Delete"><Trash2 size={11} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </GlassCard>
             </div>
@@ -6284,7 +8543,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     <label className="text-[9px] text-slate-500 font-bold uppercase">Select Book Title</label>
                     <select value={biBookId} onChange={(e) => setBiBookId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
                       <option value="">-- Choose Book --</option>
-                      {mockDb.books.filter(b => b.availableCopies > 0).map(b => (
+                      {books.filter(b => b.availableCopies > 0).map(b => (
                         <option key={b.id} value={b.id}>{b.title} ({b.availableCopies} available)</option>
                       ))}
                     </select>
@@ -6305,24 +8564,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Issue Book (Check-out)</button>
                 </form>
 
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {bookIssues.filter(bi => bi.status === 'ISSUED' || bi.status === 'OVERDUE').map(bi => {
-                    const student = students.find(s => s.id === bi.studentId);
-                    const book = mockDb.books.find(b => b.id === bi.bookId);
-                    return (
-                      <div key={bi.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-slate-200">{book ? book.title : 'Unknown Book'}</p>
-                          <p className="text-[9px] text-slate-400">To: {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'} | Due: {new Date(bi.dueDate).toLocaleDateString()}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${bi.status === 'OVERDUE' ? 'bg-red-500/10 text-red-400' : 'bg-brand-500/10 text-brand-400'}`}>{bi.status}</span>
-                          <button onClick={() => { setBrIssueId(bi.id); const dueMs = new Date(bi.dueDate).getTime(); const nowMs = Date.now(); if (nowMs > dueMs) { const days = Math.ceil((nowMs - dueMs) / (24*3600*1000)); setBrFine(days * 0.50); } else { setBrFine(0); } }} className="px-2 py-1 bg-green-600/20 text-green-400 hover:bg-green-600/30 rounded border border-green-500/20 font-bold text-[9px] transition-all">Return</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                <p className="text-[10px] text-slate-500 font-mono text-center pt-2">ACTIVE LOGS REGISTRY SHOWN BELOW</p>
               </GlassCard>
 
               {brIssueId && (
@@ -6362,7 +8604,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 <div className="space-y-2 max-h-48 overflow-y-auto">
                   {libraryFines.map(lf => {
                     const student = students.find(s => s.id === lf.studentId);
-                    const book = mockDb.books.find(b => b.id === lf.issue?.bookId);
+                    const book = lf.issue?.book || books.find(b => b.id === lf.issue?.bookId);
                     return (
                       <div key={lf.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
                         <div>
@@ -6416,9 +8658,173 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   </div>
                   <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Upload Digital Link</button>
                 </form>
+
+                <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-48 mt-4">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 text-slate-400 text-[9px] font-bold uppercase tracking-wider bg-slate-900/40">
+                        <th className="py-2 px-3">Title</th>
+                        <th className="py-2 px-3">Type</th>
+                        <th className="py-2 px-3 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                      {digitalAssetsList.length === 0 ? (
+                        <tr>
+                          <td colSpan={3} className="text-center py-4 text-slate-500 font-mono text-[9px]">NO DIGITAL ASSETS</td>
+                        </tr>
+                      ) : (
+                        digitalAssetsList.map(da => (
+                          <tr key={da.id} className="hover:bg-slate-900/10 text-[10px]">
+                            <td className="py-2 px-3">
+                              <p className="font-semibold text-slate-200 truncate max-w-[120px]">{da.title}</p>
+                              <p className="text-[8px] text-slate-400 truncate max-w-[120px]">{da.author}</p>
+                            </td>
+                            <td className="py-2 px-3">
+                              <span className="px-1 py-0.5 rounded text-[8px] font-mono font-bold bg-brand-500/10 text-brand-400 uppercase">{da.fileType}</span>
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <a href={da.fileUrl} target="_blank" rel="noopener noreferrer" className="text-emerald-400 hover:text-emerald-300 p-0.5" title="View/Download"><Eye size={11} /></a>
+                                <button type="button" onClick={() => { setEditingDigitalAsset(da); setEditDaTitle(da.title); setEditDaAuthor(da.author || ''); setEditDaType(da.fileType); setEditDaUrl(da.fileUrl); }} className="text-brand-400 hover:text-brand-300 p-0.5" title="Edit"><Edit size={11} /></button>
+                                <button type="button" onClick={() => handleDeleteDigitalAsset(da.id)} className="text-red-400 hover:text-red-300 p-0.5" title="Delete"><Trash2 size={11} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </GlassCard>
             </div>
           </div>
+
+          {/* Checkout & Issue History Panel */}
+          <GlassCard className="space-y-4">
+            <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+              <Calendar className="text-brand-400" size={15} />
+              Book Issue & Checkout Registry Logs
+            </h4>
+            <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-80">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-slate-400 text-[9px] font-bold uppercase tracking-wider bg-slate-900/40">
+                    <th className="py-2.5 px-3">Student Name</th>
+                    <th className="py-2.5 px-3">Admission Code</th>
+                    <th className="py-2.5 px-3">Book Title</th>
+                    <th className="py-2.5 px-3">Issue Date</th>
+                    <th className="py-2.5 px-3">Due Date</th>
+                    <th className="py-2.5 px-3">Return Date</th>
+                    <th className="py-2.5 px-3">Status</th>
+                    <th className="py-2.5 px-3">Fine Detail</th>
+                    <th className="py-2.5 px-3 text-center">Actions</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                  {bookIssues.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="text-center py-4 text-slate-500 font-mono text-[9px]">NO BOOK ISSUES RECORDED</td>
+                    </tr>
+                  ) : (
+                    bookIssues.map(bi => {
+                      const student = students.find(s => s.id === bi.studentId);
+                      const book = bi.book || books.find(b => b.id === bi.bookId);
+                      const fineRecord = libraryFines.find(f => f.issueId === bi.id);
+                      
+                      let fineText = 'No Fine';
+                      let fineColor = 'text-slate-450';
+                      if (fineRecord) {
+                        const statusStr = fineRecord.isPaid ? 'Paid' : (fineRecord.status === 'WAIVED' ? 'Waived' : 'Unpaid');
+                        fineText = `$${Number(fineRecord.amount).toFixed(2)} (${statusStr})`;
+                        fineColor = fineRecord.isPaid ? 'text-green-400' : (fineRecord.status === 'WAIVED' ? 'text-amber-400' : 'text-red-400');
+                      } else if (bi.status === 'OVERDUE') {
+                        const dueMs = new Date(bi.dueDate).getTime();
+                        const nowMs = Date.now();
+                        if (nowMs > dueMs) {
+                          const days = Math.ceil((nowMs - dueMs) / (24 * 3600 * 1000));
+                          fineText = `$${(days * 0.50).toFixed(2)} (Pending)`;
+                          fineColor = 'text-red-400';
+                        }
+                      }
+
+                      return (
+                        <tr key={bi.id} className="hover:bg-slate-900/10 text-[10px]">
+                          <td className="py-2.5 px-3 font-semibold text-slate-200">
+                            {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}
+                          </td>
+                          <td className="py-2.5 px-3 font-mono">{student?.admissionNumber || '—'}</td>
+                          <td className="py-2.5 px-3">{book ? book.title : 'Unknown'}</td>
+                          <td className="py-2.5 px-3 font-mono">{new Date(bi.issueDate).toLocaleDateString()}</td>
+                          <td className="py-2.5 px-3 font-mono">{new Date(bi.dueDate).toLocaleDateString()}</td>
+                          <td className="py-2.5 px-3 font-mono">{bi.returnDate ? new Date(bi.returnDate).toLocaleDateString() : '—'}</td>
+                          <td className="py-2.5 px-3">
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
+                              bi.status === 'RETURNED' ? 'bg-green-500/10 text-green-400' :
+                              bi.status === 'OVERDUE' ? 'bg-red-500/10 text-red-400' :
+                              bi.status === 'LOST' ? 'bg-rose-600/20 text-rose-300' :
+                              bi.status === 'DAMAGED' ? 'bg-orange-600/20 text-orange-300' :
+                              'bg-brand-500/10 text-brand-400'
+                            }`}>{bi.status}</span>
+                          </td>
+                          <td className={`py-2.5 px-3 font-mono font-semibold ${fineColor}`}>
+                            {fineText}
+                          </td>
+                          <td className="py-2.5 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              {(bi.status === 'ISSUED' || bi.status === 'OVERDUE') && (
+                                <button 
+                                  type="button"
+                                  onClick={() => { 
+                                    setBrIssueId(bi.id); 
+                                    const dueMs = new Date(bi.dueDate).getTime(); 
+                                    const nowMs = Date.now(); 
+                                    if (nowMs > dueMs) { 
+                                      const days = Math.ceil((nowMs - dueMs) / (24*3600*1000)); 
+                                      setBrFine(days * 0.50); 
+                                    } else { 
+                                      setBrFine(0); 
+                                    } 
+                                  }} 
+                                  className="px-1.5 py-0.5 bg-green-500/20 text-green-400 border border-green-500/20 rounded hover:bg-green-500/30 text-[9px] font-bold"
+                                >
+                                  Return
+                                </button>
+                              )}
+                              
+                              <button 
+                                type="button"
+                                onClick={() => { 
+                                  setEditingBookIssue(bi); 
+                                  setEditBiDueDate(bi.dueDate); 
+                                  setEditBiFineAmount(bi.fineAmount || 0); 
+                                  setEditBiStatus(bi.status); 
+                                  setEditBiReturnDate(bi.returnDate || ''); 
+                                }} 
+                                className="text-brand-400 hover:text-brand-300 p-0.5" 
+                                title="Edit Issue Details"
+                              >
+                                <Edit size={11} />
+                              </button>
+                              
+                              <button 
+                                type="button"
+                                onClick={() => handleDeleteBookIssue(bi.id)} 
+                                className="text-red-400 hover:text-red-300 p-0.5" 
+                                title="Delete Checkout Record"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
           </div>
         </PremiumLock>
       )}
@@ -6477,16 +8883,40 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Create Exam Term</button>
                 </form>
 
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {examsList.map(ex => (
-                    <div key={ex.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between text-[11px]">
-                      <div>
-                        <p className="font-bold text-slate-200">{ex.name}</p>
-                        <p className="text-[9px] text-slate-400">Term: {ex.term} | Period: {new Date(ex.startDate).toLocaleDateString()} - {new Date(ex.endDate).toLocaleDateString()}</p>
-                      </div>
-                      <button onClick={() => handleDeleteExam(ex.id)} className="p-1 text-slate-500 hover:text-red-400 rounded"><Trash2 size={12} /></button>
-                    </div>
-                  ))}
+                <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-48 mt-4">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 text-slate-400 text-[9px] font-bold uppercase tracking-wider bg-slate-900/40">
+                        <th className="py-2 px-3">Exam Name</th>
+                        <th className="py-2 px-3">Term</th>
+                        <th className="py-2 px-3">Schedule</th>
+                        <th className="py-2 px-3 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/40 text-slate-300">
+                      {examsList.length === 0 ? (
+                        <tr>
+                          <td colSpan={4} className="text-center py-4 text-slate-500 font-mono text-[9px]">NO EXAMS REGISTERED</td>
+                        </tr>
+                      ) : (
+                        examsList.map(ex => (
+                          <tr key={ex.id} className="hover:bg-slate-900/10 text-[10px]">
+                            <td className="py-2 px-3 font-semibold text-slate-200">{ex.name}</td>
+                            <td className="py-2 px-3 font-mono text-brand-400 text-[9px]">{ex.term}</td>
+                            <td className="py-2 px-3 font-mono text-[9px]">
+                              {new Date(ex.startDate).toLocaleDateString()} - {new Date(ex.endDate).toLocaleDateString()}
+                            </td>
+                            <td className="py-2 px-3 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                <button type="button" onClick={() => { setEditingExam(ex); setEditExName(ex.name); setEditExTerm(ex.term); setEditExStart(ex.startDate); setEditExEnd(ex.endDate); }} className="text-brand-400 hover:text-brand-300 p-0.5" title="Edit"><Edit size={11} /></button>
+                                <button type="button" onClick={() => handleDeleteExam(ex.id)} className="text-red-400 hover:text-red-300 p-0.5" title="Delete"><Trash2 size={11} /></button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </GlassCard>
 
@@ -6527,6 +8957,46 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                   </div>
                   <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Add Criteria</button>
                 </form>
+
+                <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-48 mt-4">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 text-slate-400 text-[9px] font-bold uppercase tracking-wider bg-slate-900/40">
+                        <th className="py-2 px-3">Exam</th>
+                        <th className="py-2 px-3">Subject</th>
+                        <th className="py-2 px-3 text-center">Max</th>
+                        <th className="py-2 px-3 text-center">Pass</th>
+                        <th className="py-2 px-3 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/40 text-slate-300">
+                      {examSubjects.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="text-center py-4 text-slate-500 font-mono text-[9px]">NO CRITERIA DEFINED</td>
+                        </tr>
+                      ) : (
+                        examSubjects.map(es => {
+                          const exam = examsList.find(e => e.id === es.examId);
+                          const subjectName = es.subject?.name || subjects.find(s => s.id === es.subjectId)?.name || 'Unknown';
+                          return (
+                            <tr key={es.id} className="hover:bg-slate-900/10 text-[10px]">
+                              <td className="py-2 px-3 font-semibold text-slate-200">{exam ? exam.name : 'Unknown'}</td>
+                              <td className="py-2 px-3 text-slate-300">{subjectName}</td>
+                              <td className="py-2 px-3 text-center font-mono">{es.maxMarks}</td>
+                              <td className="py-2 px-3 text-center font-mono text-brand-400">{es.passingMarks}</td>
+                              <td className="py-2 px-3 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button type="button" onClick={() => { setEditingExamSubject(es); setEditEsMax(es.maxMarks); setEditEsPass(es.passingMarks); }} className="text-brand-400 hover:text-brand-300 p-0.5" title="Edit"><Edit size={11} /></button>
+                                  <button type="button" onClick={() => handleDeleteExamSubject(es.id)} className="text-red-400 hover:text-red-300 p-0.5" title="Delete"><Trash2 size={11} /></button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </GlassCard>
             </div>
 
@@ -6621,6 +9091,63 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                 )}
               </GlassCard>
 
+              {/* Recorded Marks Registry Logs */}
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Award className="text-brand-400" size={15} />
+                  Student Marks Registry Records
+                </h4>
+                <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-64">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 text-slate-400 text-[9px] font-bold uppercase tracking-wider bg-slate-900/40">
+                        <th className="py-2.5 px-3">Student</th>
+                        <th className="py-2.5 px-3">Exam</th>
+                        <th className="py-2.5 px-3">Subject</th>
+                        <th className="py-2.5 px-3 text-center">Score</th>
+                        <th className="py-2.5 px-3">Remarks</th>
+                        <th className="py-2.5 px-3 text-center">Delete</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                      {studentMarks.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-4 text-slate-500 font-mono text-[9px]">NO STUDENT MARKS RECORDED</td>
+                        </tr>
+                      ) : (
+                        studentMarks.map(sm => {
+                          const student = students.find(s => s.id === sm.studentId);
+                          const exam = examsList.find(e => e.id === sm.examId);
+                          const subject = subjects.find(s => s.id === sm.subjectId);
+                          const criteria = examSubjects.find(es => es.examId === sm.examId && es.subjectId === sm.subjectId);
+                          return (
+                            <tr key={sm.id} className="hover:bg-slate-900/10 text-[10px]">
+                              <td className="py-2 px-3 font-semibold text-slate-200">
+                                {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}
+                              </td>
+                              <td className="py-2 px-3">{exam ? exam.name : 'Unknown'}</td>
+                              <td className="py-2 px-3 text-slate-300">{subject ? subject.name : 'Unknown'}</td>
+                              <td className="py-2 px-3 text-center font-mono font-bold">
+                                <span className={criteria && sm.marksObtained < criteria.passingMarks ? 'text-red-400' : 'text-green-400'}>
+                                  {sm.marksObtained}
+                                </span>
+                                <span className="text-slate-500 font-normal"> / {criteria ? criteria.maxMarks : 100}</span>
+                              </td>
+                              <td className="py-2 px-3 italic text-slate-400 max-w-[150px] truncate">{sm.remarks || '—'}</td>
+                              <td className="py-2 px-3 text-center">
+                                <button type="button" onClick={() => handleDeleteStudentMark(sm.id)} className="text-red-400 hover:text-red-300 p-1" title="Delete Mark Record">
+                                  <Trash2 size={12} />
+                                </button>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </GlassCard>
+
               {/* Aggregate Results Publisher */}
               <GlassCard className="space-y-4">
                 <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
@@ -6657,6 +9184,56 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
                     <button type="submit" className="glass-btn-primary py-2 px-6 font-bold text-xs bg-brand-600 text-slate-100">Publish & Generate Report Card</button>
                   </div>
                 </form>
+              </GlassCard>
+
+              {/* Published Report Cards History Table */}
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Award className="text-brand-400" size={15} />
+                  Published Report Cards History Ledger
+                </h4>
+                <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-64">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 text-slate-400 text-[9px] font-bold uppercase tracking-wider bg-slate-900/40">
+                        <th className="py-2.5 px-3">Student</th>
+                        <th className="py-2.5 px-3">Term</th>
+                        <th className="py-2.5 px-3 text-center">Attendance %</th>
+                        <th className="py-2.5 px-3 text-center">GPA Score</th>
+                        <th className="py-2.5 px-3">Remarks</th>
+                        <th className="py-2.5 px-3 text-center">Actions</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                      {reportCards.length === 0 ? (
+                        <tr>
+                          <td colSpan={6} className="text-center py-4 text-slate-500 font-mono text-[9px]">NO REPORT CARDS PUBLISHED</td>
+                        </tr>
+                      ) : (
+                        reportCards.map(rc => {
+                          const student = students.find(s => s.id === rc.studentId);
+                          return (
+                            <tr key={rc.id} className="hover:bg-slate-900/10 text-[10px]">
+                              <td className="py-2 px-3 font-semibold text-slate-200">
+                                {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}
+                              </td>
+                              <td className="py-2 px-3 font-mono text-[9px] text-brand-400">{rc.term}</td>
+                              <td className="py-2 px-3 text-center font-mono">{rc.attendancePercentage}%</td>
+                              <td className="py-2 px-3 text-center font-mono font-bold text-emerald-400">{rc.gradePointAverage.toFixed(2)}</td>
+                              <td className="py-2 px-3 text-slate-350 italic max-w-[150px] truncate">{rc.remarks || '—'}</td>
+                              <td className="py-2 px-3 text-center">
+                                <div className="flex items-center justify-center gap-1.5">
+                                  <button type="button" onClick={() => { setEditingReportCard(rc); setEditRcTerm(rc.term); setEditRcAttendance(rc.attendancePercentage); setEditRcGpa(rc.gradePointAverage); setEditRcRemarks(rc.remarks || ''); }} className="text-brand-400 hover:text-brand-300 p-0.5" title="Edit"><Edit size={11} /></button>
+                                  <button type="button" onClick={() => handleDeleteReportCard(rc.id)} className="text-red-400 hover:text-red-300 p-0.5" title="Delete"><Trash2 size={11} /></button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
               </GlassCard>
             </div>
           </div>
@@ -7229,6 +9806,342 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
               </div>
             </GlassCard>
           </div>
+        </div>
+      )}
+
+      {/* ── Edit Book Modal Overlay ── */}
+      {editingBook && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in text-xs">
+          <GlassCard className="w-full max-w-md border border-brand-500/30 p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+              <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <BookOpen size={16} className="text-brand-400" />
+                Edit Book Catalog Details
+              </h3>
+              <button type="button" onClick={() => setEditingBook(null)} className="text-[10px] font-bold text-slate-500 hover:text-slate-350 uppercase">Cancel</button>
+            </div>
+            <form onSubmit={handleUpdateBook} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[9px] text-slate-400 font-bold uppercase">Book Title</label>
+                <input type="text" value={editBkTitle} onChange={(e) => setEditBkTitle(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Author</label>
+                  <input type="text" value={editBkAuthor} onChange={(e) => setEditBkAuthor(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">ISBN Code</label>
+                  <input type="text" value={editBkIsbn} onChange={(e) => setEditBkIsbn(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Total Copies</label>
+                  <input type="number" value={editBkCopies} onChange={(e) => setEditBkCopies(parseInt(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Subject/Category</label>
+                  <select value={editBkSubject} onChange={(e) => setEditBkSubject(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required>
+                    <option value="">-- Choose Category --</option>
+                    {bookCategories.map(bc => (
+                      <option key={bc.id} value={bc.name}>{bc.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <button type="submit" className="w-full py-2 bg-brand-600 hover:bg-brand-500 rounded-lg font-bold text-slate-100 transition-colors mt-2">Save Catalog Changes</button>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── Edit Book Category Modal Overlay ── */}
+      {editingBookCategory && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in text-xs">
+          <GlassCard className="w-full max-w-md border border-brand-500/30 p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+              <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <Layers size={16} className="text-brand-400" />
+                Edit Book Category
+              </h3>
+              <button type="button" onClick={() => setEditingBookCategory(null)} className="text-[10px] font-bold text-slate-500 hover:text-slate-350 uppercase">Cancel</button>
+            </div>
+            <form onSubmit={handleUpdateBookCategory} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Category Name</label>
+                  <input type="text" value={editBcName} onChange={(e) => setEditBcName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Category Code</label>
+                  <input type="text" value={editBcCode} onChange={(e) => setEditBcCode(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] text-slate-400 font-bold uppercase">Description</label>
+                <input type="text" value={editBcDesc} onChange={(e) => setEditBcDesc(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" />
+              </div>
+              <button type="submit" className="w-full py-2 bg-emerald-650 hover:bg-emerald-600 rounded-lg font-bold text-slate-100 transition-colors mt-2">Update Category</button>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── Edit Book Issue Modal Overlay ── */}
+      {editingBookIssue && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in text-xs">
+          <GlassCard className="w-full max-w-md border border-brand-500/30 p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+              <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <Calendar size={16} className="text-brand-400" />
+                Edit Book Issue Record
+              </h3>
+              <button type="button" onClick={() => setEditingBookIssue(null)} className="text-[10px] font-bold text-slate-500 hover:text-slate-350 uppercase">Cancel</button>
+            </div>
+            <form onSubmit={handleUpdateBookIssue} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Due Return Date</label>
+                  <input type="date" value={editBiDueDate} onChange={(e) => setEditBiDueDate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Fine Amount ($)</label>
+                  <input type="number" step="0.01" value={editBiFineAmount} onChange={(e) => setEditBiFineAmount(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Checkout Status</label>
+                  <select value={editBiStatus} onChange={(e) => setEditBiStatus(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required>
+                    <option value="ISSUED">Issued</option>
+                    <option value="RETURNED">Returned</option>
+                    <option value="OVERDUE">Overdue</option>
+                    <option value="DAMAGED">Damaged</option>
+                    <option value="LOST">Lost</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Return Date (Optional)</label>
+                  <input type="date" value={editBiReturnDate} onChange={(e) => setEditBiReturnDate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" />
+                </div>
+              </div>
+              <button type="submit" className="w-full py-2 bg-brand-600 hover:bg-brand-500 rounded-lg font-bold text-slate-100 transition-colors mt-2">Update Issue Record</button>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── Edit Digital Asset Modal Overlay ── */}
+      {editingDigitalAsset && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in text-xs">
+          <GlassCard className="w-full max-w-md border border-brand-500/30 p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+              <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <HardDrive size={16} className="text-brand-400" />
+                Edit Digital Library Link
+              </h3>
+              <button type="button" onClick={() => setEditingDigitalAsset(null)} className="text-[10px] font-bold text-slate-500 hover:text-slate-350 uppercase">Cancel</button>
+            </div>
+            <form onSubmit={handleUpdateDigitalAsset} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[9px] text-slate-400 font-bold uppercase">Asset Title</label>
+                <input type="text" value={editDaTitle} onChange={(e) => setEditDaTitle(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Author</label>
+                  <input type="text" value={editDaAuthor} onChange={(e) => setEditDaAuthor(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">File Type</label>
+                  <select value={editDaType} onChange={(e) => setEditDaType(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none">
+                    <option value="pdf">PDF E-Book</option>
+                    <option value="epub">EPUB Reader</option>
+                    <option value="mp4">Video Guide</option>
+                  </select>
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] text-slate-400 font-bold uppercase">Public URL</label>
+                <input type="url" value={editDaUrl} onChange={(e) => setEditDaUrl(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+              </div>
+              <button type="submit" className="w-full py-2 bg-brand-600 hover:bg-brand-500 rounded-lg font-bold text-slate-100 transition-colors mt-2">Update Asset Link</button>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── Edit Transport Assignment Modal Overlay ── */}
+      {editingTransportAssignment && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in text-xs">
+          <GlassCard className="w-full max-w-md border border-brand-500/30 p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+              <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <Layers size={16} className="text-brand-400" />
+                Edit Transport Assignment Stop
+              </h3>
+              <button type="button" onClick={() => setEditingTransportAssignment(null)} className="text-[10px] font-bold text-slate-500 hover:text-slate-350 uppercase">Cancel</button>
+            </div>
+            <form onSubmit={handleUpdateTransportAssignment} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[9px] text-slate-400 font-bold uppercase">Student</label>
+                <input type="text" value={(() => { const st = students.find(s => s.id === editingTransportAssignment.studentId); return st ? `${st.userDetails?.firstName || ''} ${st.userDetails?.lastName || ''}` : 'Unknown student'; })()} className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-slate-500 focus:outline-none cursor-not-allowed font-semibold" disabled />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] text-slate-400 font-bold uppercase">Select Bus Fleet</label>
+                <select value={editTaBusId} onChange={(e) => setEditTaBusId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required>
+                  <option value="">-- Choose Bus --</option>
+                  {buses.map(b => (
+                    <option key={b.id} value={b.id}>{b.numberPlate}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Select Route</label>
+                  <select value={editTaRouteId} onChange={(e) => setEditTaRouteId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required>
+                    <option value="">-- Choose Route --</option>
+                    {routes.map(r => (
+                      <option key={r.id} value={r.id}>{r.name} ({r.routeCode})</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Select Stop Point</label>
+                  <select value={editTaPickupPointId} onChange={(e) => setEditTaPickupPointId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required>
+                    <option value="">-- Choose Stop --</option>
+                    {pickupPointsList.filter(pp => pp.routeId === editTaRouteId).map(pp => (
+                      <option key={pp.id} value={pp.id}>{pp.name}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+              <button type="submit" className="w-full py-2 bg-brand-600 hover:bg-brand-500 rounded-lg font-bold text-slate-100 transition-colors mt-2">Save Assignment</button>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── Edit Exam Modal Overlay ── */}
+      {editingExam && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in text-xs">
+          <GlassCard className="w-full max-w-md border border-brand-500/30 p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+              <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <Calendar size={16} className="text-brand-400" />
+                Edit Examination Term
+              </h3>
+              <button type="button" onClick={() => setEditingExam(null)} className="text-[10px] font-bold text-slate-500 hover:text-slate-350 uppercase">Cancel</button>
+            </div>
+            <form onSubmit={handleUpdateExam} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[9px] text-slate-400 font-bold uppercase">Exam Name</label>
+                <input type="text" value={editExName} onChange={(e) => setEditExName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] text-slate-400 font-bold uppercase">Term Session</label>
+                <select value={editExTerm} onChange={(e) => setEditExTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none">
+                  <option value="TERM 1">Term 1</option>
+                  <option value="TERM 2">Term 2</option>
+                  <option value="FINAL">Final Examination</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Start Date</label>
+                  <input type="date" value={editExStart} onChange={(e) => setEditExStart(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">End Date</label>
+                  <input type="date" value={editExEnd} onChange={(e) => setEditExEnd(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+              </div>
+              <button type="submit" className="w-full py-2 bg-brand-600 hover:bg-brand-500 rounded-lg font-bold text-slate-100 transition-colors mt-2">Save Exam Details</button>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── Edit Exam Subject Criteria Modal Overlay ── */}
+      {editingExamSubject && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in text-xs">
+          <GlassCard className="w-full max-w-md border border-brand-500/30 p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+              <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <Layers size={16} className="text-brand-400" />
+                Edit Criteria Thresholds
+              </h3>
+              <button type="button" onClick={() => setEditingExamSubject(null)} className="text-[10px] font-bold text-slate-500 hover:text-slate-350 uppercase">Cancel</button>
+            </div>
+            <form onSubmit={handleUpdateExamSubject} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 font-semibold text-slate-400">
+                <div>
+                  <p className="text-[8px] uppercase">Exam</p>
+                  <p className="text-slate-200 truncate mt-0.5">{examsList.find(e => e.id === editingExamSubject.examId)?.name || 'Unknown'}</p>
+                </div>
+                <div>
+                  <p className="text-[8px] uppercase">Subject</p>
+                  <p className="text-slate-200 truncate mt-0.5">{editingExamSubject.subject?.name || subjects.find(s => s.id === editingExamSubject.subjectId)?.name || 'Unknown'}</p>
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3 pt-2">
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Max Marks</label>
+                  <input type="number" value={editEsMax} onChange={(e) => setEditEsMax(parseInt(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Passing Marks</label>
+                  <input type="number" value={editEsPass} onChange={(e) => setEditEsPass(parseInt(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+              </div>
+              <button type="submit" className="w-full py-2 bg-brand-600 hover:bg-brand-500 rounded-lg font-bold text-slate-100 transition-colors mt-2">Save Thresholds</button>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── Edit Report Card Modal Overlay ── */}
+      {editingReportCard && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in text-xs">
+          <GlassCard className="w-full max-w-md border border-brand-500/30 p-6 space-y-4 shadow-2xl">
+            <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+              <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                <Award size={16} className="text-brand-400" />
+                Edit Report Card Details
+              </h3>
+              <button type="button" onClick={() => setEditingReportCard(null)} className="text-[10px] font-bold text-slate-500 hover:text-slate-350 uppercase">Cancel</button>
+            </div>
+            <form onSubmit={handleUpdateReportCard} className="space-y-3">
+              <div className="space-y-1">
+                <label className="text-[9px] text-slate-400 font-bold uppercase">Student</label>
+                <input type="text" value={(() => { const st = students.find(s => s.id === editingReportCard.studentId); return st ? `${st.userDetails?.firstName || ''} ${st.userDetails?.lastName || ''}` : 'Unknown student'; })()} className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-slate-500 focus:outline-none cursor-not-allowed font-semibold" disabled />
+              </div>
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1 col-span-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Term</label>
+                  <select value={editRcTerm} onChange={(e) => setEditRcTerm(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required>
+                    <option value="TERM 1">Term 1</option>
+                    <option value="TERM 2">Term 2</option>
+                    <option value="FINAL">Final</option>
+                  </select>
+                </div>
+                <div className="space-y-1 col-span-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">Attendance %</label>
+                  <input type="number" value={editRcAttendance} onChange={(e) => setEditRcAttendance(parseInt(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+                <div className="space-y-1 col-span-1">
+                  <label className="text-[9px] text-slate-400 font-bold uppercase">GPA Score</label>
+                  <input type="number" step="0.01" value={editRcGpa} onChange={(e) => setEditRcGpa(parseFloat(e.target.value) || 0)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                </div>
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] text-slate-400 font-bold uppercase">Teacher Remarks</label>
+                <input type="text" value={editRcRemarks} onChange={(e) => setEditRcRemarks(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+              </div>
+              <button type="submit" className="w-full py-2 bg-brand-600 hover:bg-brand-500 rounded-lg font-bold text-slate-100 transition-colors mt-2">Save Report Card Changes</button>
+            </form>
+          </GlassCard>
         </div>
       )}
 

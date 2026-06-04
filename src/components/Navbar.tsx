@@ -117,6 +117,8 @@ export const Navbar: React.FC = () => {
     try {
       await mockApi.logout();
       setSession(null);
+      window.location.hash = '';
+      window.location.reload();
     } catch (err) {
       console.error(err);
     }

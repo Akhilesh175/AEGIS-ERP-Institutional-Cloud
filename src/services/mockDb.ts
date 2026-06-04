@@ -64,7 +64,10 @@ const SEED_USERS: User[] = [
   { id: 'u-student3', email: 'student3@aegis.com', role: 'STUDENT', firstName: 'Marie', lastName: 'Curie', phone: '+1 (555) 444-3333', avatarUrl: 'https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   // Parents
   { id: 'u-parent1', email: 'parent1@aegis.com', role: 'PARENT', firstName: 'Robert', lastName: 'da Vinci', phone: '+1 (555) 555-9999', avatarUrl: 'https://images.unsplash.com/photo-1492562080023-ab3db95bfbce?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'u-parent2', email: 'parent2@aegis.com', role: 'PARENT', firstName: 'Pierre', lastName: 'Curie', phone: '+1 (555) 555-8888', avatarUrl: 'https://images.unsplash.com/photo-1489980508314-941910ded1f4?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+  { id: 'u-parent2', email: 'parent2@aegis.com', role: 'PARENT', firstName: 'Pierre', lastName: 'Curie', phone: '+1 (555) 555-8888', avatarUrl: 'https://images.unsplash.com/photo-1489980508314-941910ded1f4?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  // Hostel Sub-admins
+  { id: 'u-hosteladmin', email: 'hosteladmin@aegis.com', role: 'HOSTEL_ADMIN', firstName: 'Jack', lastName: 'Harper', phone: '+1 (555) 333-8888', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150', isActive: true, schoolId: 'school-1', password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  { id: 'u-warden1', email: 'warden@aegis.com', role: 'WARDEN', firstName: 'Clara', lastName: 'Oswald', phone: '+1 (555) 333-9999', avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150', isActive: true, schoolId: 'school-1', password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
 ];
 
 const SEED_CLASSES: Class[] = [
@@ -435,6 +438,19 @@ class MockDatabase {
   reportCards: ReportCard[];
   quizResults: QuizResult[];
   driverSalaryPayouts: DriverSalaryPayout[];
+  hostels: any[];
+  hostelBlocks: any[];
+  hostelRooms: any[];
+  hostelBeds: any[];
+  hostelWardens: any[];
+  hostelAdmissions: any[];
+  hostelAttendance: any[];
+  hostelFees: any[];
+  hostelPayments: any[];
+  hostelLeaveRequests: any[];
+  hostelVisitors: any[];
+  hostelComplaints: any[];
+  hostelMessMenu: any[];
 
   constructor() {
     this.users = getStorage<User[]>('users', SEED_USERS);
@@ -519,6 +535,19 @@ class MockDatabase {
     this.reportCards = getStorage<ReportCard[]>('report_cards', SEED_REPORT_CARDS);
     this.quizResults = getStorage<QuizResult[]>('quiz_results', SEED_QUIZ_RESULTS);
     this.driverSalaryPayouts = getStorage<DriverSalaryPayout[]>('driver_salary_payouts', []);
+    this.hostels = getStorage<any[]>('hostels', []);
+    this.hostelBlocks = getStorage<any[]>('hostel_blocks', []);
+    this.hostelRooms = getStorage<any[]>('hostel_rooms', []);
+    this.hostelBeds = getStorage<any[]>('hostel_beds', []);
+    this.hostelWardens = getStorage<any[]>('hostel_wardens', []);
+    this.hostelAdmissions = getStorage<any[]>('hostel_admissions', []);
+    this.hostelAttendance = getStorage<any[]>('hostel_attendance', []);
+    this.hostelFees = getStorage<any[]>('hostel_fees', []);
+    this.hostelPayments = getStorage<any[]>('hostel_payments', []);
+    this.hostelLeaveRequests = getStorage<any[]>('hostel_leave_requests', []);
+    this.hostelVisitors = getStorage<any[]>('hostel_visitors', []);
+    this.hostelComplaints = getStorage<any[]>('hostel_complaints', []);
+    this.hostelMessMenu = getStorage<any[]>('hostel_mess_menu', []);
   }
 
   saveAll() {
@@ -578,6 +607,19 @@ class MockDatabase {
     setStorage('report_cards', this.reportCards);
     setStorage('quiz_results', this.quizResults);
     setStorage('driver_salary_payouts', this.driverSalaryPayouts);
+    setStorage('hostels', this.hostels);
+    setStorage('hostel_blocks', this.hostelBlocks);
+    setStorage('hostel_rooms', this.hostelRooms);
+    setStorage('hostel_beds', this.hostelBeds);
+    setStorage('hostel_wardens', this.hostelWardens);
+    setStorage('hostel_admissions', this.hostelAdmissions);
+    setStorage('hostel_attendance', this.hostelAttendance);
+    setStorage('hostel_fees', this.hostelFees);
+    setStorage('hostel_payments', this.hostelPayments);
+    setStorage('hostel_leave_requests', this.hostelLeaveRequests);
+    setStorage('hostel_visitors', this.hostelVisitors);
+    setStorage('hostel_complaints', this.hostelComplaints);
+    setStorage('hostel_mess_menu', this.hostelMessMenu);
   }
 
   // --- CRUD HELPERS ---

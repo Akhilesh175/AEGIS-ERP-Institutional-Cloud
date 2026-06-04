@@ -1,6 +1,6 @@
 // --- CORE ENUMS ---
 
-export type UserRole = 'STUDENT' | 'PARENT' | 'TEACHER' | 'ADMIN' | 'SUPER_ADMIN' | 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN';
+export type UserRole = 'STUDENT' | 'PARENT' | 'TEACHER' | 'ADMIN' | 'SUPER_ADMIN' | 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN' | 'CUSTOM_SUB_ADMIN';
 
 export type GenderType = 'MALE' | 'FEMALE' | 'OTHER';
 
@@ -232,6 +232,7 @@ export interface HomeworkAttachment {
 
 export interface Assignment {
   id: string;
+  schoolId?: string;
   classId: string;
   sectionId?: string | null;
   subjectId: string;
@@ -264,6 +265,7 @@ export interface AssignmentSubmission {
 
 export interface Quiz {
   id: string;
+  schoolId?: string;
   subjectId: string;
   classId?: string;
   teacherId: string | null;
@@ -488,6 +490,8 @@ export interface Bus {
   capacity: number;
   status: 'ACTIVE' | 'MAINTENANCE' | 'INACTIVE';
   driverId?: string | null;
+  driverName?: string | null;
+  driverPhone?: string | null;
   createdAt: string;
 }
 
@@ -705,4 +709,209 @@ export interface DriverSalaryPayout {
   currencyCode?: string;
   currencySymbol?: string;
 }
+
+export interface Hostel {
+  id: string;
+  schoolId: string;
+  name: string;
+  type: 'BOYS' | 'GIRLS' | 'MIXED';
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface HostelBlock {
+  id: string;
+  schoolId: string;
+  hostelId: string;
+  name: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface HostelRoom {
+  id: string;
+  schoolId: string;
+  blockId: string;
+  floor: number;
+  roomNumber: string;
+  capacity: number;
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface HostelBed {
+  id: string;
+  schoolId: string;
+  roomId: string;
+  bedName: string;
+  status: 'VACANT' | 'OCCUPIED' | 'MAINTENANCE';
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface HostelWarden {
+  id: string;
+  schoolId: string;
+  userId: string;
+  hostelId: string | null;
+  phone?: string;
+  username?: string;
+  gender?: string;
+  address?: string;
+  assignedLocations?: any[];
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  userDetails?: User;
+  hostelDetails?: Hostel;
+}
+
+export interface HostelAdmission {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  hostelId: string;
+  roomId: string;
+  bedId: string;
+  admissionDate: string;
+  checkInDate?: string;
+  checkOutDate?: string;
+  status: 'ACTIVE' | 'CHECKED_OUT';
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  student?: any;
+  hostel?: Hostel;
+  room?: HostelRoom;
+  bed?: HostelBed;
+}
+
+export interface HostelAttendance {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  date: string;
+  timeSlot: 'MORNING' | 'EVENING';
+  status: 'PRESENT' | 'ABSENT' | 'LEAVE';
+  recordedBy: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  student?: any;
+  recordedByDetails?: any;
+}
+
+export interface HostelFee {
+  id: string;
+  schoolId: string;
+  name: string;
+  amount: number;
+  feeType: 'MONTHLY' | 'ANNUAL' | 'ONE_TIME' | 'MESS';
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+}
+
+export interface HostelPayment {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  feeId: string;
+  amountPaid: number;
+  paymentDate: string;
+  paymentMethod: 'CASH' | 'CARD' | 'ONLINE' | 'BANK_TRANSFER';
+  txId?: string;
+  status: 'PAID' | 'PENDING' | 'PARTIAL';
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  student?: any;
+  fee?: HostelFee;
+}
+
+export interface HostelLeaveRequest {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  fromDate: string;
+  toDate: string;
+  reason: string;
+  parentApproval: 'PENDING' | 'APPROVED' | 'REJECTED' | 'HOLD';
+  wardenApproval: 'PENDING' | 'APPROVED' | 'REJECTED' | 'HOLD';
+  hostelAdminApproval?: 'PENDING' | 'APPROVED' | 'REJECTED' | 'HOLD';
+  adminApproval: 'PENDING' | 'APPROVED' | 'REJECTED' | 'HOLD';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'HOLD';
+  approvedBy?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  student?: any;
+}
+
+export interface HostelVisitor {
+  id: string;
+  schoolId: string;
+  visitorName: string;
+  relation: string;
+  studentId: string;
+  entryTime: string;
+  exitTime?: string;
+  purpose: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  student?: any;
+}
+
+export interface HostelComplaint {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  category: 'ROOM' | 'ELECTRICITY' | 'WATER' | 'MAINTENANCE' | 'OTHER';
+  description: string;
+  assignedStaff?: string;
+  resolutionNotes?: string;
+  status: 'SUBMITTED' | 'ASSIGNED' | 'RESOLVED' | 'CLOSED';
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  student?: any;
+}
+
+export interface HostelMessMenu {
+  id: string;
+  schoolId: string;
+  hostelId: string | null;
+  dayOfWeek: number;
+  breakfast: string;
+  lunch: string;
+  dinner: string;
+  specialMenu?: string;
+  createdAt?: string;
+  updatedAt?: string;
+  createdBy?: string;
+  updatedBy?: string;
+  hostel?: Hostel;
+}
+
 

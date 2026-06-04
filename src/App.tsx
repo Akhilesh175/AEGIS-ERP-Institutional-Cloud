@@ -16,9 +16,9 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 const getTabsForRole = (role: string, planName: string): string[] => {
   switch (role) {
     case 'STUDENT':
-      return ['dashboard', 'timetable', 'grades', 'materials', 'quizzes', 'library', 'transit', 'forums'];
+      return ['dashboard', 'timetable', 'grades', 'materials', 'quizzes', 'library', 'transit', 'forums', 'fees', 'hostel'];
     case 'PARENT':
-      return ['dashboard', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'transit', 'forums'];
+      return ['dashboard', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'transit', 'forums', 'hostel'];
     case 'TEACHER':
       return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics'];
     case 'SUPER_ADMIN':
@@ -28,7 +28,7 @@ const getTabsForRole = (role: string, planName: string): string[] => {
         'dashboard', 'impersonation', 'dangerzone',
         'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments'
+        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel'
       ];
   }
 };
@@ -71,7 +71,8 @@ export const App: React.FC = () => {
         // Validate route for the current user's role
         if (session) {
           const allowed = getTabsForRole(session.user.role, session.schoolSubscriptionPlan || 'freemium');
-          if (allowed.includes(hash)) {
+          const baseTab = hash.split('/')[0];
+          if (allowed.includes(baseTab)) {
             setActiveTab(hash);
             return;
           }
@@ -106,7 +107,8 @@ export const App: React.FC = () => {
     if (!session) return;
     const role = session.user.role;
     const allowed = getTabsForRole(role, session.schoolSubscriptionPlan || 'freemium');
-    if (activeTab !== 'dashboard' && !allowed.includes(activeTab)) {
+    const baseTab = activeTab.split('/')[0];
+    if (activeTab !== 'dashboard' && !allowed.includes(baseTab)) {
       setActiveTab('dashboard');
       window.location.hash = 'dashboard';
     }
@@ -308,9 +310,11 @@ export const App: React.FC = () => {
                 {[
                   { label: 'Super Admin', email: 'superadmin@aegis.com', desc: 'Manage all institutions, system audits, & SaaS stats.' },
                   { label: 'School Admin', email: 'admin@aegis.com', desc: 'Full registry maps, timetables, CRUDs, & gateway login.' },
+                  { label: 'Hostel Admin', email: 'hosteladmin@aegis.com', desc: 'Manage building layout, room allocations & hostel fees.' },
+                  { label: 'Hostel Warden', email: 'warden@aegis.com', desc: 'Manage attendance, leave workflows, visitor logs & menu.' },
                   { label: 'Faculty Teacher', email: 'teacher1@aegis.com', desc: 'Taught courses, grade rolls, mark attendance registers.' },
-                  { label: 'Parent Guardian', email: 'parent1@aegis.com', desc: 'Secure read-only child monitor (Leo & Albert accounts).' },
-                  { label: 'Active Student', email: 'student1@aegis.com', desc: 'Take online quizzes, download materials, stream lectures.' }
+                  { label: 'Parent Guardian', email: 'parent1@aegis.com', desc: 'Secure child portal child monitor (Leo & Albert).' },
+                  { label: 'Active Student', email: 'student1@aegis.com', desc: 'Hostel info, take online quizzes, forums, classes.' }
                 ].map((roleItem, idx) => (
                   <div 
                     key={idx}
@@ -356,7 +360,7 @@ export const App: React.FC = () => {
             {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
             {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
             {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
-            {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
+            {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
             {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
           </ErrorBoundary>
 

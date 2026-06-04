@@ -5,14 +5,17 @@ import { mockDb } from '../services/mockDb';
 import { supabase } from '../lib/supabase';
 import { 
   Timetable, Assignment, AssignmentSubmission, Quiz, QuizAttempt, 
-  Subject, ExamSchedule, ExamMark, StudyMaterial, Announcement, ForumPost 
+  Subject, ExamSchedule, ExamMark, StudyMaterial, Announcement, ForumPost,
+  Hostel, HostelBlock, HostelRoom, HostelBed, HostelWarden, HostelAdmission,
+  HostelAttendance, HostelFee, HostelPayment, HostelLeaveRequest, HostelVisitor,
+  HostelComplaint, HostelMessMenu
 } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Calendar, Clock, BookOpen, PenTool, Award, Download, 
   ExternalLink, UploadCloud, MessageCircle, DollarSign, PlayCircle,
   Paperclip, Trash2, Loader2, CheckCircle, X, FileText, AlertCircle, Eye, ClipboardList,
-  BookMarked, Layers
+  BookMarked, Layers, Home, User, Coffee, HelpCircle, Activity, Utensils, ShieldAlert
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -61,7 +64,8 @@ const renderVideoPlayer = (url: string) => {
   );
 };
 
-export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
+export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawActiveTab }) => {
+  const activeTab = rawActiveTab.split('/')[0];
   const { session, syncSubscriptionPlan } = useStore();
   const studentId = session?.studentId;
   const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
@@ -76,6 +80,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
   const [forumPosts, setForumPosts] = useState<(ForumPost & { schoolId: string; authorName: string; categoryName: string; repliesCount: number })[]>([]);
   const [fees, setFees] = useState<{ structure: any; payment?: any }[]>([]);
+  const [reportCards, setReportCards] = useState<any[]>([]);
 
   // Dynamic Library & Transport States
   const [transitAssignment, setTransitAssignment] = useState<any>(null);
@@ -117,6 +122,29 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
   const [postReplies, setPostReplies] = useState<any[]>([]);
   const [replyText, setReplyText] = useState('');
 
+  // Hostel Portal States
+  const [activeAdmission, setActiveAdmission] = useState<HostelAdmission | null>(null);
+  const [hostelDetails, setHostelDetails] = useState<Hostel | null>(null);
+  const [blockDetails, setBlockDetails] = useState<HostelBlock | null>(null);
+  const [roomDetails, setRoomDetails] = useState<HostelRoom | null>(null);
+  const [bedDetails, setBedDetails] = useState<HostelBed | null>(null);
+  const [wardenDetails, setWardenDetails] = useState<HostelWarden | null>(null);
+
+  const [myLeaveRequests, setMyLeaveRequests] = useState<HostelLeaveRequest[]>([]);
+  const [myComplaints, setMyComplaints] = useState<HostelComplaint[]>([]);
+  const [myAttendance, setMyAttendance] = useState<HostelAttendance[]>([]);
+  const [messMenus, setMessMenus] = useState<HostelMessMenu[]>([]);
+  const [myVisitorLogs, setMyVisitorLogs] = useState<HostelVisitor[]>([]);
+  const [myPayments, setMyPayments] = useState<HostelPayment[]>([]);
+
+  // Hostel Form States
+  const [leaveFromDate, setLeaveFromDate] = useState('');
+  const [leaveToDate, setLeaveToDate] = useState('');
+  const [leaveReason, setLeaveReason] = useState('');
+
+  const [complaintCategory, setComplaintCategory] = useState<'ROOM' | 'ELECTRICITY' | 'WATER' | 'MAINTENANCE' | 'OTHER'>('ROOM');
+  const [complaintDescription, setComplaintDescription] = useState('');
+
   const loadData = async () => {
     try {
       const schoolId = session?.user?.schoolId || '';
@@ -137,22 +165,27 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
 
       await syncSubscriptionPlan();
       const tt = await mockApi.studentGetTimetable(studentId).catch(() => []);
-      setTimetable(tt);
+      // Deduplicate timetable
+      setTimetable(Array.from(new Map(tt.map(t => [t.id, t])).values()));
 
       const ass = await mockApi.studentGetAssignments(studentId).catch(() => []);
-      setAssignments(ass);
+      // Deduplicate assignments by assignment.id
+      setAssignments(Array.from(new Map(ass.map(item => [item.assignment.id, item])).values()));
 
       const grd = await mockApi.studentGetGrades(studentId).catch(() => []);
-      setGrades(grd);
+      // Deduplicate grades by schedule.id
+      setGrades(Array.from(new Map(grd.map(item => [item.schedule.id, item])).values()));
 
       const qz = await mockApi.studentGetQuizzes(studentId).catch(() => []);
-      setQuizzes(qz);
+      // Deduplicate quizzes by quiz.id
+      setQuizzes(Array.from(new Map(qz.map(item => [item.quiz.id, item])).values()));
 
       const mat = await mockApi.getStudyMaterials(schoolId, classId).catch(() => []);
-      setMaterials(mat);
+      // Deduplicate materials by id
+      setMaterials(Array.from(new Map(mat.map(m => [m.id, m])).values()));
 
       const ann = await mockApi.getAnnouncements('STUDENT').catch(() => []);
-      setAnnouncements(ann);
+      setAnnouncements(Array.from(new Map(ann.map(a => [a.id, a])).values()));
 
       await mockApi.syncStudentsData(schoolId);
       await mockApi.syncForumCategoriesData(schoolId).catch(() => {});
@@ -162,17 +195,23 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       const cats = await mockApi.getForumCategories(schoolId).catch(() => []);
       const allowedCats = cats.filter(c => c.classId === studentObj?.classId || !c.classId);
       
-      setForumCategories(allowedCats);
+      // Deduplicate forum categories by id
+      setForumCategories(Array.from(new Map(allowedCats.map(c => [c.id, c])).values()));
       if (allowedCats.length > 0 && !postCategoryId) {
         setPostCategoryId(allowedCats[0].id);
       }
 
       const posts = await mockApi.getForumPosts().catch(() => []);
       const allowedCatIds = allowedCats.map(c => c.id);
-      setForumPosts(posts.filter(p => allowedCatIds.includes(p.categoryId)));
+      const filteredPosts = posts.filter(p => allowedCatIds.includes(p.categoryId));
+      // Deduplicate forum posts by id
+      setForumPosts(Array.from(new Map(filteredPosts.map(p => [p.id, p])).values()));
 
       const f = await mockApi.studentGetFees(studentId).catch(() => []);
-      setFees(f);
+      setFees(Array.from(new Map(f.map(item => [item.structure.id, item])).values()));
+
+      const rcs = await mockApi.fetchReportCards(schoolId, studentId).catch(() => []);
+      setReportCards(rcs);
 
       // Fetch dynamic transit and library details with safe catches
       const [allAssignments, allBuses, allRoutes, allPickupPoints, allDrivers, myIssues, myFines, digitalAssets, booksList] = await Promise.all([
@@ -186,7 +225,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
         mockApi.fetchDigitalLibraryAssets(schoolId).catch(() => []),
         mockApi.fetchBookInventory(schoolId).catch(() => [])
       ]);
-      const myAssignment = allAssignments.find(ta => ta.studentId === studentId && ta.status === 'ACTIVE');
+      const studentUserId = studentObj?.userId || '';
+      const myAssignment = allAssignments.find(ta => (ta.studentId === studentId || ta.studentId === studentUserId || ta.studentId === session?.user?.id) && ta.status === 'ACTIVE');
       if (myAssignment) {
         setTransitAssignment(myAssignment);
         const route = allRoutes.find(r => r.id === myAssignment.routeId);
@@ -198,6 +238,11 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
         if (bus && bus.driverId) {
           const driver = allDrivers.find(d => d.id === bus.driverId);
           setAssignedDriver(driver);
+        } else if (bus && (bus.driverName || bus.driverPhone)) {
+          setAssignedDriver({
+            name: bus.driverName,
+            phone: bus.driverPhone
+          });
         }
       } else {
         setTransitAssignment(null);
@@ -207,10 +252,75 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
         setAssignedDriver(null);
       }
 
-      setIssuedBooks(myIssues.filter(bi => bi.status === 'ISSUED'));
-      setLibraryFines(myFines);
-      setDigitalLibraryAssets(digitalAssets || []);
-      setLibraryBooks(booksList || []);
+      setIssuedBooks(Array.from(new Map(myIssues.map(bi => [bi.id, bi])).values()));
+      setLibraryFines(Array.from(new Map(myFines.map(lf => [lf.id, lf])).values()));
+      setDigitalLibraryAssets(Array.from(new Map((digitalAssets || []).map(da => [da.id, da])).values()));
+      setLibraryBooks(Array.from(new Map((booksList || []).map(b => [b.id, b])).values()));
+
+      // Load Hostel details
+      if (schoolId && studentId) {
+        await mockApi.syncHostelData(schoolId).catch(() => {});
+        
+        const admissions = await mockApi.fetchHostelAdmissions(schoolId).catch(() => []);
+        const activeAd = admissions.find((a: any) => a.studentId === studentId && a.status === 'ACTIVE');
+        setActiveAdmission(activeAd || null);
+        
+        if (activeAd) {
+          const hostels = await mockApi.fetchHostels(schoolId).catch(() => []);
+          const blocks = await mockApi.fetchHostelBlocks(schoolId).catch(() => []);
+          const rooms = await mockApi.fetchHostelRooms(schoolId).catch(() => []);
+          const beds = await mockApi.fetchHostelBeds(schoolId).catch(() => []);
+          const wardens = await mockApi.fetchHostelWardens(schoolId).catch(() => []);
+          const menus = await mockApi.fetchHostelMessMenus(schoolId).catch(() => []);
+          
+          const h = hostels.find((x: any) => x.id === activeAd.hostelId);
+          const rm = rooms.find((x: any) => x.id === activeAd.roomId);
+          const bl = blocks.find((x: any) => x.id === rm?.blockId);
+          const bd = beds.find((x: any) => x.id === activeAd.bedId);
+          const wd = wardens.find((w: any) => {
+            if (w.hostelId === activeAd.hostelId) return true;
+            if (w.assignedLocations && Array.isArray(w.assignedLocations)) {
+              return w.assignedLocations.some((loc: any) => {
+                const matchesBuilding = loc.buildingId === activeAd.hostelId;
+                const matchesBlock = !loc.blockId || loc.blockId === rm?.blockId;
+                const matchesFloor = loc.floor === null || loc.floor === rm?.floor;
+                const matchesSection = !loc.section || loc.section === rm?.roomNumber;
+                return matchesBuilding && matchesBlock && matchesFloor && matchesSection;
+              });
+            }
+            return false;
+          });
+          
+          setHostelDetails(h || null);
+          setBlockDetails(bl || null);
+          setRoomDetails(rm || null);
+          setBedDetails(bd || null);
+          setWardenDetails(wd || null);
+          setMessMenus(menus.filter((m: any) => m.hostelId === activeAd.hostelId || !m.hostelId));
+        } else {
+          setHostelDetails(null);
+          setBlockDetails(null);
+          setRoomDetails(null);
+          setBedDetails(null);
+          setWardenDetails(null);
+          setMessMenus([]);
+        }
+
+        const leaves = await mockApi.fetchHostelLeaveRequests(schoolId).catch(() => []);
+        setMyLeaveRequests(leaves.filter((l: any) => l.studentId === studentId));
+
+        const complaints = await mockApi.fetchHostelComplaints(schoolId).catch(() => []);
+        setMyComplaints(complaints.filter((c: any) => c.studentId === studentId));
+
+        const attendance = await mockApi.fetchHostelAttendance(schoolId).catch(() => []);
+        setMyAttendance(attendance.filter((a: any) => a.studentId === studentId));
+
+        const visitors = await mockApi.fetchHostelVisitors(schoolId).catch(() => []);
+        setMyVisitorLogs(visitors.filter((v: any) => v.studentId === studentId));
+
+        const payments = await mockApi.fetchHostelPayments(schoolId).catch(() => []);
+        setMyPayments(payments.filter((p: any) => p.studentId === studentId));
+      }
     } catch (err) {
       console.error(err);
     }
@@ -234,7 +344,9 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                   const studentObj = mockDb.students.find(s => s.id === studentId);
                   const allowedCats = cats.filter(c => c.classId === studentObj?.classId || !c.classId);
                   const allowedCatIds = allowedCats.map(c => c.id);
-                  setForumPosts(posts.filter(p => allowedCatIds.includes(p.categoryId)));
+                  const filtered = posts.filter(p => allowedCatIds.includes(p.categoryId));
+                  // Deduplicate realtime forum posts by id
+                  setForumPosts(Array.from(new Map(filtered.map(p => [p.id, p])).values()));
                 });
               });
               if (selectedPost) {
@@ -264,6 +376,9 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
 
     const handleAcademicSync = () => {
       console.log('Realtime academic update detected, refreshing student portal...');
+      if (session?.user?.schoolId) {
+        mockApi.clearHostelCache(session.user.schoolId);
+      }
       loadData();
     };
 
@@ -278,6 +393,10 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'report_cards' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_marks' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_marks' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_subjects' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_schedules' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_results' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'book_inventory' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'digital_library_assets' }, handleAcademicSync)
@@ -291,6 +410,19 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exams' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_attendance' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostels' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_blocks' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_rooms' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_beds' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_wardens' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_admissions' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_attendance' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_leave_requests' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_visitors' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_complaints' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_mess_menu' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_fees' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_payments' }, handleAcademicSync)
       .subscribe();
 
     return () => {
@@ -490,6 +622,55 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       alert(`Quiz submitted! Your calculated score: ${score}/${activeQuiz.totalMarks}`);
     } catch (err) {
       alert(err);
+    }
+  };
+
+  // Submit Hostel Leave Request
+  const handleCreateLeaveRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!studentId || !session?.user?.schoolId) return;
+    if (!leaveFromDate || !leaveToDate || !leaveReason.trim()) {
+      alert('Please fill out all fields.');
+      return;
+    }
+    try {
+      await mockApi.createHostelLeaveRequest(
+        session.user.schoolId,
+        studentId,
+        leaveFromDate,
+        leaveToDate,
+        leaveReason
+      );
+      setLeaveFromDate('');
+      setLeaveToDate('');
+      setLeaveReason('');
+      loadData();
+      alert('Leave request submitted successfully! It is pending Parent Approval.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to submit leave request');
+    }
+  };
+
+  // Submit Hostel Complaint
+  const handleCreateComplaint = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!studentId || !session?.user?.schoolId) return;
+    if (!complaintDescription.trim()) {
+      alert('Please enter a description.');
+      return;
+    }
+    try {
+      await mockApi.createHostelComplaint(
+        session.user.schoolId,
+        studentId,
+        complaintCategory,
+        complaintDescription
+      );
+      setComplaintDescription('');
+      loadData();
+      alert('Complaint logged successfully.');
+    } catch (err: any) {
+      alert(err.message || 'Failed to log complaint');
     }
   };
 
@@ -1087,7 +1268,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
       )}
 
       {activeTab === 'grades' && (
-        <GlassCard className="space-y-6">
+        <>
+          <GlassCard className="space-y-6">
           <div className="border-b border-slate-850 pb-3">
             <h3 className="font-bold text-slate-100 flex items-center gap-2">
               <Award className="text-brand-500" size={18} />
@@ -1136,7 +1318,76 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
             </div>
           )}
         </GlassCard>
-      )}
+
+        {/* Published Term Report Cards Section */}
+        <GlassCard className="space-y-6">
+          <div className="border-b border-slate-850 pb-3">
+            <h3 className="font-bold text-slate-100 flex items-center gap-2">
+              <Award className="text-emerald-500" size={18} />
+              Published Term Report Cards
+            </h3>
+          </div>
+
+          {reportCards.length === 0 ? (
+            <p className="text-xs text-slate-500 italic py-4 text-center">No official term report cards published yet.</p>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {reportCards.map((rc: any) => (
+                <div key={rc.id} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4 hover:border-slate-800 transition-all duration-200">
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-bold text-slate-200 text-sm">{rc.term}</h4>
+                      <span className="inline-block text-[9.5px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 uppercase">
+                        GPA: {rc.gradePointAverage.toFixed(2)}
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-1">Attendance: {rc.attendancePercentage}%</p>
+                    <p className="text-xs text-slate-400 italic mt-1 font-semibold">" {rc.remarks || 'No remarks.'} "</p>
+                  </div>
+                  <div className="pt-2 border-t border-slate-850/60 flex items-center justify-between">
+                    <span className="text-[10px] text-slate-500">Issued: {new Date(rc.createdAt).toLocaleDateString()}</span>
+                    <button
+                      onClick={() => {
+                        const filename = `report_card_${rc.term.toLowerCase().replace(/\s+/g, '_')}.txt`;
+                        const content = `==================================================
+              AEGIS INSTITUTIONAL ERP
+             OFFICIAL TERM REPORT CARD
+==================================================
+School ID:      ${rc.schoolId || 'N/A'}
+Student Name:   ${rc.studentName || 'N/A'}
+Term:           ${rc.term}
+--------------------------------------------------
+Academic Performance summary:
+Grade Point Average (GPA): ${rc.gradePointAverage.toFixed(2)} / 4.00
+Attendance Percentage:     ${rc.attendancePercentage.toFixed(1)}%
+--------------------------------------------------
+Teacher Remarks:
+${rc.remarks || 'No remarks provided.'}
+--------------------------------------------------
+Date of Issue: ${new Date(rc.createdAt).toLocaleDateString()}
+Status:        OFFICIALLY PUBLISHED
+==================================================`;
+                        const blob = new Blob([content], { type: 'text/plain' });
+                        const link = document.createElement('a');
+                        link.href = URL.createObjectURL(blob);
+                        link.download = filename;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      }}
+                      className="px-2.5 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded-lg flex items-center gap-1.5 font-semibold text-[10px] cursor-pointer active:scale-95 transition-all animate-pulse-subtle"
+                    >
+                      <Download size={11} />
+                      Download Report Card
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </GlassCard>
+      </>
+    )}
 
       {activeTab === 'library' && (
         <PremiumLock
@@ -1213,23 +1464,47 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
             </GlassCard>
           </div>
           <div className="space-y-6">
-            <GlassCard className="space-y-4">
-              <h3 className="font-bold text-slate-200 text-xs pb-2 border-b border-slate-850">My Issued Books</h3>
-              <div className="space-y-3">
-                {issuedBooks.length === 0 ? (
-                  <p className="text-xs text-slate-500 italic">No books currently checked out.</p>
-                ) : (
-                  issuedBooks.map(bi => (
-                    <div key={bi.id} className="p-3 bg-brand-500/5 border border-brand-500/10 rounded-xl">
-                      <h4 className="font-bold text-slate-200 text-xs">{bi.book?.title || bi.bookTitle || 'Library Book'}</h4>
-                      <p className="text-[10px] text-slate-400 mt-1">Due Date: {new Date(bi.due_date || bi.dueDate).toLocaleDateString()}</p>
-                      <p className={`text-[9px] font-bold mt-1 ${new Date(bi.due_date || bi.dueDate) < new Date() ? 'text-red-400' : 'text-green-400'}`}>
-                        Status: {new Date(bi.due_date || bi.dueDate) < new Date() ? 'OVERDUE' : 'Checked Out'}
-                      </p>
-                    </div>
-                  ))
-                )}
-
+              <GlassCard className="space-y-4">
+                <h3 className="font-bold text-slate-200 text-xs pb-2 border-b border-slate-850 flex items-center gap-1.5">
+                  <BookOpen size={14} className="text-brand-500" />
+                  My Issued Books History
+                </h3>
+                <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
+                  {issuedBooks.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic">No library checkout history found.</p>
+                  ) : (
+                    issuedBooks.map(bi => {
+                      const bookTitle = bi.book?.title || mockDb.books.find(b => b.id === bi.bookId)?.title || 'Unknown Book';
+                      const fineRecord = libraryFines.find(f => f.issueId === bi.id);
+                      let fineText = null;
+                      if (fineRecord) {
+                        fineText = `${studentSchool?.currencySymbol || '$'}${Number(fineRecord.amount).toFixed(2)} (${fineRecord.isPaid ? 'Paid' : 'Unpaid'})`;
+                      }
+                      return (
+                        <div key={bi.id} className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1.5 text-[11px]">
+                          <h4 className="font-bold text-slate-200">{bookTitle}</h4>
+                          <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] text-slate-450 font-mono">
+                            <div>Issued: {bi.issueDate ? new Date(bi.issueDate).toLocaleDateString() : '—'}</div>
+                            <div>Due: {bi.dueDate ? new Date(bi.dueDate).toLocaleDateString() : '—'}</div>
+                            {bi.returnDate && <div className="col-span-2">Returned: {new Date(bi.returnDate).toLocaleDateString()}</div>}
+                          </div>
+                          <div className="flex items-center justify-between pt-1 border-t border-slate-850/40 mt-1">
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
+                              bi.status === 'RETURNED' ? 'bg-green-500/10 text-green-400' :
+                              bi.status === 'OVERDUE' ? 'bg-red-500/10 text-red-400' :
+                              'bg-brand-500/10 text-brand-400'
+                            }`}>{bi.status}</span>
+                            {fineText && (
+                              <span className="text-[10px] font-semibold text-red-400 font-mono">
+                                Fine: {fineText}
+                              </span>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })
+                  )}
+                </div>
                 {libraryFines.length > 0 && (
                   <div className="space-y-2 mt-4 pt-4 border-t border-slate-850">
                     <h4 className="font-bold text-slate-200 text-xs">Outstanding Library Fines</h4>
@@ -1244,8 +1519,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                     ))}
                   </div>
                 )}
-              </div>
-            </GlassCard>
+              </GlassCard>
           </div>
         </div>
         </PremiumLock>
@@ -1429,6 +1703,639 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) =>
                 </form>
               </GlassCard>
             </div>
+          </div>
+        </PremiumLock>
+      )}
+
+      {activeTab === 'fees' && (
+        <PremiumLock 
+          isLocked={false} 
+          requiredTier="Basic" 
+          featureName="Fee Management"
+        >
+          <GlassCard className="space-y-6 animate-fade-in">
+            <div className="border-b border-slate-850 pb-3">
+              <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                <DollarSign className="text-brand-500" size={18} />
+                Outstanding Fee Structure & Invoices
+              </h3>
+            </div>
+
+            {fees.length === 0 ? (
+              <div className="text-center py-16 p-6 flex flex-col items-center justify-center gap-3">
+                <DollarSign size={36} className="text-slate-650 animate-pulse-subtle" />
+                <p className="text-sm text-slate-350 font-semibold">No Fee Invoices Mapped</p>
+                <p className="text-xs text-slate-500 max-w-sm">No fee structures or billing invoices have been published for this academic cycle yet.</p>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {fees.map(({ structure, payment }, idx: number) => {
+                  const isPaid = payment?.status === 'PAID';
+                  return (
+                    <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4 hover:border-slate-800 transition-all duration-200">
+                      <div className="space-y-1">
+                        <span className={`text-[9.5px] font-bold tracking-wider px-2.5 py-0.5 rounded-full uppercase border ${
+                          isPaid 
+                            ? 'bg-green-500/10 border-green-500/15 text-green-400' 
+                            : payment?.status === 'PENDING' 
+                              ? 'bg-amber-500/10 border-amber-500/15 text-amber-400' 
+                              : 'bg-red-500/10 border-red-500/15 text-red-400'
+                        }`}>
+                          {payment?.status || 'PENDING'}
+                        </span>
+                        <h4 className="font-bold text-slate-200 text-sm mt-2">{structure.description}</h4>
+                        <p className="text-xs text-slate-400">Total Bill Amount: {studentSchool?.currencySymbol || '$'}{structure.amount.toFixed(2)}</p>
+                        <p className="text-[10px] text-slate-500">Bill Due: {new Date(structure.dueDate).toLocaleDateString()}</p>
+                      </div>
+
+                      {isPaid && (
+                        <div className="text-[10px] text-slate-500 border-t border-slate-850 pt-2 flex justify-between items-center">
+                          <span>Receipt Download Ready</span>
+                          <button
+                            onClick={() => {
+                              const filename = `receipt_${structure.description.toLowerCase().replace(/\s+/g, '_')}.txt`;
+                              const content = `==================================================
+              AEGIS INSTITUTIONAL ERP
+                 OFFICIAL RECEIPT
+==================================================
+School ID:      ${studentSchool?.id || 'N/A'}
+Student ID:     ${studentId}
+Student Name:   ${session?.user?.firstName || 'Student'} ${session?.user?.lastName || ''}
+--------------------------------------------------
+Fee Component:  ${structure.description}
+Total Amount:   ${studentSchool?.currencySymbol || '$'}${structure.amount.toFixed(2)}
+Payment Date:   ${new Date(payment.paymentDate || Date.now()).toLocaleString()}
+Payment Status: PAID
+--------------------------------------------------
+Thank you for your payment.
+This is a system-generated official receipt.
+==================================================`;
+                              const blob = new Blob([content], { type: 'text/plain' });
+                              const link = document.createElement('a');
+                              link.href = URL.createObjectURL(blob);
+                              link.download = filename;
+                              document.body.appendChild(link);
+                              link.click();
+                              document.body.removeChild(link);
+                            }}
+                            className="px-2 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded flex items-center gap-1 font-semibold cursor-pointer active:scale-95 transition-all text-[9px]"
+                          >
+                            <Download size={10} />
+                            Download
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </GlassCard>
+        </PremiumLock>
+      )}
+
+      {activeTab === 'hostel' && (
+        <PremiumLock 
+          isLocked={false} 
+          requiredTier="Basic" 
+          featureName="Hostel Registry"
+        >
+          <div className="space-y-6 animate-fade-in">
+            {/* If the student is not active in any hostel */}
+            {!activeAdmission ? (
+              <GlassCard className="text-center py-16 p-6 flex flex-col items-center justify-center gap-3">
+                <Home size={40} className="text-slate-650 animate-pulse-subtle" />
+                <p className="text-sm text-slate-350 font-semibold font-mono">No Active Hostel Admission</p>
+                <p className="text-xs text-slate-500 max-w-md">
+                  You are not currently registered or assigned to an active bed space in any hostel building. Please contact the Hostel Warden or Admin for registration/allocation assistance.
+                </p>
+              </GlassCard>
+            ) : (
+              <div className="space-y-6">
+                {/* 1. Header Grid / Allocations & Warden Contact */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  <GlassCard className="p-5 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-brand-400">
+                        <Home size={18} />
+                        <h4 className="font-bold text-xs uppercase tracking-wider">Room Allocation</h4>
+                      </div>
+                      <h3 className="text-2xl font-bold text-slate-100">{hostelDetails?.name || 'Loading Hostel...'}</h3>
+                      <p className="text-xs text-slate-400">Building Type: <span className="font-semibold text-slate-200">{hostelDetails?.type || 'N/A'}</span></p>
+                      <p className="text-xs text-slate-400">Block / Wing: <span className="font-semibold text-slate-200">{blockDetails?.name || 'N/A'}</span></p>
+                      <p className="text-xs text-slate-400">Floor Level: <span className="font-semibold text-slate-200">{roomDetails?.floor !== undefined ? `Floor ${roomDetails.floor}` : 'N/A'}</span></p>
+                    </div>
+                    <div className="border-t border-slate-850 pt-3 mt-4 text-[10px] text-slate-500 flex justify-between">
+                      <span>Room: {roomDetails?.roomNumber || 'N/A'}</span>
+                      <span>Bed: {bedDetails?.bedName || 'N/A'}</span>
+                    </div>
+                  </GlassCard>
+
+                  <GlassCard className="p-5 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-teal-400">
+                        <User size={18} />
+                        <h4 className="font-bold text-xs uppercase tracking-wider">Hostel Warden Details</h4>
+                      </div>
+                      {wardenDetails ? (
+                        <>
+                          <h3 className="text-lg font-bold text-slate-100">
+                            {wardenDetails.userDetails 
+                              ? `${wardenDetails.userDetails.firstName} ${wardenDetails.userDetails.lastName}` 
+                              : 'Assigned Warden'}
+                          </h3>
+                          <p className="text-xs text-slate-400">Warden Email: <span className="text-slate-200 font-medium">{wardenDetails.userDetails?.email || 'N/A'}</span></p>
+                          <p className="text-xs text-slate-400">Phone Contact: <span className="text-brand-400 font-bold font-mono">{wardenDetails.phone || 'N/A'}</span></p>
+                        </>
+                      ) : (
+                        <p className="text-xs text-slate-500 italic py-2">No specific warden assigned to this building structure yet.</p>
+                      )}
+                    </div>
+                    <div className="border-t border-slate-850 pt-3 mt-4 text-[10px] text-slate-500 font-medium">
+                      Admission Date: {activeAdmission.admissionDate ? new Date(activeAdmission.admissionDate).toLocaleDateString() : 'N/A'}
+                    </div>
+                  </GlassCard>
+
+                  <GlassCard className="p-5 flex flex-col justify-between">
+                    <div className="space-y-2">
+                      <div className="flex items-center gap-2 text-indigo-400">
+                        <Activity size={18} />
+                        <h4 className="font-bold text-xs uppercase tracking-wider">Attendance Rate</h4>
+                      </div>
+                      {(() => {
+                        const totalAtt = myAttendance.length;
+                        const presentAtt = myAttendance.filter(a => a.status === 'PRESENT').length;
+                        const leaveAtt = myAttendance.filter(a => a.status === 'LEAVE').length;
+                        const absentAtt = myAttendance.filter(a => a.status === 'ABSENT').length;
+                        const rate = totalAtt > 0 ? Math.round(((presentAtt + leaveAtt) / totalAtt) * 100) : 100;
+                        return (
+                          <>
+                            <h3 className="text-2xl font-bold text-slate-100">{rate}%</h3>
+                            <div className="flex items-center gap-2 text-xs text-slate-400 mt-1">
+                              <span className="text-emerald-400 font-bold">{presentAtt} Present</span>
+                              <span>•</span>
+                              <span className="text-amber-400 font-bold">{leaveAtt} Approved Leave</span>
+                              <span>•</span>
+                              <span className="text-red-400 font-bold">{absentAtt} Absent</span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 mt-1">Based on Warden evening/morning roster check-ins</p>
+                          </>
+                        );
+                      })()}
+                    </div>
+                    <div className="border-t border-slate-850 pt-3 mt-4 text-[10px] text-slate-500 flex justify-between">
+                      <span>Total Roll Checks: {myAttendance.length}</span>
+                      <span className="text-teal-400 font-bold font-mono">Roll Sync Active</span>
+                    </div>
+                  </GlassCard>
+                </div>
+
+                {/* 2. Mess Menu & Attendance Logs */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Mess Menu Menu Grid */}
+                  <GlassCard className="p-5 space-y-4">
+                    <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                      <Utensils size={18} />
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Hostel Mess Menu Planner</h4>
+                    </div>
+
+                    {messMenus.length === 0 ? (
+                      <div className="text-center py-10 flex flex-col items-center justify-center gap-2">
+                        <Coffee size={24} className="text-slate-650 animate-pulse-subtle" />
+                        <p className="text-xs text-slate-450 italic">Mess Menu Planner has not been configured for this cycle.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-[11px] text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-850 text-slate-400 uppercase tracking-widest text-[9px]">
+                              <th className="py-2">Day</th>
+                              <th className="py-2">Breakfast</th>
+                              <th className="py-2">Lunch</th>
+                              <th className="py-2">Dinner</th>
+                              <th className="py-2">Special Menu</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-850">
+                            {(() => {
+                              const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                              return days.map((dayName, idx) => {
+                                const menu = messMenus.find(m => m.dayOfWeek === idx);
+                                return (
+                                  <tr key={idx} className="hover:bg-slate-900/30 text-slate-300">
+                                    <td className="py-2.5 font-semibold text-brand-400">{dayName}</td>
+                                    <td className="py-2.5 max-w-[100px] truncate" title={menu?.breakfast || '-'}>{menu?.breakfast || '-'}</td>
+                                    <td className="py-2.5 max-w-[100px] truncate" title={menu?.lunch || '-'}>{menu?.lunch || '-'}</td>
+                                    <td className="py-2.5 max-w-[100px] truncate" title={menu?.dinner || '-'}>{menu?.dinner || '-'}</td>
+                                    <td className="py-2.5 text-indigo-400 truncate max-w-[100px]" title={menu?.specialMenu || '-'}>{menu?.specialMenu || '-'}</td>
+                                  </tr>
+                                );
+                              });
+                            })()}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </GlassCard>
+
+                  {/* Attendance Log Card */}
+                  <GlassCard className="p-5 space-y-4">
+                    <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                      <ClipboardList size={18} />
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Daily Attendance Roll Log</h4>
+                    </div>
+
+                    {myAttendance.length === 0 ? (
+                      <div className="text-center py-10 flex flex-col items-center justify-center gap-2">
+                        <Activity size={24} className="text-slate-650" />
+                        <p className="text-xs text-slate-450 italic">No attendance records registered yet for your profile.</p>
+                      </div>
+                    ) : (
+                      <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                        {myAttendance
+                          .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+                          .map((att, index) => (
+                            <div key={index} className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl flex items-center justify-between text-xs hover:border-slate-800 transition-all duration-200">
+                              <div className="space-y-1">
+                                <p className="font-semibold text-slate-300">
+                                  {new Date(att.date).toLocaleDateString(undefined, { weekday: 'short', year: 'numeric', month: 'short', day: 'numeric' })}
+                                </p>
+                                <p className="text-[10px] text-slate-500 uppercase tracking-widest font-bold">Shift: {att.timeSlot}</p>
+                              </div>
+                              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase border ${
+                                att.status === 'PRESENT' 
+                                  ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400' 
+                                  : att.status === 'LEAVE'
+                                    ? 'bg-amber-500/10 border-amber-500/15 text-amber-400'
+                                    : 'bg-red-500/10 border-red-500/15 text-red-400'
+                              }`}>
+                                {att.status}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </GlassCard>
+                </div>
+
+                {/* 3. Leave Requests & Workflow approvals */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Leave Request Form */}
+                  <GlassCard className="p-5 lg:col-span-4 space-y-4">
+                    <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                      <Clock size={18} />
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Request Gate Leave</h4>
+                    </div>
+
+                    <form onSubmit={handleCreateLeaveRequest} className="space-y-3.5">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">From Date</label>
+                        <input 
+                          type="date" 
+                          value={leaveFromDate}
+                          onChange={(e) => setLeaveFromDate(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">To Date</label>
+                        <input 
+                          type="date" 
+                          value={leaveToDate}
+                          onChange={(e) => setLeaveToDate(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                          required
+                        />
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Reason / Destination</label>
+                        <textarea 
+                          placeholder="Provide leave description, travel details, and contact point..."
+                          rows={3}
+                          value={leaveReason}
+                          onChange={(e) => setLeaveReason(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                          required
+                        />
+                      </div>
+                      <button type="submit" className="w-full glass-btn-primary text-xs cursor-pointer py-2 font-semibold">
+                        Submit Leave Request
+                      </button>
+                    </form>
+                  </GlassCard>
+
+                  {/* Leave Request Logs */}
+                  <GlassCard className="p-5 lg:col-span-8 space-y-4">
+                    <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                      <Clock size={18} />
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Leave Approvals Tracker</h4>
+                    </div>
+
+                    {myLeaveRequests.length === 0 ? (
+                      <div className="text-center py-16 flex flex-col items-center justify-center gap-2">
+                        <Clock size={28} className="text-slate-650" />
+                        <p className="text-xs text-slate-450 italic">No leave requests recorded yet.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-850 text-slate-400 uppercase tracking-widest text-[9px]">
+                              <th className="py-2.5">Dates</th>
+                              <th className="py-2.5">Reason</th>
+                              <th className="py-2.5">Parent Stage</th>
+                              <th className="py-2.5">Warden Stage</th>
+                              <th className="py-2.5">Hostel Admin Stage</th>
+                              <th className="py-2.5">School Admin Stage</th>
+                              <th className="py-2.5">Final Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-850">
+                            {myLeaveRequests
+                              .sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime())
+                              .map((l) => (
+                                <tr key={l.id} className="hover:bg-slate-900/30 text-slate-300">
+                                  <td className="py-3 font-medium whitespace-nowrap">
+                                    {new Date(l.fromDate).toLocaleDateString()} to {new Date(l.toDate).toLocaleDateString()}
+                                  </td>
+                                  <td className="py-3 max-w-[150px] truncate" title={l.reason}>{l.reason}</td>
+                                  <td className="py-3">
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                      l.parentApproval === 'APPROVED' 
+                                        ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400' 
+                                        : l.parentApproval === 'REJECTED'
+                                          ? 'bg-red-500/10 border-red-500/15 text-red-400'
+                                          : 'bg-amber-500/10 border-amber-500/15 text-amber-400'
+                                    }`}>
+                                      {l.parentApproval}
+                                    </span>
+                                  </td>
+                                  <td className="py-3">
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                      l.wardenApproval === 'APPROVED' 
+                                        ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400' 
+                                        : l.wardenApproval === 'REJECTED'
+                                          ? 'bg-red-500/10 border-red-500/15 text-red-400'
+                                          : 'bg-amber-500/10 border-amber-500/15 text-amber-400'
+                                    }`}>
+                                      {l.wardenApproval}
+                                    </span>
+                                  </td>
+                                  <td className="py-3">
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                      (l.hostelAdminApproval || 'PENDING') === 'APPROVED' 
+                                        ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400' 
+                                        : (l.hostelAdminApproval || 'PENDING') === 'REJECTED'
+                                          ? 'bg-red-500/10 border-red-500/15 text-red-400'
+                                          : 'bg-amber-500/10 border-amber-500/15 text-amber-400'
+                                    }`}>
+                                      {l.hostelAdminApproval || 'PENDING'}
+                                    </span>
+                                  </td>
+                                  <td className="py-3">
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                      l.adminApproval === 'APPROVED' 
+                                        ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400' 
+                                        : l.adminApproval === 'REJECTED'
+                                          ? 'bg-red-500/10 border-red-500/15 text-red-400'
+                                          : 'bg-amber-500/10 border-amber-500/15 text-amber-400'
+                                    }`}>
+                                      {l.adminApproval}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 font-bold">
+                                    <span className={`text-[9.5px] font-bold px-2 py-0.5 rounded-full border ${
+                                      l.status === 'APPROVED' 
+                                        ? 'bg-emerald-500/15 border-emerald-500/25 text-emerald-400' 
+                                        : l.status === 'REJECTED'
+                                          ? 'bg-red-500/15 border-red-500/25 text-red-400'
+                                          : l.status === 'HOLD'
+                                            ? 'bg-amber-500/15 border-amber-500/25 text-amber-400'
+                                            : 'bg-blue-500/15 border-blue-500/25 text-blue-400'
+                                    }`}>
+                                      {l.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </GlassCard>
+                </div>
+
+                {/* 4. Complaints & Grievances Ledger */}
+                <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                  {/* Lodge Complaint Form */}
+                  <GlassCard className="p-5 lg:col-span-4 space-y-4">
+                    <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                      <ShieldAlert size={18} />
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Log Room Complaint</h4>
+                    </div>
+
+                    <form onSubmit={handleCreateComplaint} className="space-y-3.5">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Issue Category</label>
+                        <select 
+                          value={complaintCategory}
+                          onChange={(e) => setComplaintCategory(e.target.value as any)}
+                          className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                        >
+                          <option value="ROOM">Room Allocation Issue</option>
+                          <option value="ELECTRICITY">Electricity / Wiring</option>
+                          <option value="WATER">Water Supply / Plumbing</option>
+                          <option value="MAINTENANCE">Furniture / Infrastructure</option>
+                          <option value="OTHER">Other Issues</option>
+                        </select>
+                      </div>
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Issue Details</label>
+                        <textarea 
+                          placeholder="Describe the complaint in detail so that warden can dispatch maintenance..."
+                          rows={4}
+                          value={complaintDescription}
+                          onChange={(e) => setComplaintDescription(e.target.value)}
+                          className="w-full bg-slate-900 border border-slate-800 text-xs text-slate-100 rounded-lg p-2 focus:outline-none focus:border-brand-500"
+                          required
+                        />
+                      </div>
+                      <button type="submit" className="w-full glass-btn-primary text-xs cursor-pointer py-2 font-semibold">
+                        Log Maintenance Complaint
+                      </button>
+                    </form>
+                  </GlassCard>
+
+                  {/* Complaints Tracker Table */}
+                  <GlassCard className="p-5 lg:col-span-8 space-y-4">
+                    <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                      <ShieldAlert size={18} />
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Maintenance & Complaints Log</h4>
+                    </div>
+
+                    {myComplaints.length === 0 ? (
+                      <div className="text-center py-16 flex flex-col items-center justify-center gap-2">
+                        <ShieldAlert size={28} className="text-slate-650" />
+                        <p className="text-xs text-slate-450 italic">No room complaints logged.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-850 text-slate-400 uppercase tracking-widest text-[9px]">
+                              <th className="py-2.5">Category</th>
+                              <th className="py-2.5">Description</th>
+                              <th className="py-2.5">Assigned Staff</th>
+                              <th className="py-2.5">Status</th>
+                              <th className="py-2.5">Resolution Notes</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-850 text-slate-300">
+                            {myComplaints
+                              .sort((a, b) => b.status.localeCompare(a.status))
+                              .map((c) => (
+                                <tr key={c.id} className="hover:bg-slate-900/30 text-slate-300">
+                                  <td className="py-3 font-semibold text-brand-400">{c.category}</td>
+                                  <td className="py-3 max-w-[200px] truncate" title={c.description}>{c.description}</td>
+                                  <td className="py-3 text-slate-450">{c.assignedStaff || 'Unassigned'}</td>
+                                  <td className="py-3">
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                      c.status === 'RESOLVED' || c.status === 'CLOSED'
+                                        ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400'
+                                        : c.status === 'ASSIGNED'
+                                          ? 'bg-indigo-500/10 border-indigo-500/15 text-indigo-400'
+                                          : 'bg-amber-500/10 border-amber-500/15 text-amber-400'
+                                    }`}>
+                                      {c.status}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 text-slate-450 italic max-w-[150px] truncate" title={c.resolutionNotes || '-'}>
+                                    {c.resolutionNotes || '-'}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </GlassCard>
+                </div>
+
+                {/* 5. Visitor Logs & Fees Ledger */}
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Visitor Logs */}
+                  <GlassCard className="p-5 space-y-4">
+                    <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                      <User size={18} />
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Visitor Logs</h4>
+                    </div>
+
+                    {myVisitorLogs.length === 0 ? (
+                      <div className="text-center py-10 flex flex-col items-center justify-center gap-2">
+                        <User size={24} className="text-slate-650" />
+                        <p className="text-xs text-slate-450 italic">No visitor logs recorded yet.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-850 text-slate-400 uppercase tracking-widest text-[9px]">
+                              <th className="py-2.5">Visitor Name</th>
+                              <th className="py-2.5">Relation</th>
+                              <th className="py-2.5">Purpose</th>
+                              <th className="py-2.5">Entry Time</th>
+                              <th className="py-2.5">Exit Time</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-850 text-slate-300">
+                            {myVisitorLogs
+                              .sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime())
+                              .map((v) => (
+                                <tr key={v.id} className="hover:bg-slate-900/30">
+                                  <td className="py-3 font-semibold text-slate-200">{v.visitorName}</td>
+                                  <td className="py-3 text-slate-400">{v.relation}</td>
+                                  <td className="py-3 text-slate-400 max-w-[120px] truncate" title={v.purpose}>{v.purpose}</td>
+                                  <td className="py-3 font-mono text-[10px] text-slate-450">
+                                    {new Date(v.entryTime).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })}
+                                  </td>
+                                  <td className="py-3 font-mono text-[10px] text-slate-450">
+                                    {v.exitTime ? (
+                                      new Date(v.exitTime).toLocaleString(undefined, { dateStyle: 'short', timeStyle: 'short' })
+                                    ) : (
+                                      <span className="text-amber-400 font-bold uppercase text-[9px] px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-500/15">
+                                        Still In
+                                      </span>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </GlassCard>
+
+                  {/* Fee Status & Payments */}
+                  <GlassCard className="p-5 space-y-4">
+                    <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                      <DollarSign size={18} />
+                      <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Hostel Fees & Payments Ledger</h4>
+                    </div>
+
+                    {myPayments.length === 0 ? (
+                      <div className="text-center py-10 flex flex-col items-center justify-center gap-2">
+                        <DollarSign size={24} className="text-slate-650" />
+                        <p className="text-xs text-slate-450 italic">No hostel payments or fee invoices found.</p>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-xs text-left border-collapse">
+                          <thead>
+                            <tr className="border-b border-slate-850 text-slate-400 uppercase tracking-widest text-[9px]">
+                              <th className="py-2.5">Fee Name</th>
+                              <th className="py-2.5">Type</th>
+                              <th className="py-2.5">Amount Paid</th>
+                              <th className="py-2.5">Method</th>
+                              <th className="py-2.5">Date</th>
+                              <th className="py-2.5">Tx ID</th>
+                              <th className="py-2.5">Status</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-850 text-slate-300">
+                            {myPayments
+                              .sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime())
+                              .map((p) => (
+                                <tr key={p.id} className="hover:bg-slate-900/30">
+                                  <td className="py-3 font-semibold text-slate-200">{p.fee?.name || 'Hostel Fee'}</td>
+                                  <td className="py-3 text-[10px] text-slate-400">{p.fee?.feeType || 'N/A'}</td>
+                                  <td className="py-3 font-bold text-slate-200">${p.amountPaid}</td>
+                                  <td className="py-3 font-mono text-[10px] text-slate-400">{p.paymentMethod}</td>
+                                  <td className="py-3 text-slate-400">
+                                    {new Date(p.paymentDate).toLocaleDateString()}
+                                  </td>
+                                  <td className="py-3 font-mono text-[10px] text-slate-500" title={p.txId}>{p.txId || '-'}</td>
+                                  <td className="py-3">
+                                    <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                      p.status === 'PAID'
+                                        ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400'
+                                        : p.status === 'PARTIAL'
+                                          ? 'bg-indigo-500/10 border-indigo-500/15 text-indigo-400'
+                                          : 'bg-amber-500/10 border-amber-500/15 text-amber-400'
+                                    }`}>
+                                      {p.status}
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
+                  </GlassCard>
+                </div>
+              </div>
+            )}
           </div>
         </PremiumLock>
       )}

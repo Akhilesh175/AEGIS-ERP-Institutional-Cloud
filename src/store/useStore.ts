@@ -90,6 +90,10 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
           import('../services/mockApi').then(async ({ mockApi }) => {
             try {
               const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(parsed.user.schoolId);
+              if (!localStorage.getItem('aegis_session')) {
+                console.log('Session was cleared during background sync. Aborting.');
+                return;
+              }
               if (livePlan) {
                 const updatedSession = { ...parsed, schoolSubscriptionPlan: livePlan.toLowerCase() };
                 set({ session: updatedSession });
@@ -130,10 +134,15 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
  
   syncSubscriptionPlan: async () => {
     const sess = get().session;
+    if (!sess) return;
     if (sess?.user?.schoolId) {
       try {
         const { mockApi } = await import('../services/mockApi');
         const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(sess.user.schoolId);
+        if (!get().session || !localStorage.getItem('aegis_session')) {
+          console.log('Session was cleared during syncSubscriptionPlan. Aborting.');
+          return;
+        }
         if (livePlan) {
           const planNormalized = livePlan.toLowerCase();
           const updatedSession = { ...sess, schoolSubscriptionPlan: planNormalized };

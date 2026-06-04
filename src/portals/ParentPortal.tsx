@@ -2,7 +2,11 @@ import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { mockDb } from '../services/mockDb';
-import { Student, User, Quiz, QuizAttempt } from '../types';
+import { Student, User, Quiz, QuizAttempt,
+  Hostel, HostelBlock, HostelRoom, HostelBed, HostelWarden, HostelAdmission,
+  HostelAttendance, HostelFee, HostelPayment, HostelLeaveRequest, HostelVisitor,
+  HostelComplaint, HostelMessMenu
+} from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { supabase } from '../lib/supabase';
 import { 
@@ -10,7 +14,7 @@ import {
   User as UserIcon, ShieldAlert, CheckCircle, AlertCircle, UsersRound, Clock,
   BookOpen, Play, Download, MessageCircle, Paperclip,
   Filter, Search, ChevronDown, ChevronRight, ExternalLink,
-  BookMarked, Layers
+  BookMarked, Layers, Home, Coffee, Utensils, ClipboardList, Check, X
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -59,7 +63,8 @@ const renderVideoPlayer = (url: string) => {
   );
 };
 
-export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
+export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawActiveTab }) => {
+  const activeTab = rawActiveTab.split('/')[0];
   const { session, syncSubscriptionPlan } = useStore();
   const parentId = session?.parentId;
   
@@ -78,6 +83,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
   const [quizzes, setQuizzes] = useState<{ quiz: Quiz; attempt?: QuizAttempt }[]>([]);
 
   // Dynamic Library & Transport States
+  const [reportCards, setReportCards] = useState<any[]>([]);
   const [transitAssignment, setTransitAssignment] = useState<any>(null);
   const [assignedRoute, setAssignedRoute] = useState<any>(null);
   const [assignedBus, setAssignedBus] = useState<any>(null);
@@ -98,6 +104,22 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
   const [materials, setMaterials] = useState<any[]>([]);
   const [materialsLoading, setMaterialsLoading] = useState(false);
   const [activeVideoUrl, setActiveVideoUrl] = useState<string | null>(null);
+
+  // Hostel Portal States
+  const [activeAdmission, setActiveAdmission] = useState<HostelAdmission | null>(null);
+  const [hostelDetails, setHostelDetails] = useState<Hostel | null>(null);
+  const [blockDetails, setBlockDetails] = useState<HostelBlock | null>(null);
+  const [roomDetails, setRoomDetails] = useState<HostelRoom | null>(null);
+  const [bedDetails, setBedDetails] = useState<HostelBed | null>(null);
+  const [wardenDetails, setWardenDetails] = useState<HostelWarden | null>(null);
+
+  const [myLeaveRequests, setMyLeaveRequests] = useState<HostelLeaveRequest[]>([]);
+  const [myComplaints, setMyComplaints] = useState<HostelComplaint[]>([]);
+  const [myAttendance, setMyAttendance] = useState<HostelAttendance[]>([]);
+  const [messMenus, setMessMenus] = useState<HostelMessMenu[]>([]);
+  const [myVisitors, setMyVisitors] = useState<HostelVisitor[]>([]);
+  const [myPayments, setMyPayments] = useState<HostelPayment[]>([]);
+  const [myFees, setMyFees] = useState<HostelFee[]>([]);
 
   // Homework tab state
   const [hwSubjectFilter, setHwSubjectFilter] = useState<string>('all');
@@ -124,13 +146,17 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
         await mockApi.syncStudentsData(parentSchoolId);
         await mockApi.syncParentsData(parentSchoolId);
         await mockApi.syncParentStudentMappingsData(parentSchoolId);
+        await mockApi.syncUsersData(parentSchoolId).catch(() => {});
       }
 
       const data = await mockApi.parentGetStudents(parentId);
       setAssignedStudents(data);
-      if (data.length > 0) {
-        setSelectedStudent(data[0].id);
-      }
+      setSelectedStudent(prev => {
+        if (prev && data.some(s => s.id === prev)) {
+          return prev;
+        }
+        return data[0].id;
+      });
       setLoading(false);
     } catch (err: any) {
       setError(err.message || 'Error loading mapped student records');
@@ -146,18 +172,34 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       setError(null);
       setMaterialsLoading(true);
       const data = await mockApi.parentGetStudentAcademicRecord(parentId, selectedStudent);
-      setAcademicRecord(data);
+      
+      // Deduplicate lists inside data
+      const deduplicatedData = data ? {
+        ...data,
+        assignments: Array.from(new Map((data.assignments || []).map((a: any) => [a.id, a])).values()),
+        attendance: Array.from(new Map((data.attendance || []).map((att: any) => [att.id, att])).values()),
+        fees: Array.from(new Map((data.fees || []).map((f: any) => [f.description + '-' + f.dueDate, f])).values())
+      } : null;
+      setAcademicRecord(deduplicatedData);
+
       const qz = await mockApi.studentGetQuizzes(selectedStudent).catch(() => []);
-      setQuizzes(qz);
+      // Deduplicate quizzes by quiz.id
+      setQuizzes(Array.from(new Map(qz.map(item => [item.quiz.id, item])).values()));
       
       const studentObj = mockDb.students.find(s => s.id === selectedStudent);
       if (studentObj) {
         const mat = await mockApi.getStudyMaterials(studentObj.schoolId, studentObj.classId).catch(() => []);
-        setMaterials(mat);
+        // Deduplicate study materials by id
+        setMaterials(Array.from(new Map(mat.map(m => [m.id, m])).values()));
       } else {
         setMaterials([]);
       }
       setMaterialsLoading(false);
+
+      if (studentObj) {
+        const rcs = await mockApi.fetchReportCards(studentObj.schoolId, selectedStudent).catch(() => []);
+        setReportCards(rcs);
+      }
 
       if (studentObj) {
         await mockApi.syncSchoolsData(studentObj.schoolId);
@@ -169,6 +211,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
         await mockApi.syncStudentsData(studentObj.schoolId);
         await mockApi.syncParentsData(studentObj.schoolId);
         await mockApi.syncParentStudentMappingsData(studentObj.schoolId);
+        await mockApi.syncUsersData(studentObj.schoolId).catch(() => {});
 
         await mockApi.syncForumCategoriesData(studentObj.schoolId).catch(() => {});
         await mockApi.syncForumPostsData(studentObj.schoolId).catch(() => {});
@@ -178,8 +221,9 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
         const cats = await mockApi.getForumCategories(studentObj.schoolId).catch(() => []);
         const allowedCats = cats.filter(c => c.classId === studentObj.classId || !c.classId);
         const allowedCatIds = allowedCats.map(c => c.id);
-        
-        setForumPosts(allPosts.filter(p => allowedCatIds.includes(p.categoryId)));
+        const filteredPosts = allPosts.filter(p => allowedCatIds.includes(p.categoryId));
+        // Deduplicate forum posts by id
+        setForumPosts(Array.from(new Map(filteredPosts.map(p => [p.id, p])).values()));
 
         // Fetch dynamic transit and library details for parent selectedStudent with safe catches
         const [allAssignments, allBuses, allRoutes, allPickupPoints, allDrivers, myIssues, myFines, digitalAssets, booksList] = await Promise.all([
@@ -194,7 +238,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
           mockApi.fetchBookInventory(studentObj.schoolId).catch(() => [])
         ]);
 
-        const myAssignment = allAssignments.find(ta => ta.studentId === selectedStudent && ta.status === 'ACTIVE');
+        const studentUserId = studentObj?.userId || '';
+        const myAssignment = allAssignments.find(ta => (ta.studentId === selectedStudent || ta.studentId === studentUserId) && ta.status === 'ACTIVE');
         if (myAssignment) {
           setTransitAssignment(myAssignment);
           const route = allRoutes.find(r => r.id === myAssignment.routeId);
@@ -206,6 +251,11 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
           if (bus && bus.driverId) {
             const driver = allDrivers.find(d => d.id === bus.driverId);
             setAssignedDriver(driver);
+          } else if (bus && (bus.driverName || bus.driverPhone)) {
+            setAssignedDriver({
+              name: bus.driverName,
+              phone: bus.driverPhone
+            });
           }
         } else {
           setTransitAssignment(null);
@@ -215,10 +265,80 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
           setAssignedDriver(null);
         }
 
-        setIssuedBooks(myIssues.filter(bi => bi.status === 'ISSUED'));
-        setLibraryFines(myFines);
-        setDigitalLibraryAssets(digitalAssets || []);
-        setLibraryBooks(booksList || []);
+        setIssuedBooks(Array.from(new Map(myIssues.map(bi => [bi.id, bi])).values()));
+        setLibraryFines(Array.from(new Map(myFines.map(lf => [lf.id, lf])).values()));
+        setDigitalLibraryAssets(Array.from(new Map((digitalAssets || []).map(da => [da.id, da])).values()));
+        setLibraryBooks(Array.from(new Map((booksList || []).map(b => [b.id, b])).values()));
+
+        // Load Hostel details for Parent's ward
+        if (studentObj) {
+          const schoolId = studentObj.schoolId;
+          const studentId = selectedStudent;
+          await mockApi.syncHostelData(schoolId).catch(() => {});
+          
+          const admissions = await mockApi.fetchHostelAdmissions(schoolId).catch(() => []);
+          const activeAd = admissions.find((a: any) => a.studentId === studentId && a.status === 'ACTIVE');
+          setActiveAdmission(activeAd || null);
+          
+          if (activeAd) {
+            const hostels = await mockApi.fetchHostels(schoolId).catch(() => []);
+            const blocks = await mockApi.fetchHostelBlocks(schoolId).catch(() => []);
+            const rooms = await mockApi.fetchHostelRooms(schoolId).catch(() => []);
+            const beds = await mockApi.fetchHostelBeds(schoolId).catch(() => []);
+            const wardens = await mockApi.fetchHostelWardens(schoolId).catch(() => []);
+            const menus = await mockApi.fetchHostelMessMenus(schoolId).catch(() => []);
+            
+            const h = hostels.find((x: any) => x.id === activeAd.hostelId);
+            const rm = rooms.find((x: any) => x.id === activeAd.roomId);
+            const bl = blocks.find((x: any) => x.id === rm?.blockId);
+            const bd = beds.find((x: any) => x.id === activeAd.bedId);
+            const wd = wardens.find((w: any) => {
+               if (w.hostelId === activeAd.hostelId) return true;
+               if (w.assignedLocations && Array.isArray(w.assignedLocations)) {
+                 return w.assignedLocations.some((loc: any) => {
+                   const matchesBuilding = loc.buildingId === activeAd.hostelId;
+                   const matchesBlock = !loc.blockId || loc.blockId === rm?.blockId;
+                   const matchesFloor = loc.floor === null || loc.floor === rm?.floor;
+                   const matchesSection = !loc.section || loc.section === rm?.roomNumber;
+                   return matchesBuilding && matchesBlock && matchesFloor && matchesSection;
+                 });
+               }
+               return false;
+             });
+            
+            setHostelDetails(h || null);
+            setBlockDetails(bl || null);
+            setRoomDetails(rm || null);
+            setBedDetails(bd || null);
+            setWardenDetails(wd || null);
+            setMessMenus(menus.filter((m: any) => m.hostelId === activeAd.hostelId || !m.hostelId));
+          } else {
+            setHostelDetails(null);
+            setBlockDetails(null);
+            setRoomDetails(null);
+            setBedDetails(null);
+            setWardenDetails(null);
+            setMessMenus([]);
+          }
+
+          const leaves = await mockApi.fetchHostelLeaveRequests(schoolId).catch(() => []);
+          setMyLeaveRequests(leaves.filter((l: any) => l.studentId === studentId));
+
+          const complaints = await mockApi.fetchHostelComplaints(schoolId).catch(() => []);
+          setMyComplaints(complaints.filter((c: any) => c.studentId === studentId));
+
+          const attendance = await mockApi.fetchHostelAttendance(schoolId).catch(() => []);
+          setMyAttendance(attendance.filter((a: any) => a.studentId === studentId));
+
+          const visitors = await mockApi.fetchHostelVisitors(schoolId).catch(() => []);
+          setMyVisitors(visitors.filter((v: any) => v.studentId === studentId));
+
+          const payments = await mockApi.fetchHostelPayments(schoolId).catch(() => []);
+          setMyPayments(payments.filter((p: any) => p.studentId === studentId));
+
+          const feesList = await mockApi.fetchHostelFees(schoolId).catch(() => []);
+          setMyFees(feesList);
+        }
       }
 
       setLoading(false);
@@ -254,7 +374,9 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                     mockApi.getForumCategories(studentObj.schoolId).then(cats => {
                       const allowedCats = cats.filter(c => c.classId === studentObj.classId || !c.classId);
                       const allowedCatIds = allowedCats.map(c => c.id);
-                      setForumPosts(allPosts.filter(p => allowedCatIds.includes(p.categoryId)));
+                      const filtered = allPosts.filter(p => allowedCatIds.includes(p.categoryId));
+                      // Deduplicate realtime forum posts by id
+                      setForumPosts(Array.from(new Map(filtered.map(p => [p.id, p])).values()));
                     });
                   });
                   if (selectedPost) {
@@ -286,6 +408,10 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
 
     const handleAcademicSync = () => {
       console.log('Realtime academic update detected, refreshing parent portal...');
+      const studentObj = mockDb.students.find(s => s.id === selectedStudent);
+      if (studentObj) {
+        mockApi.clearHostelCache(studentObj.schoolId);
+      }
       loadAcademicRecord();
     };
 
@@ -300,6 +426,10 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       .on('postgres_changes', { event: '*', schema: 'public', table: 'announcements' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'invoices' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'report_cards' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_marks' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_marks' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_subjects' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_schedules' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_results' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'book_inventory' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'digital_library_assets' }, handleAcademicSync)
@@ -313,6 +443,19 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exams' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_attendance' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostels' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_blocks' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_rooms' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_beds' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_wardens' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_admissions' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_attendance' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_leave_requests' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_visitors' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_complaints' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_mess_menu' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_fees' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_payments' }, handleAcademicSync)
       .subscribe();
 
     return () => {
@@ -397,6 +540,36 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
     }
   };
 
+  const handleHostelLeaveApproval = async (id: string, approvalStatus: 'APPROVED' | 'REJECTED') => {
+    if (!session?.user?.id) return;
+    try {
+      await mockApi.approveHostelLeaveRequest(id, 'PARENT', approvalStatus, session.user.id);
+      loadAcademicRecord();
+      alert(`Leave request ${approvalStatus.toLowerCase()} successfully!`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update leave request status');
+    }
+  };
+
+  const handleHostelFeePayment = async (feeId: string, amount: number) => {
+    if (!selectedStudent || !studentObj) return;
+    try {
+      const txId = 'TXN-' + Math.floor(Math.random() * 1000000);
+      await mockApi.recordHostelPayment(
+        studentObj.schoolId,
+        selectedStudent,
+        feeId,
+        amount,
+        'ONLINE',
+        txId
+      );
+      loadAcademicRecord();
+      alert('Hostel fee payment processed successfully via Aegis Secure Gateway!');
+    } catch (err: any) {
+      alert(err.message || 'Payment processing failed');
+    }
+  };
+
   const parentUser = mockDb.users.find(u => u.id === session?.user?.id);
   const parentName = parentUser ? `${parentUser.firstName} ${parentUser.lastName}` : 'Guardian';
   
@@ -405,7 +578,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
   const schoolNames = schoolIds.map(id => mockDb.schools.find(sch => sch.id === id)?.name).filter(Boolean).join(', ') || 'Aegis Academy';
 
   // Get student names
-  const studentNames = assignedStudents.map(s => `${s.userDetails.firstName} ${s.userDetails.lastName}`).join(', ') || 'No linked wards';
+  const studentNames = assignedStudents.map(s => `${s.userDetails?.firstName || 'Student'} ${s.userDetails?.lastName || ''}`.trim()).join(', ') || 'No linked wards';
 
   if (loading && !academicRecord) {
     return (
@@ -454,7 +627,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
             className="bg-slate-950 border border-slate-800 text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 focus:outline-none focus:border-brand-500"
           >
             {assignedStudents.map(s => (
-              <option key={s.id} value={s.id}>{s.userDetails.firstName} {s.userDetails.lastName} ({s.className})</option>
+              <option key={s.id} value={s.id}>{s.userDetails?.firstName || 'Student'} {s.userDetails?.lastName || ''} ({s.className})</option>
             ))}
           </select>
         </div>
@@ -997,47 +1170,117 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
             )}
 
             {activeTab === 'grades' && (
-              <GlassCard className="space-y-6">
-                <div className="border-b border-slate-850 pb-3">
-                  <h3 className="font-bold text-slate-100 flex items-center gap-2">
-                    <Award className="text-brand-500" size={18} />
-                    Midterm Exam Report Card Grades
-                  </h3>
-                </div>
+              <div className="space-y-6">
+                <GlassCard className="space-y-6">
+                  <div className="border-b border-slate-850 pb-3">
+                    <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                      <Award className="text-brand-500" size={18} />
+                      Midterm Exam Report Card Grades
+                    </h3>
+                  </div>
 
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs border-collapse">
-                    <thead>
-                      <tr className="border-b border-slate-850 text-slate-400 font-bold">
-                        <th className="py-3 px-4">Subject Name</th>
-                        <th className="py-3 px-4">Subject Code</th>
-                        <th className="py-3 px-4">Marks Obtained</th>
-                        <th className="py-3 px-4">Max Marks</th>
-                        <th className="py-3 px-4">Remarks Feedback</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-slate-850">
-                      {academicRecord.examMarks.map((em: any, idx: number) => (
-                        <tr key={idx} className="hover:bg-slate-900/10 text-slate-200">
-                          <td className="py-3 px-4 font-semibold">{em.subjectName}</td>
-                          <td className="py-3 px-4 text-slate-400">{em.subjectCode}</td>
-                          <td className="py-3 px-4">
-                            {em.marksObtained !== null ? (
-                              <span className={`font-bold text-sm ${em.marksObtained >= 80 ? 'text-green-400' : 'text-slate-200'}`}>
-                                {em.marksObtained}
-                              </span>
-                            ) : (
-                              <span className="text-slate-500">Ungraded</span>
-                            )}
-                          </td>
-                          <td className="py-3 px-4 text-slate-400">{em.maxMarks}</td>
-                          <td className="py-3 px-4 text-slate-400 italic max-w-xs truncate">{em.remarks || '-'}</td>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-850 text-slate-400 font-bold">
+                          <th className="py-3 px-4">Subject Name</th>
+                          <th className="py-3 px-4">Subject Code</th>
+                          <th className="py-3 px-4">Marks Obtained</th>
+                          <th className="py-3 px-4">Max Marks</th>
+                          <th className="py-3 px-4">Remarks Feedback</th>
                         </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850">
+                        {academicRecord.examMarks.map((em: any, idx: number) => (
+                          <tr key={idx} className="hover:bg-slate-900/10 text-slate-200">
+                            <td className="py-3 px-4 font-semibold">{em.subjectName}</td>
+                            <td className="py-3 px-4 text-slate-400">{em.subjectCode}</td>
+                            <td className="py-3 px-4">
+                              {em.marksObtained !== null ? (
+                                <span className={`font-bold text-sm ${em.marksObtained >= 80 ? 'text-green-400' : 'text-slate-200'}`}>
+                                  {em.marksObtained}
+                                </span>
+                              ) : (
+                                <span className="text-slate-500">Ungraded</span>
+                              )}
+                            </td>
+                            <td className="py-3 px-4 text-slate-400">{em.maxMarks}</td>
+                            <td className="py-3 px-4 text-slate-400 italic max-w-xs truncate">{em.remarks || '-'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </GlassCard>
+
+                {/* Published Term Report Cards Section */}
+                <GlassCard className="space-y-6">
+                  <div className="border-b border-slate-850 pb-3">
+                    <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                      <Award className="text-emerald-500" size={18} />
+                      Published Term Report Cards
+                    </h3>
+                  </div>
+
+                  {reportCards.length === 0 ? (
+                    <p className="text-xs text-slate-500 italic py-4 text-center">No official term report cards published yet.</p>
+                  ) : (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {reportCards.map((rc: any) => (
+                        <div key={rc.id} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4 hover:border-slate-800 transition-all duration-200">
+                          <div className="space-y-1">
+                            <div className="flex items-center justify-between">
+                              <h4 className="font-bold text-slate-200 text-sm">{rc.term}</h4>
+                              <span className="inline-block text-[9.5px] font-bold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 uppercase">
+                                GPA: {rc.gradePointAverage.toFixed(2)}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-400 mt-1">Attendance: {rc.attendancePercentage}%</p>
+                            <p className="text-xs text-slate-400 italic mt-1 font-semibold">" {rc.remarks || 'No remarks.'} "</p>
+                          </div>
+                          <div className="pt-2 border-t border-slate-850/60 flex items-center justify-between">
+                            <span className="text-[10px] text-slate-500">Issued: {new Date(rc.createdAt).toLocaleDateString()}</span>
+                            <button
+                              onClick={() => {
+                                const filename = `report_card_${rc.term.toLowerCase().replace(/\s+/g, '_')}.txt`;
+                                const content = `==================================================
+              AEGIS INSTITUTIONAL ERP
+             OFFICIAL TERM REPORT CARD
+==================================================
+School ID:      ${rc.schoolId || 'N/A'}
+Student Name:   ${rc.studentName || 'N/A'}
+Term:           ${rc.term}
+--------------------------------------------------
+Academic Performance summary:
+Grade Point Average (GPA): ${rc.gradePointAverage.toFixed(2)} / 4.00
+Attendance Percentage:     ${rc.attendancePercentage.toFixed(1)}%
+--------------------------------------------------
+Teacher Remarks:
+${rc.remarks || 'No remarks provided.'}
+--------------------------------------------------
+Date of Issue: ${new Date(rc.createdAt).toLocaleDateString()}
+Status:        OFFICIALLY PUBLISHED
+==================================================`;
+                                const blob = new Blob([content], { type: 'text/plain' });
+                                const link = document.createElement('a');
+                                link.href = URL.createObjectURL(blob);
+                                link.download = filename;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                              }}
+                              className="px-2.5 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded-lg flex items-center gap-1.5 font-semibold text-[10px] cursor-pointer active:scale-95 transition-all animate-pulse-subtle"
+                            >
+                              <Download size={11} />
+                              Download Report Card
+                            </button>
+                          </div>
+                        </div>
                       ))}
-                    </tbody>
-                  </table>
-                </div>
-              </GlassCard>
+                    </div>
+                  )}
+                </GlassCard>
+              </div>
             )}
 
             {activeTab === 'fees' && (
@@ -1073,9 +1316,40 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                         </div>
 
                         {f.status === 'PAID' && (
-                          <div className="text-[10px] text-slate-500 border-t border-slate-850 pt-2 flex justify-between">
+                          <div className="text-[10px] text-slate-500 border-t border-slate-850 pt-2 flex justify-between items-center">
                             <span>Receipt Download Ready</span>
-                            <span>Paid on {new Date(f.paymentDate).toLocaleDateString()}</span>
+                            <button
+                              onClick={() => {
+                                const filename = `receipt_${f.description.toLowerCase().replace(/\s+/g, '_')}.txt`;
+                                const content = `==================================================
+              AEGIS INSTITUTIONAL ERP
+                 OFFICIAL RECEIPT
+==================================================
+School ID:      ${studentSchool?.id || 'N/A'}
+Student ID:     ${selectedStudent}
+Student Name:   ${academicRecord?.studentProfile?.fullName || 'N/A'}
+--------------------------------------------------
+Fee Component:  ${f.description}
+Total Amount:   ${studentSchool?.currencySymbol || '$'}${f.amount.toFixed(2)}
+Payment Date:   ${new Date(f.paymentDate || Date.now()).toLocaleString()}
+Payment Status: PAID
+--------------------------------------------------
+Thank you for your payment.
+This is a system-generated official receipt.
+==================================================`;
+                                const blob = new Blob([content], { type: 'text/plain' });
+                                const link = document.createElement('a');
+                                link.href = URL.createObjectURL(blob);
+                                link.download = filename;
+                                document.body.appendChild(link);
+                                link.click();
+                                document.body.removeChild(link);
+                              }}
+                              className="px-2 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded flex items-center gap-1 font-semibold cursor-pointer active:scale-95 transition-all text-[9px]"
+                            >
+                              <Download size={10} />
+                              Download
+                            </button>
                           </div>
                         )}
                       </div>
@@ -1160,22 +1434,45 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                 </div>
                 <div className="space-y-6">
                   <GlassCard className="space-y-4">
-                    <h3 className="font-bold text-slate-200 text-xs pb-2 border-b border-slate-850">Ward's Issued Books & Fines</h3>
-                    <div className="space-y-3">
+                    <h3 className="font-bold text-slate-200 text-xs pb-2 border-b border-slate-850 flex items-center gap-1.5">
+                      <BookOpen size={14} className="text-brand-500" />
+                      Library Activity & History
+                    </h3>
+                    <div className="space-y-3 max-h-[300px] overflow-y-auto pr-1">
                       {issuedBooks.length === 0 ? (
-                        <p className="text-xs text-slate-500 italic">No books currently checked out.</p>
+                        <p className="text-xs text-slate-500 italic">No library activity recorded for your ward.</p>
                       ) : (
-                        issuedBooks.map(bi => (
-                          <div key={bi.id} className="p-3 bg-brand-500/5 border border-brand-500/10 rounded-xl">
-                            <h4 className="font-bold text-slate-200 text-xs">{bi.book?.title || bi.bookTitle || 'Library Book'}</h4>
-                            <p className="text-[10px] text-slate-400 mt-1">Due Date: {new Date(bi.due_date || bi.dueDate).toLocaleDateString()}</p>
-                            <p className={`text-[9px] font-bold mt-1 ${new Date(bi.due_date || bi.dueDate) < new Date() ? 'text-red-400' : 'text-green-400'}`}>
-                              Status: {new Date(bi.due_date || bi.dueDate) < new Date() ? 'OVERDUE' : 'Checked Out'}
-                            </p>
-                          </div>
-                        ))
+                        issuedBooks.map(bi => {
+                          const bookTitle = bi.book?.title || mockDb.books.find(b => b.id === bi.bookId)?.title || 'Unknown Book';
+                          const fineRecord = libraryFines.find(f => f.issueId === bi.id);
+                          let fineText = null;
+                          if (fineRecord) {
+                            fineText = `${studentSchool?.currencySymbol || '$'}${Number(fineRecord.amount).toFixed(2)} (${fineRecord.isPaid ? 'Paid' : 'Unpaid'})`;
+                          }
+                          return (
+                            <div key={bi.id} className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1.5 text-[11px]">
+                              <h4 className="font-bold text-slate-200">{bookTitle}</h4>
+                              <div className="grid grid-cols-2 gap-x-2 gap-y-1 text-[10px] text-slate-450 font-mono">
+                                <div>Issued: {bi.issueDate ? new Date(bi.issueDate).toLocaleDateString() : '—'}</div>
+                                <div>Due: {bi.dueDate ? new Date(bi.dueDate).toLocaleDateString() : '—'}</div>
+                                {bi.returnDate && <div className="col-span-2">Returned: {new Date(bi.returnDate).toLocaleDateString()}</div>}
+                              </div>
+                              <div className="flex items-center justify-between pt-1 border-t border-slate-850/40 mt-1">
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
+                                  bi.status === 'RETURNED' ? 'bg-green-500/10 text-green-400' :
+                                  bi.status === 'OVERDUE' ? 'bg-red-500/10 text-red-400' :
+                                  'bg-brand-500/10 text-brand-400'
+                                }`}>{bi.status}</span>
+                                {fineText && (
+                                  <span className="text-[10px] font-semibold text-red-400 font-mono">
+                                    Fine: {fineText}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })
                       )}
-
                       {libraryFines.length > 0 && (
                         <div className="space-y-2 mt-4 pt-4 border-t border-slate-850">
                           <h4 className="font-bold text-slate-200 text-xs">Outstanding Library Fines</h4>
@@ -1484,6 +1781,368 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => 
                     </div>
                   )}
                 </GlassCard>
+              </PremiumLock>
+            )}
+
+            {activeTab === 'hostel' && (
+              <PremiumLock 
+                isLocked={false} 
+                requiredTier="Basic" 
+                featureName="Hostel Registry"
+              >
+                <div className="space-y-6 animate-fade-in">
+                  {!activeAdmission ? (
+                    <GlassCard className="text-center py-16 p-6 flex flex-col items-center justify-center gap-3">
+                      <Home size={40} className="text-slate-650 animate-pulse-subtle" />
+                      <p className="text-sm text-slate-350 font-semibold font-mono">No Active Hostel Admission</p>
+                      <p className="text-xs text-slate-500 max-w-md">
+                        Your ward is not currently registered or assigned to any hostel room space. Please coordinate with the Hostel Admin or Warden for details.
+                      </p>
+                    </GlassCard>
+                  ) : (
+                    <div className="space-y-6">
+                      {/* 1. Header Ward Hostel Info / Warden Contact */}
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <GlassCard className="p-5 flex flex-col justify-between">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-brand-400">
+                              <Home size={18} />
+                              <h4 className="font-bold text-xs uppercase tracking-wider">Ward Room Allocation</h4>
+                            </div>
+                            <h3 className="text-2xl font-bold text-slate-100">{hostelDetails?.name || 'Loading Hostel...'}</h3>
+                            <p className="text-xs text-slate-400">Building Type: <span className="font-semibold text-slate-200">{hostelDetails?.type || 'N/A'}</span></p>
+                            <p className="text-xs text-slate-400">Block / Wing: <span className="font-semibold text-slate-200">{blockDetails?.name || 'N/A'}</span></p>
+                            <p className="text-xs text-slate-400">Floor Level: <span className="font-semibold text-slate-200">{roomDetails?.floor !== undefined ? `Floor ${roomDetails.floor}` : 'N/A'}</span></p>
+                          </div>
+                          <div className="border-t border-slate-850 pt-3 mt-4 text-[10px] text-slate-500 flex justify-between">
+                            <span>Room: {roomDetails?.roomNumber || 'N/A'}</span>
+                            <span>Bed: {bedDetails?.bedName || 'N/A'}</span>
+                          </div>
+                        </GlassCard>
+
+                        <GlassCard className="p-5 flex flex-col justify-between">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-teal-400">
+                              <UserIcon size={18} />
+                              <h4 className="font-bold text-xs uppercase tracking-wider">Hostel Warden Details</h4>
+                            </div>
+                            {wardenDetails ? (
+                              <>
+                                <h3 className="text-lg font-bold text-slate-100">
+                                  {wardenDetails.userDetails 
+                                    ? `${wardenDetails.userDetails.firstName} ${wardenDetails.userDetails.lastName}` 
+                                    : 'Assigned Warden'}
+                                </h3>
+                                <p className="text-xs text-slate-400">Warden Email: <span className="text-slate-200 font-medium">{wardenDetails.userDetails?.email || 'N/A'}</span></p>
+                                <p className="text-xs text-slate-400">Phone Contact: <span className="text-brand-400 font-bold font-mono">{wardenDetails.phone || 'N/A'}</span></p>
+                              </>
+                            ) : (
+                              <p className="text-xs text-slate-500 italic py-2">No specific warden assigned to this building structure yet.</p>
+                            )}
+                          </div>
+                          <div className="border-t border-slate-850 pt-3 mt-4 text-[10px] text-slate-500">
+                            Admission Date: {activeAdmission.admissionDate ? new Date(activeAdmission.admissionDate).toLocaleDateString() : 'N/A'}
+                          </div>
+                        </GlassCard>
+
+                        <GlassCard className="p-5 flex flex-col justify-between">
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-indigo-400">
+                              <Calendar size={18} />
+                              <h4 className="font-bold text-xs uppercase tracking-wider">Attendance Roll Rate</h4>
+                            </div>
+                            {(() => {
+                              const totalAtt = myAttendance.length;
+                              const presentAtt = myAttendance.filter(a => a.status === 'PRESENT').length;
+                              const leaveAtt = myAttendance.filter(a => a.status === 'LEAVE').length;
+                              const absentAtt = myAttendance.filter(a => a.status === 'ABSENT').length;
+                              const rate = totalAtt > 0 ? Math.round(((presentAtt + leaveAtt) / totalAtt) * 100) : 100;
+                              return (
+                                <>
+                                  <h3 className="text-2xl font-bold text-slate-100">{rate}%</h3>
+                                  <div className="flex items-center gap-2 text-xs text-slate-400 mt-1">
+                                    <span className="text-emerald-400 font-bold">{presentAtt} Present</span>
+                                    <span>•</span>
+                                    <span className="text-amber-400 font-bold">{leaveAtt} Leave</span>
+                                    <span>•</span>
+                                    <span className="text-red-400 font-bold">{absentAtt} Absent</span>
+                                  </div>
+                                  <p className="text-[10px] text-slate-500 mt-1">Based on daily warden check-ins</p>
+                                </>
+                              );
+                            })()}
+                          </div>
+                          <div className="border-t border-slate-850 pt-3 mt-4 text-[10px] text-slate-500 flex justify-between">
+                            <span>Checks: {myAttendance.length}</span>
+                            <span className="text-teal-400 font-bold font-mono">Roll Log Synced</span>
+                          </div>
+                        </GlassCard>
+                      </div>
+
+                      {/* 2. Leave Request Approval Console & Mess Menu */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Leave Approvals Console */}
+                        <GlassCard className="p-5 space-y-4">
+                          <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                            <Clock size={18} />
+                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Ward Leave Approvals Console</h4>
+                          </div>
+
+                          {myLeaveRequests.length === 0 ? (
+                            <div className="text-center py-10 flex flex-col items-center justify-center gap-2">
+                              <Clock size={24} className="text-slate-650" />
+                              <p className="text-xs text-slate-455 italic">No leave requests logged for your ward.</p>
+                            </div>
+                          ) : (
+                            <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
+                              {myLeaveRequests
+                                .sort((a, b) => new Date(b.fromDate).getTime() - new Date(a.fromDate).getTime())
+                                .map((l) => {
+                                  const isPendingParent = l.parentApproval === 'PENDING';
+                                  return (
+                                    <div key={l.id} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col gap-3 hover:border-slate-800 transition-all duration-200">
+                                      <div className="flex justify-between items-start">
+                                        <div className="space-y-1">
+                                          <p className="text-xs font-bold text-slate-200">
+                                            {new Date(l.fromDate).toLocaleDateString()} to {new Date(l.toDate).toLocaleDateString()}
+                                          </p>
+                                          <p className="text-xs text-slate-400 font-medium">Reason: {l.reason}</p>
+                                        </div>
+                                        <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${
+                                          l.status === 'APPROVED' 
+                                            ? 'bg-green-500/10 border-green-500/15 text-green-400' 
+                                            : l.status === 'REJECTED'
+                                              ? 'bg-red-500/10 border-red-500/15 text-red-400'
+                                              : l.status === 'HOLD'
+                                                ? 'bg-amber-500/10 border-amber-500/15 text-amber-400'
+                                                : 'bg-blue-500/10 border-blue-500/15 text-blue-400'
+                                        }`}>
+                                          Status: {l.status}
+                                        </span>
+                                      </div>
+
+                                      <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500 border-t border-slate-850/60 pt-2.5">
+                                        <span>Parent: <span className="font-bold text-slate-350">{l.parentApproval}</span></span>
+                                        <span>•</span>
+                                        <span>Warden: <span className="font-bold text-slate-350">{l.wardenApproval}</span></span>
+                                        <span>•</span>
+                                        <span>Hostel Admin: <span className="font-bold text-slate-350">{l.hostelAdminApproval || 'PENDING'}</span></span>
+                                        <span>•</span>
+                                        <span>School Admin: <span className="font-bold text-slate-350">{l.adminApproval}</span></span>
+                                      </div>
+
+                                      {isPendingParent && (
+                                        <div className="flex gap-2 pt-1">
+                                          <button
+                                            onClick={() => handleHostelLeaveApproval(l.id, 'APPROVED')}
+                                            className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                                          >
+                                            <Check size={12} /> Approve Leave
+                                          </button>
+                                          <button
+                                            onClick={() => handleHostelLeaveApproval(l.id, 'REJECTED')}
+                                            className="px-3 py-1.5 bg-red-500/10 hover:bg-red-500/20 text-red-400 border border-red-500/30 rounded-xl text-xs font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                                          >
+                                            <X size={12} /> Reject Leave
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                            </div>
+                          )}
+                        </GlassCard>
+
+                        {/* Mess Menu Grid */}
+                        <GlassCard className="p-5 space-y-4">
+                          <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                            <Utensils size={18} />
+                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Hostel Mess Menu Planner</h4>
+                          </div>
+
+                          {messMenus.length === 0 ? (
+                            <div className="text-center py-10 flex flex-col items-center justify-center gap-2">
+                              <Coffee size={24} className="text-slate-650 animate-pulse-subtle" />
+                              <p className="text-xs text-slate-455 italic">Mess Menu Planner has not been configured for this cycle.</p>
+                            </div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-[11px] text-left border-collapse">
+                                <thead>
+                                  <tr className="border-b border-slate-850 text-slate-400 uppercase tracking-widest text-[9px]">
+                                    <th className="py-2">Day</th>
+                                    <th className="py-2">Breakfast</th>
+                                    <th className="py-2">Lunch</th>
+                                    <th className="py-2">Dinner</th>
+                                    <th className="py-2">Special Menu</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-850">
+                                  {(() => {
+                                    const days = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+                                    return days.map((dayName, idx) => {
+                                      const menu = messMenus.find(m => m.dayOfWeek === idx);
+                                      return (
+                                        <tr key={idx} className="hover:bg-slate-900/30 text-slate-300">
+                                          <td className="py-2.5 font-semibold text-brand-400">{dayName}</td>
+                                          <td className="py-2.5 max-w-[100px] truncate" title={menu?.breakfast || '-'}>{menu?.breakfast || '-'}</td>
+                                          <td className="py-2.5 max-w-[100px] truncate" title={menu?.lunch || '-'}>{menu?.lunch || '-'}</td>
+                                          <td className="py-2.5 max-w-[100px] truncate" title={menu?.dinner || '-'}>{menu?.dinner || '-'}</td>
+                                          <td className="py-2.5 text-indigo-400 truncate max-w-[100px]" title={menu?.specialMenu || '-'}>{menu?.specialMenu || '-'}</td>
+                                        </tr>
+                                      );
+                                    });
+                                  })()}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
+                        </GlassCard>
+                      </div>
+
+                      {/* 3. Complaints & Visitors Logs */}
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Complaints List */}
+                        <GlassCard className="p-5 space-y-4">
+                          <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                            <ShieldAlert size={18} />
+                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Ward Maintenance Complaints Log</h4>
+                          </div>
+
+                          {myComplaints.length === 0 ? (
+                            <div className="text-center py-10 flex flex-col items-center justify-center gap-2">
+                              <ShieldAlert size={24} className="text-slate-650" />
+                              <p className="text-xs text-slate-455 italic">No complaints logged for this ward.</p>
+                            </div>
+                          ) : (
+                            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                              {myComplaints
+                                .sort((a, b) => b.status.localeCompare(a.status))
+                                .map((c) => (
+                                  <div key={c.id} className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl flex flex-col gap-2 hover:border-slate-800 transition-all duration-200">
+                                    <div className="flex justify-between items-center text-xs">
+                                      <span className="font-bold text-brand-400">{c.category}</span>
+                                      <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full border ${
+                                        c.status === 'RESOLVED' || c.status === 'CLOSED'
+                                          ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400'
+                                          : c.status === 'ASSIGNED'
+                                            ? 'bg-indigo-500/10 border-indigo-500/15 text-indigo-400'
+                                            : 'bg-amber-500/10 border-amber-500/15 text-amber-400'
+                                      }`}>
+                                        {c.status}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-slate-300 leading-normal">{c.description}</p>
+                                    <div className="text-[10px] text-slate-500 border-t border-slate-850/40 pt-2 flex flex-col gap-1">
+                                      <p>Assigned Staff: <span className="font-medium text-slate-450">{c.assignedStaff || 'Unassigned'}</span></p>
+                                      {c.resolutionNotes && <p>Resolution: <span className="font-semibold text-slate-300 italic">{c.resolutionNotes}</span></p>}
+                                    </div>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </GlassCard>
+
+                        {/* Visitors Log Card */}
+                        <GlassCard className="p-5 space-y-4">
+                          <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                            <ClipboardList size={18} />
+                            <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Ward Visitor Log Book</h4>
+                          </div>
+
+                          {myVisitors.length === 0 ? (
+                            <div className="text-center py-10 flex flex-col items-center justify-center gap-2">
+                              <ClipboardList size={24} className="text-slate-650" />
+                              <p className="text-xs text-slate-455 italic">No visitor entry logs registered for this student.</p>
+                            </div>
+                          ) : (
+                            <div className="max-h-60 overflow-y-auto space-y-2 pr-1">
+                              {myVisitors
+                                .sort((a, b) => new Date(b.entryTime).getTime() - new Date(a.entryTime).getTime())
+                                .map((v) => (
+                                  <div key={v.id} className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl flex items-center justify-between text-xs hover:border-slate-800 transition-all duration-200">
+                                    <div className="space-y-1">
+                                      <p className="font-bold text-slate-200">{v.visitorName} <span className="text-[10px] text-slate-450 font-normal">({v.relation})</span></p>
+                                      <p className="text-[10px] text-slate-450">Purpose: {v.purpose}</p>
+                                      <p className="text-[9px] text-slate-500 font-mono">In: {new Date(v.entryTime).toLocaleString()}</p>
+                                    </div>
+                                    <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full uppercase border ${
+                                      v.exitTime 
+                                        ? 'bg-emerald-500/10 border-emerald-500/15 text-emerald-400' 
+                                        : 'bg-rose-500/10 border-rose-500/15 text-rose-400'
+                                    }`}>
+                                      {v.exitTime ? `Out: ${new Date(v.exitTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` : 'Inside Building'}
+                                    </span>
+                                  </div>
+                                ))}
+                            </div>
+                          )}
+                        </GlassCard>
+                      </div>
+
+                      {/* 4. Hostel Invoices / Billing & Payments Ledger */}
+                      <GlassCard className="p-5 space-y-4">
+                        <div className="border-b border-slate-850 pb-2 flex items-center gap-2 text-brand-400">
+                          <DollarSign size={18} />
+                          <h4 className="font-bold text-xs uppercase tracking-wider text-slate-100">Hostel Fees Ledger & Invoices</h4>
+                        </div>
+
+                        {myFees.length === 0 ? (
+                          <div className="text-center py-10 flex flex-col items-center justify-center gap-2">
+                            <DollarSign size={24} className="text-slate-650 animate-pulse-subtle" />
+                            <p className="text-xs text-slate-455 italic">No hostel-related fee structures defined for this school.</p>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            {myFees.map((fee) => {
+                              const paymentRecord = myPayments.find(p => p.feeId === fee.id);
+                              const isPaid = paymentRecord?.status === 'PAID';
+                              return (
+                                <div key={fee.id} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4 hover:border-slate-800 transition-all duration-200">
+                                  <div className="space-y-1">
+                                    <div className="flex justify-between items-center">
+                                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest font-mono">{fee.feeType}</span>
+                                      <span className={`text-[9.5px] font-bold px-2 py-0.5 rounded-full uppercase border ${
+                                        isPaid 
+                                          ? 'bg-green-500/10 border-green-500/15 text-green-400' 
+                                          : 'bg-red-500/10 border-red-500/15 text-red-400'
+                                      }`}>
+                                        {isPaid ? 'PAID' : 'UNPAID'}
+                                      </span>
+                                    </div>
+                                    <h4 className="font-bold text-slate-200 text-sm mt-2">{fee.name}</h4>
+                                    <p className="text-xs text-slate-450 mt-1">{fee.description || 'Hostel services accommodation billing component.'}</p>
+                                  </div>
+
+                                  <div className="pt-3 border-t border-slate-850 flex items-center justify-between">
+                                    <div>
+                                      <p className="text-xs text-slate-400">Fee Amount</p>
+                                      <p className="text-sm font-bold text-slate-100">{studentSchool?.currencySymbol || '$'}{fee.amount.toFixed(2)}</p>
+                                    </div>
+                                    {!isPaid ? (
+                                      <button
+                                        onClick={() => handleHostelFeePayment(fee.id, fee.amount)}
+                                        className="px-3 py-1.5 bg-brand-500/15 hover:bg-brand-500/25 border border-brand-500/30 rounded-xl text-xs font-bold text-brand-400 cursor-pointer active:scale-95 transition-all"
+                                      >
+                                        Process Online Payment
+                                      </button>
+                                    ) : (
+                                      <div className="text-[9.5px] text-slate-500 text-right">
+                                        <p>Paid: {new Date(paymentRecord.paymentDate).toLocaleDateString()}</p>
+                                        <p>Ref: {paymentRecord.txId || paymentRecord.id.substring(0, 8)}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        )}
+                      </GlassCard>
+                    </div>
+                  )}
+                </div>
               </PremiumLock>
             )}
 

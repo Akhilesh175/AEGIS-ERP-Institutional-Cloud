@@ -5,7 +5,10 @@ import {
   Exam, ExamMark, FeeStructure, FeePayment, PaymentStatus, ChatMessage, Announcement, 
   Notification, AuditLog, StudyMaterial, ExamSchedule, 
   TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory, PhoneNumber, EmailAddress, Section, HomeworkAttachment,
-  Role, RolePermission, DriverSalaryPayout, UserRole
+  Role, RolePermission, DriverSalaryPayout, UserRole,
+  Hostel, HostelBlock, HostelRoom, HostelBed, HostelWarden, HostelAdmission,
+  HostelAttendance, HostelLeaveRequest, HostelVisitor, HostelComplaint,
+  HostelFee, HostelPayment, HostelMessMenu
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
@@ -93,6 +96,9 @@ const SESSION_KEY = 'aegis_session';
 const isSeedingClassesMap: { [schoolId: string]: boolean } = {};
 const isSeedingSubjectsMap: { [schoolId: string]: boolean } = {};
 
+// Consolidation map for parallel hostel data sync calls to avoid duplicate queries
+const syncHostelDataPromises: { [schoolId: string]: Promise<void> | null } = {};
+
 export interface AuthSession {
   user: User;
   token: string;
@@ -107,7 +113,7 @@ export const getAdminSchoolId = (): string => {
     const sessionRaw = localStorage.getItem(SESSION_KEY);
     if (sessionRaw) {
       const session = JSON.parse(sessionRaw) as AuthSession;
-      if (['ADMIN', 'FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'].includes(session.user.role) && session.user.schoolId) {
+      if (session.user.schoolId) {
         return session.user.schoolId;
       }
     }
@@ -160,7 +166,7 @@ export function validateTeacherForTimetable(teacherId: string, schoolId: string)
 
 export const isChatAllowed = (roleA: string, roleB: string): boolean => {
   if (roleA === roleB) return false;
-  const subAdmins = ['FINANCE_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'ACADEMIC_ADMIN', 'CUSTOM_SUB_ADMIN'];
+  const subAdmins = ['FINANCE_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'ACADEMIC_ADMIN', 'CUSTOM_SUB_ADMIN', 'HOSTEL_ADMIN', 'WARDEN'];
   const isSubAdmin = (r: string) => subAdmins.includes(r);
   
   const checkPair = (r1: string, r2: string) => {
@@ -844,10 +850,38 @@ export const mockApi = {
     const sessionRaw = localStorage.getItem(SESSION_KEY);
     if (sessionRaw) {
       const session = JSON.parse(sessionRaw) as AuthSession;
-      mockDb.addLog(session.user.id, 'LOGOUT');
+      try {
+        mockDb.addLog(session.user.id, 'LOGOUT');
+      } catch (e) {}
     }
-    localStorage.removeItem(SESSION_KEY);
-    await delay(100);
+    
+    // Clear all session and DB local storage keys synchronously first to prevent any race condition on reload
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && key !== 'aegis_theme') {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(key => localStorage.removeItem(key));
+
+    try {
+      sessionStorage.clear();
+    } catch (err) {
+      console.error('sessionStorage clear error:', err);
+    }
+
+    try {
+      // Async signOut call, timeout after 500ms to not block reload flow
+      await Promise.race([
+        supabase.auth.signOut(),
+        new Promise(resolve => setTimeout(resolve, 500))
+      ]);
+    } catch (err) {
+      console.error('Supabase signOut error:', err);
+    }
+
+    await delay(50);
   },
 
   async getSession(): Promise<AuthSession | null> {
@@ -884,10 +918,11 @@ export const mockApi = {
 
     // Apply strict boundaries: match class, section (if active), and academic session
     const assignments = mockDb.assignments.filter(a => {
+      const schoolMatches = a.schoolId === student.schoolId;
       const classMatches = a.classId === student.classId;
       const sectionMatches = !student.sectionId || !a.sectionId || a.sectionId === student.sectionId;
-      const sessionMatches = a.academicSessionId === student.academicSessionId;
-      return classMatches && sectionMatches && sessionMatches;
+      const sessionMatches = !a.academicSessionId || !student.academicSessionId || a.academicSessionId === student.academicSessionId || a.academicSessionId === 'session-1' || student.academicSessionId === 'session-1';
+      return schoolMatches && classMatches && sectionMatches && sessionMatches;
     });
     
     return assignments.map(assignment => {
@@ -999,35 +1034,86 @@ export const mockApi = {
     const student = mockDb.students.find(s => s.id === studentId);
     if (!student || !student.classId) return [];
 
-    // Sync from database first
+    // Sync exams from database first
     await this.syncExamsData(student.schoolId);
-    await this.syncExamSchedulesData(student.schoolId);
-    await this.syncExamMarksData(student.schoolId);
 
-    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-    
-    // Clean up local mock db for this class to prevent seed data from mixing with real Supabase data
-    mockDb.examSchedules = mockDb.examSchedules.filter(s => s.classId === student.classId ? isUUID(s.id) : true);
+    const { data: dbExamSubjects } = await supabaseAdmin
+      .from('exam_subjects')
+      .select('*, subject:subjects(*)')
+      .eq('school_id', student.schoolId);
 
-    let schedules = mockDb.examSchedules.filter(s => s.classId === student.classId);
-    if (schedules.length === 0) {
-      // Graceful fallback to seed arrays
-      schedules = SEED_EXAM_SCHEDULES.map(s => ({ ...s, classId: student.classId as string }));
+    const { data: dbStudentMarks } = await supabaseAdmin
+      .from('student_marks')
+      .select('*')
+      .eq('school_id', student.schoolId)
+      .eq('student_id', studentId);
+
+    let examSubjects: any[] = [];
+    if (dbExamSubjects) {
+      examSubjects = dbExamSubjects.map(es => ({
+        id: es.id,
+        schoolId: es.school_id,
+        examId: es.exam_id,
+        subjectId: es.subject_id,
+        maxMarks: Number(es.max_marks || 100),
+        passingMarks: Number(es.passing_marks || 40),
+        subject: es.subject
+      }));
+    } else {
+      examSubjects = mockDb.examSubjects.filter(es => es.schoolId === student.schoolId);
     }
 
-    return schedules.map(sched => {
-      const exam = mockDb.exams.find(e => e.id === sched.examId);
-      const subject = mockDb.subjects.find(sub => sub.id === sched.subjectId);
-      const mark = mockDb.examMarks.find(m => m.examScheduleId === sched.id && m.studentId === studentId);
+    let studentMarks: any[] = [];
+    if (dbStudentMarks) {
+      studentMarks = dbStudentMarks.map(sm => ({
+        id: sm.id,
+        schoolId: sm.school_id,
+        examId: sm.exam_id,
+        subjectId: sm.subject_id,
+        studentId: sm.student_id,
+        marksObtained: Number(sm.marks_obtained || 0),
+        remarks: sm.remarks || ''
+      }));
+    } else {
+      studentMarks = mockDb.studentMarks.filter(sm => sm.schoolId === student.schoolId && sm.studentId === studentId);
+    }
+
+    return examSubjects.map(es => {
+      const exam = mockDb.exams.find(e => e.id === es.examId);
+      const subject = mockDb.subjects.find(sub => sub.id === es.subjectId) || es.subject || {
+        id: es.subjectId,
+        schoolId: student.schoolId,
+        name: 'Unknown Subject',
+        code: 'UNK'
+      };
+      const mark = studentMarks.find(sm => sm.examId === es.examId && sm.subjectId === es.subjectId);
+
+      const virtualSchedule: ExamSchedule = {
+        id: 'virtual-sched-' + es.id,
+        examId: es.examId,
+        classId: student.classId as string,
+        subjectId: es.subjectId,
+        examDate: '',
+        startTime: '',
+        endTime: '',
+        classroom: '',
+        maxMarks: es.maxMarks
+      };
+
+      const virtualMark: ExamMark | undefined = mark ? {
+        id: mark.id,
+        examScheduleId: 'virtual-sched-' + es.id,
+        studentId: studentId,
+        marksObtained: mark.marksObtained,
+        remarks: mark.remarks,
+        gradedBy: 'Teacher',
+        createdAt: new Date().toISOString()
+      } : undefined;
+
       return {
-        schedule: sched,
-        mark,
-        subject: subject || {
-          id: sched.subjectId,
-          schoolId: student.schoolId,
-          name: 'Unknown Subject',
-          code: 'UNK'
-        },
+        schedule: virtualSchedule,
+        mark: virtualMark,
+        subject,
         examName: exam ? exam.name : 'Exam Assessment'
       };
     });
@@ -1079,6 +1165,7 @@ export const mockApi = {
         dbAssignments.forEach((r: any) => {
           const ass: Assignment = {
             id: r.id,
+            schoolId: r.school_id,
             classId: r.class_id,
             sectionId: r.section_id || undefined,
             subjectId: r.subject_id,
@@ -1568,7 +1655,9 @@ export const mockApi = {
         dbQuizzes.forEach((r: any) => {
           const qz: Quiz = {
             id: r.id,
+            schoolId: r.school_id,
             subjectId: r.subject_id,
+            classId: r.class_id || undefined,
             teacherId: r.teacher_id,
             title: r.title,
             durationMinutes: r.duration_minutes,
@@ -1640,7 +1729,7 @@ export const mockApi = {
       const { data: dbUsers } = await supabaseAdmin
         .from('users')
         .select('*')
-        .eq('school_id', schoolId);
+        .or(`school_id.eq.${schoolId},role.eq.SUPER_ADMIN`);
       
       if (dbUsers) {
         dbUsers.forEach((r: any) => {
@@ -1676,7 +1765,43 @@ export const mockApi = {
         .select('*')
         .eq('school_id', schoolId);
       
-      if (dbCats) {
+      if (dbCats && dbCats.length === 0) {
+        // No categories exist in the DB for this school yet. Let's auto-seed default ones.
+        const defaultCats = [
+          {
+            school_id: schoolId,
+            name: 'General Q&A',
+            description: 'Standard school topics, general academic questions'
+          },
+          {
+            school_id: schoolId,
+            name: 'Computer Science & Tech',
+            description: 'Share coding concepts, programming bugs, and tech advancements'
+          }
+        ];
+        const { data: seededCats } = await supabaseAdmin
+          .from('forum_categories')
+          .insert(defaultCats)
+          .select();
+        
+        if (seededCats) {
+          seededCats.forEach((r: any) => {
+            const cat: ForumCategory = {
+              id: r.id,
+              schoolId: r.school_id,
+              academicSessionId: r.academic_session_id || null,
+              classId: r.class_id || null,
+              subjectId: r.subject_id || null,
+              name: r.name,
+              description: r.description
+            };
+            const idx = mockDb.forumCategories.findIndex(c => c.id === cat.id);
+            if (idx === -1) mockDb.forumCategories.push(cat);
+            else mockDb.forumCategories[idx] = cat;
+          });
+          mockDb.saveAll();
+        }
+      } else if (dbCats) {
         const dbCatIds = dbCats.map((r: any) => r.id);
         mockDb.forumCategories = mockDb.forumCategories.filter(
           c => c.schoolId !== schoolId || dbCatIds.includes(c.id)
@@ -1708,7 +1833,7 @@ export const mockApi = {
       await this.syncForumCategoriesData(schoolId);
       const catIds = mockDb.forumCategories.filter(c => c.schoolId === schoolId).map(c => c.id);
       if (catIds.length === 0) {
-        mockDb.forumPosts = [];
+        mockDb.forumPosts = mockDb.forumPosts.filter(p => !catIds.includes(p.categoryId));
         mockDb.saveAll();
         return;
       }
@@ -1748,9 +1873,10 @@ export const mockApi = {
   async syncForumRepliesData(schoolId: string): Promise<void> {
     try {
       await this.syncForumPostsData(schoolId);
-      const postIds = mockDb.forumPosts.map(p => p.id);
+      const catIds = mockDb.forumCategories.filter(c => c.schoolId === schoolId).map(c => c.id);
+      const postIds = mockDb.forumPosts.filter(p => catIds.includes(p.categoryId)).map(p => p.id);
       if (postIds.length === 0) {
-        mockDb.forumReplies = [];
+        mockDb.forumReplies = mockDb.forumReplies.filter(rp => !postIds.includes(rp.postId));
         mockDb.saveAll();
         return;
       }
@@ -2160,7 +2286,14 @@ export const mockApi = {
       .filter(m => m.classId === student.classId)
       .map(m => m.subjectId);
 
-    const quizzes = mockDb.quizzes.filter(q => activeSubjectIds.includes(q.subjectId));
+    const quizzes = mockDb.quizzes.filter(q => {
+      const schoolMatches = q.schoolId === student.schoolId;
+      if (!schoolMatches) return false;
+      if (q.classId) {
+        return q.classId === student.classId;
+      }
+      return activeSubjectIds.includes(q.subjectId);
+    });
 
     return quizzes.map(quiz => {
       const attempt = mockDb.quizAttempts.find(a => a.quizId === quiz.id && a.studentId === studentId);
@@ -2254,11 +2387,29 @@ export const mockApi = {
     await delay();
     const mappings = mockDb.parentStudentMappings.filter(m => m.parentId === parentId);
     const studentIds = mappings.map(m => m.studentId);
+    const students = mockDb.students.filter(s => studentIds.includes(s.id));
 
-    return mockDb.students
-      .filter(s => studentIds.includes(s.id))
+    // Sync users data for these students' schools
+    const schoolIds = Array.from(new Set(students.map(s => s.schoolId)));
+    for (const schoolId of schoolIds) {
+      await this.syncUsersData(schoolId).catch(() => {});
+    }
+
+    return students
       .map(s => {
-        const u = mockDb.users.find(usr => usr.id === s.userId)!;
+        const u = mockDb.users.find(usr => usr.id === s.userId) || {
+          id: s.userId,
+          email: '',
+          role: 'STUDENT',
+          firstName: 'Student',
+          lastName: '',
+          phone: '',
+          avatarUrl: 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+          isActive: true,
+          schoolId: s.schoolId,
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        } as User;
         const c = mockDb.classes.find(cls => cls.id === s.classId);
         return {
           ...s,
@@ -2301,6 +2452,7 @@ export const mockApi = {
     await this.syncAttendanceData(student.schoolId);
     await this.syncFeeStructuresData(student.schoolId);
     await this.syncFeePaymentsData(student.schoolId);
+    await this.syncUsersData(student.schoolId).catch(() => {});
 
     const userDetails = mockDb.users.find(u => u.id === student.userId);
     if (!userDetails) throw new Error('Student user profile not found.');
@@ -2311,32 +2463,71 @@ export const mockApi = {
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     mockDb.examSchedules = mockDb.examSchedules.filter(s => s.classId === student.classId ? isUUID(s.id) : true);
     
-    // Exam report
-    let schedules = mockDb.examSchedules.filter(sched => sched.classId === student.classId);
-    if (schedules.length === 0) {
-      schedules = SEED_EXAM_SCHEDULES.map(s => ({ ...s, classId: student.classId || '' }));
+    // Fetch all exams for child's school
+    await this.syncExamsData(student.schoolId);
+
+    const { data: dbExamSubjects } = await supabaseAdmin
+      .from('exam_subjects')
+      .select('*, subject:subjects(*)')
+      .eq('school_id', student.schoolId);
+
+    const { data: dbStudentMarks } = await supabaseAdmin
+      .from('student_marks')
+      .select('*')
+      .eq('school_id', student.schoolId)
+      .eq('student_id', studentId);
+
+    let examSubjects: any[] = [];
+    if (dbExamSubjects) {
+      examSubjects = dbExamSubjects.map(es => ({
+        id: es.id,
+        schoolId: es.school_id,
+        examId: es.exam_id,
+        subjectId: es.subject_id,
+        maxMarks: Number(es.max_marks || 100),
+        passingMarks: Number(es.passing_marks || 40),
+        subject: es.subject
+      }));
+    } else {
+      examSubjects = mockDb.examSubjects.filter(es => es.schoolId === student.schoolId);
     }
 
-    const examMarks = schedules.map(sched => {
-      const exam = mockDb.exams.find(e => e.id === sched.examId);
-      const subject = mockDb.subjects.find(sub => sub.id === sched.subjectId);
-      const mark = mockDb.examMarks.find(m => m.examScheduleId === sched.id && m.studentId === studentId);
+    let studentMarks: any[] = [];
+    if (dbStudentMarks) {
+      studentMarks = dbStudentMarks.map(sm => ({
+        id: sm.id,
+        schoolId: sm.school_id,
+        examId: sm.exam_id,
+        subjectId: sm.subject_id,
+        studentId: sm.student_id,
+        marksObtained: Number(sm.marks_obtained || 0),
+        remarks: sm.remarks || ''
+      }));
+    } else {
+      studentMarks = mockDb.studentMarks.filter(sm => sm.schoolId === student.schoolId && sm.studentId === studentId);
+    }
+
+    const examMarks = examSubjects.map(es => {
+      const exam = mockDb.exams.find(e => e.id === es.examId);
+      const subject = mockDb.subjects.find(sub => sub.id === es.subjectId) || es.subject;
+      const mark = studentMarks.find(sm => sm.examId === es.examId && sm.subjectId === es.subjectId);
       return {
-        examName: exam ? exam.name : 'Midterm',
+        examName: exam ? exam.name : 'Exam Assessment',
         subjectName: subject ? subject.name : 'Unknown Subject',
-        subjectCode: subject ? subject.code : '',
+        subjectCode: subject ? subject.code : 'UNK',
         marksObtained: mark ? mark.marksObtained : null,
-        maxMarks: sched.maxMarks,
+        maxMarks: es.maxMarks,
         remarks: mark ? mark.remarks : ''
       };
     });
 
     // Assignments Homework with strict section boundaries
     const assignments = mockDb.assignments.filter(a => {
+      const schoolMatches = a.schoolId === student.schoolId;
       const classMatches = a.classId === student.classId;
       const sectionMatches = !student.sectionId || !a.sectionId || a.sectionId === student.sectionId;
-      const sessionMatches = a.academicSessionId === student.academicSessionId;
-      return classMatches && sectionMatches && sessionMatches;
+      const sessionMatches = !a.academicSessionId || !student.academicSessionId || a.academicSessionId === student.academicSessionId || a.academicSessionId === 'session-1' || student.academicSessionId === 'session-1';
+      return schoolMatches && classMatches && sectionMatches && sessionMatches;
     });
     const assignmentSummaries = assignments.map(a => {
       const submission = mockDb.assignmentSubmissions.find(
@@ -3013,6 +3204,7 @@ export const mockApi = {
 
     const assign: Assignment = {
       id: dbAssign.id,
+      schoolId: schoolId,
       classId: dbAssign.class_id,
       sectionId: dbAssign.section_id || undefined,
       subjectId: dbAssign.subject_id,
@@ -3087,6 +3279,7 @@ export const mockApi = {
 
     const ass: Assignment = {
       id: dbAssign.id,
+      schoolId: schoolId,
       classId: dbAssign.class_id,
       sectionId: dbAssign.section_id || undefined,
       subjectId: dbAssign.subject_id,
@@ -3202,6 +3395,7 @@ export const mockApi = {
       .insert({
         school_id: schoolId,
         subject_id: subjectId,
+        class_id: classId,
         teacher_id: teacherId,
         title: title,
         duration_minutes: duration,
@@ -3239,7 +3433,9 @@ export const mockApi = {
     // 3. Sync to local mockDb
     const quizMapped: Quiz = {
       id: dbQuiz.id,
+      schoolId: schoolId,
       subjectId: dbQuiz.subject_id,
+      classId: dbQuiz.class_id,
       teacherId: dbQuiz.teacher_id,
       title: dbQuiz.title,
       durationMinutes: dbQuiz.duration_minutes,
@@ -4344,6 +4540,7 @@ export const mockApi = {
     classroomNumber?: string
   ): Promise<void> {
     await delay(500);
+    checkCoreAdminOrAcademicAdmin();
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     const schoolId = teacher ? teacher.schoolId : getAdminSchoolId();
@@ -4606,13 +4803,18 @@ export const mockApi = {
     firstName: string, 
     lastName: string, 
     phone: string, 
-    role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER', 
+    role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN', 
     password: string,
-    employeeId?: string
+    employeeId?: string,
+    username?: string,
+    gender?: string,
+    address?: string,
+    assignedLocations?: any[],
+    isActive?: boolean
   ): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
-    if (adminErr || !admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+    if (adminErr || !admin || (admin.role !== 'ADMIN' && (admin.role !== 'HOSTEL_ADMIN' || role !== 'WARDEN'))) throw new Error('Unauthorized');
 
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
@@ -4646,6 +4848,8 @@ export const mockApi = {
       'EXAM_CONTROLLER': 'Exam Controller',
       'LIBRARIAN': 'Librarian',
       'TRANSPORT_MANAGER': 'Transport Manager',
+      'HOSTEL_ADMIN': 'Hostel Admin',
+      'WARDEN': 'Hostel Warden',
       'CUSTOM_SUB_ADMIN': 'Custom Operator'
     };
     const roleDescMap: Record<string, string> = {
@@ -4654,15 +4858,19 @@ export const mockApi = {
       'EXAM_CONTROLLER': 'Administers examinations, quiz configurations, marksheets, and grading books.',
       'LIBRARIAN': 'Manages library book inventory, issue/return logs, and late fee tracking.',
       'TRANSPORT_MANAGER': 'Administers school buses, routes, driver information, and passenger maps.',
+      'HOSTEL_ADMIN': 'Responsible for hostels, blocks, floors, rooms, beds, admissions, leave requests, visitor logs, complaints, and mess menus.',
+      'WARDEN': 'Responsible for daily hostel operations, attendance logging, and initial leave requests.',
       'CUSTOM_SUB_ADMIN': 'Customizable operator role with custom-assigned modular access tags.'
     };
     const defaultRolePermissions: Record<string, Record<string, boolean>> = {
-      'FINANCE_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
-      'ACADEMIC_ADMIN': { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true },
-      'EXAM_CONTROLLER': { billing: false, directory: true, academics: true, grading: true, security: false, books: false, transport: false },
-      'LIBRARIAN': { billing: false, directory: true, academics: true, grading: false, security: false, books: true, transport: false },
-      'TRANSPORT_MANAGER': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
-      'CUSTOM_SUB_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false }
+      'FINANCE_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
+      'ACADEMIC_ADMIN': { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true, hostel: false },
+      'EXAM_CONTROLLER': { billing: false, directory: true, academics: true, grading: true, security: false, books: false, transport: false, hostel: false },
+      'LIBRARIAN': { billing: false, directory: true, academics: true, grading: false, security: false, books: true, transport: false, hostel: false },
+      'TRANSPORT_MANAGER': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
+      'HOSTEL_ADMIN': { billing: false, directory: false, academics: false, grading: false, security: false, books: false, transport: false, hostel: true },
+      'WARDEN': { billing: false, directory: false, academics: false, grading: false, security: false, books: false, transport: false, hostel: true },
+      'CUSTOM_SUB_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false, hostel: false }
     };
 
     let { data: dbRole } = await supabaseAdmin
@@ -4724,7 +4932,7 @@ export const mockApi = {
       last_name: lastName,
       phone: phone,
       school_id: schoolId,
-      is_active: true
+      is_active: isActive !== undefined ? isActive : true
     };
     if (trimmedEmployeeId) userInsert.employee_id = trimmedEmployeeId;
 
@@ -4742,17 +4950,28 @@ export const mockApi = {
     else if (role === 'EXAM_CONTROLLER') dedicatedTable = 'exam_controllers';
     else if (role === 'LIBRARIAN') dedicatedTable = 'librarians';
     else if (role === 'TRANSPORT_MANAGER') dedicatedTable = 'transport_managers';
+    else if (role === 'HOSTEL_ADMIN') dedicatedTable = 'hostel_admins';
+    else if (role === 'WARDEN') dedicatedTable = 'hostel_wardens';
     else if (role === 'CUSTOM_SUB_ADMIN') dedicatedTable = 'custom_sub_admins';
 
     if (dedicatedTable) {
       const profileInsert: any = {
         user_id: newUserId,
-        school_id: schoolId,
-        role_id: roleId,
-        status: 'ACTIVE',
-        permissions: {}
+        school_id: schoolId
       };
-      if (trimmedEmployeeId) profileInsert.employee_id = trimmedEmployeeId;
+      if (role === 'WARDEN') {
+        profileInsert.phone = phone;
+        profileInsert.hostel_id = null;
+        profileInsert.username = username || null;
+        profileInsert.gender = gender || null;
+        profileInsert.address = address || null;
+        profileInsert.assigned_locations = assignedLocations || [];
+      } else {
+        profileInsert.role_id = roleId;
+        profileInsert.status = 'ACTIVE';
+        profileInsert.permissions = {};
+        if (trimmedEmployeeId) profileInsert.employee_id = trimmedEmployeeId;
+      }
 
       const { error: profileErr } = await supabaseAdmin.from(dedicatedTable).insert(profileInsert);
       if (profileErr) {
@@ -4815,8 +5034,38 @@ export const mockApi = {
     };
     mockDb.users.push(user);
 
+    // If warden, also push to hostelWardens cache immediately so the table renders instantly
+    if (role === 'WARDEN') {
+      // Query the newly inserted hostel_wardens row to get its id
+      const { data: newWardenRow } = await supabaseAdmin
+        .from('hostel_wardens')
+        .select('*')
+        .eq('user_id', newUserId)
+        .eq('school_id', schoolId)
+        .maybeSingle();
+      if (newWardenRow) {
+        mockDb.hostelWardens.push({
+          id: newWardenRow.id,
+          schoolId: newWardenRow.school_id,
+          userId: newWardenRow.user_id,
+          hostelId: newWardenRow.hostel_id,
+          phone: newWardenRow.phone,
+          username: newWardenRow.username || '',
+          gender: newWardenRow.gender || '',
+          address: newWardenRow.address || '',
+          assignedLocations: newWardenRow.assigned_locations || [],
+          userDetails: user,
+          createdBy: newWardenRow.created_by,
+          updatedBy: newWardenRow.updated_by
+        });
+      }
+    }
+
     mockDb.addLog(adminId, 'CREATE_SUB_ADMIN', { subAdminName: `${firstName} ${lastName}`, role: role, email: normalizedEmail, employeeId: trimmedEmployeeId || undefined });
     mockDb.saveAll();
+    if (role === 'WARDEN' || role === 'HOSTEL_ADMIN') {
+      this.clearHostelCache(schoolId);
+    }
   },
 
   async adminEditSubAdmin(
@@ -4826,7 +5075,7 @@ export const mockApi = {
     firstName: string,
     lastName: string,
     phone: string,
-    role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN',
+    role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN' | 'HOSTEL_ADMIN' | 'WARDEN',
     employeeId: string,
     isActive: boolean
   ): Promise<void> {
@@ -4872,6 +5121,7 @@ export const mockApi = {
       'EXAM_CONTROLLER': 'Exam Controller',
       'LIBRARIAN': 'Librarian',
       'TRANSPORT_MANAGER': 'Transport Manager',
+      'HOSTEL_ADMIN': 'Hostel Admin',
       'CUSTOM_SUB_ADMIN': 'Custom Operator'
     };
     const roleDescMap: Record<string, string> = {
@@ -4880,15 +5130,17 @@ export const mockApi = {
       'EXAM_CONTROLLER': 'Administers examinations, quiz configurations, marksheets, and grading books.',
       'LIBRARIAN': 'Manages library book inventory, issue/return logs, and late fee tracking.',
       'TRANSPORT_MANAGER': 'Administers school buses, routes, driver information, and passenger maps.',
+      'HOSTEL_ADMIN': 'Responsible for hostels, blocks, floors, rooms, beds, admissions, leave requests, visitor logs, complaints, and mess menus.',
       'CUSTOM_SUB_ADMIN': 'Customizable operator role with custom-assigned modular access tags.'
     };
     const defaultRolePermissions: Record<string, Record<string, boolean>> = {
-      'FINANCE_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
-      'ACADEMIC_ADMIN': { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true },
-      'EXAM_CONTROLLER': { billing: false, directory: true, academics: true, grading: true, security: false, books: false, transport: false },
-      'LIBRARIAN': { billing: false, directory: true, academics: true, grading: false, security: false, books: true, transport: false },
-      'TRANSPORT_MANAGER': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
-      'CUSTOM_SUB_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false }
+      'FINANCE_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
+      'ACADEMIC_ADMIN': { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true, hostel: false },
+      'EXAM_CONTROLLER': { billing: false, directory: true, academics: true, grading: true, security: false, books: false, transport: false, hostel: false },
+      'LIBRARIAN': { billing: false, directory: true, academics: true, grading: false, security: false, books: true, transport: false, hostel: false },
+      'TRANSPORT_MANAGER': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
+      'HOSTEL_ADMIN': { billing: false, directory: false, academics: false, grading: false, security: false, books: false, transport: false, hostel: true },
+      'CUSTOM_SUB_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false, hostel: false }
     };
 
     let targetRoleId: string | null = null;
@@ -4967,6 +5219,7 @@ export const mockApi = {
       if (roleCode === 'EXAM_CONTROLLER') return 'exam_controllers';
       if (roleCode === 'LIBRARIAN') return 'librarians';
       if (roleCode === 'TRANSPORT_MANAGER') return 'transport_managers';
+      if (roleCode === 'HOSTEL_ADMIN') return 'hostel_admins';
       if (roleCode === 'CUSTOM_SUB_ADMIN') return 'custom_sub_admins';
       return '';
     };
@@ -6788,62 +7041,185 @@ export const mockApi = {
 
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     
+    // Resolve active exam from DB or mock
+    let dbExamId: string | null = null;
+    const { data: dbExams } = await supabaseAdmin.from('exams').select('*').eq('school_id', cls.schoolId);
+    if (dbExams && dbExams.length > 0) {
+      dbExamId = dbExams[0].id;
+    } else {
+      const activeSession = await this.resolveActiveSessionId(cls.schoolId);
+      const { data: newExam } = await supabaseAdmin.from('exams').insert({
+        school_id: cls.schoolId,
+        academic_session_id: activeSession,
+        name: 'Midterm Assessments 2026',
+        start_date: new Date().toISOString().split('T')[0],
+        end_date: new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString().split('T')[0],
+        term: 'MID-TERM'
+      }).select().single();
+      if (newExam) dbExamId = newExam.id;
+    }
+
+    if (!dbExamId) throw new Error('Unable to resolve active exam reference in database.');
+
     // Keep local exam marks clean for this student but preserve seed marks for others
     mockDb.examMarks = mockDb.examMarks.filter(m => m.studentId === studentId ? isUUID(m.id) : true);
 
     for (const data of marksData) {
       try {
-        if (!isUUID(data.scheduleId)) {
-          console.warn('Skipping Supabase insert for exam mark because schedule ID is a seed string (not a UUID).');
-          const existingIdx = mockDb.examMarks.findIndex(m => m.examScheduleId === data.scheduleId && m.studentId === studentId);
-          if (existingIdx !== -1) {
-            mockDb.examMarks[existingIdx].marksObtained = data.marksObtained;
-            mockDb.examMarks[existingIdx].remarks = data.remarks;
-            mockDb.examMarks[existingIdx].gradedBy = teacherId;
-          } else {
-            mockDb.examMarks.push({
-              id: 'em-mock-' + Math.random().toString(36).substr(2, 9),
-              examScheduleId: data.scheduleId,
-              studentId,
-              marksObtained: data.marksObtained,
-              remarks: data.remarks,
-              gradedBy: teacherId,
-              createdAt: new Date().toISOString()
-            });
+        let dbScheduleId: string | null = null;
+        let dbSubjectId: string | null = null;
+        let localMaxMarks = 100;
+
+        if (isUUID(data.scheduleId)) {
+          dbScheduleId = data.scheduleId;
+          const sched = mockDb.examSchedules.find(s => s.id === data.scheduleId);
+          dbSubjectId = sched?.subjectId || null;
+          localMaxMarks = sched?.maxMarks || 100;
+        } else {
+          // Resolve mock schedule (e.g. es-1) to DB entities
+          const localSched = mockDb.examSchedules.find(s => s.id === data.scheduleId) || SEED_EXAM_SCHEDULES.find(s => s.id === data.scheduleId);
+          if (localSched) {
+            localMaxMarks = localSched.maxMarks || 100;
+            const localSubject = mockDb.subjects.find(s => s.id === localSched.subjectId);
+            if (localSubject) {
+              let dbSubject = mockDb.subjects.find(s => s.schoolId === cls.schoolId && isUUID(s.id) && s.name.toLowerCase() === localSubject.name.toLowerCase());
+              if (!dbSubject) {
+                const { data: dbSubjects } = await supabaseAdmin.from('subjects').select('*').eq('school_id', cls.schoolId);
+                dbSubject = dbSubjects?.find((s: any) => s.name.toLowerCase() === localSubject.name.toLowerCase()) || dbSubjects?.[0];
+              }
+              if (dbSubject) {
+                dbSubjectId = dbSubject.id;
+              }
+            }
           }
+        }
+
+        if (!dbSubjectId) {
+          console.warn('Unable to resolve subject ID for schedule:', data.scheduleId);
           continue;
         }
 
-        const { data: dbMarkRecord } = await supabaseAdmin
-          .from('exam_marks')
-          .select('id')
-          .eq('exam_schedule_id', data.scheduleId)
-          .eq('student_id', studentId);
-        
-        if (dbMarkRecord && dbMarkRecord.length > 0) {
-          await supabaseAdmin
+        // Ensure exam_subjects mapping exists
+        const { data: existingES } = await supabaseAdmin.from('exam_subjects').select('id').eq('exam_id', dbExamId).eq('subject_id', dbSubjectId).eq('school_id', cls.schoolId);
+        if (!existingES || existingES.length === 0) {
+          await supabaseAdmin.from('exam_subjects').insert({
+            school_id: cls.schoolId,
+            exam_id: dbExamId,
+            subject_id: dbSubjectId,
+            max_marks: localMaxMarks,
+            passing_marks: Math.round(localMaxMarks * 0.4)
+          });
+        }
+
+        // Resolve or create exam_schedules row
+        if (!dbScheduleId) {
+          const { data: existingSched } = await supabaseAdmin.from('exam_schedules').select('id').eq('exam_id', dbExamId).eq('class_id', classId).eq('subject_id', dbSubjectId);
+          if (existingSched && existingSched.length > 0) {
+            dbScheduleId = existingSched[0].id;
+          } else {
+            const { data: newSched } = await supabaseAdmin.from('exam_schedules').insert({
+              exam_id: dbExamId,
+              class_id: classId,
+              subject_id: dbSubjectId,
+              max_marks: localMaxMarks,
+              date: new Date().toISOString().split('T')[0],
+              start_time: '09:00',
+              end_time: '12:00',
+              classroom: 'Classroom'
+            }).select().single();
+            if (newSched) dbScheduleId = newSched.id;
+          }
+        }
+
+        if (dbScheduleId && dbSubjectId) {
+          // Save to exam_marks
+          const { data: dbMarkRecord } = await supabaseAdmin
             .from('exam_marks')
-            .update({
-              marks_obtained: data.marksObtained,
-              remarks: data.remarks,
-              graded_by: teacherId
-            })
-            .eq('id', dbMarkRecord[0].id);
-        } else {
-          await supabaseAdmin
-            .from('exam_marks')
-            .insert({
-              exam_schedule_id: data.scheduleId,
-              student_id: studentId,
-              marks_obtained: data.marksObtained,
-              remarks: data.remarks,
-              graded_by: teacherId
-            });
+            .select('id')
+            .eq('exam_schedule_id', dbScheduleId)
+            .eq('student_id', studentId);
+          
+          if (dbMarkRecord && dbMarkRecord.length > 0) {
+            await supabaseAdmin
+              .from('exam_marks')
+              .update({
+                marks_obtained: data.marksObtained,
+                remarks: data.remarks,
+                graded_by: teacherId
+              })
+              .eq('id', dbMarkRecord[0].id);
+          } else {
+            await supabaseAdmin
+              .from('exam_marks')
+              .insert({
+                exam_schedule_id: dbScheduleId,
+                student_id: studentId,
+                marks_obtained: data.marksObtained,
+                remarks: data.remarks,
+                graded_by: teacherId
+              });
+          }
+
+          // Save to student_marks
+          await this.enterStudentMarks(cls.schoolId, dbExamId, dbSubjectId, studentId, data.marksObtained, data.remarks);
         }
       } catch (err) {
         console.error('Failed to save exam mark in database:', err);
       }
     }
+
+    // Upsert Report Card term summary record
+    try {
+      const resolvedSessionId = await this.resolveActiveSessionId(cls.schoolId);
+      const totalMax = marksData.reduce((sum, item) => {
+        const sched = mockDb.examSchedules.find(s => s.id === item.scheduleId) || SEED_EXAM_SCHEDULES.find(s => s.id === item.scheduleId);
+        return sum + (sched?.maxMarks || 100);
+      }, 0);
+      const totalObtained = marksData.reduce((sum, item) => sum + (item.marksObtained || 0), 0);
+      const gpa = totalMax > 0 ? (totalObtained / totalMax) * 10 : 0;
+
+      const studentAtt = mockDb.attendance.filter(a => a.studentId === studentId);
+      const totalDays = studentAtt.length;
+      const presentDays = studentAtt.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
+      const attendancePercent = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 95;
+
+      const summaryRemarks = marksData.map(m => m.remarks).filter(Boolean).join('; ') || 'Satisfactory midterm progress.';
+
+      const examObj = mockDb.exams.find(e => e.id === dbExamId);
+      const termName = examObj?.term || 'TERM 1';
+
+      const { data: existingRC } = await supabaseAdmin
+        .from('report_cards')
+        .select('id')
+        .eq('school_id', cls.schoolId)
+        .eq('student_id', studentId)
+        .eq('term', termName);
+
+      if (existingRC && existingRC.length > 0) {
+        await supabaseAdmin.from('report_cards').update({
+          grade_point_average: gpa,
+          attendance_percentage: attendancePercent,
+          remarks: summaryRemarks,
+          academic_session_id: resolvedSessionId
+        }).eq('id', existingRC[0].id);
+      } else {
+        await supabaseAdmin.from('report_cards').insert({
+          school_id: cls.schoolId,
+          academic_session_id: resolvedSessionId,
+          student_id: studentId,
+          term: termName,
+          grade_point_average: gpa,
+          attendance_percentage: attendancePercent,
+          remarks: summaryRemarks,
+          file_url: ''
+        });
+      }
+
+      await this.fetchReportCards(cls.schoolId, studentId);
+    } catch (rcErr) {
+      console.error('Failed to create/update report card summary in database:', rcErr);
+    }
+
     mockDb.addLog(mockDb.teachers.find(t => t.id === teacherId)?.userId || null, 'CLASS_TEACHER_UPDATE_REPORT_CARD', { classId, studentId });
     mockDb.saveAll();
 
@@ -7376,6 +7752,10 @@ export const mockApi = {
     const currentUsr = mockDb.users.find(u => u.id === userId);
     if (!currentUsr) return [];
 
+    if (currentUsr.schoolId) {
+      await this.syncUsersData(currentUsr.schoolId);
+    }
+
     // Filter contacts based on role contexts (Strict boundary checking) and school isolation
     const allowedContactUserIds = mockDb.users.filter(u => {
       if (u.id === userId) return false;
@@ -7469,7 +7849,8 @@ export const mockApi = {
         sender_id: senderId,
         receiver_id: receiverId,
         message,
-        is_read: false
+        is_read: false,
+        school_id: sender.schoolId || receiver.schoolId
       }])
       .select()
       .single();
@@ -7795,12 +8176,13 @@ export const mockApi = {
       .eq('school_id', schoolId);
 
     const defaultMatrix: Record<string, Record<string, boolean>> = {
-      FINANCE_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true },
-      ACADEMIC_ADMIN: { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true },
-      EXAM_CONTROLLER: { billing: false, directory: false, academics: true, grading: true, security: false, books: false, transport: false },
-      LIBRARIAN: { billing: false, directory: false, academics: true, grading: false, security: false, books: true, transport: false },
-      TRANSPORT_MANAGER: { billing: true, directory: false, academics: false, grading: false, security: false, books: false, transport: true },
-      CUSTOM_SUB_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false }
+      FINANCE_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
+      ACADEMIC_ADMIN: { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true, hostel: false },
+      EXAM_CONTROLLER: { billing: false, directory: false, academics: true, grading: true, security: false, books: false, transport: false, hostel: false },
+      LIBRARIAN: { billing: false, directory: false, academics: true, grading: false, security: false, books: true, transport: false, hostel: false },
+      TRANSPORT_MANAGER: { billing: true, directory: false, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
+      HOSTEL_ADMIN: { billing: false, directory: false, academics: false, grading: false, security: false, books: false, transport: false, hostel: true },
+      CUSTOM_SUB_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false, hostel: false }
     };
 
     if (rolesError || !dbRoles || dbRoles.length === 0) {
@@ -7998,7 +8380,8 @@ export const mockApi = {
   async fetchOperators(schoolId: string): Promise<User[]> {
     const adminRoles = [
       'ADMIN', 'SUPER_ADMIN', 'FINANCE_ADMIN', 'ACADEMIC_ADMIN', 
-      'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN'
+      'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'CUSTOM_SUB_ADMIN',
+      'HOSTEL_ADMIN', 'WARDEN'
     ];
     
     const { data, error } = await supabaseAdmin
@@ -8019,6 +8402,7 @@ export const mockApi = {
       else if (u.role === 'LIBRARIAN') dedicatedTable = 'librarians';
       else if (u.role === 'TRANSPORT_MANAGER') dedicatedTable = 'transport_managers';
       else if (u.role === 'CUSTOM_SUB_ADMIN') dedicatedTable = 'custom_sub_admins';
+      else if (u.role === 'HOSTEL_ADMIN') dedicatedTable = 'hostel_admins';
 
       if (dedicatedTable) {
         const { data: profile } = await supabaseAdmin
@@ -8163,8 +8547,12 @@ export const mockApi = {
         };
       });
     }
-    return data.map(d => ({
+
+    const mapped = data.map(d => ({
       id: d.id,
+      schoolId: d.school_id,
+      academicSessionId: d.academic_session_id || '',
+      studentId: d.student_id,
       term: d.term,
       attendancePercentage: Number(d.attendance_percentage || 0),
       gradePointAverage: Number(d.grade_point_average || 0),
@@ -8173,6 +8561,12 @@ export const mockApi = {
       createdAt: d.created_at,
       studentName: d.student?.userDetails ? `${d.student.userDetails.first_name} ${d.student.userDetails.last_name}` : 'Unknown Student'
     }));
+
+    const otherSchools = mockDb.reportCards.filter(rc => rc.schoolId !== schoolId);
+    mockDb.reportCards = [...otherSchools, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   async createReportCard(
@@ -8184,7 +8578,7 @@ export const mockApi = {
       ? sessionId 
       : await this.resolveActiveSessionId(schoolId);
 
-    const { error } = await supabaseAdmin.from('report_cards').insert({
+    const { data, error } = await supabaseAdmin.from('report_cards').insert({
       school_id: schoolId,
       academic_session_id: resolvedSessionId,
       student_id: studentId,
@@ -8193,7 +8587,24 @@ export const mockApi = {
       grade_point_average: gradePointAverage,
       remarks: remarks,
       file_url: fileUrl
-    });
+    }).select().single();
+
+    const newReportCard = {
+      id: data ? data.id : ('rc-' + Math.random().toString(36).substr(2, 9)),
+      schoolId,
+      academicSessionId: resolvedSessionId,
+      studentId,
+      term,
+      attendancePercentage,
+      gradePointAverage,
+      remarks,
+      fileUrl,
+      createdAt: data ? data.created_at : new Date().toISOString()
+    };
+
+    mockDb.reportCards.push(newReportCard);
+    mockDb.saveAll();
+
     if (error) throw new Error('Failed to publish student report card: ' + error.message);
   },
 
@@ -8213,7 +8624,8 @@ export const mockApi = {
       .select('*')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.books.filter(b => b.schoolId === schoolId);
-    return data.map(b => ({
+    
+    const mapped = data.map(b => ({
       id: b.id,
       schoolId: b.school_id,
       title: b.title,
@@ -8224,6 +8636,12 @@ export const mockApi = {
       availableCopies: b.available_copies,
       createdAt: b.created_at
     }));
+
+    const otherSchools = mockDb.books.filter(b => b.schoolId !== schoolId);
+    mockDb.books = [...otherSchools, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   async fetchDigitalLibraryAssets(schoolId: string): Promise<any[]> {
@@ -8232,15 +8650,23 @@ export const mockApi = {
       .from('digital_library_assets')
       .select('*')
       .eq('school_id', schoolId);
-    if (error || !data) return [];
-    return data.map(d => ({
+    if (error || !data) return mockDb.digitalLibraryAssets.filter(d => d.schoolId === schoolId);
+    
+    const mapped = data.map(d => ({
       id: d.id,
+      schoolId: d.school_id,
       title: d.title,
       author: d.author || 'Anonymous',
       fileUrl: d.file_url,
       fileType: d.file_type || 'pdf',
       createdAt: d.created_at
     }));
+
+    const otherSchools = mockDb.digitalLibraryAssets.filter(d => d.schoolId !== schoolId);
+    mockDb.digitalLibraryAssets = [...otherSchools, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   // --- Dedicated Transport Manager Helpers ---
@@ -8438,6 +8864,8 @@ export const mockApi = {
       capacity: Number(b.capacity || 0),
       status: b.status || 'ACTIVE',
       driverId: b.driver_id || b.driverId || null,
+      driverName: b.driver_name || null,
+      driverPhone: b.driver_phone || null,
       createdAt: b.created_at
     }));
     
@@ -8623,16 +9051,23 @@ export const mockApi = {
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.transportAssignments.filter(ta => ta.schoolId === schoolId);
     
-    const mapped = data.map(ta => ({
-      id: ta.id,
-      schoolId: ta.school_id || schoolId,
-      studentId: ta.student_id || ta.studentId,
-      routeId: ta.route_id || ta.routeId,
-      busId: ta.bus_id || ta.busId,
-      pickupPointId: ta.pickup_point_id || ta.pickupPointId || '',
-      status: ta.status || 'ACTIVE',
-      createdAt: ta.created_at
-    }));
+    // transport_assignments.student_id is a FK to users(id), but portals compare against students.id.
+    // Resolve each user_id back to the corresponding students.id for correct portal matching.
+    const mapped = data.map(ta => {
+      const dbUserId = ta.student_id || ta.studentId;
+      // Find the student record whose userId or id matches the DB's student_id (which is actually a user_id)
+      const studentRecord = mockDb.students.find(s => s.userId === dbUserId || s.id === dbUserId);
+      return {
+        id: ta.id,
+        schoolId: ta.school_id || schoolId,
+        studentId: studentRecord ? studentRecord.id : dbUserId,
+        routeId: ta.route_id || ta.routeId,
+        busId: ta.bus_id || ta.busId,
+        pickupPointId: ta.pickup_point_id || ta.pickupPointId || '',
+        status: ta.status || 'ACTIVE',
+        createdAt: ta.created_at
+      };
+    });
 
     const otherSchools = mockDb.transportAssignments.filter(ta => ta.schoolId !== schoolId);
     mockDb.transportAssignments = [...otherSchools, ...mapped];
@@ -8645,6 +9080,18 @@ export const mockApi = {
     await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const validPickupPointId = (pickupPointId && isUUID(pickupPointId)) ? pickupPointId : null;
+
+    // Resolve the student's user_id — transport_assignments.student_id references users(id), NOT students(id)
+    const studentRecord = mockDb.students.find(s => s.id === studentId);
+    const userIdForTransport = studentRecord?.userId || studentId;
+
+    // Prevent duplicate active assignments for the same student
+    const existingActive = mockDb.transportAssignments.find(
+      ta => ta.studentId === studentId && ta.status === 'ACTIVE'
+    );
+    if (existingActive) {
+      throw new Error('This student already has an active transport assignment. Please edit or remove the existing one first.');
+    }
 
     let fare = 0;
     const route = mockDb.routes.find(r => r.id === routeId);
@@ -8671,9 +9118,10 @@ export const mockApi = {
     mockDb.transportAssignments.push(assignmentObj);
     mockDb.saveAll();
 
+    // Insert with user_id (not students.id) since transport_assignments.student_id FK -> users(id)
     const { data, error } = await supabaseAdmin.from('transport_assignments').insert({
       school_id: schoolId,
-      student_id: studentId,
+      student_id: userIdForTransport,
       route_id: routeId,
       bus_id: busId,
       pickup_point_id: validPickupPointId,
@@ -8683,7 +9131,7 @@ export const mockApi = {
     if (error) {
       const { data: retryData } = await supabaseAdmin.from('transport_assignments').insert({
         school_id: schoolId,
-        student_id: studentId,
+        student_id: userIdForTransport,
         route_id: routeId,
         bus_id: busId
       }).select().single();
@@ -8694,6 +9142,7 @@ export const mockApi = {
           mockDb.transportAssignments[idx].id = retryData.id;
           mockDb.saveAll();
         }
+        // transport_fee_records.student_id FK -> students(id), so use the original studentId
         await supabaseAdmin.from('transport_fee_records').insert({
           school_id: schoolId,
           academic_session_id: sessionId,
@@ -8709,6 +9158,7 @@ export const mockApi = {
         mockDb.transportAssignments[idx].id = data.id;
         mockDb.saveAll();
       }
+      // transport_fee_records.student_id FK -> students(id), so use the original studentId
       await supabaseAdmin.from('transport_fee_records').insert({
         school_id: schoolId,
         academic_session_id: sessionId,
@@ -8955,28 +9405,45 @@ export const mockApi = {
   async adminCreateBook(title: string, author: string, isbn: string, subject: string, totalCopies: number): Promise<void> {
     const schoolId = getAdminSchoolId();
     await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
-    const newBook = {
-      id: 'bk-' + Math.random().toString(36).substr(2, 9),
-      schoolId,
-      title,
-      author,
-      isbn,
-      subject,
-      totalCopies,
-      availableCopies: totalCopies,
-      createdAt: new Date().toISOString()
-    };
-    const { error } = await supabaseAdmin.from('book_inventory').insert({
+    
+    const { data, error } = await supabaseAdmin.from('book_inventory').insert({
       school_id: schoolId,
       title,
       author,
       isbn,
       subject,
       total_copies: totalCopies,
-      available_copies: totalCopies
-    });
-    if (error) {
-      mockDb.books.push(newBook);
+      available_copies: totalCopies,
+      barcode: 'BAR-' + Date.now().toString(36).toUpperCase() + Math.random().toString(36).substr(2, 4).toUpperCase()
+    }).select().single();
+
+    if (!error && data) {
+      const bookObj = {
+        id: data.id,
+        schoolId: data.school_id,
+        title: data.title,
+        author: data.author,
+        isbn: data.isbn,
+        subject: data.subject,
+        totalCopies: data.total_copies,
+        availableCopies: data.available_copies,
+        createdAt: data.created_at
+      };
+      mockDb.books.push(bookObj);
+      mockDb.saveAll();
+    } else {
+      const fallbackBook = {
+        id: 'bk-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        title,
+        author,
+        isbn,
+        subject,
+        totalCopies,
+        availableCopies: totalCopies,
+        createdAt: new Date().toISOString()
+      };
+      mockDb.books.push(fallbackBook);
       mockDb.saveAll();
     }
   },
@@ -8989,36 +9456,58 @@ export const mockApi = {
       .select('*')
       .eq('school_id', schoolId);
     if (error || !data) return mockDb.bookCategories.filter(bc => bc.schoolId === schoolId);
-    return data;
+    
+    const mapped = data.map(bc => ({
+      id: bc.id,
+      schoolId: bc.school_id,
+      name: bc.name,
+      code: bc.code,
+      description: bc.description || '',
+      createdAt: bc.created_at
+    }));
+
+    const otherSchools = mockDb.bookCategories.filter(bc => bc.schoolId !== schoolId);
+    mockDb.bookCategories = [...otherSchools, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   async createBookCategory(schoolId: string, name: string, code: string, description?: string): Promise<void> {
     await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
-    const id = 'bc-' + Math.random().toString(36).substr(2, 9);
-    const newCategory: any = {
-      id,
-      schoolId,
-      name,
-      code,
-      description: description || '',
-      createdAt: new Date().toISOString()
-    };
-
+    
+    // Do not pass invalid custom id prefix (book_categories.id is UUID)
     const { data, error } = await supabaseAdmin.from('book_categories').insert({
-      id,
       school_id: schoolId,
       name,
       code,
       description: description || ''
     }).select().single();
 
-    if (data) {
-      newCategory.id = data.id;
-      newCategory.createdAt = data.created_at;
+    if (error || !data) {
+      const fallbackId = 'bc-' + Math.random().toString(36).substr(2, 9);
+      const fallbackCategory = {
+        id: fallbackId,
+        schoolId,
+        name,
+        code,
+        description: description || '',
+        createdAt: new Date().toISOString()
+      };
+      mockDb.bookCategories.push(fallbackCategory);
+      mockDb.saveAll();
+    } else {
+      const newCategory = {
+        id: data.id,
+        schoolId: data.school_id,
+        name: data.name,
+        code: data.code,
+        description: data.description || '',
+        createdAt: data.created_at
+      };
+      mockDb.bookCategories.push(newCategory);
+      mockDb.saveAll();
     }
-
-    mockDb.bookCategories.push(newCategory);
-    mockDb.saveAll();
   },
 
   async deleteBookCategory(id: string): Promise<void> {
@@ -9047,7 +9536,7 @@ export const mockApi = {
       if (studentId) return local.filter(bi => bi.studentId === studentId);
       return local;
     }
-    return data.map(bi => ({
+    const mapped = data.map(bi => ({
       id: bi.id,
       schoolId: bi.school_id,
       bookId: bi.book_id,
@@ -9070,6 +9559,12 @@ export const mockApi = {
       } : null,
       student: bi.student
     }));
+
+    const otherSchools = mockDb.bookIssues.filter(bi => bi.schoolId !== schoolId);
+    mockDb.bookIssues = [...otherSchools, ...mapped];
+    mockDb.saveAll();
+
+    return mapped;
   },
 
   async issueBook(schoolId: string, bookId: string, studentId: string, issueDate: string, dueDate: string): Promise<void> {
@@ -9086,13 +9581,43 @@ export const mockApi = {
     if (existingIssue) {
       throw new Error('This student already has an active issue for this book.');
     }
+
+    // Resolve student's user_id for the book_issues.user_id constraint
+    const studentRecord = mockDb.students.find(s => s.id === studentId);
+    let userIdForIssue = studentRecord?.userId;
+    if (!userIdForIssue) {
+      const { data: dbSt } = await supabaseAdmin
+        .from('students')
+        .select('user_id')
+        .eq('id', studentId)
+        .single();
+      if (dbSt) {
+        userIdForIssue = dbSt.user_id;
+      }
+    }
+    if (!userIdForIssue) {
+      userIdForIssue = studentId;
+    }
+
+    // Resolve logged-in operator for issued_by field
+    let issuedBy = '';
+    const sessionRaw = localStorage.getItem('aegis_session');
+    if (sessionRaw) {
+      try {
+        const session = JSON.parse(sessionRaw);
+        issuedBy = `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim() || session.user.email || '';
+      } catch (e) {}
+    }
+
     const { error } = await supabaseAdmin.from('book_issues').insert({
       school_id: schoolId,
       book_id: bookId,
       student_id: studentId,
+      user_id: userIdForIssue,
       issue_date: issueDate,
       due_date: dueDate,
-      status: 'ISSUED'
+      status: 'ISSUED',
+      issued_by: issuedBy
     });
     // Decrement available copies in Supabase
     if (!error) {
@@ -9140,13 +9665,24 @@ export const mockApi = {
     if (status === 'DAMAGED') calculatedFine += 5.00;
     if (status === 'LOST') calculatedFine += 25.00;
 
+    // Resolve logged-in operator for returned_to field
+    let returnedTo = '';
+    const sessionRaw = localStorage.getItem('aegis_session');
+    if (sessionRaw) {
+      try {
+        const session = JSON.parse(sessionRaw);
+        returnedTo = `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim() || session.user.email || '';
+      } catch (e) {}
+    }
+
     // Insert return record in Supabase
     const { error } = await supabaseAdmin.from('book_returns').insert({
       school_id: schoolId,
       issue_id: issueId,
       return_date: returnDate,
       fine_amount: calculatedFine,
-      status
+      status,
+      returned_to: returnedTo
     });
     // Update issue record in Supabase
     await supabaseAdmin.from('book_issues').update({
@@ -9200,6 +9736,11 @@ export const mockApi = {
         createdAt: new Date().toISOString()
       };
       mockDb.libraryFines.push(fineRecord);
+
+      // Resolve student's user_id for the library_fines.user_id NOT NULL constraint
+      const studentRecord = mockDb.students.find(s => s.id === issue.studentId);
+      const userIdForFine = studentRecord?.userId || issue.studentId;
+
       // Also insert into Supabase
       try {
         await supabaseAdmin.from('library_fines').insert({
@@ -9207,6 +9748,7 @@ export const mockApi = {
           school_id: schoolId,
           issue_id: issueId,
           student_id: issue.studentId,
+          user_id: userIdForFine,
           amount: calculatedFine,
           is_paid: false,
           reason: fineRecord.reason,
@@ -9290,19 +9832,9 @@ export const mockApi = {
 
   async createDigitalLibraryAsset(schoolId: string, title: string, author: string, fileUrl: string, fileType: string): Promise<void> {
     await this.validateSubscriptionFeature(schoolId, 'Digital Library Resources', ['enterprise']);
-    const id = 'dla-' + Math.random().toString(36).substr(2, 9);
-    const newAsset = {
-      id,
-      schoolId,
-      title,
-      author,
-      fileUrl,
-      fileType,
-      createdAt: new Date().toISOString()
-    };
-
+    
+    // Do not pass invalid custom id prefix (digital_library_assets.id is UUID)
     const { data, error } = await supabaseAdmin.from('digital_library_assets').insert({
-      id,
       school_id: schoolId,
       title,
       author,
@@ -9310,13 +9842,32 @@ export const mockApi = {
       file_type: fileType
     }).select().single();
 
-    if (data) {
-      newAsset.id = data.id;
-      newAsset.createdAt = data.created_at;
+    if (error || !data) {
+      const fallbackId = 'dla-' + Math.random().toString(36).substr(2, 9);
+      const fallbackAsset = {
+        id: fallbackId,
+        schoolId,
+        title,
+        author,
+        fileUrl,
+        fileType,
+        createdAt: new Date().toISOString()
+      };
+      mockDb.digitalLibraryAssets.push(fallbackAsset);
+      mockDb.saveAll();
+    } else {
+      const newAsset = {
+        id: data.id,
+        schoolId: data.school_id,
+        title: data.title,
+        author: data.author || 'Anonymous',
+        fileUrl: data.file_url,
+        fileType: data.file_type || 'pdf',
+        createdAt: data.created_at
+      };
+      mockDb.digitalLibraryAssets.push(newAsset);
+      mockDb.saveAll();
     }
-
-    mockDb.digitalLibraryAssets.push(newAsset);
-    mockDb.saveAll();
   },
 
   async fetchLibraryInvoices(schoolId: string, studentId?: string): Promise<any[]> {
@@ -9357,9 +9908,14 @@ export const mockApi = {
   },
 
   async createExam(schoolId: string, academicSessionId: string, name: string, term: string, startDate: string, endDate: string): Promise<void> {
+    let finalSessionId = academicSessionId;
+    if (!finalSessionId || finalSessionId === 'session-1' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(finalSessionId)) {
+      finalSessionId = await this.resolveActiveSessionId(schoolId);
+    }
+
     const { data, error } = await supabaseAdmin.from('exams').insert({
       school_id: schoolId,
-      academic_session_id: academicSessionId,
+      academic_session_id: finalSessionId,
       name,
       term,
       start_date: startDate,
@@ -9371,7 +9927,7 @@ export const mockApi = {
       // Graceful fallback: Retry insert without 'term' column
       const { data: retryData, error: retryErr } = await supabaseAdmin.from('exams').insert({
         school_id: schoolId,
-        academic_session_id: academicSessionId,
+        academic_session_id: finalSessionId,
         name,
         start_date: startDate,
         end_date: endDate
@@ -9381,7 +9937,7 @@ export const mockApi = {
         const localExam = {
           id: 'ex-' + Math.random().toString(36).substr(2, 9),
           schoolId,
-          academicSessionId,
+          academicSessionId: finalSessionId,
           name,
           term,
           startDate,
@@ -9399,7 +9955,7 @@ export const mockApi = {
       const ex: Exam = {
         id: resolvedExam.id,
         schoolId: resolvedExam.school_id,
-        academicSessionId: resolvedExam.academic_session_id || academicSessionId,
+        academicSessionId: resolvedExam.academic_session_id || finalSessionId,
         name: resolvedExam.name,
         term: resolvedExam.term || term,
         startDate: resolvedExam.start_date,
@@ -9718,6 +10274,1237 @@ export const mockApi = {
     mockDb.saveAll();
 
     return mapped;
+  },
+
+  async updateBook(id: string, title: string, author: string, isbn: string, subject: string, totalCopies: number): Promise<void> {
+    const book = mockDb.books.find(b => b.id === id);
+    if (!book) throw new Error('Book not found.');
+    const copiesDiff = totalCopies - book.totalCopies;
+    const newAvailable = Math.max(0, book.availableCopies + copiesDiff);
+
+    const { error } = await supabaseAdmin.from('book_inventory').update({
+      title,
+      author,
+      isbn,
+      subject,
+      total_copies: totalCopies,
+      available_copies: newAvailable
+    }).eq('id', id);
+
+    book.title = title;
+    book.author = author;
+    book.isbn = isbn;
+    book.subject = subject;
+    book.totalCopies = totalCopies;
+    book.availableCopies = newAvailable;
+    mockDb.saveAll();
+
+    if (error) throw new Error('Failed to update book: ' + error.message);
+  },
+
+  async deleteBook(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('book_inventory').delete().eq('id', id);
+    const idx = mockDb.books.findIndex(b => b.id === id);
+    if (idx !== -1) {
+      mockDb.books.splice(idx, 1);
+      mockDb.saveAll();
+    }
+    if (error) throw new Error('Failed to delete book: ' + error.message);
+  },
+
+  async updateBookCategory(id: string, name: string, code: string, description?: string): Promise<void> {
+    const cat = mockDb.bookCategories.find(c => c.id === id);
+    if (!cat) throw new Error('Category not found.');
+
+    const { error } = await supabaseAdmin.from('book_categories').update({
+      name,
+      code,
+      description: description || ''
+    }).eq('id', id);
+
+    cat.name = name;
+    cat.code = code;
+    cat.description = description || '';
+    mockDb.saveAll();
+
+    if (error) throw new Error('Failed to update category: ' + error.message);
+  },
+
+  async updateBookIssue(id: string, dueDate: string, fineAmount: number, status: string, returnDate?: string): Promise<void> {
+    const issue = mockDb.bookIssues.find(bi => bi.id === id);
+    if (!issue) throw new Error('Book issue record not found.');
+
+    const { error } = await supabaseAdmin.from('book_issues').update({
+      due_date: dueDate,
+      fine_amount: fineAmount,
+      status,
+      return_date: returnDate || null
+    }).eq('id', id);
+
+    issue.dueDate = dueDate;
+    issue.fineAmount = fineAmount;
+    issue.status = status as any;
+    issue.returnDate = returnDate || null;
+    mockDb.saveAll();
+
+    if (error) throw new Error('Failed to update book issue: ' + error.message);
+  },
+
+  async deleteBookIssue(id: string): Promise<void> {
+    const issue = mockDb.bookIssues.find(bi => bi.id === id);
+    if (!issue) throw new Error('Book issue record not found.');
+
+    const { error } = await supabaseAdmin.from('book_issues').delete().eq('id', id);
+    
+    if (issue.status === 'ISSUED' || issue.status === 'OVERDUE') {
+      const book = mockDb.books.find(b => b.id === issue.bookId);
+      if (book) {
+        book.availableCopies = Math.min(book.totalCopies, book.availableCopies + 1);
+      }
+    }
+
+    const idx = mockDb.bookIssues.findIndex(bi => bi.id === id);
+    if (idx !== -1) {
+      mockDb.bookIssues.splice(idx, 1);
+      mockDb.saveAll();
+    }
+
+    if (error) throw new Error('Failed to delete book issue: ' + error.message);
+  },
+
+  async updateDigitalLibraryAsset(id: string, title: string, author: string, fileUrl: string, fileType: string): Promise<void> {
+    const asset = mockDb.digitalLibraryAssets.find(da => da.id === id);
+    if (!asset) throw new Error('Digital asset not found.');
+
+    const { error } = await supabaseAdmin.from('digital_library_assets').update({
+      title,
+      author,
+      file_url: fileUrl,
+      file_type: fileType
+    }).eq('id', id);
+
+    asset.title = title;
+    asset.author = author;
+    asset.fileUrl = fileUrl;
+    asset.fileType = fileType;
+    mockDb.saveAll();
+
+    if (error) throw new Error('Failed to update digital asset: ' + error.message);
+  },
+
+  async deleteDigitalLibraryAsset(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('digital_library_assets').delete().eq('id', id);
+    const idx = mockDb.digitalLibraryAssets.findIndex(da => da.id === id);
+    if (idx !== -1) {
+      mockDb.digitalLibraryAssets.splice(idx, 1);
+      mockDb.saveAll();
+    }
+    if (error) throw new Error('Failed to delete digital asset: ' + error.message);
+  },
+
+  async updateTransportAssignment(id: string, busId: string, routeId: string, pickupPointId: string): Promise<void> {
+    const ta = mockDb.transportAssignments.find(t => t.id === id);
+    if (!ta) throw new Error('Transit assignment not found.');
+    await this.validateSubscriptionFeature(ta.schoolId, 'School Transit', ['enterprise']);
+
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const validPickupPointId = (pickupPointId && isUUID(pickupPointId)) ? pickupPointId : null;
+
+    const { error } = await supabaseAdmin.from('transport_assignments').update({
+      bus_id: busId,
+      route_id: routeId,
+      pickup_point_id: validPickupPointId
+    }).eq('id', id);
+
+    ta.busId = busId;
+    ta.routeId = routeId;
+    ta.pickupPointId = pickupPointId;
+    mockDb.saveAll();
+
+    if (error) throw new Error('Failed to update transport assignment: ' + error.message);
+  },
+
+  async updateExam(id: string, name: string, term: string, startDate: string, endDate: string): Promise<void> {
+    const ex = mockDb.exams.find(e => e.id === id);
+    if (!ex) throw new Error('Exam not found.');
+
+    const { error } = await supabaseAdmin.from('exams').update({
+      name,
+      term,
+      start_date: startDate,
+      end_date: endDate
+    }).eq('id', id);
+
+    ex.name = name;
+    ex.term = term;
+    ex.startDate = startDate;
+    ex.endDate = endDate;
+    mockDb.saveAll();
+
+    if (error) throw new Error('Failed to update exam: ' + error.message);
+  },
+
+  async updateExamSubject(id: string, maxMarks: number, passingMarks: number): Promise<void> {
+    const es = mockDb.examSubjects.find(x => x.id === id);
+    if (!es) throw new Error('Subject criteria not found.');
+
+    const { error } = await supabaseAdmin.from('exam_subjects').update({
+      max_marks: maxMarks,
+      passing_marks: passingMarks
+    }).eq('id', id);
+
+    es.maxMarks = maxMarks;
+    es.passingMarks = passingMarks;
+    mockDb.saveAll();
+
+    if (error) throw new Error('Failed to update criteria: ' + error.message);
+  },
+
+  async deleteExamSubject(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('exam_subjects').delete().eq('id', id);
+    const idx = mockDb.examSubjects.findIndex(x => x.id === id);
+    if (idx !== -1) {
+      mockDb.examSubjects.splice(idx, 1);
+      mockDb.saveAll();
+    }
+    if (error) throw new Error('Failed to delete criteria: ' + error.message);
+  },
+
+  async deleteStudentMark(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('student_marks').delete().eq('id', id);
+    const idx = mockDb.studentMarks.findIndex(x => x.id === id);
+    if (idx !== -1) {
+      mockDb.studentMarks.splice(idx, 1);
+      mockDb.saveAll();
+    }
+    if (error) throw new Error('Failed to delete mark entry: ' + error.message);
+  },
+
+  async updateReportCard(id: string, term: string, attendancePercentage: number, gradePointAverage: number, remarks: string): Promise<void> {
+    const rc = mockDb.reportCards.find(r => r.id === id);
+    if (!rc) throw new Error('Report card not found.');
+
+    const { error } = await supabaseAdmin.from('report_cards').update({
+      term,
+      attendance_percentage: attendancePercentage,
+      grade_point_average: gradePointAverage,
+      remarks
+    }).eq('id', id);
+
+    rc.term = term;
+    rc.attendancePercentage = attendancePercentage;
+    rc.gradePointAverage = gradePointAverage;
+    rc.remarks = remarks;
+    mockDb.saveAll();
+
+    if (error) throw new Error('Failed to update report card: ' + error.message);
+  },
+
+  async deleteReportCard(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('report_cards').delete().eq('id', id);
+    const idx = mockDb.reportCards.findIndex(r => r.id === id);
+    if (idx !== -1) {
+      mockDb.reportCards.splice(idx, 1);
+      mockDb.saveAll();
+    }
+    if (error) throw new Error('Failed to delete report card: ' + error.message);
+  },
+
+  // ==========================================
+  // HOSTEL MODULE ENDPOINTS
+  // ==========================================
+
+  async syncHostelData(schoolId: string): Promise<void> {
+    if (!schoolId) return;
+    if (syncHostelDataPromises[schoolId]) {
+      return syncHostelDataPromises[schoolId]!;
+    }
+
+    const syncPromise = (async () => {
+      try {
+        const [hRes, bRes, rRes, bdRes, aRes, attRes, fRes, pRes, lRes, vRes, cRes, mRes] = await Promise.all([
+          supabaseAdmin.from('hostels').select('*').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_blocks').select('*').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_rooms').select('*').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_beds').select('*').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_admissions').select('*, student:students(*, userDetails:users(*))').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_attendance').select('*, student:students(*, userDetails:users(*)), recordedByDetails:users!recorded_by(*)').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_fees').select('*').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_payments').select('*, student:students(*, userDetails:users(*))').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_leave_requests').select('*, student:students(*, userDetails:users(*))').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_visitors').select('*, student:students(*, userDetails:users(*))').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_complaints').select('*, student:students(*, userDetails:users(*))').eq('school_id', schoolId),
+          supabaseAdmin.from('hostel_mess_menu').select('*').eq('school_id', schoolId)
+        ]);
+
+        // Fetch hostel_wardens separately with a resilient fallback
+        // The users(*) JOIN can fail if FK isn't configured on the DB
+        let wRes: any = { data: null, error: null };
+        try {
+          wRes = await supabaseAdmin.from('hostel_wardens').select('*, userDetails:users(*)').eq('school_id', schoolId);
+        } catch (joinErr) {
+          console.warn('hostel_wardens JOIN with users failed, falling back to plain select:', joinErr);
+        }
+        if (!wRes.data || wRes.error) {
+          // Fallback: query without the users JOIN
+          wRes = await supabaseAdmin.from('hostel_wardens').select('*').eq('school_id', schoolId);
+        }
+
+        if (hRes.data) {
+          mockDb.hostels = hRes.data.map(x => ({ id: x.id, schoolId: x.school_id, name: x.name, type: x.type, status: x.status, createdBy: x.created_by, updatedBy: x.updated_by }));
+        }
+        if (bRes.data) {
+          mockDb.hostelBlocks = bRes.data.map(x => ({ id: x.id, schoolId: x.school_id, hostelId: x.hostel_id, name: x.name, status: x.status, createdBy: x.created_by, updatedBy: x.updated_by }));
+        }
+        if (rRes.data) {
+          mockDb.hostelRooms = rRes.data.map(x => ({ id: x.id, schoolId: x.school_id, blockId: x.block_id, floor: Number(x.floor), roomNumber: x.room_number, capacity: Number(x.capacity), status: x.status, createdBy: x.created_by, updatedBy: x.updated_by }));
+        }
+        if (bdRes.data) {
+          mockDb.hostelBeds = bdRes.data.map(x => ({ id: x.id, schoolId: x.school_id, roomId: x.room_id, bedName: x.bed_name, status: x.status, createdBy: x.created_by, updatedBy: x.updated_by }));
+        }
+        if (wRes.data) {
+          // For each warden row, resolve user details from the JOIN or from a separate users query
+          const wardenUserIds = wRes.data.map((x: any) => x.user_id).filter(Boolean);
+          let wardenUsersMap: Record<string, any> = {};
+          if (wardenUserIds.length > 0) {
+            const { data: wardenUsers } = await supabaseAdmin.from('users').select('*').in('id', wardenUserIds);
+            if (wardenUsers) {
+              wardenUsers.forEach((u: any) => {
+                wardenUsersMap[u.id] = {
+                  id: u.id, email: u.email, firstName: u.first_name, lastName: u.last_name,
+                  phone: u.phone, role: u.role, isActive: u.is_active, schoolId: u.school_id,
+                  employeeId: u.employee_id, avatarUrl: u.avatar_url || ''
+                };
+              });
+            }
+          }
+          mockDb.hostelWardens = wRes.data.map((x: any) => {
+            const joinedUser = x.userDetails; // From JOIN (may be null)
+            const lookedUpUser = wardenUsersMap[x.user_id]; // From separate query
+            const userDetails = joinedUser ? {
+              id: joinedUser.id, email: joinedUser.email, firstName: joinedUser.first_name,
+              lastName: joinedUser.last_name, phone: joinedUser.phone, role: joinedUser.role,
+              isActive: joinedUser.is_active, schoolId: joinedUser.school_id,
+              employeeId: joinedUser.employee_id, avatarUrl: joinedUser.avatar_url || ''
+            } : lookedUpUser || null;
+            
+            // Also ensure this user is in mockDb.users
+            if (userDetails && !mockDb.users.find((u: any) => u.id === userDetails.id)) {
+              mockDb.users.push(userDetails);
+            } else if (userDetails) {
+              // Update existing user with latest data
+              const idx = mockDb.users.findIndex((u: any) => u.id === userDetails.id);
+              if (idx >= 0) mockDb.users[idx] = { ...mockDb.users[idx], ...userDetails };
+            }
+            
+            return {
+              id: x.id,
+              schoolId: x.school_id,
+              userId: x.user_id,
+              hostelId: x.hostel_id,
+              phone: x.phone,
+              username: x.username || '',
+              gender: x.gender || '',
+              address: x.address || '',
+              assignedLocations: x.assigned_locations || [],
+              userDetails: userDetails,
+              createdBy: x.created_by,
+              updatedBy: x.updated_by
+            };
+          });
+        }
+        if (aRes.data) {
+          mockDb.hostelAdmissions = aRes.data.map(x => ({ id: x.id, schoolId: x.school_id, studentId: x.student_id, hostelId: x.hostel_id, roomId: x.room_id, bedId: x.bed_id, admissionDate: x.admission_date, checkInDate: x.check_in_date, checkOutDate: x.check_out_date, status: x.status, student: x.student, createdBy: x.created_by, updatedBy: x.updated_by }));
+        }
+        if (attRes.data) {
+          mockDb.hostelAttendance = attRes.data.map(x => {
+            const joinedRecorder = x.recordedByDetails;
+            const recorderDetails = joinedRecorder ? {
+              id: joinedRecorder.id,
+              email: joinedRecorder.email,
+              firstName: joinedRecorder.first_name,
+              lastName: joinedRecorder.last_name,
+              phone: joinedRecorder.phone || '',
+              role: joinedRecorder.role,
+              isActive: joinedRecorder.is_active,
+              schoolId: joinedRecorder.school_id,
+              employeeId: joinedRecorder.employee_id,
+              avatarUrl: joinedRecorder.avatar_url || '',
+              createdAt: joinedRecorder.created_at || '',
+              updatedAt: joinedRecorder.updated_at || ''
+            } : null;
+
+            if (recorderDetails && !mockDb.users.find((u: any) => u.id === recorderDetails.id)) {
+              mockDb.users.push(recorderDetails as any);
+            }
+
+            return {
+              id: x.id,
+              schoolId: x.school_id,
+              studentId: x.student_id,
+              date: x.date,
+              timeSlot: x.time_slot,
+              status: x.status,
+              recordedBy: x.recorded_by,
+              student: x.student,
+              recordedByDetails: recorderDetails,
+              createdBy: x.created_by,
+              updatedBy: x.updated_by
+            };
+          });
+        }
+        if (fRes.data) {
+          mockDb.hostelFees = fRes.data.map(x => ({ id: x.id, schoolId: x.school_id, name: x.name, amount: Number(x.amount), feeType: x.fee_type, description: x.description, createdBy: x.created_by, updatedBy: x.updated_by }));
+        }
+        if (pRes.data) {
+          mockDb.hostelPayments = pRes.data.map(x => ({ id: x.id, schoolId: x.school_id, studentId: x.student_id, feeId: x.fee_id, amountPaid: Number(x.amount_paid), paymentDate: x.payment_date, paymentMethod: x.payment_method, txId: x.tx_id, status: x.status, student: x.student, createdBy: x.created_by, updatedBy: x.updated_by }));
+        }
+        if (lRes.data) {
+          mockDb.hostelLeaveRequests = lRes.data.map(x => ({
+            id: x.id,
+            schoolId: x.school_id,
+            studentId: x.student_id,
+            fromDate: x.from_date,
+            toDate: x.to_date,
+            reason: x.reason,
+            parentApproval: x.parent_approval,
+            wardenApproval: x.warden_approval,
+            hostelAdminApproval: x.hostel_admin_approval || 'PENDING',
+            adminApproval: x.admin_approval,
+            status: x.status,
+            approvedBy: x.approved_by,
+            student: x.student,
+            createdBy: x.created_by,
+            updatedBy: x.updated_by
+          }));
+        }
+        if (vRes.data) {
+          mockDb.hostelVisitors = vRes.data.map(x => ({ id: x.id, schoolId: x.school_id, visitorName: x.visitor_name, relation: x.relation, studentId: x.student_id, entryTime: x.entry_time, exitTime: x.exit_time, purpose: x.purpose, student: x.student, createdBy: x.created_by, updatedBy: x.updated_by }));
+        }
+        if (cRes.data) {
+          mockDb.hostelComplaints = cRes.data.map(x => ({ id: x.id, schoolId: x.school_id, studentId: x.student_id, category: x.category, description: x.description, assignedStaff: x.assigned_staff, resolutionNotes: x.resolution_notes, status: x.status, student: x.student, createdBy: x.created_by, updatedBy: x.updated_by }));
+        }
+        if (mRes.data) {
+          mockDb.hostelMessMenu = mRes.data.map(x => ({ id: x.id, schoolId: x.school_id, hostelId: x.hostel_id, dayOfWeek: Number(x.day_of_week), breakfast: x.breakfast, lunch: x.lunch, dinner: x.dinner, specialMenu: x.special_menu, createdBy: x.created_by, updatedBy: x.updated_by }));
+        }
+
+        mockDb.saveAll();
+      } catch (e) {
+        console.error('Failed to sync hostel data:', e);
+      } finally {
+        setTimeout(() => {
+          syncHostelDataPromises[schoolId] = null;
+        }, 2000);
+      }
+    })();
+
+    syncHostelDataPromises[schoolId] = syncPromise;
+    return syncPromise;
+  },
+  clearHostelCache(schoolId: string) {
+    if (schoolId) {
+      syncHostelDataPromises[schoolId] = null;
+    }
+  },
+
+
+  // Hostel CRUD
+  async fetchHostels(schoolId: string): Promise<Hostel[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostels.filter(h => h.schoolId === schoolId);
+  },
+
+  async createHostel(schoolId: string, name: string, type: 'BOYS' | 'GIRLS' | 'MIXED', status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostels').insert({ school_id: schoolId, name, type, status, created_by: operatorId, updated_by: operatorId }).select().single();
+    if (error) throw new Error('Failed to create hostel: ' + error.message);
+    if (data) {
+      mockDb.hostels.push({ id: data.id, schoolId: data.school_id, name: data.name, type: data.type, status: data.status, createdBy: data.created_by, updatedBy: data.updated_by });
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async updateHostel(id: string, name: string, type: 'BOYS' | 'GIRLS' | 'MIXED', status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error } = await supabaseAdmin.from('hostels').update({ name, type, status, updated_by: operatorId }).eq('id', id);
+    if (error) throw new Error('Failed to update hostel: ' + error.message);
+    const h = mockDb.hostels.find(x => x.id === id);
+    if (h) {
+      h.name = name;
+      h.type = type;
+      h.status = status;
+      h.updatedBy = operatorId || undefined;
+      mockDb.saveAll();
+      this.clearHostelCache(h.schoolId);
+    }
+  },
+
+  async deleteHostel(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('hostels').delete().eq('id', id);
+    if (error) throw new Error('Failed to delete hostel: ' + error.message);
+    const h = mockDb.hostels.find(x => x.id === id);
+    mockDb.hostels = mockDb.hostels.filter(x => x.id !== id);
+    mockDb.saveAll();
+    if (h) this.clearHostelCache(h.schoolId);
+  },
+
+  // Blocks CRUD
+  async fetchHostelBlocks(schoolId: string): Promise<HostelBlock[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelBlocks.filter(b => b.schoolId === schoolId);
+  },
+
+  async createHostelBlock(schoolId: string, hostelId: string, name: string, status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_blocks').insert({ school_id: schoolId, hostel_id: hostelId, name, status, created_by: operatorId, updated_by: operatorId }).select().single();
+    if (error) throw new Error('Failed to create block: ' + error.message);
+    if (data) {
+      mockDb.hostelBlocks.push({ id: data.id, schoolId: data.school_id, hostelId: data.hostel_id, name: data.name, status: data.status, createdBy: data.created_by, updatedBy: data.updated_by });
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async updateHostelBlock(id: string, name: string, status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error } = await supabaseAdmin.from('hostel_blocks').update({ name, status, updated_by: operatorId }).eq('id', id);
+    if (error) throw new Error('Failed to update block: ' + error.message);
+    const b = mockDb.hostelBlocks.find(x => x.id === id);
+    if (b) {
+      b.name = name;
+      b.status = status;
+      b.updatedBy = operatorId || undefined;
+      mockDb.saveAll();
+      this.clearHostelCache(b.schoolId);
+    }
+  },
+
+  async deleteHostelBlock(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('hostel_blocks').delete().eq('id', id);
+    if (error) throw new Error('Failed to delete block: ' + error.message);
+    const b = mockDb.hostelBlocks.find(x => x.id === id);
+    mockDb.hostelBlocks = mockDb.hostelBlocks.filter(x => x.id !== id);
+    mockDb.saveAll();
+    if (b) this.clearHostelCache(b.schoolId);
+  },
+
+  // Rooms CRUD
+  async fetchHostelRooms(schoolId: string): Promise<HostelRoom[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelRooms.filter(r => r.schoolId === schoolId);
+  },
+
+  async createHostelRoom(schoolId: string, blockId: string, floor: number, roomNumber: string, capacity: number, status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    const exists = mockDb.hostelRooms.some(r => r.blockId === blockId && r.roomNumber.toLowerCase() === roomNumber.toLowerCase());
+    if (exists) {
+      throw new Error(`A room with number "${roomNumber}" already exists in this block.`);
+    }
+
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_rooms').insert({ school_id: schoolId, block_id: blockId, floor, room_number: roomNumber, capacity, status, created_by: operatorId, updated_by: operatorId }).select().single();
+    if (error) throw new Error('Failed to create room: ' + error.message);
+    if (data) {
+      mockDb.hostelRooms.push({ id: data.id, schoolId: data.school_id, blockId: data.block_id, floor: Number(data.floor), roomNumber: data.room_number, capacity: Number(data.capacity), status: data.status, createdBy: data.created_by, updatedBy: data.updated_by });
+      
+      // Auto generate beds for the room
+      for (let i = 1; i <= capacity; i++) {
+        await this.createHostelBed(schoolId, data.id, `Bed ${i}`);
+      }
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async updateHostelRoom(id: string, floor: number, roomNumber: string, status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error } = await supabaseAdmin.from('hostel_rooms').update({ floor, room_number: roomNumber, status, updated_by: operatorId }).eq('id', id);
+    if (error) throw new Error('Failed to update room: ' + error.message);
+    const r = mockDb.hostelRooms.find(x => x.id === id);
+    if (r) {
+      r.floor = floor;
+      r.roomNumber = roomNumber;
+      r.status = status;
+      r.updatedBy = operatorId || undefined;
+      mockDb.saveAll();
+      this.clearHostelCache(r.schoolId);
+    }
+  },
+
+  async deleteHostelRoom(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('hostel_rooms').delete().eq('id', id);
+    if (error) throw new Error('Failed to delete room: ' + error.message);
+    const r = mockDb.hostelRooms.find(x => x.id === id);
+    mockDb.hostelRooms = mockDb.hostelRooms.filter(x => x.id !== id);
+    mockDb.hostelBeds = mockDb.hostelBeds.filter(x => x.roomId !== id);
+    mockDb.saveAll();
+    if (r) this.clearHostelCache(r.schoolId);
+  },
+
+  // Beds CRUD
+  async fetchHostelBeds(schoolId: string): Promise<HostelBed[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelBeds.filter(b => b.schoolId === schoolId);
+  },
+
+  async createHostelBed(schoolId: string, roomId: string, bedName: string): Promise<void> {
+    const exists = mockDb.hostelBeds.some(b => b.roomId === roomId && b.bedName.toLowerCase() === bedName.toLowerCase());
+    if (exists) {
+      throw new Error(`A bed with designation "${bedName}" already exists in this room.`);
+    }
+
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_beds').insert({ school_id: schoolId, room_id: roomId, bed_name: bedName, status: 'VACANT', created_by: operatorId, updated_by: operatorId }).select().single();
+    if (error) throw new Error('Failed to create bed: ' + error.message);
+    if (data) {
+      mockDb.hostelBeds.push({ id: data.id, schoolId: data.school_id, roomId: data.room_id, bedName: data.bed_name, status: data.status, createdBy: data.created_by, updatedBy: data.updated_by });
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async updateHostelBedStatus(id: string, status: 'VACANT' | 'OCCUPIED' | 'MAINTENANCE'): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error } = await supabaseAdmin.from('hostel_beds').update({ status, updated_by: operatorId }).eq('id', id);
+    if (error) throw new Error('Failed to update bed: ' + error.message);
+    const b = mockDb.hostelBeds.find(x => x.id === id);
+    if (b) {
+      b.status = status;
+      mockDb.saveAll();
+      this.clearHostelCache(b.schoolId);
+    }
+  },
+
+  async deleteHostelBed(id: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('hostel_beds').delete().eq('id', id);
+    if (error) throw new Error('Failed to delete bed: ' + error.message);
+    const b = mockDb.hostelBeds.find(x => x.id === id);
+    mockDb.hostelBeds = mockDb.hostelBeds.filter(x => x.id !== id);
+    mockDb.saveAll();
+    if (b) this.clearHostelCache(b.schoolId);
+  },
+
+  // Wardens CRUD
+  async fetchHostelWardens(schoolId: string): Promise<HostelWarden[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelWardens.filter(w => w.schoolId === schoolId);
+  },
+
+  async createHostelWarden(schoolId: string, userId: string, hostelId: string | null, phone?: string): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_wardens').insert({ school_id: schoolId, user_id: userId, hostel_id: hostelId || null, phone, created_by: operatorId, updated_by: operatorId }).select().single();
+    if (error) throw new Error('Failed to assign warden: ' + error.message);
+    if (data) {
+      const user = mockDb.users.find(u => u.id === userId);
+      mockDb.hostelWardens.push({ id: data.id, schoolId: data.school_id, userId: data.user_id, hostelId: data.hostel_id, phone: data.phone, userDetails: user, createdBy: data.created_by, updatedBy: data.updated_by });
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async updateHostelWarden(
+    id: string,
+    fields: {
+      firstName?: string;
+      lastName?: string;
+      email?: string;
+      phone?: string;
+      employeeId?: string;
+      username?: string;
+      gender?: string;
+      address?: string;
+      isActive?: boolean;
+      assignedLocations?: any[];
+      hostelId?: string | null;
+    }
+  ): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    
+    // Find the warden row to get user_id and schoolId
+    const w = mockDb.hostelWardens.find(x => x.id === id);
+    if (!w) throw new Error('Warden profile not found');
+
+    // Update hostel_wardens table
+    const updateObj: any = {
+      updated_by: operatorId
+    };
+    if (fields.hostelId !== undefined) updateObj.hostel_id = fields.hostelId;
+    if (fields.phone !== undefined) updateObj.phone = fields.phone;
+    if (fields.username !== undefined) updateObj.username = fields.username;
+    if (fields.gender !== undefined) updateObj.gender = fields.gender;
+    if (fields.address !== undefined) updateObj.address = fields.address;
+    if (fields.assignedLocations !== undefined) updateObj.assigned_locations = fields.assignedLocations;
+
+    const { error: wErr } = await supabaseAdmin.from('hostel_wardens').update(updateObj).eq('id', id);
+    if (wErr) throw new Error('Failed to update warden database profile: ' + wErr.message);
+
+    // Update users table
+    const userUpdate: any = {};
+    if (fields.firstName !== undefined) userUpdate.first_name = fields.firstName;
+    if (fields.lastName !== undefined) userUpdate.last_name = fields.lastName;
+    if (fields.email !== undefined) userUpdate.email = fields.email;
+    if (fields.phone !== undefined) userUpdate.phone = fields.phone;
+    if (fields.employeeId !== undefined) userUpdate.employee_id = fields.employeeId;
+    if (fields.isActive !== undefined) userUpdate.is_active = fields.isActive;
+
+    const { error: uErr } = await supabaseAdmin.from('users').update(userUpdate).eq('id', w.userId);
+    if (uErr) throw new Error('Failed to update warden system user account: ' + uErr.message);
+
+    // Sync mockDb state
+    w.hostelId = fields.hostelId !== undefined ? fields.hostelId : w.hostelId;
+    w.phone = fields.phone !== undefined ? fields.phone : w.phone;
+    w.username = fields.username !== undefined ? fields.username : w.username;
+    w.gender = fields.gender !== undefined ? fields.gender : w.gender;
+    w.address = fields.address !== undefined ? fields.address : w.address;
+    w.assignedLocations = fields.assignedLocations !== undefined ? fields.assignedLocations : w.assignedLocations;
+    w.updatedBy = operatorId || undefined;
+
+    const usrObj = mockDb.users.find(u => u.id === w.userId);
+    if (usrObj) {
+      if (fields.firstName !== undefined) usrObj.firstName = fields.firstName;
+      if (fields.lastName !== undefined) usrObj.lastName = fields.lastName;
+      if (fields.email !== undefined) usrObj.email = fields.email;
+      if (fields.phone !== undefined) usrObj.phone = fields.phone || '';
+      if (fields.employeeId !== undefined) usrObj.employeeId = fields.employeeId;
+      if (fields.isActive !== undefined) usrObj.isActive = fields.isActive;
+    }
+
+    mockDb.saveAll();
+    this.clearHostelCache(w.schoolId);
+  },
+
+  async deleteHostelWarden(id: string): Promise<void> {
+    const w = mockDb.hostelWardens.find(x => x.id === id);
+    if (!w) return;
+
+    // Delete from users table (cascades to delete hostel_wardens)
+    const { error } = await supabaseAdmin.from('users').delete().eq('id', w.userId);
+    if (error) throw new Error('Failed to remove warden: ' + error.message);
+
+    // Delete auth user (bypasses SQL RLS)
+    try {
+      await supabaseAdmin.auth.admin.deleteUser(w.userId);
+    } catch (e) {
+      console.warn('Auth user deletion skipped or failed:', e);
+    }
+
+    // Sync cache
+    mockDb.users = mockDb.users.filter(u => u.id !== w.userId);
+    mockDb.hostelWardens = mockDb.hostelWardens.filter(x => x.id !== id);
+    mockDb.saveAll();
+    this.clearHostelCache(w.schoolId);
+  },
+
+  // Admissions CRUD
+  async fetchHostelAdmissions(schoolId: string): Promise<HostelAdmission[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelAdmissions.filter(a => a.schoolId === schoolId);
+  },
+
+  async admitStudentToHostel(schoolId: string, studentId: string, hostelId: string, roomId: string, bedId: string, admissionDate: string, checkInDate?: string): Promise<void> {
+    // 1. Validation: Prevent duplicate active admission for same student
+    const active = mockDb.hostelAdmissions.find(a => a.studentId === studentId && a.status === 'ACTIVE');
+    if (active) throw new Error('Student is already actively assigned to another hostel room.');
+
+    // 2. Validation: Prevent overcapacity or occupied beds
+    const bed = mockDb.hostelBeds.find(b => b.id === bedId);
+    if (!bed || bed.status !== 'VACANT') {
+      throw new Error('Selected bed is occupied or undergoing maintenance.');
+    }
+
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_admissions').insert({
+      school_id: schoolId,
+      student_id: studentId,
+      hostel_id: hostelId,
+      room_id: roomId,
+      bed_id: bedId,
+      admission_date: admissionDate,
+      check_in_date: checkInDate || null,
+      status: 'ACTIVE',
+      created_by: operatorId,
+      updated_by: operatorId
+    }).select().single();
+
+    if (error) throw new Error('Failed to admit student: ' + error.message);
+    if (data) {
+      // Set bed status to OCCUPIED
+      await this.updateHostelBedStatus(bedId, 'OCCUPIED');
+
+      const student = mockDb.students.find(s => s.id === studentId);
+      mockDb.hostelAdmissions.push({
+        id: data.id, schoolId: data.school_id, studentId: data.student_id, hostelId: data.hostel_id,
+        roomId: data.room_id, bedId: data.bed_id, admissionDate: data.admission_date,
+        checkInDate: data.check_in_date, status: data.status, student, createdBy: data.created_by, updatedBy: data.updated_by
+      });
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async checkoutStudentFromHostel(id: string, checkOutDate: string): Promise<void> {
+    const ad = mockDb.hostelAdmissions.find(x => x.id === id);
+    if (!ad) throw new Error('Admission record not found.');
+
+    const operatorId = getActiveUser()?.id || null;
+    const { error } = await supabaseAdmin.from('hostel_admissions').update({
+      check_out_date: checkOutDate,
+      status: 'CHECKED_OUT',
+      updated_by: operatorId
+    }).eq('id', id);
+
+    if (error) throw new Error('Failed to checkout student: ' + error.message);
+
+    // Free the bed
+    await this.updateHostelBedStatus(ad.bedId, 'VACANT');
+
+    ad.checkOutDate = checkOutDate;
+    ad.status = 'CHECKED_OUT';
+    ad.updatedBy = operatorId || undefined;
+    mockDb.saveAll();
+    this.clearHostelCache(ad.schoolId);
+  },
+
+  async deleteHostelAdmission(id: string): Promise<void> {
+    const ad = mockDb.hostelAdmissions.find(x => x.id === id);
+    if (!ad) throw new Error('Admission record not found.');
+
+    const { error } = await supabaseAdmin.from('hostel_admissions').delete().eq('id', id);
+    if (error) throw new Error('Failed to delete admission: ' + error.message);
+
+    if (ad.status === 'ACTIVE') {
+      await this.updateHostelBedStatus(ad.bedId, 'VACANT');
+    }
+
+    mockDb.hostelAdmissions = mockDb.hostelAdmissions.filter(x => x.id !== id);
+    mockDb.saveAll();
+    this.clearHostelCache(ad.schoolId);
+  },
+
+  // Attendance CRUD
+  async fetchHostelAttendance(schoolId: string): Promise<HostelAttendance[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelAttendance.filter(a => a.schoolId === schoolId);
+  },
+
+  async recordHostelAttendance(schoolId: string, studentId: string, date: string, timeSlot: 'MORNING' | 'EVENING', status: 'PRESENT' | 'ABSENT' | 'LEAVE', recordedBy: string): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_attendance').upsert({
+      school_id: schoolId,
+      student_id: studentId,
+      date,
+      time_slot: timeSlot,
+      status,
+      recorded_by: recordedBy,
+      created_by: operatorId,
+      updated_by: operatorId
+    }, { onConflict: 'student_id,date,time_slot' }).select().single();
+
+    if (error) throw new Error('Failed to record attendance: ' + error.message);
+    if (data) {
+      const idx = mockDb.hostelAttendance.findIndex(x => x.studentId === studentId && x.date === date && x.timeSlot === timeSlot);
+      const student = mockDb.students.find(s => s.id === studentId);
+      const recorderUser = mockDb.users.find(u => u.id === recordedBy);
+      const mapped = {
+        id: data.id,
+        schoolId: data.school_id,
+        studentId: data.student_id,
+        date: data.date,
+        timeSlot: data.time_slot,
+        status: data.status,
+        recordedBy: data.recorded_by,
+        student,
+        recordedByDetails: recorderUser || null,
+        createdBy: data.created_by,
+        updatedBy: data.updated_by
+      };
+      
+      if (idx === -1) mockDb.hostelAttendance.push(mapped);
+      else mockDb.hostelAttendance[idx] = mapped;
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  // Leave Requests CRUD
+  async fetchHostelLeaveRequests(schoolId: string): Promise<HostelLeaveRequest[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelLeaveRequests.filter(l => l.schoolId === schoolId);
+  },
+
+  async createHostelLeaveRequest(schoolId: string, studentId: string, fromDate: string, toDate: string, reason: string): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_leave_requests').insert({
+      school_id: schoolId,
+      student_id: studentId,
+      from_date: fromDate,
+      to_date: toDate,
+      reason,
+      parent_approval: 'PENDING',
+      warden_approval: 'PENDING',
+      hostel_admin_approval: 'PENDING',
+      admin_approval: 'PENDING',
+      status: 'PENDING',
+      created_by: operatorId,
+      updated_by: operatorId
+    }).select().single();
+
+    if (error) throw new Error('Failed to submit leave request: ' + error.message);
+    if (data) {
+      const student = mockDb.students.find(s => s.id === studentId);
+      mockDb.hostelLeaveRequests.push({
+        id: data.id, schoolId: data.school_id, studentId: data.student_id, fromDate: data.from_date,
+        toDate: data.to_date, reason: data.reason, parentApproval: data.parent_approval,
+        wardenApproval: data.warden_approval, hostelAdminApproval: data.hostel_admin_approval || 'PENDING',
+        adminApproval: data.admin_approval,
+        status: data.status, student, createdBy: data.created_by, updatedBy: data.updated_by
+      });
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async approveHostelLeaveRequest(id: string, approverRole: 'PARENT' | 'WARDEN' | 'HOSTEL_ADMIN' | 'SCHOOL_ADMIN', approvalStatus: 'APPROVED' | 'REJECTED' | 'HOLD', approverUserId: string): Promise<void> {
+    const l = mockDb.hostelLeaveRequests.find(x => x.id === id);
+    if (!l) throw new Error('Leave request not found.');
+
+    const operatorId = getActiveUser()?.id || null;
+    const updateObj: any = {};
+    if (approverRole === 'PARENT') updateObj.parent_approval = approvalStatus;
+    else if (approverRole === 'WARDEN') updateObj.warden_approval = approvalStatus;
+    else if (approverRole === 'HOSTEL_ADMIN') updateObj.hostel_admin_approval = approvalStatus;
+    else if (approverRole === 'SCHOOL_ADMIN') updateObj.admin_approval = approvalStatus;
+
+    // Evaluate final request status
+    const nextParent = approverRole === 'PARENT' ? approvalStatus : l.parentApproval;
+    const nextWarden = approverRole === 'WARDEN' ? approvalStatus : l.wardenApproval;
+    const nextHostelAdmin = approverRole === 'HOSTEL_ADMIN' ? approvalStatus : (l.hostelAdminApproval || 'PENDING');
+    const nextSchoolAdmin = approverRole === 'SCHOOL_ADMIN' ? approvalStatus : l.adminApproval;
+
+    if (nextParent === 'REJECTED' || nextWarden === 'REJECTED' || nextHostelAdmin === 'REJECTED' || nextSchoolAdmin === 'REJECTED') {
+      updateObj.status = 'REJECTED';
+    } else if (nextParent === 'HOLD' || nextWarden === 'HOLD' || nextHostelAdmin === 'HOLD' || nextSchoolAdmin === 'HOLD') {
+      updateObj.status = 'HOLD';
+    } else if (nextParent === 'APPROVED' && nextWarden === 'APPROVED' && nextHostelAdmin === 'APPROVED' && nextSchoolAdmin === 'APPROVED') {
+      updateObj.status = 'APPROVED';
+    } else {
+      updateObj.status = 'PENDING';
+    }
+
+    updateObj.approved_by = approverUserId;
+    updateObj.updated_by = operatorId;
+
+    const { error } = await supabaseAdmin.from('hostel_leave_requests').update(updateObj).eq('id', id);
+    if (error) throw new Error('Failed to approve request: ' + error.message);
+
+    if (approverRole === 'PARENT') l.parentApproval = approvalStatus;
+    else if (approverRole === 'WARDEN') l.wardenApproval = approvalStatus;
+    else if (approverRole === 'HOSTEL_ADMIN') l.hostelAdminApproval = approvalStatus;
+    else if (approverRole === 'SCHOOL_ADMIN') l.adminApproval = approvalStatus;
+
+    l.status = updateObj.status || l.status;
+    l.approvedBy = approverUserId;
+    l.updatedBy = operatorId || undefined;
+    mockDb.saveAll();
+    this.clearHostelCache(l.schoolId);
+  },
+
+  async deleteHostelLeaveRequest(id: string): Promise<void> {
+    const l = mockDb.hostelLeaveRequests.find(x => x.id === id);
+    const { error } = await supabaseAdmin.from('hostel_leave_requests').delete().eq('id', id);
+    if (error) throw new Error('Failed to delete leave request: ' + error.message);
+    mockDb.hostelLeaveRequests = mockDb.hostelLeaveRequests.filter(x => x.id !== id);
+    mockDb.saveAll();
+    if (l) this.clearHostelCache(l.schoolId);
+  },
+
+  // Visitors CRUD
+  async fetchHostelVisitors(schoolId: string): Promise<HostelVisitor[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelVisitors.filter(v => v.schoolId === schoolId);
+  },
+
+  async createHostelVisitor(schoolId: string, visitorName: string, relation: string, studentId: string, purpose: string): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_visitors').insert({
+      school_id: schoolId,
+      visitor_name: visitorName,
+      relation,
+      student_id: studentId,
+      purpose,
+      entry_time: new Date().toISOString(),
+      created_by: operatorId,
+      updated_by: operatorId
+    }).select().single();
+
+    if (error) throw new Error('Failed to log visitor: ' + error.message);
+    if (data) {
+      const student = mockDb.students.find(s => s.id === studentId);
+      mockDb.hostelVisitors.push({
+        id: data.id, schoolId: data.school_id, visitorName: data.visitor_name, relation: data.relation,
+        studentId: data.student_id, entryTime: data.entry_time, purpose: data.purpose, student, createdBy: data.created_by, updatedBy: data.updated_by
+      });
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async checkoutHostelVisitor(id: string): Promise<void> {
+    const now = new Date().toISOString();
+    const operatorId = getActiveUser()?.id || null;
+    const { error } = await supabaseAdmin.from('hostel_visitors').update({ exit_time: now, updated_by: operatorId }).eq('id', id);
+    if (error) throw new Error('Failed to check out visitor: ' + error.message);
+    const v = mockDb.hostelVisitors.find(x => x.id === id);
+    if (v) {
+      v.exitTime = now;
+      v.updatedBy = operatorId || undefined;
+      mockDb.saveAll();
+      this.clearHostelCache(v.schoolId);
+    }
+  },
+
+  async deleteHostelVisitor(id: string): Promise<void> {
+    const v = mockDb.hostelVisitors.find(x => x.id === id);
+    const { error } = await supabaseAdmin.from('hostel_visitors').delete().eq('id', id);
+    if (error) throw new Error('Failed to delete visitor log: ' + error.message);
+    mockDb.hostelVisitors = mockDb.hostelVisitors.filter(x => x.id !== id);
+    mockDb.saveAll();
+    if (v) this.clearHostelCache(v.schoolId);
+  },
+
+  // Complaints CRUD
+  async fetchHostelComplaints(schoolId: string): Promise<HostelComplaint[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelComplaints.filter(c => c.schoolId === schoolId);
+  },
+
+  async createHostelComplaint(schoolId: string, studentId: string, category: 'ROOM' | 'ELECTRICITY' | 'WATER' | 'MAINTENANCE' | 'OTHER', description: string): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_complaints').insert({
+      school_id: schoolId,
+      student_id: studentId,
+      category,
+      description,
+      status: 'SUBMITTED',
+      created_by: operatorId,
+      updated_by: operatorId
+    }).select().single();
+
+    if (error) throw new Error('Failed to log complaint: ' + error.message);
+    if (data) {
+      const student = mockDb.students.find(s => s.id === studentId);
+      mockDb.hostelComplaints.push({
+        id: data.id, schoolId: data.school_id, studentId: data.student_id, category: data.category,
+        description: data.description, status: data.status, student, createdBy: data.created_by, updatedBy: data.updated_by
+      });
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async updateHostelComplaint(id: string, status: 'SUBMITTED' | 'ASSIGNED' | 'RESOLVED' | 'CLOSED', assignedStaff?: string, resolutionNotes?: string): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error } = await supabaseAdmin.from('hostel_complaints').update({
+      status,
+      assigned_staff: assignedStaff || null,
+      resolution_notes: resolutionNotes || null,
+      updated_by: operatorId
+    }).eq('id', id);
+
+    if (error) throw new Error('Failed to update complaint: ' + error.message);
+    const c = mockDb.hostelComplaints.find(x => x.id === id);
+    if (c) {
+      c.status = status;
+      c.assignedStaff = assignedStaff;
+      c.resolutionNotes = resolutionNotes;
+      c.updatedBy = operatorId || undefined;
+      mockDb.saveAll();
+      this.clearHostelCache(c.schoolId);
+    }
+  },
+
+  async deleteHostelComplaint(id: string): Promise<void> {
+    const c = mockDb.hostelComplaints.find(x => x.id === id);
+    const { error } = await supabaseAdmin.from('hostel_complaints').delete().eq('id', id);
+    if (error) throw new Error('Failed to delete complaint: ' + error.message);
+    mockDb.hostelComplaints = mockDb.hostelComplaints.filter(x => x.id !== id);
+    mockDb.saveAll();
+    if (c) this.clearHostelCache(c.schoolId);
+  },
+
+  // Hostel Fees CRUD
+  async fetchHostelFees(schoolId: string): Promise<HostelFee[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelFees.filter(f => f.schoolId === schoolId);
+  },
+
+  async createHostelFee(schoolId: string, name: string, amount: number, feeType: 'MONTHLY' | 'ANNUAL' | 'ONE_TIME' | 'MESS', description?: string): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_fees').insert({
+      school_id: schoolId,
+      name,
+      amount,
+      fee_type: feeType,
+      description,
+      created_by: operatorId,
+      updated_by: operatorId
+    }).select().single();
+
+    if (error) throw new Error('Failed to create hostel fee structure: ' + error.message);
+    if (data) {
+      mockDb.hostelFees.push({
+        id: data.id, schoolId: data.school_id, name: data.name, amount: Number(data.amount),
+        feeType: data.fee_type, description: data.description, createdBy: data.created_by, updatedBy: data.updated_by
+      });
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async updateHostelFee(id: string, name: string, amount: number, feeType: 'MONTHLY' | 'ANNUAL' | 'ONE_TIME' | 'MESS', description?: string): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error } = await supabaseAdmin.from('hostel_fees').update({ name, amount, fee_type: feeType, description, updated_by: operatorId }).eq('id', id);
+    if (error) throw new Error('Failed to update fee: ' + error.message);
+    const f = mockDb.hostelFees.find(x => x.id === id);
+    if (f) {
+      f.name = name;
+      f.amount = amount;
+      f.feeType = feeType;
+      f.description = description;
+      f.updatedBy = operatorId || undefined;
+      mockDb.saveAll();
+      this.clearHostelCache(f.schoolId);
+    }
+  },
+
+  async deleteHostelFee(id: string): Promise<void> {
+    const f = mockDb.hostelFees.find(x => x.id === id);
+    const { error } = await supabaseAdmin.from('hostel_fees').delete().eq('id', id);
+    if (error) throw new Error('Failed to delete fee structure: ' + error.message);
+    mockDb.hostelFees = mockDb.hostelFees.filter(x => x.id !== id);
+    mockDb.saveAll();
+    if (f) this.clearHostelCache(f.schoolId);
+  },
+
+  // Payments / Receipts Ledger
+  async fetchHostelPayments(schoolId: string): Promise<HostelPayment[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelPayments.filter(p => p.schoolId === schoolId);
+  },
+
+  async recordHostelPayment(schoolId: string, studentId: string, feeId: string, amountPaid: number, paymentMethod: 'CASH' | 'CARD' | 'ONLINE' | 'BANK_TRANSFER', txId?: string): Promise<void> {
+    const feeObj = mockDb.hostelFees.find(f => f.id === feeId);
+    if (!feeObj) throw new Error('Fee structure not found.');
+
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_payments').insert({
+      school_id: schoolId,
+      student_id: studentId,
+      fee_id: feeId,
+      amount_paid: amountPaid,
+      payment_method: paymentMethod,
+      tx_id: txId || null,
+      status: amountPaid >= feeObj.amount ? 'PAID' : 'PARTIAL',
+      created_by: operatorId,
+      updated_by: operatorId
+    }).select().single();
+
+    if (error) throw new Error('Failed to record payment: ' + error.message);
+    if (data) {
+      // Integration with Finance Module: Generate a general invoice/receipt in invoices
+      try {
+        const student = mockDb.students.find(s => s.id === studentId);
+        
+        let sessionId = student?.academicSessionId;
+        if (!sessionId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sessionId)) {
+          const { data: sessData } = await supabaseAdmin
+            .from('academic_sessions')
+            .select('id')
+            .eq('school_id', schoolId)
+            .eq('is_active', true)
+            .limit(1);
+          if (sessData && sessData.length > 0) {
+            sessionId = sessData[0].id;
+          } else {
+            const { data: sessData2 } = await supabaseAdmin
+              .from('academic_sessions')
+              .select('id')
+              .eq('school_id', schoolId)
+              .limit(1);
+            if (sessData2 && sessData2.length > 0) {
+              sessionId = sessData2[0].id;
+            }
+          }
+        }
+
+        if (sessionId) {
+          const invNumber = 'INV-HST-' + Math.floor(100000 + Math.random() * 900000);
+          const dueDate = new Date().toISOString().split('T')[0];
+          
+          await supabaseAdmin.from('invoices').insert({
+            school_id: schoolId,
+            academic_session_id: sessionId,
+            student_id: studentId,
+            invoice_number: invNumber,
+            amount: amountPaid,
+            due_date: dueDate,
+            status: 'PAID'
+          });
+        }
+      } catch (finErr) {
+        console.error('Failed to link hostel fee to finance invoices:', finErr);
+      }
+
+      const student = mockDb.students.find(s => s.id === studentId);
+      mockDb.hostelPayments.push({
+        id: data.id, schoolId: data.school_id, studentId: data.student_id, feeId: data.fee_id,
+        amountPaid: Number(data.amount_paid), paymentDate: data.payment_date, paymentMethod: data.payment_method,
+        txId: data.tx_id, status: data.status, student, fee: feeObj, createdBy: data.created_by, updatedBy: data.updated_by
+      });
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
+  },
+
+  async deleteHostelPayment(id: string): Promise<void> {
+    const p = mockDb.hostelPayments.find(x => x.id === id);
+    const { error } = await supabaseAdmin.from('hostel_payments').delete().eq('id', id);
+    if (error) throw new Error('Failed to delete payment log: ' + error.message);
+    mockDb.hostelPayments = mockDb.hostelPayments.filter(x => x.id !== id);
+    mockDb.saveAll();
+    if (p) this.clearHostelCache(p.schoolId);
+  },
+
+  // Mess Menu CRUD
+  async fetchHostelMessMenus(schoolId: string): Promise<HostelMessMenu[]> {
+    await this.syncHostelData(schoolId);
+    return mockDb.hostelMessMenu.filter(m => m.schoolId === schoolId);
+  },
+
+  async saveHostelMessMenu(schoolId: string, hostelId: string | null, dayOfWeek: number, breakfast: string, lunch: string, dinner: string, specialMenu?: string): Promise<void> {
+    const operatorId = getActiveUser()?.id || null;
+    const { error, data } = await supabaseAdmin.from('hostel_mess_menu').upsert({
+      school_id: schoolId,
+      hostel_id: hostelId || null,
+      day_of_week: dayOfWeek,
+      breakfast,
+      lunch,
+      dinner,
+      special_menu: specialMenu || null,
+      created_by: operatorId,
+      updated_by: operatorId
+    }, { onConflict: 'hostel_id,day_of_week' }).select().single();
+
+    if (error) throw new Error('Failed to update mess menu: ' + error.message);
+    if (data) {
+      const idx = mockDb.hostelMessMenu.findIndex(x => x.hostelId === hostelId && x.dayOfWeek === dayOfWeek);
+      const mapped = { id: data.id, schoolId: data.school_id, hostelId: data.hostel_id, dayOfWeek: Number(data.day_of_week), breakfast: data.breakfast, lunch: data.lunch, dinner: data.dinner, specialMenu: data.special_menu, createdBy: data.created_by, updatedBy: data.updated_by };
+      
+      if (idx === -1) mockDb.hostelMessMenu.push(mapped);
+      else mockDb.hostelMessMenu[idx] = mapped;
+      mockDb.saveAll();
+      this.clearHostelCache(schoolId);
+    }
   }
 };
 
