@@ -7,10 +7,11 @@ interface PremiumLockProps {
   isLocked: boolean;
   requiredTier: string;
   featureName: string;
+  customMessage?: string;
   children: React.ReactNode;
 }
 
-const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featureName, children }) => {
+const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featureName, customMessage, children }) => {
   const { session } = useStore();
   const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
 
@@ -58,8 +59,12 @@ const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featu
               <div>
                 <p className="text-[10px] font-bold text-red-400 uppercase tracking-wide">Subscription Security Warning</p>
                 <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
-                  Access to this premium module is suspended. The school's active subscription tier is currently registered as <span className="text-red-400 font-bold font-mono">{currentPlan}</span>. 
-                  Enabling <strong className="text-slate-200">{featureName}</strong> requires an active transition to the Enterprise Tier.
+                  {customMessage || (
+                    <>
+                      Access to this premium module is suspended. The school's active subscription tier is currently registered as <span className="text-red-400 font-bold font-mono">{currentPlan}</span>. 
+                      Enabling <strong className="text-slate-200">{featureName}</strong> requires an active transition to the Enterprise Tier.
+                    </>
+                  )}
                 </p>
               </div>
             </div>

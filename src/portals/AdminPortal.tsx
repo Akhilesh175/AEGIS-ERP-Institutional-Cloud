@@ -1328,6 +1328,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_mess_menu' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_fees' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_payments' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'school_subscriptions' }, handleAdminSync)
       .subscribe();
 
     return () => {

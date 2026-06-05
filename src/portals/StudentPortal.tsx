@@ -423,6 +423,11 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_mess_menu' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_fees' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_payments' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'school_subscriptions' }, () => {
+        console.log('Realtime school_subscriptions change detected, refreshing plan...');
+        syncSubscriptionPlan();
+        loadData();
+      })
       .subscribe();
 
     return () => {
@@ -1796,9 +1801,10 @@ This is a system-generated official receipt.
 
       {activeTab === 'hostel' && (
         <PremiumLock 
-          isLocked={false} 
-          requiredTier="Basic" 
-          featureName="Hostel Registry"
+          isLocked={currentPlanName !== 'enterprise'} 
+          requiredTier="Enterprise" 
+          featureName="Hostel Hub"
+          customMessage="Hostel services are available only for institutions with an active Enterprise Subscription. Please contact your School Administrator to upgrade your institution's plan."
         >
           <div className="space-y-6 animate-fade-in">
             {/* If the student is not active in any hostel */}

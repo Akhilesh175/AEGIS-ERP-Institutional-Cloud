@@ -65,10 +65,25 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         syncSubscriptionPlan();
       })
       .subscribe();
+
+    // Subscribe to realtime updates on school_subscriptions table for enterprise gating!
+    const subChannel = supabase
+      .channel(`sidebar-sub-${session.user.schoolId}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'school_subscriptions', 
+        filter: `school_id=eq.${session.user.schoolId}` 
+      }, () => {
+        console.log('Realtime school_subscriptions update detected in Sidebar! Syncing plan...');
+        syncSubscriptionPlan();
+      })
+      .subscribe();
       
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(schoolChannel);
+      supabase.removeChannel(subChannel);
     };
   }, [session, syncSubscriptionPlan]);
 

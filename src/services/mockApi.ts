@@ -6901,6 +6901,31 @@ export const mockApi = {
     const { error } = await supabaseAdmin.from('schools').update({ subscription_plan: subscriptionPlan }).eq('id', schoolId);
     if (error) throw new Error('Failed to update school subscription: ' + error.message);
     
+    const isEnterprise = subscriptionPlan.toLowerCase() === 'enterprise';
+    try {
+      if (isEnterprise) {
+        const oneYearLaterStr = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
+        await supabaseAdmin
+          .from('school_subscriptions')
+          .upsert({
+            school_id: schoolId,
+            plan: 'ENTERPRISE',
+            status: 'ACTIVE',
+            expiry_date: oneYearLaterStr
+          }, {
+            onConflict: 'school_id,plan'
+          });
+      } else {
+        await supabaseAdmin
+          .from('school_subscriptions')
+          .update({ status: 'INACTIVE' })
+          .eq('school_id', schoolId)
+          .eq('plan', 'ENTERPRISE');
+      }
+    } catch (e) {
+      console.warn('Failed to update school_subscriptions table in Supabase:', e);
+    }
+
     // Sync local mockDb schools cache
     const idx = mockDb.schools.findIndex(s => s.id === schoolId);
     if (idx !== -1) {
@@ -8118,35 +8143,95 @@ export const mockApi = {
     }
   },
 
+  async checkEnterpriseSubscription(schoolId: string): Promise<boolean> {
+    if (!schoolId) return false;
+    try {
+      const todayStr = new Date().toISOString().split('T')[0];
+      const { data: activeSub, error: subError } = await supabaseAdmin
+        .from('school_subscriptions')
+        .select('*')
+        .eq('school_id', schoolId)
+        .eq('plan', 'ENTERPRISE')
+        .eq('status', 'ACTIVE')
+        .gte('expiry_date', todayStr)
+        .limit(1)
+        .maybeSingle();
+
+      if (subError) {
+        // Fallback to schools table if the subscription table query fails (e.g. table not created yet)
+        const { data: dbSchool } = await supabaseAdmin
+          .from('schools')
+          .select('subscription_plan')
+          .eq('id', schoolId)
+          .maybeSingle();
+        return dbSchool?.subscription_plan?.toLowerCase() === 'enterprise';
+      }
+
+      return !!activeSub;
+    } catch {
+      const s = mockDb.schools.find(x => x.id === schoolId);
+      return s?.subscriptionPlan?.toLowerCase() === 'enterprise';
+    }
+  },
+
+  async checkHostelAccess(schoolId: string): Promise<void> {
+    const isEnterprise = await this.checkEnterpriseSubscription(schoolId);
+    if (!isEnterprise) {
+      throw new Error('Enterprise subscription required');
+    }
+  },
+
   async getLiveSchoolSubscriptionPlan(schoolId: string): Promise<string | null> {
     if (!schoolId) return null;
     try {
-      const { data: dbSchool, error } = await supabaseAdmin
-        .from('schools')
+      // 1. Query the school_subscriptions table for active enterprise plan
+      const todayStr = new Date().toISOString().split('T')[0];
+      const { data: activeSub, error: subError } = await supabaseAdmin
+        .from('school_subscriptions')
         .select('*')
-        .eq('id', schoolId)
+        .eq('school_id', schoolId)
+        .eq('plan', 'ENTERPRISE')
+        .eq('status', 'ACTIVE')
+        .gte('expiry_date', todayStr)
+        .limit(1)
         .maybeSingle();
-      if (error || !dbSchool) return null;
+
+      let plan = 'freemium';
       
-      const plan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
+      if (!subError && activeSub) {
+        plan = 'enterprise';
+      } else {
+        // Fallback: Query schools table
+        const { data: dbSchool } = await supabaseAdmin
+          .from('schools')
+          .select('*')
+          .eq('id', schoolId)
+          .maybeSingle();
+          
+        if (dbSchool) {
+          const basePlan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
+          // Force downgrade if schools table says enterprise but there is no active subscription in school_subscriptions!
+          plan = basePlan === 'enterprise' ? 'pro' : basePlan;
+        }
+      }
       
       // Update local mockDb.schools cache in real time!
       const schoolMapped = {
-        id: dbSchool.id,
-        name: dbSchool.name,
-        address: dbSchool.address || '',
-        phone: dbSchool.phone || '',
+        id: schoolId,
+        name: mockDb.schools.find(s => s.id === schoolId)?.name || 'Institution Name',
+        address: '',
+        phone: '',
         subscriptionPlan: plan as any,
-        createdAt: dbSchool.created_at
+        createdAt: new Date().toISOString()
       };
-      const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
+      const idx = mockDb.schools.findIndex(s => s.id === schoolId);
       if (idx === -1) mockDb.schools.push(schoolMapped);
-      else mockDb.schools[idx] = schoolMapped;
+      else mockDb.schools[idx].subscriptionPlan = plan as any;
       mockDb.saveAll();
       
       return plan;
     } catch {
-      return null;
+      return 'freemium';
     }
   },
 
@@ -10516,6 +10601,7 @@ export const mockApi = {
 
   async syncHostelData(schoolId: string): Promise<void> {
     if (!schoolId) return;
+    await this.checkHostelAccess(schoolId);
     if (syncHostelDataPromises[schoolId]) {
       return syncHostelDataPromises[schoolId]!;
     }
@@ -10715,6 +10801,7 @@ export const mockApi = {
   },
 
   async createHostel(schoolId: string, name: string, type: 'BOYS' | 'GIRLS' | 'MIXED', status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error, data } = await supabaseAdmin.from('hostels').insert({ school_id: schoolId, name, type, status, created_by: operatorId, updated_by: operatorId }).select().single();
     if (error) throw new Error('Failed to create hostel: ' + error.message);
@@ -10756,6 +10843,7 @@ export const mockApi = {
   },
 
   async createHostelBlock(schoolId: string, hostelId: string, name: string, status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error, data } = await supabaseAdmin.from('hostel_blocks').insert({ school_id: schoolId, hostel_id: hostelId, name, status, created_by: operatorId, updated_by: operatorId }).select().single();
     if (error) throw new Error('Failed to create block: ' + error.message);
@@ -10796,6 +10884,7 @@ export const mockApi = {
   },
 
   async createHostelRoom(schoolId: string, blockId: string, floor: number, roomNumber: string, capacity: number, status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const exists = mockDb.hostelRooms.some(r => r.blockId === blockId && r.roomNumber.toLowerCase() === roomNumber.toLowerCase());
     if (exists) {
       throw new Error(`A room with number "${roomNumber}" already exists in this block.`);
@@ -10848,6 +10937,7 @@ export const mockApi = {
   },
 
   async createHostelBed(schoolId: string, roomId: string, bedName: string): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const exists = mockDb.hostelBeds.some(b => b.roomId === roomId && b.bedName.toLowerCase() === bedName.toLowerCase());
     if (exists) {
       throw new Error(`A bed with designation "${bedName}" already exists in this room.`);
@@ -10891,6 +10981,7 @@ export const mockApi = {
   },
 
   async createHostelWarden(schoolId: string, userId: string, hostelId: string | null, phone?: string): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error, data } = await supabaseAdmin.from('hostel_wardens').insert({ school_id: schoolId, user_id: userId, hostel_id: hostelId || null, phone, created_by: operatorId, updated_by: operatorId }).select().single();
     if (error) throw new Error('Failed to assign warden: ' + error.message);
@@ -11002,6 +11093,7 @@ export const mockApi = {
   },
 
   async admitStudentToHostel(schoolId: string, studentId: string, hostelId: string, roomId: string, bedId: string, admissionDate: string, checkInDate?: string): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     // 1. Validation: Prevent duplicate active admission for same student
     const active = mockDb.hostelAdmissions.find(a => a.studentId === studentId && a.status === 'ACTIVE');
     if (active) throw new Error('Student is already actively assigned to another hostel room.');
@@ -11088,6 +11180,7 @@ export const mockApi = {
   },
 
   async recordHostelAttendance(schoolId: string, studentId: string, date: string, timeSlot: 'MORNING' | 'EVENING', status: 'PRESENT' | 'ABSENT' | 'LEAVE', recordedBy: string): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error, data } = await supabaseAdmin.from('hostel_attendance').upsert({
       school_id: schoolId,
@@ -11133,6 +11226,7 @@ export const mockApi = {
   },
 
   async createHostelLeaveRequest(schoolId: string, studentId: string, fromDate: string, toDate: string, reason: string): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error, data } = await supabaseAdmin.from('hostel_leave_requests').insert({
       school_id: schoolId,
@@ -11225,6 +11319,7 @@ export const mockApi = {
   },
 
   async createHostelVisitor(schoolId: string, visitorName: string, relation: string, studentId: string, purpose: string): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error, data } = await supabaseAdmin.from('hostel_visitors').insert({
       school_id: schoolId,
@@ -11279,6 +11374,7 @@ export const mockApi = {
   },
 
   async createHostelComplaint(schoolId: string, studentId: string, category: 'ROOM' | 'ELECTRICITY' | 'WATER' | 'MAINTENANCE' | 'OTHER', description: string): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error, data } = await supabaseAdmin.from('hostel_complaints').insert({
       school_id: schoolId,
@@ -11339,6 +11435,7 @@ export const mockApi = {
   },
 
   async createHostelFee(schoolId: string, name: string, amount: number, feeType: 'MONTHLY' | 'ANNUAL' | 'ONE_TIME' | 'MESS', description?: string): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error, data } = await supabaseAdmin.from('hostel_fees').insert({
       school_id: schoolId,
@@ -11393,6 +11490,7 @@ export const mockApi = {
   },
 
   async recordHostelPayment(schoolId: string, studentId: string, feeId: string, amountPaid: number, paymentMethod: 'CASH' | 'CARD' | 'ONLINE' | 'BANK_TRANSFER', txId?: string): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const feeObj = mockDb.hostelFees.find(f => f.id === feeId);
     if (!feeObj) throw new Error('Fee structure not found.');
 
@@ -11482,6 +11580,7 @@ export const mockApi = {
   },
 
   async saveHostelMessMenu(schoolId: string, hostelId: string | null, dayOfWeek: number, breakfast: string, lunch: string, dinner: string, specialMenu?: string): Promise<void> {
+    await this.checkHostelAccess(schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error, data } = await supabaseAdmin.from('hostel_mess_menu').upsert({
       school_id: schoolId,

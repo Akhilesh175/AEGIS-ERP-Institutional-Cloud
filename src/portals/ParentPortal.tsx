@@ -456,6 +456,11 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_mess_menu' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_fees' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_payments' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'school_subscriptions' }, () => {
+        console.log('Realtime school_subscriptions change detected in parent portal, refreshing plan...');
+        syncSubscriptionPlan();
+        loadAcademicRecord();
+      })
       .subscribe();
 
     return () => {
@@ -1786,9 +1791,10 @@ This is a system-generated official receipt.
 
             {activeTab === 'hostel' && (
               <PremiumLock 
-                isLocked={false} 
-                requiredTier="Basic" 
-                featureName="Hostel Registry"
+                isLocked={currentPlanName !== 'enterprise'} 
+                requiredTier="Enterprise" 
+                featureName="Hostel Hub"
+                customMessage="Hostel monitoring features are available only under the Enterprise Plan. Please contact the School Administrator to request an upgrade."
               >
                 <div className="space-y-6 animate-fade-in">
                   {!activeAdmission ? (
