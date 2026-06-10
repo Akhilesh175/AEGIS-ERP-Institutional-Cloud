@@ -655,10 +655,21 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       })
       .subscribe();
 
+    // Subscribe to manual broadcast channel for instant, guaranteed real-time updates!
+    const broadcastChannel = supabase
+      .channel(`school-subscription-updates-${session?.user.schoolId}`)
+      .on('broadcast', { event: 'plan_updated' }, () => {
+        console.log('Realtime broadcast subscription update detected in TeacherPortal! Syncing plan and refreshing classes...');
+        syncSubscriptionPlan();
+        handleAcademicSync();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(broadcastChannel);
     };
-  }, [teacherId]);
+  }, [teacherId, session, syncSubscriptionPlan]);
 
   useEffect(() => {
     let interval: ReturnType<typeof setInterval> | undefined;

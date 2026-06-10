@@ -430,10 +430,21 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
       })
       .subscribe();
 
+    // Subscribe to manual broadcast channel for instant, guaranteed real-time updates!
+    const broadcastChannel = supabase
+      .channel(`school-subscription-updates-${session?.user.schoolId}`)
+      .on('broadcast', { event: 'plan_updated' }, () => {
+        console.log('Realtime broadcast subscription update detected in StudentPortal! Syncing plan and loading data...');
+        syncSubscriptionPlan();
+        loadData();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(broadcastChannel);
     };
-  }, [studentId]);
+  }, [studentId, session, syncSubscriptionPlan]);
 
   useEffect(() => {
     const interval = setInterval(() => {

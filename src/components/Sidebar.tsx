@@ -79,11 +79,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         syncSubscriptionPlan();
       })
       .subscribe();
+
+    // Subscribe to manual broadcast channel for instant, guaranteed real-time updates!
+    const broadcastChannel = supabase
+      .channel(`school-subscription-updates-${session.user.schoolId}`)
+      .on('broadcast', { event: 'plan_updated' }, () => {
+        console.log('Realtime broadcast school subscription update detected in Sidebar! Syncing plan...');
+        syncSubscriptionPlan();
+      })
+      .subscribe();
       
     return () => {
       supabase.removeChannel(channel);
       supabase.removeChannel(schoolChannel);
       supabase.removeChannel(subChannel);
+      supabase.removeChannel(broadcastChannel);
     };
   }, [session, syncSubscriptionPlan]);
 

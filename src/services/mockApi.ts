@@ -7197,11 +7197,45 @@ export const mockApi = {
       console.warn('Failed to update school_subscriptions table in Supabase:', e);
     }
 
+    // Invalidate cached subscription-related telemetry
+    Object.keys(attendanceAnalyticsCache).forEach((key) => {
+      if (key.startsWith(`${schoolId}_`)) {
+        delete attendanceAnalyticsCache[key];
+      }
+    });
+    this.clearHostelCache(schoolId);
+
     // Sync local mockDb schools cache
     const idx = mockDb.schools.findIndex(s => s.id === schoolId);
     if (idx !== -1) {
       mockDb.schools[idx].subscriptionPlan = subscriptionPlan.toLowerCase() as any;
       mockDb.saveAll();
+    }
+
+    // Broadcast the updated plan in real-time to all listening clients in this school
+    try {
+      const channel = supabaseAdmin.channel(`school-subscription-updates-${schoolId}`);
+      await new Promise<void>((resolve) => {
+        channel.subscribe(async (status) => {
+          if (status === 'SUBSCRIBED') {
+            await channel.send({
+              type: 'broadcast',
+              event: 'plan_updated',
+              payload: { schoolId, plan: subscriptionPlan.toLowerCase() }
+            });
+            supabaseAdmin.removeChannel(channel);
+            resolve();
+          } else {
+            // fallback timeout logic
+            setTimeout(() => {
+              supabaseAdmin.removeChannel(channel);
+              resolve();
+            }, 1000);
+          }
+        });
+      });
+    } catch (broadcastErr) {
+      console.warn('Failed to broadcast subscription change event in real-time:', broadcastErr);
     }
   },
 

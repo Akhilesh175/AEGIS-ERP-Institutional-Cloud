@@ -1335,10 +1335,20 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       .on('postgres_changes', { event: '*', schema: 'public', table: 'school_subscriptions' }, handleAdminSync)
       .subscribe();
 
+    // Subscribe to manual broadcast channel for instant, guaranteed real-time updates!
+    const broadcastChannel = supabase
+      .channel(`school-subscription-updates-${session?.user.schoolId}`)
+      .on('broadcast', { event: 'plan_updated' }, () => {
+        console.log('Realtime broadcast subscription update detected in AdminPortal! Syncing plan and loading data...');
+        handleAdminSync();
+      })
+      .subscribe();
+
     return () => {
       supabase.removeChannel(channel);
+      supabase.removeChannel(broadcastChannel);
     };
-  }, [adminId]);
+  }, [adminId, session, syncSubscriptionPlan]);
 
 
   // --- Hostel Handlers ---
