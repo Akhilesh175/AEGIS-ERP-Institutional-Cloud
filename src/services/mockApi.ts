@@ -5220,6 +5220,7 @@ export const mockApi = {
       if (roleCode === 'LIBRARIAN') return 'librarians';
       if (roleCode === 'TRANSPORT_MANAGER') return 'transport_managers';
       if (roleCode === 'HOSTEL_ADMIN') return 'hostel_admins';
+      if (roleCode === 'WARDEN') return 'hostel_wardens';
       if (roleCode === 'CUSTOM_SUB_ADMIN') return 'custom_sub_admins';
       return '';
     };
@@ -5229,31 +5230,54 @@ export const mockApi = {
 
     if (oldTable && newTable) {
       if (oldTable !== newTable) {
-        // Delete old profile, insert new
+        // Delete old profile
         await supabaseAdmin.from(oldTable).delete().eq('user_id', userId);
         
-        await supabaseAdmin.from(newTable).insert({
-          user_id: userId,
-          school_id: schoolId,
-          role_id: targetRoleId,
-          employee_id: trimmedEmployeeId,
-          status: isActive ? 'ACTIVE' : 'INACTIVE',
-          permissions: {},
-          deactivated_at: isActive ? null : new Date().toISOString(),
-          deactivated_by: isActive ? null : adminId
-        });
-      } else {
-        // Just update existing
-        await supabaseAdmin
-          .from(newTable)
-          .update({
+        // Insert new profile
+        if (newTable === 'hostel_wardens') {
+          await supabaseAdmin.from('hostel_wardens').insert({
+            user_id: userId,
+            school_id: schoolId,
+            phone: phone,
+            hostel_id: null,
+            username: null,
+            gender: null,
+            address: null,
+            assigned_locations: []
+          });
+        } else {
+          await supabaseAdmin.from(newTable).insert({
+            user_id: userId,
+            school_id: schoolId,
             role_id: targetRoleId,
             employee_id: trimmedEmployeeId,
             status: isActive ? 'ACTIVE' : 'INACTIVE',
+            permissions: {},
             deactivated_at: isActive ? null : new Date().toISOString(),
             deactivated_by: isActive ? null : adminId
-          })
-          .eq('user_id', userId);
+          });
+        }
+      } else {
+        // Just update existing
+        if (newTable === 'hostel_wardens') {
+          await supabaseAdmin
+            .from('hostel_wardens')
+            .update({
+              phone: phone
+            })
+            .eq('user_id', userId);
+        } else {
+          await supabaseAdmin
+            .from(newTable)
+            .update({
+              role_id: targetRoleId,
+              employee_id: trimmedEmployeeId,
+              status: isActive ? 'ACTIVE' : 'INACTIVE',
+              deactivated_at: isActive ? null : new Date().toISOString(),
+              deactivated_by: isActive ? null : adminId
+            })
+            .eq('user_id', userId);
+        }
       }
     }
 
@@ -5322,6 +5346,36 @@ export const mockApi = {
     }
 
     mockDb.addLog(adminId, 'EDIT_SUB_ADMIN', { subAdminName: `${firstName} ${lastName}`, role, email: normalizedEmail, employeeId: trimmedEmployeeId || undefined });
+    mockDb.saveAll();
+
+    // Sync mockDb.hostelWardens list for warden additions/removals
+    if (role === 'WARDEN') {
+      const idx = mockDb.hostelWardens.findIndex(w => w.userId === userId);
+      if (idx === -1) {
+        const wId = 'w-' + Math.random().toString(36).substr(2, 9);
+        mockDb.hostelWardens.push({
+          id: wId,
+          schoolId,
+          userId,
+          hostelId: null,
+          phone,
+          username: '',
+          gender: '',
+          address: '',
+          assignedLocations: [],
+          userDetails: cachedUser || undefined
+        });
+      } else {
+        mockDb.hostelWardens[idx].phone = phone;
+        if (cachedUser) mockDb.hostelWardens[idx].userDetails = cachedUser;
+      }
+    } else {
+      mockDb.hostelWardens = mockDb.hostelWardens.filter(w => w.userId !== userId);
+    }
+    
+    if (role === 'WARDEN' || oldRole === 'WARDEN' || role === 'HOSTEL_ADMIN' || oldRole === 'HOSTEL_ADMIN') {
+      this.clearHostelCache(schoolId);
+    }
     mockDb.saveAll();
   },
 
@@ -8529,6 +8583,7 @@ export const mockApi = {
       else if (userRow.role === 'EXAM_CONTROLLER') dedicatedTable = 'exam_controllers';
       else if (userRow.role === 'LIBRARIAN') dedicatedTable = 'librarians';
       else if (userRow.role === 'TRANSPORT_MANAGER') dedicatedTable = 'transport_managers';
+      else if (userRow.role === 'HOSTEL_ADMIN') dedicatedTable = 'hostel_admins';
       else if (userRow.role === 'CUSTOM_SUB_ADMIN') dedicatedTable = 'custom_sub_admins';
 
       if (dedicatedTable) {

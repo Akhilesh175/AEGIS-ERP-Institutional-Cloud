@@ -140,7 +140,7 @@ export const App: React.FC = () => {
     validateSession();
   }, [session, setSession]);
 
-  // Real-time status sync: listen for administrative deactivation events to instantly log out the user.
+  // Real-time status sync: listen for administrative deactivation or role events to instantly update the user session.
   useEffect(() => {
     if (!session?.user?.id) return;
     
@@ -156,11 +156,26 @@ export const App: React.FC = () => {
         },
         (payload) => {
           const updatedUser = payload.new as any;
-          if (updatedUser && updatedUser.is_active === false) {
-            console.log('Realtime administrative deactivation triggered! Enforcing instant session destruction.');
-            setSession(null);
-            localStorage.removeItem('aegis_session');
-            alert('Your account has been deactivated by the administrator. You have been logged out.');
+          if (updatedUser) {
+            if (updatedUser.is_active === false) {
+              console.log('Realtime administrative deactivation triggered! Enforcing instant session destruction.');
+              setSession(null);
+              localStorage.removeItem('aegis_session');
+              alert('Your account has been deactivated by the administrator. You have been logged out.');
+            } else if (updatedUser.role !== session.user.role) {
+              console.log('Realtime administrative role update detected! Syncing session user role...', updatedUser.role);
+              const updatedSession = {
+                ...session,
+                user: {
+                  ...session.user,
+                  role: updatedUser.role,
+                  roleId: updatedUser.role_id || undefined
+                }
+              };
+              setSession(updatedSession);
+              localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+              alert(`Your administrative role has been updated to [${updatedUser.role}]. The portal layout is refreshing.`);
+            }
           }
         }
       )

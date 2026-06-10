@@ -629,8 +629,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
   const handleCreateSubAdmin = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (currentPlanName !== 'enterprise') {
-      alert('Security Policy Alert: Registering sub-admin operators requires an active Enterprise subscription plan. Please upgrade your institution.');
+    if (currentPlanName !== 'pro' && currentPlanName !== 'enterprise') {
+      alert('Security Policy Alert: Registering sub-admin operators requires an active Pro or Enterprise subscription plan. Please upgrade your institution.');
       return;
     }
     if (!saEmail.trim() || !saPassword || saPassword.length < 6) {
@@ -654,11 +654,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       setSaRole('FINANCE_ADMIN');
       setSaPassword('password');
       setSaEmployeeId('');
-      // Reload operators list to show the new sub-admin
-      if (overview?.schoolId) {
-        const ops = await mockApi.fetchOperators(overview.schoolId);
-        setOperators(ops);
-      }
+      // Reload operator directories and staff registries
+      await loadData();
       alert(`Sub-admin user with role [${saRole}] and Employee ID [${saEmployeeId.trim()}] registered successfully in Supabase!`);
     } catch (err: any) {
       alert(err.message || 'Error creating sub-admin');
@@ -689,11 +686,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       );
       setShowEditSubAdmin(null);
       
-      // Reload operators list to show the updated sub-admin
-      if (overview?.schoolId) {
-        const ops = await mockApi.fetchOperators(overview.schoolId);
-        setOperators(ops);
-      }
+      // Reload operator directories and staff registries
+      await loadData();
       alert('Sub-admin operator details updated successfully!');
     } catch (err: any) {
       alert(err.message || 'Error updating sub-admin');
@@ -6468,7 +6462,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       )}
 
       {/* Sub-Admin Registration Modal */}
-      {showAddSubAdmin && currentPlanName === 'enterprise' && (
+      {showAddSubAdmin && (currentPlanName === 'pro' || currentPlanName === 'enterprise') && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
           <GlassCard className="w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto">
             <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
