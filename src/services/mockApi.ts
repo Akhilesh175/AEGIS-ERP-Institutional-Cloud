@@ -181,6 +181,108 @@ export const isChatAllowed = (roleA: string, roleB: string): boolean => {
   return checkPair(roleA, roleB) || checkPair(roleB, roleA);
 };
 
+export const checkChatAllowed = (sender: any, receiver: any): boolean => {
+  if (sender.id === receiver.id) return false;
+  
+  // Enforce strict school tenant isolation (unless super admin is involved)
+  if (sender.role !== 'SUPER_ADMIN' && receiver.role !== 'SUPER_ADMIN') {
+    if (sender.schoolId !== receiver.schoolId) return false;
+  }
+
+  const roleA = sender.role;
+  const roleB = receiver.role;
+  const subAdmins = ['FINANCE_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'ACADEMIC_ADMIN', 'CUSTOM_SUB_ADMIN', 'HOSTEL_ADMIN', 'WARDEN'];
+  const isSubAdmin = (r: string) => subAdmins.includes(r);
+
+  const checkPair = (uA: any, uB: any) => {
+    const rA = uA.role;
+    const rB = uB.role;
+    
+    // 1. SUPER_ADMIN <-> ADMIN
+    if (rA === 'SUPER_ADMIN' && rB === 'ADMIN') return true;
+    
+    // 2. ADMIN <-> SUPER_ADMIN, TEACHER, SUB_ADMIN
+    if (rA === 'ADMIN') {
+      return rB === 'SUPER_ADMIN' || rB === 'TEACHER' || isSubAdmin(rB);
+    }
+    
+    // 3. SUB_ADMIN <-> ADMIN, TEACHER, STUDENT, PARENT
+    if (isSubAdmin(rA)) {
+      return rB === 'ADMIN' || rB === 'TEACHER' || rB === 'STUDENT' || rB === 'PARENT';
+    }
+    
+    // 4. TEACHER <-> ADMIN, SUB_ADMIN, STUDENT, PARENT, TEACHER (assigned to same class/section only)
+    if (rA === 'TEACHER') {
+      if (rB === 'ADMIN' || isSubAdmin(rB)) return true;
+      if (rB === 'STUDENT') {
+        const student = mockDb.students.find(s => s.userId === uB.id);
+        const teacher = mockDb.teachers.find(t => t.userId === uA.id);
+        if (student && teacher && student.classId) {
+          return mockDb.teacherClassSubjectMappings.some(m => m.teacherId === teacher.id && m.classId === student.classId);
+        }
+        return false;
+      }
+      if (rB === 'PARENT') {
+        const parent = mockDb.parents.find(p => p.userId === uB.id);
+        const teacher = mockDb.teachers.find(t => t.userId === uA.id);
+        if (parent && teacher) {
+          const studentIds = mockDb.parentStudentMappings.filter(m => m.parentId === parent.id).map(m => m.studentId);
+          const childStudents = mockDb.students.filter(s => studentIds.includes(s.id) && s.classId);
+          return childStudents.some(student => 
+            mockDb.teacherClassSubjectMappings.some(m => m.teacherId === teacher.id && m.classId === student.classId)
+          );
+        }
+        return false;
+      }
+      if (rB === 'TEACHER') {
+        const teacherA = mockDb.teachers.find(t => t.userId === uA.id);
+        const teacherB = mockDb.teachers.find(t => t.userId === uB.id);
+        if (teacherA && teacherB) {
+          const classesA = mockDb.teacherClassSubjectMappings.filter(m => m.teacherId === teacherA.id).map(m => m.classId);
+          const classesB = mockDb.teacherClassSubjectMappings.filter(m => m.teacherId === teacherB.id).map(m => m.classId);
+          return classesA.some(cId => classesB.includes(cId));
+        }
+        return false;
+      }
+      return false;
+    }
+    
+    // 5. STUDENT <-> TEACHER (assigned to student class), SUB_ADMIN
+    if (rA === 'STUDENT') {
+      if (isSubAdmin(rB)) return true;
+      if (rB === 'TEACHER') {
+        const student = mockDb.students.find(s => s.userId === uA.id);
+        const teacher = mockDb.teachers.find(t => t.userId === uB.id);
+        if (student && teacher && student.classId) {
+          return mockDb.teacherClassSubjectMappings.some(m => m.teacherId === teacher.id && m.classId === student.classId);
+        }
+      }
+      return false;
+    }
+    
+    // 6. PARENT <-> TEACHER (assigned to child class), SUB_ADMIN
+    if (rA === 'PARENT') {
+      if (isSubAdmin(rB)) return true;
+      if (rB === 'TEACHER') {
+        const parent = mockDb.parents.find(p => p.userId === uA.id);
+        const teacher = mockDb.teachers.find(t => t.userId === uB.id);
+        if (parent && teacher) {
+          const studentIds = mockDb.parentStudentMappings.filter(m => m.parentId === parent.id).map(m => m.studentId);
+          const childStudents = mockDb.students.filter(s => studentIds.includes(s.id) && s.classId);
+          return childStudents.some(student => 
+            mockDb.teacherClassSubjectMappings.some(m => m.teacherId === teacher.id && m.classId === student.classId)
+          );
+        }
+      }
+      return false;
+    }
+    
+    return false;
+  };
+
+  return checkPair(sender, receiver) || checkPair(receiver, sender);
+};
+
 
 // ── Super Admin Identity Lock ────────────────────────────────────────────────
 // ONLY this exact email address is permitted to log in as SUPER_ADMIN.
@@ -2251,17 +2353,52 @@ export const mockApi = {
 
   async syncChatMessagesData(userId: string): Promise<void> {
     try {
-      const { data: dbChats } = await supabaseAdmin
-        .from('chat_messages')
+      // 1. Get all channel IDs for the user
+      const { data: participants, error: partError } = await supabaseAdmin
+        .from('messaging_participants')
+        .select('channel_id')
+        .eq('user_id', userId);
+
+      if (partError) throw partError;
+      if (!participants || participants.length === 0) return;
+
+      const channelIds = participants.map((p: any) => p.channel_id);
+
+      // 2. Fetch all participants of those channels
+      const { data: allParticipants, error: allPartError } = await supabaseAdmin
+        .from('messaging_participants')
+        .select('channel_id, user_id')
+        .in('channel_id', channelIds);
+
+      if (allPartError) throw allPartError;
+
+      // 3. Fetch all messages in those channels
+      const { data: dbMessages, error: msgError } = await supabaseAdmin
+        .from('messages')
         .select('*')
-        .or(`sender_id.eq.${userId},receiver_id.eq.${userId}`);
-      
-      if (dbChats) {
-        dbChats.forEach((r: any) => {
+        .in('channel_id', channelIds);
+
+      if (msgError) throw msgError;
+
+      if (dbMessages && allParticipants) {
+        // Group participants by channel
+        const participantsByChannel: Record<string, string[]> = {};
+        allParticipants.forEach((p: any) => {
+          if (!participantsByChannel[p.channel_id]) {
+            participantsByChannel[p.channel_id] = [];
+          }
+          participantsByChannel[p.channel_id].push(p.user_id);
+        });
+
+        dbMessages.forEach((r: any) => {
+          const chParts = participantsByChannel[r.channel_id] || [];
+          // The receiver is the other participant in the channel
+          const receiverId = chParts.find((uid: string) => uid !== r.sender_id) || r.sender_id;
+
           const msg: ChatMessage = {
             id: r.id,
             senderId: r.sender_id,
-            receiverId: r.receiver_id,
+            receiverId: receiverId,
             message: r.message,
             isRead: r.is_read,
             createdAt: r.created_at
@@ -7913,22 +8050,14 @@ export const mockApi = {
 
     if (currentUsr.schoolId) {
       await this.syncUsersData(currentUsr.schoolId);
+      const planName = await this.getLiveSchoolSubscriptionPlan(currentUsr.schoolId);
+      if (planName !== 'enterprise' && currentUsr.role !== 'SUPER_ADMIN') {
+        return []; // Hide related API data when locked
+      }
     }
 
-    // Filter contacts based on role contexts (Strict boundary checking) and school isolation
-    const allowedContactUserIds = mockDb.users.filter(u => {
-      if (u.id === userId) return false;
-      
-      // Enforce strict school tenant isolation (unless super admin is involved)
-      if (currentUsr.role !== 'SUPER_ADMIN' && u.role !== 'SUPER_ADMIN') {
-        if (currentUsr.schoolId !== u.schoolId) return false;
-      }
-      
-      // Enforce strict RBAC direct messaging allowed contacts
-      return isChatAllowed(currentUsr.role, u.role);
-    }).map(u => u.id);
-
-    const chats = mockDb.users.filter(u => allowedContactUserIds.includes(u.id));
+    // Filter contacts based on permission matrix
+    const chats = mockDb.users.filter(u => checkChatAllowed(currentUsr, u));
 
     return chats.map(u => {
       const msgs = mockDb.chatMessages.filter(
@@ -7949,13 +8078,36 @@ export const mockApi = {
   async getChatHistory(senderId: string, receiverId: string): Promise<ChatMessage[]> {
     await delay();
     
-    // Mark as read in Supabase write-through
-    await supabaseAdmin
-      .from('chat_messages')
-      .update({ is_read: true })
-      .eq('sender_id', receiverId)
-      .eq('receiver_id', senderId)
-      .eq('is_read', false);
+    // Find DIRECT channel between senderId and receiverId
+    const { data: senderChannels } = await supabaseAdmin
+      .from('messaging_participants')
+      .select('channel_id, messaging_channels!inner(channel_type)')
+      .eq('user_id', senderId)
+      .eq('messaging_channels.channel_type', 'DIRECT');
+
+    let channelId: string | null = null;
+    if (senderChannels && senderChannels.length > 0) {
+      const channelIds = senderChannels.map((sc: any) => sc.channel_id);
+      const { data: receiverParticipants } = await supabaseAdmin
+        .from('messaging_participants')
+        .select('channel_id')
+        .eq('user_id', receiverId)
+        .in('channel_id', channelIds);
+        
+      if (receiverParticipants && receiverParticipants.length > 0) {
+        channelId = receiverParticipants[0].channel_id;
+      }
+    }
+
+    if (channelId) {
+      // Mark as read in messages table
+      await supabaseAdmin
+        .from('messages')
+        .update({ is_read: true })
+        .eq('channel_id', channelId)
+        .eq('sender_id', receiverId)
+        .eq('is_read', false);
+    }
 
     mockDb.chatMessages.forEach((m, idx) => {
       if (m.senderId === receiverId && m.receiverId === senderId && !m.isRead) {
@@ -7982,34 +8134,84 @@ export const mockApi = {
     // Enforce school isolation
     if (sender.role !== 'SUPER_ADMIN' && receiver.role !== 'SUPER_ADMIN') {
       if (sender.schoolId !== receiver.schoolId) {
-        throw new Error('Access Denied: School-scoped tenant isolation violation.');
+        throw new Error('Messaging permission denied');
       }
     }
 
-    // Enforce school subscription validation for communications
+    // Enforce Enterprise subscription check
     if (sender.role !== 'SUPER_ADMIN' && sender.schoolId) {
-      const school = mockDb.schools.find(s => s.id === sender.schoolId);
-      if (school) {
-        const plan = subscriptionPlans[school.subscriptionPlan] || subscriptionPlans.freemium;
-        if (!plan.features.communications) {
-          throw new Error(`Direct messaging and communications are not enabled on your ${school.subscriptionPlan} subscription tier. Please upgrade.`);
-        }
+      const planName = await this.getLiveSchoolSubscriptionPlan(sender.schoolId);
+      if (planName !== 'enterprise') {
+        throw new Error('Messaging permission denied');
       }
     }
 
-    // Enforce role DM rules
-    if (!isChatAllowed(sender.role, receiver.role)) {
-      throw new Error('Unauthorized messaging channel: Direct messaging is restricted between these roles.');
+    // Enforce role DM matrix rules
+    if (!checkChatAllowed(sender, receiver)) {
+      throw new Error('Messaging permission denied');
     }
 
+    // Find or create DIRECT channel
+    const { data: senderChannels } = await supabaseAdmin
+      .from('messaging_participants')
+      .select('channel_id, messaging_channels!inner(channel_type)')
+      .eq('user_id', senderId)
+      .eq('messaging_channels.channel_type', 'DIRECT');
+
+    let channelId: string | null = null;
+    if (senderChannels && senderChannels.length > 0) {
+      const channelIds = senderChannels.map((sc: any) => sc.channel_id);
+      const { data: receiverParticipants } = await supabaseAdmin
+        .from('messaging_participants')
+        .select('channel_id')
+        .eq('user_id', receiverId)
+        .in('channel_id', channelIds);
+        
+      if (receiverParticipants && receiverParticipants.length > 0) {
+        channelId = receiverParticipants[0].channel_id;
+      }
+    }
+
+    const schoolId = sender.schoolId || receiver.schoolId;
+    if (!channelId) {
+      // Create channel
+      const { data: newChannel, error: newChError } = await supabaseAdmin
+        .from('messaging_channels')
+        .insert({
+          school_id: schoolId,
+          channel_type: 'DIRECT',
+          created_by: senderId
+        })
+        .select()
+        .single();
+
+      if (newChError || !newChannel) {
+        throw new Error(newChError ? newChError.message : 'Failed to create chat channel');
+      }
+
+      channelId = newChannel.id;
+
+      // Add participants
+      const { error: partErr } = await supabaseAdmin
+        .from('messaging_participants')
+        .insert([
+          { channel_id: channelId, user_id: senderId, role: sender.role },
+          { channel_id: channelId, user_id: receiverId, role: receiver.role }
+        ]);
+
+      if (partErr) {
+        throw new Error(partErr.message);
+      }
+    }
+
+    // Insert message
     const { data: r, error } = await supabaseAdmin
-      .from('chat_messages')
+      .from('messages')
       .insert([{
+        channel_id: channelId,
         sender_id: senderId,
-        receiver_id: receiverId,
         message,
-        is_read: false,
-        school_id: sender.schoolId || receiver.schoolId
+        is_read: false
       }])
       .select()
       .single();
@@ -8021,7 +8223,7 @@ export const mockApi = {
     const chat: ChatMessage = {
       id: r.id,
       senderId: r.sender_id,
-      receiverId: r.receiver_id,
+      receiverId: receiverId,
       message: r.message,
       isRead: r.is_read,
       createdAt: r.created_at
@@ -8446,6 +8648,9 @@ export const mockApi = {
           
         if (dbSchool) {
           plan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
+          if (plan === 'enterprise') {
+            plan = 'freemium'; // Force non-enterprise fallback to keep enterprise gated
+          }
         }
       }
       

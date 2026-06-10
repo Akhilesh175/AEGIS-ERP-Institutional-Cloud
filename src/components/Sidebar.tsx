@@ -101,9 +101,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
           { id: 'timetable', label: 'Schedule', icon: Calendar },
           { id: 'grades', label: 'Report Cards', icon: Award },
-          { id: 'materials', label: 'Materials', icon: BookOpen, locked: planName === 'freemium' || planName === 'basic' },
+          { id: 'materials', label: 'Materials', icon: BookOpen, locked: planName !== 'enterprise' },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName === 'freemium' },
+          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName !== 'enterprise' },
           { id: 'transit', label: 'School Transit', icon: Layers, locked: planName !== 'enterprise' },
           { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: planName !== 'enterprise' },
           { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: planName === 'freemium' },
@@ -113,13 +113,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       case 'PARENT': {
         return [
           { id: 'dashboard', label: 'Child Tracker', icon: Eye },
-          { id: 'homework', label: 'Homework', icon: BookMarked, locked: planName === 'freemium' || planName === 'basic' },
+          { id: 'homework', label: 'Homework', icon: BookMarked, locked: planName !== 'enterprise' },
           { id: 'timetable', label: 'Class Schedule', icon: Calendar },
           { id: 'grades', label: 'Grades Progress', icon: Award },
           { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: planName === 'freemium' },
-          { id: 'materials', label: 'Materials', icon: BookOpen, locked: planName === 'freemium' || planName === 'basic' },
+          { id: 'materials', label: 'Materials', icon: BookOpen, locked: planName !== 'enterprise' },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName === 'freemium' },
+          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName !== 'enterprise' },
           { id: 'transit', label: 'School Transit', icon: Layers, locked: planName !== 'enterprise' },
           { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: planName !== 'enterprise' },
           { id: 'forums', label: 'Forums', icon: MessageSquare, locked: planName === 'freemium' }

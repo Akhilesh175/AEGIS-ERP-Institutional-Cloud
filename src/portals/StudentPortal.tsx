@@ -917,8 +917,15 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
 
             {/* Assignments Homework */}
             <div className="space-y-4">
-              <h4 className="font-semibold text-slate-200 text-xs">Upcoming Homework & Project Deadlines</h4>
-              <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
+              <PremiumLock
+                isLocked={currentPlanName !== 'enterprise'}
+                requiredTier="ENTERPRISE"
+                featureName="Upcoming Homework & Project Deadlines"
+                customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
+              >
+                <div>
+                  <h4 className="font-semibold text-slate-200 text-xs">Upcoming Homework & Project Deadlines</h4>
+                  <div className="space-y-3 max-h-[400px] overflow-y-auto pr-1">
                 {assignments.filter(({ assignment }) => mockDb.subjects.some(s => s.id === assignment.subjectId)).length === 0 ? (
                   <div className="text-center py-12 bg-slate-900/10 border border-dashed border-slate-850 rounded-2xl p-4 flex flex-col items-center justify-center gap-2">
                     <ClipboardList size={28} className="text-slate-650 animate-pulse-subtle" />
@@ -1077,15 +1084,18 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                 )}
               </div>
             </div>
+            </PremiumLock>
           </div>
+        </div>
         </GlassCard>
       )}
 
       {activeTab === 'materials' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
-          requiredTier="Pro"
+          isLocked={currentPlanName !== 'enterprise'}
+          requiredTier="ENTERPRISE"
           featureName="Premium Learning Resources"
+          customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
         >
           <GlassCard className="space-y-6">
             <div className="border-b border-slate-850 pb-3">
@@ -1396,9 +1406,10 @@ Status:        OFFICIALLY PUBLISHED
 
       {activeTab === 'library' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium'}
-          requiredTier="Basic"
+          isLocked={currentPlanName !== 'enterprise'}
+          requiredTier="ENTERPRISE"
           featureName="School Library & Digital Books"
+          customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
         >
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
           <div className="lg:col-span-2 space-y-6">

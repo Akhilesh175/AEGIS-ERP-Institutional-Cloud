@@ -869,7 +869,13 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
             )}
 
             {activeTab === 'homework' && (
-              <div className="space-y-6 animate-fade-in">
+              <PremiumLock
+                isLocked={currentPlanName !== 'enterprise'}
+                requiredTier="ENTERPRISE"
+                featureName="Homework & Assignments"
+                customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
+              >
+                <div className="space-y-6 animate-fade-in">
                 {/* Homework Header */}
                 <GlassCard className="space-y-4">
                   <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -1180,6 +1186,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                   })()}
                 </div>
               </div>
+              </PremiumLock>
             )}
 
             {activeTab === 'grades' && (
@@ -1373,9 +1380,10 @@ This is a system-generated official receipt.
             )}
                   {activeTab === 'library' && (
                     <PremiumLock
-                      isLocked={currentPlanName === 'freemium'}
-                      requiredTier="Basic"
+                      isLocked={currentPlanName !== 'enterprise'}
+                      requiredTier="ENTERPRISE"
                       featureName="School Library & Digital Books"
+                      customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
                     >
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
                 <div className="lg:col-span-2 space-y-6">
@@ -1639,9 +1647,10 @@ This is a system-generated official receipt.
 
             {activeTab === 'materials' && (
               <PremiumLock
-                isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
-                requiredTier="Pro"
+                isLocked={currentPlanName !== 'enterprise'}
+                requiredTier="ENTERPRISE"
                 featureName="Premium Learning Resources"
+                customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
               >
                 <GlassCard className="space-y-6">
                   <div className="border-b border-slate-850 pb-3">

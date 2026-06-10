@@ -6,6 +6,7 @@ import { MessageSquare, Send, X, ArrowLeft } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import PremiumLock from './PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
+import { supabase } from '../lib/supabase';
 
 interface ChatDrawerProps {
   isOpen: boolean;
@@ -53,6 +54,30 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
       loadContacts();
     }
   }, [isOpen, session]);
+
+  useEffect(() => {
+    if (!session || !isOpen) return;
+
+    const channel = supabase
+      .channel(`chat-messages-realtime-${session.user.id}`)
+      .on('postgres_changes', { 
+        event: '*', 
+        schema: 'public', 
+        table: 'messages'
+      }, async (payload) => {
+        console.log('Realtime message update detected! Syncing...', payload);
+        await mockApi.syncChatMessagesData(session.user.id);
+        loadContacts();
+        if (activeContact) {
+          loadMessages(activeContact.id);
+        }
+      })
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [session, isOpen, activeContact]);
 
   useEffect(() => {
     if (activeContact) {
@@ -129,6 +154,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
             isLocked={currentPlanName !== 'enterprise'} 
             requiredTier="Enterprise" 
             featureName="Direct Messaging"
+            customMessage="Direct Messaging Channels are available only under the Enterprise Subscription."
           >
             {!activeContact ? (
             // Contact list
