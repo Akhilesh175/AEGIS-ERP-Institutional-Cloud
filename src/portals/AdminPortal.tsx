@@ -132,6 +132,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [wPassword, setWPassword] = useState('');
   const [wIsActive, setWIsActive] = useState(true);
   const [wAssignedLocations, setWAssignedLocations] = useState<any[]>([]);
+  const [wDesignation, setWDesignation] = useState('');
+  const [wJoiningDate, setWJoiningDate] = useState(new Date().toISOString().split('T')[0]);
 
   // Assigned Locations Selector States
   const [wlHostelId, setWlHostelId] = useState('');
@@ -1449,6 +1451,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     setWPassword('');
     setWIsActive(true);
     setWAssignedLocations([]);
+    setWDesignation('');
+    setWJoiningDate(new Date().toISOString().split('T')[0]);
     setWlHostelId('');
     setWlBlockId('');
     setWlFloor('');
@@ -1470,7 +1474,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           gender: wGender,
           address: wAddress,
           isActive: wIsActive,
-          assignedLocations: wAssignedLocations
+          assignedLocations: wAssignedLocations,
+          designation: wDesignation,
+          joiningDate: wJoiningDate
         });
         alert('Warden profile updated successfully!');
       } else {
@@ -1491,7 +1497,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           wGender,
           wAddress || undefined,
           wAssignedLocations,
-          wIsActive
+          wIsActive,
+          wDesignation || undefined,
+          wJoiningDate || undefined
         );
         alert('Warden account created successfully!');
       }
@@ -1568,6 +1576,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     setWPassword('');
     setWIsActive(usrObj?.isActive !== false);
     setWAssignedLocations(w.assignedLocations || []);
+    setWDesignation(w.designation || '');
+    setWJoiningDate(w.joiningDate || new Date().toISOString().split('T')[0]);
   };
 
   const handleAdmitStudent = async (e: React.FormEvent) => {
@@ -7750,6 +7760,17 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             <textarea value={wAddress} onChange={e => setWAddress(e.target.value)} placeholder="Address line..." className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs h-12 resize-none" required></textarea>
                           </div>
 
+                          <div className="grid grid-cols-2 gap-3">
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Designation</label>
+                              <input type="text" value={wDesignation} onChange={e => setWDesignation(e.target.value)} placeholder="Senior Warden" className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                            <div>
+                              <label className="text-[9px] font-bold text-slate-500 uppercase">Joining Date</label>
+                              <input type="date" value={wJoiningDate} onChange={e => setWJoiningDate(e.target.value)} className="w-full bg-slate-900 border border-slate-850 text-slate-200 rounded-xl px-3 py-2 text-xs" required />
+                            </div>
+                          </div>
+
                           {/* Location Assigner Section */}
                           <div className="border-t border-slate-850 pt-3 mt-2">
                             <span className="text-[10px] font-bold text-slate-400 block mb-2">Assign Housing Locations</span>
@@ -7848,6 +7869,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                         <div className="font-semibold text-slate-200">
                                           {usrObj ? `${usrObj.firstName} ${usrObj.lastName}` : 'Warden'}
                                         </div>
+                                        {w.designation && (
+                                          <div className="text-[10px] text-brand-400 font-medium">{w.designation}</div>
+                                        )}
                                         <div className="text-[9px] text-slate-500">Username: @{w.username || usrObj?.email?.split('@')[0]}</div>
                                         <span className={`inline-block px-1.5 py-0.5 rounded text-[8px] font-bold mt-1 ${isActive ? 'bg-green-500/10 text-green-400 border border-green-500/20' : 'bg-red-500/10 text-red-400 border border-red-500/20'}`}>
                                           {isActive ? 'Active' : 'Inactive'}
@@ -7857,6 +7881,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                         <div className="font-mono text-slate-300">{w.phone || usrObj?.phone || 'No Phone'}</div>
                                         <div className="text-[10px] text-slate-400">{usrObj?.email}</div>
                                         <div className="text-[9px] text-slate-500">Emp ID: {usrObj?.employeeId || 'N/A'}</div>
+                                        {w.joiningDate && (
+                                          <div className="text-[9px] text-slate-500">Joined: {new Date(w.joiningDate).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}</div>
+                                        )}
                                       </td>
                                       <td className="p-3">
                                         {(!w.assignedLocations || w.assignedLocations.length === 0) ? (

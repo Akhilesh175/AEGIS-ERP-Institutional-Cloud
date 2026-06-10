@@ -770,12 +770,32 @@ export interface HostelWarden {
   gender?: string;
   address?: string;
   assignedLocations?: any[];
+  employeeId?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  designation?: string;
+  joiningDate?: string;
+  status?: 'ACTIVE' | 'INACTIVE';
   createdAt?: string;
   updatedAt?: string;
   createdBy?: string;
   updatedBy?: string;
   userDetails?: User;
   hostelDetails?: Hostel;
+}
+
+export interface HostelWardenAssignment {
+  id: string;
+  wardenId: string;
+  buildingId: string;
+  blockId: string | null;
+  assignedBy?: string | null;
+  assignedAt?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  wardenDetails?: HostelWarden;
+  buildingDetails?: Hostel;
+  blockDetails?: HostelBlock;
 }
 
 export interface HostelAdmission {

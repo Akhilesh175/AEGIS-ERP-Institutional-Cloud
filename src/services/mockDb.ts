@@ -443,6 +443,8 @@ class MockDatabase {
   hostelRooms: any[];
   hostelBeds: any[];
   hostelWardens: any[];
+  hostelBuildings: any[];
+  hostelWardenAssignments: any[];
   hostelAdmissions: any[];
   hostelAttendance: any[];
   hostelFees: any[];
@@ -540,6 +542,8 @@ class MockDatabase {
     this.hostelRooms = getStorage<any[]>('hostel_rooms', []);
     this.hostelBeds = getStorage<any[]>('hostel_beds', []);
     this.hostelWardens = getStorage<any[]>('hostel_wardens', []);
+    this.hostelBuildings = getStorage<any[]>('hostel_buildings', []);
+    this.hostelWardenAssignments = getStorage<any[]>('hostel_warden_assignments', []);
     this.hostelAdmissions = getStorage<any[]>('hostel_admissions', []);
     this.hostelAttendance = getStorage<any[]>('hostel_attendance', []);
     this.hostelFees = getStorage<any[]>('hostel_fees', []);
@@ -612,6 +616,8 @@ class MockDatabase {
     setStorage('hostel_rooms', this.hostelRooms);
     setStorage('hostel_beds', this.hostelBeds);
     setStorage('hostel_wardens', this.hostelWardens);
+    setStorage('hostel_buildings', this.hostelBuildings);
+    setStorage('hostel_warden_assignments', this.hostelWardenAssignments);
     setStorage('hostel_admissions', this.hostelAdmissions);
     setStorage('hostel_attendance', this.hostelAttendance);
     setStorage('hostel_fees', this.hostelFees);

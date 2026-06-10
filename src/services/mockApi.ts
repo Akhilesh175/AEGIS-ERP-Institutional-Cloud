@@ -4810,7 +4810,9 @@ export const mockApi = {
     gender?: string,
     address?: string,
     assignedLocations?: any[],
-    isActive?: boolean
+    isActive?: boolean,
+    designation?: string,
+    joiningDate?: string
   ): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
@@ -4966,6 +4968,13 @@ export const mockApi = {
         profileInsert.gender = gender || null;
         profileInsert.address = address || null;
         profileInsert.assigned_locations = assignedLocations || [];
+        profileInsert.first_name = firstName;
+        profileInsert.last_name = lastName;
+        profileInsert.email = email;
+        profileInsert.employee_id = trimmedEmployeeId || null;
+        profileInsert.status = isActive !== undefined ? (isActive ? 'ACTIVE' : 'INACTIVE') : 'ACTIVE';
+        profileInsert.designation = designation || null;
+        profileInsert.joining_date = joiningDate || new Date().toISOString().split('T')[0];
       } else {
         profileInsert.role_id = roleId;
         profileInsert.status = 'ACTIVE';
@@ -4973,12 +4982,36 @@ export const mockApi = {
         if (trimmedEmployeeId) profileInsert.employee_id = trimmedEmployeeId;
       }
 
-      const { error: profileErr } = await supabaseAdmin.from(dedicatedTable).insert(profileInsert);
+      const { data: wardenData, error: profileErr } = await supabaseAdmin.from(dedicatedTable).insert(profileInsert).select('id').single();
       if (profileErr) {
         // Rollback
         await supabaseAdmin.from('users').delete().eq('id', newUserId);
         await supabaseAdmin.auth.admin.deleteUser(newUserId);
         throw new Error('Failed to create dedicated sub-admin profile record: ' + profileErr.message);
+      }
+
+      if (role === 'WARDEN' && wardenData && assignedLocations && assignedLocations.length > 0) {
+        const assignmentRows = assignedLocations.map((loc: any) => ({
+          warden_id: wardenData.id,
+          building_id: loc.buildingId || loc.hostelId,
+          block_id: loc.blockId || null,
+          assigned_by: newUserId,
+          status: 'ACTIVE'
+        }));
+        await supabaseAdmin.from('hostel_warden_assignments').insert(assignmentRows);
+        
+        // Update mockDb cache
+        assignedLocations.forEach((loc: any) => {
+          mockDb.hostelWardenAssignments.push({
+            id: Math.random().toString(36).substring(2, 11),
+            wardenId: wardenData.id,
+            buildingId: loc.buildingId || loc.hostelId,
+            blockId: loc.blockId || null,
+            assignedBy: newUserId,
+            assignedAt: new Date().toISOString(),
+            status: 'ACTIVE'
+          });
+        });
       }
     }
 
@@ -10845,6 +10878,7 @@ export const mockApi = {
 
         if (hRes.data) {
           mockDb.hostels = hRes.data.map(x => ({ id: x.id, schoolId: x.school_id, name: x.name, type: x.type, status: x.status, createdBy: x.created_by, updatedBy: x.updated_by }));
+          mockDb.hostelBuildings = mockDb.hostels;
         }
         if (bRes.data) {
           mockDb.hostelBlocks = bRes.data.map(x => ({ id: x.id, schoolId: x.school_id, hostelId: x.hostel_id, name: x.name, status: x.status, createdBy: x.created_by, updatedBy: x.updated_by }));
@@ -10855,6 +10889,28 @@ export const mockApi = {
         if (bdRes.data) {
           mockDb.hostelBeds = bdRes.data.map(x => ({ id: x.id, schoolId: x.school_id, roomId: x.room_id, bedName: x.bed_name, status: x.status, createdBy: x.created_by, updatedBy: x.updated_by }));
         }
+
+        // Fetch warden assignments separately
+        let assignmentsRes: any = { data: null, error: null };
+        try {
+          assignmentsRes = await supabaseAdmin.from('hostel_warden_assignments').select('*, warden:hostel_wardens(*)');
+        } catch (assErr) {
+          console.warn('hostel_warden_assignments select failed, using fallback:', assErr);
+        }
+        if (assignmentsRes.data) {
+          mockDb.hostelWardenAssignments = assignmentsRes.data
+            .filter((x: any) => x.warden && x.warden.school_id === schoolId)
+            .map((x: any) => ({
+              id: x.id,
+              wardenId: x.warden_id,
+              buildingId: x.building_id,
+              blockId: x.block_id,
+              assignedBy: x.assigned_by,
+              assignedAt: x.assigned_at,
+              status: x.status
+            }));
+        }
+
         if (wRes.data) {
           // For each warden row, resolve user details from the JOIN or from a separate users query
           const wardenUserIds = wRes.data.map((x: any) => x.user_id).filter(Boolean);
@@ -10900,6 +10956,13 @@ export const mockApi = {
               gender: x.gender || '',
               address: x.address || '',
               assignedLocations: x.assigned_locations || [],
+              employeeId: x.employee_id || userDetails?.employeeId || '',
+              firstName: x.first_name || userDetails?.firstName || '',
+              lastName: x.last_name || userDetails?.lastName || '',
+              email: x.email || userDetails?.email || '',
+              designation: x.designation || '',
+              joiningDate: x.joining_date || '',
+              status: x.status || 'ACTIVE',
               userDetails: userDetails,
               createdBy: x.created_by,
               updatedBy: x.updated_by
@@ -11222,6 +11285,8 @@ export const mockApi = {
       isActive?: boolean;
       assignedLocations?: any[];
       hostelId?: string | null;
+      designation?: string;
+      joiningDate?: string;
     }
   ): Promise<void> {
     const w = mockDb.hostelWardens.find(x => x.id === id);
@@ -11239,9 +11304,45 @@ export const mockApi = {
     if (fields.gender !== undefined) updateObj.gender = fields.gender;
     if (fields.address !== undefined) updateObj.address = fields.address;
     if (fields.assignedLocations !== undefined) updateObj.assigned_locations = fields.assignedLocations;
+    if (fields.firstName !== undefined) updateObj.first_name = fields.firstName;
+    if (fields.lastName !== undefined) updateObj.last_name = fields.lastName;
+    if (fields.email !== undefined) updateObj.email = fields.email;
+    if (fields.employeeId !== undefined) updateObj.employee_id = fields.employeeId;
+    if (fields.designation !== undefined) updateObj.designation = fields.designation;
+    if (fields.joiningDate !== undefined) updateObj.joining_date = fields.joiningDate;
+    if (fields.isActive !== undefined) updateObj.status = fields.isActive ? 'ACTIVE' : 'INACTIVE';
 
     const { error: wErr } = await supabaseAdmin.from('hostel_wardens').update(updateObj).eq('id', id);
     if (wErr) throw new Error('Failed to update warden database profile: ' + wErr.message);
+
+    // Sync hostel_warden_assignments table in Supabase
+    if (fields.assignedLocations !== undefined) {
+      await supabaseAdmin.from('hostel_warden_assignments').delete().eq('warden_id', id);
+      const assignmentRows = fields.assignedLocations.map((loc: any) => ({
+        warden_id: id,
+        building_id: loc.buildingId || loc.hostelId,
+        block_id: loc.blockId || null,
+        assigned_by: operatorId,
+        status: 'ACTIVE'
+      }));
+      if (assignmentRows.length > 0) {
+        await supabaseAdmin.from('hostel_warden_assignments').insert(assignmentRows);
+      }
+      
+      // Update mockDb cache
+      mockDb.hostelWardenAssignments = mockDb.hostelWardenAssignments.filter(a => a.wardenId !== id);
+      fields.assignedLocations.forEach((loc: any) => {
+        mockDb.hostelWardenAssignments.push({
+          id: Math.random().toString(36).substring(2, 11),
+          wardenId: id,
+          buildingId: loc.buildingId || loc.hostelId,
+          blockId: loc.blockId || null,
+          assignedBy: operatorId,
+          assignedAt: new Date().toISOString(),
+          status: 'ACTIVE'
+        });
+      });
+    }
 
     // Update users table
     const userUpdate: any = {};
@@ -11262,6 +11363,13 @@ export const mockApi = {
     w.gender = fields.gender !== undefined ? fields.gender : w.gender;
     w.address = fields.address !== undefined ? fields.address : w.address;
     w.assignedLocations = fields.assignedLocations !== undefined ? fields.assignedLocations : w.assignedLocations;
+    w.firstName = fields.firstName !== undefined ? fields.firstName : w.firstName;
+    w.lastName = fields.lastName !== undefined ? fields.lastName : w.lastName;
+    w.email = fields.email !== undefined ? fields.email : w.email;
+    w.employeeId = fields.employeeId !== undefined ? fields.employeeId : w.employeeId;
+    w.designation = fields.designation !== undefined ? fields.designation : w.designation;
+    w.joiningDate = fields.joiningDate !== undefined ? fields.joiningDate : w.joiningDate;
+    w.status = fields.isActive !== undefined ? (fields.isActive ? 'ACTIVE' : 'INACTIVE') : w.status;
     w.updatedBy = operatorId || undefined;
 
     const usrObj = mockDb.users.find(u => u.id === w.userId);
@@ -11297,6 +11405,7 @@ export const mockApi = {
     // Sync cache
     mockDb.users = mockDb.users.filter(u => u.id !== w.userId);
     mockDb.hostelWardens = mockDb.hostelWardens.filter(x => x.id !== id);
+    mockDb.hostelWardenAssignments = mockDb.hostelWardenAssignments.filter(x => x.wardenId !== id);
     mockDb.saveAll();
     this.clearHostelCache(w.schoolId);
   },
