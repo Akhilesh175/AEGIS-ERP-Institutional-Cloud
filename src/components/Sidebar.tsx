@@ -154,7 +154,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'hostel', label: 'Hostel Registry', icon: Home, locked: planName !== 'enterprise' },
           { id: 'communications', label: 'Communication Center', icon: Mail, locked: planName === 'freemium' },
           { id: 'analytics', label: 'Institutional Analytics', icon: Activity, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: planName !== 'enterprise' },
+          { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: planName !== 'enterprise' && planName !== 'pro' },
           { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database, locked: planName !== 'enterprise' },
           { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
           { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert }
