@@ -648,6 +648,11 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_assignments' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_attendance' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'school_subscriptions' }, () => {
+        console.log('Realtime school_subscriptions change detected in teacher portal, refreshing plan...');
+        syncSubscriptionPlan();
+        handleAcademicSync();
+      })
       .subscribe();
 
     return () => {
@@ -1594,8 +1599,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
           {managedClasses.length > 0 && (
             <PremiumLock
-              isLocked={currentPlanName !== 'enterprise'}
-              requiredTier="Enterprise"
+              isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+              requiredTier="Pro"
               featureName="Class Teacher Hub (Timetables, Students, Parents)"
             >
               <GlassCard className="space-y-6 animate-fade-in border-brand-500/10">
@@ -2057,8 +2062,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {activeTab === 'attendance' && (
         <PremiumLock 
-          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'} 
-          requiredTier="Pro"
+          isLocked={currentPlanName === 'freemium'} 
+          requiredTier="Basic"
           featureName="School Attendance & Progress Analytics"
         >
           <div className="space-y-6 animate-fade-in">

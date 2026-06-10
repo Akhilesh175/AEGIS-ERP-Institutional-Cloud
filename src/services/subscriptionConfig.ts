@@ -46,7 +46,7 @@ export const subscriptionPlans: Record<string, SubscriptionConfig> = {
   pro: {
     features: {
       communications: true,
-      advancedAnalytics: false,
+      advancedAnalytics: true,
       billing: true,
       quizzes: true,
       auditLogs: true,

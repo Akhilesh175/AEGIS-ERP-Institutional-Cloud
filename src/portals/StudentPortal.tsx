@@ -1396,8 +1396,8 @@ Status:        OFFICIALLY PUBLISHED
 
       {activeTab === 'library' && (
         <PremiumLock
-          isLocked={currentPlanName !== 'enterprise'}
-          requiredTier="Enterprise"
+          isLocked={currentPlanName === 'freemium'}
+          requiredTier="Basic"
           featureName="School Library & Digital Books"
         >
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
@@ -1714,7 +1714,7 @@ Status:        OFFICIALLY PUBLISHED
 
       {activeTab === 'fees' && (
         <PremiumLock 
-          isLocked={false} 
+          isLocked={currentPlanName === 'freemium'} 
           requiredTier="Basic" 
           featureName="Fee Management"
         >

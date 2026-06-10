@@ -103,23 +103,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'grades', label: 'Report Cards', icon: Award },
           { id: 'materials', label: 'Materials', icon: BookOpen, locked: planName === 'freemium' || planName === 'basic' },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName !== 'enterprise' },
+          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName === 'freemium' },
           { id: 'transit', label: 'School Transit', icon: Layers, locked: planName !== 'enterprise' },
           { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: planName !== 'enterprise' },
           { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: planName === 'freemium' },
-          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: false }
+          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: planName === 'freemium' }
         ];
       }
       case 'PARENT': {
         return [
           { id: 'dashboard', label: 'Child Tracker', icon: Eye },
-          { id: 'homework', label: 'Homework', icon: BookMarked },
+          { id: 'homework', label: 'Homework', icon: BookMarked, locked: planName === 'freemium' || planName === 'basic' },
           { id: 'timetable', label: 'Class Schedule', icon: Calendar },
           { id: 'grades', label: 'Grades Progress', icon: Award },
-          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: false },
+          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: planName === 'freemium' },
           { id: 'materials', label: 'Materials', icon: BookOpen, locked: planName === 'freemium' || planName === 'basic' },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName !== 'enterprise' },
+          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName === 'freemium' },
           { id: 'transit', label: 'School Transit', icon: Layers, locked: planName !== 'enterprise' },
           { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: planName !== 'enterprise' },
           { id: 'forums', label: 'Forums', icon: MessageSquare, locked: planName === 'freemium' }
@@ -130,7 +130,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'dashboard', label: 'Classes Taught', icon: LayoutDashboard },
           { id: 'timetable', label: 'Teaching Schedule', icon: Calendar },
           { id: 'classroster', label: 'Class Roster', icon: Users, locked: planName === 'freemium' },
-          { id: 'attendance', label: 'Attendance Roll', icon: Layers, locked: planName === 'freemium' || planName === 'basic' },
+          { id: 'attendance', label: 'Attendance Roll', icon: Layers, locked: planName === 'freemium' },
           { id: 'grades', label: 'Gradebook Matrix', icon: Award },
           { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: planName === 'freemium' || planName === 'basic' },
           { id: 'analytics', label: 'Class Analytics', icon: Activity, locked: planName === 'freemium' || planName === 'basic' },
@@ -149,8 +149,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'classes', label: 'Classes & Sections', icon: Layers },
           { id: 'subjects', label: 'Subject Catalog', icon: BookMarked },
           { id: 'academicsessions', label: 'Academic Sessions', icon: Calendar },
-          { id: 'attendance', label: 'Student Attendance', icon: Layers },
-          { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: false },
+          { id: 'attendance', label: 'Student Attendance', icon: Layers, locked: planName === 'freemium' },
+          { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: planName === 'freemium' },
           { id: 'hostel', label: 'Hostel Registry', icon: Home, locked: planName !== 'enterprise' },
           { id: 'communications', label: 'Communication Center', icon: Mail, locked: planName === 'freemium' },
           { id: 'analytics', label: 'Institutional Analytics', icon: Activity, locked: planName === 'freemium' || planName === 'basic' },
@@ -168,53 +168,57 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       case 'HOSTEL_ADMIN':
       case 'WARDEN':
       case 'CUSTOM_SUB_ADMIN': {
+        const isFreemium = planName === 'freemium';
+        const isBasic = planName === 'basic';
+        const isPro = planName === 'pro';
         const isEnterprise = planName === 'enterprise';
+
         const subAdminTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
           { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard }
         ];
         
         // If billing is allowed
         if (permissions.billing) {
-          subAdminTabs.push({ id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: !isEnterprise || !plan.features.billing });
-          subAdminTabs.push({ id: 'analytics', label: 'Fee Analytics', icon: Activity, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: isFreemium });
+          subAdminTabs.push({ id: 'analytics', label: 'Fee Analytics', icon: Activity, locked: isFreemium || isBasic });
         }
         
         // If directory is allowed
         if (permissions.directory) {
-          subAdminTabs.push({ id: 'students', label: 'Student Directory', icon: Users, locked: !isEnterprise });
-          subAdminTabs.push({ id: 'teachers', label: 'Teacher Directory', icon: UsersRound, locked: !isEnterprise });
-          subAdminTabs.push({ id: 'parents', label: 'Parent Directory', icon: UsersRound, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'students', label: 'Student Directory', icon: Users, locked: isFreemium });
+          subAdminTabs.push({ id: 'teachers', label: 'Teacher Directory', icon: UsersRound, locked: isFreemium });
+          subAdminTabs.push({ id: 'parents', label: 'Parent Directory', icon: UsersRound, locked: isFreemium });
         }
         
         // If academics is allowed
         if (permissions.academics) {
-          subAdminTabs.push({ id: 'classes', label: 'Classes & Sections', icon: Layers, locked: !isEnterprise });
-          subAdminTabs.push({ id: 'subjects', label: 'Subject Catalog', icon: BookMarked, locked: !isEnterprise });
-          subAdminTabs.push({ id: 'academicsessions', label: 'Academic Sessions', icon: Calendar, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'classes', label: 'Classes & Sections', icon: Layers, locked: isFreemium });
+          subAdminTabs.push({ id: 'subjects', label: 'Subject Catalog', icon: BookMarked, locked: isFreemium });
+          subAdminTabs.push({ id: 'academicsessions', label: 'Academic Sessions', icon: Calendar, locked: isFreemium });
           if (role === 'ACADEMIC_ADMIN' || role === 'EXAM_CONTROLLER') {
-            subAdminTabs.push({ id: 'attendance', label: 'Student Attendance', icon: Layers, locked: !isEnterprise });
+            subAdminTabs.push({ id: 'attendance', label: 'Student Attendance', icon: Layers, locked: isFreemium });
           }
           if (role === 'ACADEMIC_ADMIN') {
-            subAdminTabs.push({ id: 'assignments', label: 'Homework & Assignments', icon: PenTool, locked: !isEnterprise });
+            subAdminTabs.push({ id: 'assignments', label: 'Homework & Assignments', icon: PenTool, locked: isFreemium || isBasic });
           }
         }
         
         // If grading is allowed
         if (permissions.grading) {
-          subAdminTabs.push({ id: 'marksheets', label: ' Homeroom Marksheets', icon: ClipboardList, locked: !isEnterprise });
-          subAdminTabs.push({ id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: !isEnterprise || !plan.features.quizzes });
+          subAdminTabs.push({ id: 'marksheets', label: ' Homeroom Marksheets', icon: ClipboardList, locked: isFreemium || isBasic });
+          subAdminTabs.push({ id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: isFreemium || isBasic });
         }
  
         // If books is allowed (Library)
         if (permissions.books) {
-          subAdminTabs.push({ id: 'books', label: 'Library Registry', icon: BookOpen, locked: !isEnterprise });
+          subAdminTabs.push({ id: 'books', label: 'Library Registry', icon: BookOpen, locked: isFreemium });
         }
  
         // If transport is allowed (Transport)
         if (permissions.transport) {
           subAdminTabs.push({ id: 'transport', label: 'Transit Registry', icon: Layers, locked: !isEnterprise });
         }
-
+ 
         // Hostel tab for hostel admin, warden, or dynamic permission
         if (role === 'HOSTEL_ADMIN' || role === 'WARDEN' || (permissions as any).hostel) {
           subAdminTabs.push({ id: 'hostel', label: 'Hostel Registry', icon: Home, locked: !isEnterprise });

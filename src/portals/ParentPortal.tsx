@@ -67,15 +67,15 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   const activeTab = rawActiveTab.split('/')[0];
   const { session, syncSubscriptionPlan } = useStore();
   const parentId = session?.parentId;
-  
   // States
   const [assignedStudents, setAssignedStudents] = useState<(Student & { userDetails: User; className: string })[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
+  const [schoolSubscriptionPlan, setSchoolSubscriptionPlan] = useState<string>('freemium');
   
   // Dynamically resolve school subscription plan from selected student's school context
   const studentObj = mockDb.students.find(s => s.id === selectedStudent);
   const studentSchool = studentObj ? mockDb.schools.find(sch => sch.id === studentObj.schoolId) : null;
-  const currentPlanName = studentSchool?.subscriptionPlan || session?.schoolSubscriptionPlan || 'freemium';
+  const currentPlanName = (schoolSubscriptionPlan || studentSchool?.subscriptionPlan || session?.schoolSubscriptionPlan || 'freemium').toLowerCase();
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
   const [academicRecord, setAcademicRecord] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
@@ -171,6 +171,15 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
       setLoading(true);
       setError(null);
       setMaterialsLoading(true);
+      
+      const studentObj = mockDb.students.find(s => s.id === selectedStudent);
+      if (studentObj) {
+        const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(studentObj.schoolId);
+        if (livePlan) {
+          setSchoolSubscriptionPlan(livePlan.toLowerCase());
+        }
+      }
+
       const data = await mockApi.parentGetStudentAcademicRecord(parentId, selectedStudent);
       
       // Deduplicate lists inside data
@@ -186,7 +195,6 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
       // Deduplicate quizzes by quiz.id
       setQuizzes(Array.from(new Map(qz.map(item => [item.quiz.id, item])).values()));
       
-      const studentObj = mockDb.students.find(s => s.id === selectedStudent);
       if (studentObj) {
         const mat = await mockApi.getStudyMaterials(studentObj.schoolId, studentObj.classId).catch(() => []);
         // Deduplicate study materials by id
@@ -1290,7 +1298,7 @@ Status:        OFFICIALLY PUBLISHED
 
             {activeTab === 'fees' && (
               <PremiumLock 
-                isLocked={false} 
+                isLocked={currentPlanName === 'freemium'} 
                 requiredTier="Basic" 
                 featureName="Fee Management"
               >
@@ -1365,8 +1373,8 @@ This is a system-generated official receipt.
             )}
                   {activeTab === 'library' && (
                     <PremiumLock
-                      isLocked={currentPlanName !== 'enterprise'}
-                      requiredTier="Enterprise"
+                      isLocked={currentPlanName === 'freemium'}
+                      requiredTier="Basic"
                       featureName="School Library & Digital Books"
                     >
                       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">

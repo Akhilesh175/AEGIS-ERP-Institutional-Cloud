@@ -190,17 +190,27 @@ const SUPER_ADMIN_EMAIL = 'jy7018080@gmail.com';
 // Dynamic cache for student attendance analytics to prevent portal lag
 export const attendanceAnalyticsCache: Record<string, { timestamp: number; data: any[] }> = {};
 
+const PLAN_HIERARCHY: Record<string, number> = {
+  freemium: 0,
+  basic: 1,
+  pro: 2,
+  enterprise: 3
+};
+
 export const mockApi = {
   async validateEnterpriseSubscription(schoolId: string, featureName: string): Promise<void> {
-    const livePlan = await this.getLiveSchoolSubscriptionPlan(schoolId);
-    if (!livePlan || livePlan.toLowerCase() !== 'enterprise') {
+    const livePlan = (await this.getLiveSchoolSubscriptionPlan(schoolId) || 'freemium').toLowerCase();
+    const liveLevel = PLAN_HIERARCHY[livePlan] ?? 0;
+    if (liveLevel < 3) {
       throw new Error(`Security Policy Violation: Accessing ${featureName} requires an active Enterprise Tier subscription.`);
     }
   },
 
   async validateSubscriptionFeature(schoolId: string, featureName: string, allowedPlans: string[]): Promise<void> {
     const livePlan = (await this.getLiveSchoolSubscriptionPlan(schoolId) || 'freemium').toLowerCase();
-    if (!allowedPlans.map(p => p.toLowerCase()).includes(livePlan)) {
+    const liveLevel = PLAN_HIERARCHY[livePlan] ?? 0;
+    const minRequiredLevel = Math.min(...allowedPlans.map(p => PLAN_HIERARCHY[p.toLowerCase()] ?? 0));
+    if (liveLevel < minRequiredLevel) {
       throw new Error(`Security Policy Violation: Accessing ${featureName} requires an active ${allowedPlans.map(p => p.toUpperCase()).join('/')} Tier subscription.`);
     }
   },
@@ -2592,12 +2602,7 @@ export const mockApi = {
   // ==========================================
 
   async verifySchoolFeature(schoolId: string, feature: string): Promise<void> {
-    const { data: dbSchool } = await supabaseAdmin
-      .from('schools')
-      .select('subscription_plan')
-      .eq('id', schoolId)
-      .maybeSingle();
-    const planName = dbSchool?.subscription_plan?.toLowerCase() || 'freemium';
+    const planName = (await this.getLiveSchoolSubscriptionPlan(schoolId) || 'freemium').toLowerCase();
     const plan = subscriptionPlans[planName] || subscriptionPlans.freemium;
     if (!(plan.features as any)[feature]) {
       throw new Error(`Security Policy Alert: The requested feature (${String(feature)}) is locked under your institution's current "${planName.toUpperCase()}" subscription plan. Please upgrade to a higher tier.`);
@@ -2609,14 +2614,9 @@ export const mockApi = {
     if (!teacher) throw new Error('Teacher not found.');
     const schoolId = teacher.schoolId;
     if (!schoolId) throw new Error('Teacher has no school association.');
-    const { data: dbSchool } = await supabaseAdmin
-      .from('schools')
-      .select('subscription_plan')
-      .eq('id', schoolId)
-      .maybeSingle();
-    const planName = dbSchool?.subscription_plan?.toLowerCase() || 'freemium';
-    if (planName !== 'enterprise') {
-      throw new Error('Class Teacher Hub features are only available in the Enterprise subscription plan.');
+    const planName = await this.getLiveSchoolSubscriptionPlan(schoolId);
+    if (planName !== 'pro' && planName !== 'enterprise') {
+      throw new Error('Class Teacher Hub features are only available in Pro and Enterprise subscription plans.');
     }
   },
 
@@ -4819,9 +4819,9 @@ export const mockApi = {
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
 
-    const { data: schoolObj } = await supabaseAdmin.from('schools').select('subscription_plan').eq('id', schoolId).single();
-    if (schoolObj?.subscription_plan?.toLowerCase() !== 'enterprise') {
-      throw new Error('Provisioning sub-admin operators requires an active Enterprise Subscription plan.');
+    const planName = await this.getLiveSchoolSubscriptionPlan(schoolId);
+    if (planName !== 'pro' && planName !== 'enterprise') {
+      throw new Error('Provisioning sub-admin operators requires an active Pro or Enterprise Subscription plan.');
     }
 
     const normalizedEmail = validateAndNormalizeEmail(email);
@@ -5086,9 +5086,9 @@ export const mockApi = {
     const schoolId = admin.school_id;
     if (!schoolId) throw new Error('Admin has no associated school');
 
-    const { data: schoolObj } = await supabaseAdmin.from('schools').select('subscription_plan').eq('id', schoolId).single();
-    if (schoolObj?.subscription_plan?.toLowerCase() !== 'enterprise') {
-      throw new Error('Modifying sub-admin operators requires an active Enterprise Subscription plan.');
+    const planName = await this.getLiveSchoolSubscriptionPlan(schoolId);
+    if (planName !== 'pro' && planName !== 'enterprise') {
+      throw new Error('Modifying sub-admin operators requires an active Pro or Enterprise Subscription plan.');
     }
 
     const normalizedEmail = validateAndNormalizeEmail(email);
@@ -6901,26 +6901,27 @@ export const mockApi = {
     const { error } = await supabaseAdmin.from('schools').update({ subscription_plan: subscriptionPlan }).eq('id', schoolId);
     if (error) throw new Error('Failed to update school subscription: ' + error.message);
     
-    const isEnterprise = subscriptionPlan.toLowerCase() === 'enterprise';
     try {
-      if (isEnterprise) {
+      // 1. Deactivate all existing plans for the school
+      await supabaseAdmin
+        .from('school_subscriptions')
+        .update({ status: 'INACTIVE' })
+        .eq('school_id', schoolId);
+
+      // 2. If the new plan is a paid plan, upsert it as ACTIVE
+      const upperPlan = subscriptionPlan.toUpperCase();
+      if (['BASIC', 'PRO', 'ENTERPRISE'].includes(upperPlan)) {
         const oneYearLaterStr = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
         await supabaseAdmin
           .from('school_subscriptions')
           .upsert({
             school_id: schoolId,
-            plan: 'ENTERPRISE',
+            plan: upperPlan,
             status: 'ACTIVE',
             expiry_date: oneYearLaterStr
           }, {
             onConflict: 'school_id,plan'
           });
-      } else {
-        await supabaseAdmin
-          .from('school_subscriptions')
-          .update({ status: 'INACTIVE' })
-          .eq('school_id', schoolId)
-          .eq('plan', 'ENTERPRISE');
       }
     } catch (e) {
       console.warn('Failed to update school_subscriptions table in Supabase:', e);
@@ -8181,16 +8182,108 @@ export const mockApi = {
     }
   },
 
+  async validateTransportAction(
+    schoolId: string,
+    action: 'create' | 'update' | 'delete' | 'assign' | 'configure',
+    targetId?: string,
+    oldData?: any,
+    newData?: any
+  ): Promise<void> {
+    const activeUser = getActiveUser();
+    if (!activeUser) {
+      throw new Error('Security Policy Alert: No active session found.');
+    }
+    
+    const role = activeUser.role;
+    
+    if (role === 'SUPER_ADMIN' || role === 'ADMIN') {
+      return;
+    }
+
+    if (role === 'FINANCE_ADMIN' || role === 'ACADEMIC_ADMIN') {
+      await this.writeAuditLog(
+        activeUser.id,
+        null,
+        schoolId,
+        'TRANSPORT',
+        `UNAUTHORIZED_${action.toUpperCase()}_ATTEMPT`,
+        targetId,
+        oldData,
+        { role, action, error: 'You do not have permission to modify transport data.' }
+      );
+      throw new Error('You do not have permission to modify transport data.');
+    }
+
+    try {
+      const { data: dbRole } = await supabaseAdmin
+        .from('roles')
+        .select('id')
+        .eq('school_id', schoolId)
+        .eq('role_code', role)
+        .maybeSingle();
+        
+      if (dbRole) {
+        const { data: perm } = await supabaseAdmin
+          .from('role_permissions')
+          .select('*')
+          .eq('role_id', dbRole.id)
+          .eq('module_name', 'transport')
+          .maybeSingle();
+
+        if (perm) {
+          const hasPerm = 
+            (action === 'create' && perm.can_create) ||
+            ((action === 'update' || action === 'assign' || action === 'configure') && perm.can_edit) ||
+            (action === 'delete' && perm.can_delete);
+
+          if (hasPerm) {
+            return;
+          }
+        }
+      }
+    } catch (err) {
+      console.error('Database permission check failed:', err);
+    }
+
+    if (role === 'TRANSPORT_MANAGER') {
+      return;
+    }
+
+    await this.writeAuditLog(
+      activeUser.id,
+      null,
+      schoolId,
+      'TRANSPORT',
+      `UNAUTHORIZED_${action.toUpperCase()}_ATTEMPT`,
+      targetId,
+      oldData,
+      { role, action, error: 'You do not have permission to modify transport data.' }
+    );
+    throw new Error('You do not have permission to modify transport data.');
+  },
+
+  async logTransportAuditAction(
+    schoolId: string,
+    actionType: string,
+    targetId?: string,
+    oldData?: any,
+    newData?: any
+  ): Promise<void> {
+    const activeUser = getActiveUser();
+    if (activeUser) {
+      await this.writeAuditLog(activeUser.id, null, schoolId, 'TRANSPORT', actionType, targetId, oldData, newData);
+    }
+  },
+
   async getLiveSchoolSubscriptionPlan(schoolId: string): Promise<string | null> {
     if (!schoolId) return null;
     try {
-      // 1. Query the school_subscriptions table for active enterprise plan
+      // 1. Query the school_subscriptions table for active plan
       const todayStr = new Date().toISOString().split('T')[0];
       const { data: activeSub, error: subError } = await supabaseAdmin
         .from('school_subscriptions')
         .select('*')
         .eq('school_id', schoolId)
-        .eq('plan', 'ENTERPRISE')
         .eq('status', 'ACTIVE')
         .gte('expiry_date', todayStr)
         .limit(1)
@@ -8199,7 +8292,7 @@ export const mockApi = {
       let plan = 'freemium';
       
       if (!subError && activeSub) {
-        plan = 'enterprise';
+        plan = activeSub.plan.toLowerCase();
       } else {
         // Fallback: Query schools table
         const { data: dbSchool } = await supabaseAdmin
@@ -8209,9 +8302,7 @@ export const mockApi = {
           .maybeSingle();
           
         if (dbSchool) {
-          const basePlan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
-          // Force downgrade if schools table says enterprise but there is no active subscription in school_subscriptions!
-          plan = basePlan === 'enterprise' ? 'pro' : basePlan;
+          plan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
         }
       }
       
@@ -8703,7 +8794,7 @@ export const mockApi = {
   },
 
   async fetchBookInventory(schoolId: string): Promise<any[]> {
-    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     const { data, error } = await supabaseAdmin
       .from('book_inventory')
       .select('*')
@@ -8730,7 +8821,7 @@ export const mockApi = {
   },
 
   async fetchDigitalLibraryAssets(schoolId: string): Promise<any[]> {
-    await this.validateSubscriptionFeature(schoolId, 'Digital Library Resources', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Digital Library Resources', ['basic', 'pro', 'enterprise']);
     const { data, error } = await supabaseAdmin
       .from('digital_library_assets')
       .select('*')
@@ -8788,6 +8879,7 @@ export const mockApi = {
   },
 
   async createDriver(schoolId: string, sessionId: string, name: string, licenseNumber: string, phone: string): Promise<void> {
+    await this.validateTransportAction(schoolId, 'create', undefined, undefined, { name, licenseNumber, phone });
     await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const resolvedSessionId = (sessionId && isUUID(sessionId)) ? sessionId : null;
@@ -8812,6 +8904,7 @@ export const mockApi = {
       });
       mockDb.saveAll();
     }
+    await this.logTransportAuditAction(schoolId, 'CREATE_DRIVER', undefined, undefined, { name, licenseNumber, phone });
   },
 
   async fetchPickupPoints(schoolId: string): Promise<any[]> {
@@ -8882,11 +8975,13 @@ export const mockApi = {
   },
 
   async createVehicleLog(schoolId: string, sessionId: string, busId: string, logType: string, description: string, amount: number): Promise<void> {
+    await this.validateTransportAction(schoolId, 'create', undefined, undefined, { busId, logType, description, amount });
     await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const validBusId = (busId && isUUID(busId)) ? busId : null;
     const validSessionId = (sessionId && isUUID(sessionId)) ? sessionId : null;
 
+    let localLogId = 'vl-' + Math.random().toString(36).substr(2, 9);
     const { data, error } = await supabaseAdmin.from('vehicle_logs').insert({
       school_id: schoolId,
       academic_session_id: validSessionId,
@@ -8898,7 +8993,7 @@ export const mockApi = {
 
     if (error) {
       const localLog = {
-        id: 'vl-' + Math.random().toString(36).substr(2, 9),
+        id: localLogId,
         schoolId,
         busId,
         logType: logType as any,
@@ -8909,6 +9004,7 @@ export const mockApi = {
       mockDb.vehicleLogs.push(localLog);
       mockDb.saveAll();
     } else if (data) {
+      localLogId = data.id;
       const mapped = {
         id: data.id,
         schoolId: data.school_id,
@@ -8922,14 +9018,22 @@ export const mockApi = {
       mockDb.vehicleLogs.push(mapped);
       mockDb.saveAll();
     }
+    await this.logTransportAuditAction(schoolId, 'CREATE_VEHICLE_LOG', localLogId, undefined, { busId, logType, description, amount });
   },
 
   async deleteVehicleLog(id: string): Promise<void> {
+    const log = mockDb.vehicleLogs.find(vl => vl.id === id);
+    if (log) {
+      await this.validateTransportAction(log.schoolId, 'delete', id, log);
+    }
     await supabaseAdmin.from('vehicle_logs').delete().eq('id', id);
     const idx = mockDb.vehicleLogs.findIndex(vl => vl.id === id);
     if (idx !== -1) {
       mockDb.vehicleLogs.splice(idx, 1);
       mockDb.saveAll();
+    }
+    if (log) {
+      await this.logTransportAuditAction(log.schoolId, 'DELETE_VEHICLE_LOG', id, log);
     }
   },
 
@@ -8962,10 +9066,12 @@ export const mockApi = {
   },
 
   async createBus(schoolId: string, numberPlate: string, capacity: number, status: string, driverId: string | null): Promise<void> {
+    await this.validateTransportAction(schoolId, 'create', undefined, undefined, { numberPlate, capacity, status, driverId });
     await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const validDriverId = (driverId && isUUID(driverId)) ? driverId : null;
 
+    let localBusId = 'bus-' + Math.random().toString(36).substr(2, 9);
     const { data, error } = await supabaseAdmin.from('buses').insert({
       school_id: schoolId,
       number_plate: numberPlate,
@@ -8995,8 +9101,9 @@ export const mockApi = {
         capacity
       }).select().single();
 
+      if (fallbackData) localBusId = fallbackData.id;
       const busObject = {
-        id: fallbackData ? fallbackData.id : ('bus-' + Math.random().toString(36).substr(2, 9)),
+        id: localBusId,
         schoolId,
         numberPlate,
         capacity,
@@ -9007,6 +9114,7 @@ export const mockApi = {
       mockDb.buses.push(busObject);
       mockDb.saveAll();
     } else if (data) {
+      localBusId = data.id;
       const busObject = {
         id: data.id,
         schoolId,
@@ -9019,11 +9127,13 @@ export const mockApi = {
       mockDb.buses.push(busObject);
       mockDb.saveAll();
     }
+    await this.logTransportAuditAction(schoolId, 'CREATE_BUS', localBusId, undefined, { numberPlate, capacity, status, driverId });
   },
 
   async deleteBus(id: string): Promise<void> {
     const bus = mockDb.buses.find(b => b.id === id);
     if (bus) {
+      await this.validateTransportAction(bus.schoolId, 'delete', id, bus);
       await this.validateSubscriptionFeature(bus.schoolId, 'School Transit', ['enterprise']);
     }
     await supabaseAdmin.from('buses').delete().eq('id', id);
@@ -9031,6 +9141,9 @@ export const mockApi = {
     if (idx !== -1) {
       mockDb.buses.splice(idx, 1);
       mockDb.saveAll();
+    }
+    if (bus) {
+      await this.logTransportAuditAction(bus.schoolId, 'DELETE_BUS', id, bus);
     }
   },
 
@@ -9066,7 +9179,9 @@ export const mockApi = {
   },
 
   async createRoute(schoolId: string, name: string, routeCode: string, startPoint: string, endPoint: string, fare: number): Promise<void> {
+    await this.validateTransportAction(schoolId, 'create', undefined, undefined, { name, routeCode, startPoint, endPoint, fare });
     await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
+    let localRouteId = 'rt-' + Math.random().toString(36).substr(2, 9);
     const { data, error } = await supabaseAdmin.from('routes').insert({
       school_id: schoolId,
       name: `${name}::${routeCode}`,
@@ -9086,8 +9201,9 @@ export const mockApi = {
         fare
       }).select().single();
       
+      if (fallbackData) localRouteId = fallbackData.id;
       const routeObj = {
-        id: fallbackData ? fallbackData.id : ('rt-' + Math.random().toString(36).substr(2, 9)),
+        id: localRouteId,
         schoolId,
         name,
         routeCode,
@@ -9099,6 +9215,7 @@ export const mockApi = {
       mockDb.routes.push(routeObj);
       mockDb.saveAll();
     } else if (data) {
+      localRouteId = data.id;
       const parts = (data.name || '').split('::');
       const routeObj = {
         id: data.id,
@@ -9113,11 +9230,13 @@ export const mockApi = {
       mockDb.routes.push(routeObj);
       mockDb.saveAll();
     }
+    await this.logTransportAuditAction(schoolId, 'CREATE_ROUTE', localRouteId, undefined, { name, routeCode, startPoint, endPoint, fare });
   },
 
   async deleteRoute(id: string): Promise<void> {
     const route = mockDb.routes.find(r => r.id === id);
     if (route) {
+      await this.validateTransportAction(route.schoolId, 'delete', id, route);
       await this.validateSubscriptionFeature(route.schoolId, 'School Transit', ['enterprise']);
     }
     await supabaseAdmin.from('routes').delete().eq('id', id);
@@ -9125,6 +9244,9 @@ export const mockApi = {
     if (idx !== -1) {
       mockDb.routes.splice(idx, 1);
       mockDb.saveAll();
+    }
+    if (route) {
+      await this.logTransportAuditAction(route.schoolId, 'DELETE_ROUTE', id, route);
     }
   },
 
@@ -9162,6 +9284,7 @@ export const mockApi = {
   },
 
   async createTransportAssignment(schoolId: string, studentId: string, routeId: string, busId: string, pickupPointId: string): Promise<void> {
+    await this.validateTransportAction(schoolId, 'assign', undefined, undefined, { studentId, routeId, busId, pickupPointId });
     await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const validPickupPointId = (pickupPointId && isUUID(pickupPointId)) ? pickupPointId : null;
@@ -9190,6 +9313,7 @@ export const mockApi = {
     const sessionId = await this.resolveActiveSessionId(schoolId);
 
     const localId = 'ta-' + Math.random().toString(36).substr(2, 9);
+    let finalId = localId;
     const assignmentObj = {
       id: localId,
       schoolId,
@@ -9222,6 +9346,7 @@ export const mockApi = {
       }).select().single();
       
       if (retryData) {
+        finalId = retryData.id;
         const idx = mockDb.transportAssignments.findIndex(t => t.id === localId);
         if (idx !== -1) {
           mockDb.transportAssignments[idx].id = retryData.id;
@@ -9238,6 +9363,7 @@ export const mockApi = {
         });
       }
     } else if (data) {
+      finalId = data.id;
       const idx = mockDb.transportAssignments.findIndex(t => t.id === localId);
       if (idx !== -1) {
         mockDb.transportAssignments[idx].id = data.id;
@@ -9253,11 +9379,13 @@ export const mockApi = {
         status: 'UNPAID'
       });
     }
+    await this.logTransportAuditAction(schoolId, 'CREATE_TRANSPORT_ASSIGNMENT', finalId, undefined, { studentId, routeId, busId, pickupPointId });
   },
 
   async deleteTransportAssignment(id: string): Promise<void> {
     const ta = mockDb.transportAssignments.find(t => t.id === id);
     if (ta) {
+      await this.validateTransportAction(ta.schoolId, 'delete', id, ta);
       await this.validateSubscriptionFeature(ta.schoolId, 'School Transit', ['enterprise']);
     }
     await supabaseAdmin.from('transport_assignments').delete().eq('id', id);
@@ -9265,6 +9393,9 @@ export const mockApi = {
     if (idx !== -1) {
       mockDb.transportAssignments.splice(idx, 1);
       mockDb.saveAll();
+    }
+    if (ta) {
+      await this.logTransportAuditAction(ta.schoolId, 'DELETE_TRANSPORT_ASSIGNMENT', id, ta);
     }
   },
 
@@ -9279,6 +9410,7 @@ export const mockApi = {
   },
 
   async createMaintenanceLog(schoolId: string, busId: string, logDate: string, description: string, cost: number): Promise<void> {
+    await this.validateTransportAction(schoolId, 'create', undefined, undefined, { busId, logDate, description, cost });
     await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { error } = await supabaseAdmin.from('maintenance_logs').insert({
       school_id: schoolId,
@@ -9299,6 +9431,7 @@ export const mockApi = {
       });
       mockDb.saveAll();
     }
+    await this.logTransportAuditAction(schoolId, 'CREATE_MAINTENANCE_LOG', undefined, undefined, { busId, logDate, description, cost });
   },
 
   async fetchDriverSalaryPayouts(schoolId: string): Promise<DriverSalaryPayout[]> {
@@ -9461,6 +9594,7 @@ export const mockApi = {
   },
 
   async markDriverAttendance(schoolId: string, driverId: string, date: string, status: string): Promise<void> {
+    await this.validateTransportAction(schoolId, 'update', undefined, undefined, { driverId, date, status });
     await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const { error } = await supabaseAdmin.from('driver_attendance').upsert({
       school_id: schoolId,
@@ -9484,12 +9618,13 @@ export const mockApi = {
       mockDb.driverAttendance[idx].status = status as any;
     }
     mockDb.saveAll();
+    await this.logTransportAuditAction(schoolId, 'MARK_DRIVER_ATTENDANCE', undefined, undefined, { driverId, date, status });
   },
 
   // --- Admin Book CRUD ---
   async adminCreateBook(title: string, author: string, isbn: string, subject: string, totalCopies: number): Promise<void> {
     const schoolId = getAdminSchoolId();
-    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     
     const { data, error } = await supabaseAdmin.from('book_inventory').insert({
       school_id: schoolId,
@@ -9535,7 +9670,7 @@ export const mockApi = {
 
   // --- Dedicated Library CRUD ---
   async fetchBookCategories(schoolId: string): Promise<any[]> {
-    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     const { data, error } = await supabaseAdmin
       .from('book_categories')
       .select('*')
@@ -9559,7 +9694,7 @@ export const mockApi = {
   },
 
   async createBookCategory(schoolId: string, name: string, code: string, description?: string): Promise<void> {
-    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     
     // Do not pass invalid custom id prefix (book_categories.id is UUID)
     const { data, error } = await supabaseAdmin.from('book_categories').insert({
@@ -9598,7 +9733,7 @@ export const mockApi = {
   async deleteBookCategory(id: string): Promise<void> {
     const bc = mockDb.bookCategories.find(c => c.id === id);
     if (bc) {
-      await this.validateSubscriptionFeature(bc.schoolId, 'Library Books', ['enterprise']);
+      await this.validateSubscriptionFeature(bc.schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     }
     await supabaseAdmin.from('book_categories').delete().eq('id', id);
     const idx = mockDb.bookCategories.findIndex(bc => bc.id === id);
@@ -9609,7 +9744,7 @@ export const mockApi = {
   },
 
   async fetchBookIssues(schoolId: string, studentId?: string): Promise<any[]> {
-    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     let query = supabaseAdmin
       .from('book_issues')
       .select('*, book:book_inventory(*), student:students(*, userDetails:users(*))')
@@ -9653,7 +9788,7 @@ export const mockApi = {
   },
 
   async issueBook(schoolId: string, bookId: string, studentId: string, issueDate: string, dueDate: string): Promise<void> {
-    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     // Check availability - local mockDb check
     const book = mockDb.books.find(b => b.id === bookId && b.schoolId === schoolId);
     if (book && book.availableCopies <= 0) {
@@ -9732,7 +9867,7 @@ export const mockApi = {
   },
 
   async returnBook(schoolId: string, issueId: string, returnDate: string, fineAmount: number, status: string): Promise<void> {
-    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     // Find the issue record
     const issue = mockDb.bookIssues.find(bi => bi.id === issueId);
     if (!issue) throw new Error('Book issue record not found.');
@@ -9845,7 +9980,7 @@ export const mockApi = {
   },
 
   async fetchLibraryFines(schoolId: string, studentId?: string): Promise<any[]> {
-    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     let query = supabaseAdmin
       .from('library_fines')
       .select('*, issue:book_issues(*, book:book_inventory(*)), student:students(*, userDetails:users(*))')
@@ -9893,7 +10028,7 @@ export const mockApi = {
   },
 
   async payLibraryFine(schoolId: string, fineId: string): Promise<void> {
-    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     const { error } = await supabaseAdmin.from('library_fines').update({ is_paid: true, status: 'PAID' }).eq('id', fineId);
     // Always update local mockDb
     const idx = mockDb.libraryFines.findIndex(lf => lf.id === fineId);
@@ -9905,7 +10040,7 @@ export const mockApi = {
   },
 
   async waiveLibraryFine(schoolId: string, fineId: string): Promise<void> {
-    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     await supabaseAdmin.from('library_fines').update({ is_paid: true, status: 'WAIVED' }).eq('id', fineId);
     const idx = mockDb.libraryFines.findIndex(lf => lf.id === fineId);
     if (idx !== -1) {
@@ -9916,7 +10051,7 @@ export const mockApi = {
   },
 
   async createDigitalLibraryAsset(schoolId: string, title: string, author: string, fileUrl: string, fileType: string): Promise<void> {
-    await this.validateSubscriptionFeature(schoolId, 'Digital Library Resources', ['enterprise']);
+    await this.validateSubscriptionFeature(schoolId, 'Digital Library Resources', ['basic', 'pro', 'enterprise']);
     
     // Do not pass invalid custom id prefix (digital_library_assets.id is UUID)
     const { data, error } = await supabaseAdmin.from('digital_library_assets').insert({
@@ -10278,6 +10413,8 @@ export const mockApi = {
   },
 
   async createPickupPoint(schoolId: string, name: string, latitude: number, longitude: number, routeId: string): Promise<void> {
+    await this.validateTransportAction(schoolId, 'create', undefined, undefined, { name, latitude, longitude, routeId });
+    let localPpId = 'pp-' + Math.random().toString(36).substr(2, 9);
     const { error } = await supabaseAdmin.from('pickup_points').insert({
       school_id: schoolId,
       name,
@@ -10287,7 +10424,7 @@ export const mockApi = {
     });
     if (error) {
       mockDb.pickupPoints.push({
-        id: 'pp-' + Math.random().toString(36).substr(2, 9),
+        id: localPpId,
         schoolId,
         name,
         latitude,
@@ -10296,17 +10433,25 @@ export const mockApi = {
         createdAt: new Date().toISOString()
       });
       mockDb.saveAll();
+    } else {
+      // Find the created pickup point ID if possible (we can sync or leave it as localId since it falls back)
     }
+    await this.logTransportAuditAction(schoolId, 'CREATE_PICKUP_POINT', localPpId, undefined, { name, latitude, longitude, routeId });
   },
 
   async deletePickupPoint(id: string): Promise<void> {
+    const pp = mockDb.pickupPoints.find(p => p.id === id);
+    if (pp) {
+      await this.validateTransportAction(pp.schoolId, 'delete', id, pp);
+    }
     const { error } = await supabaseAdmin.from('pickup_points').delete().eq('id', id);
-    if (error) {
-      const idx = mockDb.pickupPoints.findIndex(pp => pp.id === id);
-      if (idx !== -1) {
-        mockDb.pickupPoints.splice(idx, 1);
-        mockDb.saveAll();
-      }
+    const idx = mockDb.pickupPoints.findIndex(x => x.id === id);
+    if (idx !== -1) {
+      mockDb.pickupPoints.splice(idx, 1);
+      mockDb.saveAll();
+    }
+    if (pp) {
+      await this.logTransportAuditAction(pp.schoolId, 'DELETE_PICKUP_POINT', id, pp);
     }
   },
 
@@ -10490,6 +10635,7 @@ export const mockApi = {
   async updateTransportAssignment(id: string, busId: string, routeId: string, pickupPointId: string): Promise<void> {
     const ta = mockDb.transportAssignments.find(t => t.id === id);
     if (!ta) throw new Error('Transit assignment not found.');
+    await this.validateTransportAction(ta.schoolId, 'update', id, ta, { busId, routeId, pickupPointId });
     await this.validateSubscriptionFeature(ta.schoolId, 'School Transit', ['enterprise']);
 
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
@@ -10507,6 +10653,7 @@ export const mockApi = {
     mockDb.saveAll();
 
     if (error) throw new Error('Failed to update transport assignment: ' + error.message);
+    await this.logTransportAuditAction(ta.schoolId, 'UPDATE_TRANSPORT_ASSIGNMENT', id, ta, { busId, routeId, pickupPointId });
   },
 
   async updateExam(id: string, name: string, term: string, startDate: string, endDate: string): Promise<void> {
@@ -10813,10 +10960,11 @@ export const mockApi = {
   },
 
   async updateHostel(id: string, name: string, type: 'BOYS' | 'GIRLS' | 'MIXED', status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    const h = mockDb.hostels.find(x => x.id === id);
+    if (h) await this.checkHostelAccess(h.schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error } = await supabaseAdmin.from('hostels').update({ name, type, status, updated_by: operatorId }).eq('id', id);
     if (error) throw new Error('Failed to update hostel: ' + error.message);
-    const h = mockDb.hostels.find(x => x.id === id);
     if (h) {
       h.name = name;
       h.type = type;
@@ -10828,9 +10976,10 @@ export const mockApi = {
   },
 
   async deleteHostel(id: string): Promise<void> {
+    const h = mockDb.hostels.find(x => x.id === id);
+    if (h) await this.checkHostelAccess(h.schoolId);
     const { error } = await supabaseAdmin.from('hostels').delete().eq('id', id);
     if (error) throw new Error('Failed to delete hostel: ' + error.message);
-    const h = mockDb.hostels.find(x => x.id === id);
     mockDb.hostels = mockDb.hostels.filter(x => x.id !== id);
     mockDb.saveAll();
     if (h) this.clearHostelCache(h.schoolId);
@@ -10855,10 +11004,11 @@ export const mockApi = {
   },
 
   async updateHostelBlock(id: string, name: string, status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    const b = mockDb.hostelBlocks.find(x => x.id === id);
+    if (b) await this.checkHostelAccess(b.schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error } = await supabaseAdmin.from('hostel_blocks').update({ name, status, updated_by: operatorId }).eq('id', id);
     if (error) throw new Error('Failed to update block: ' + error.message);
-    const b = mockDb.hostelBlocks.find(x => x.id === id);
     if (b) {
       b.name = name;
       b.status = status;
@@ -10869,9 +11019,10 @@ export const mockApi = {
   },
 
   async deleteHostelBlock(id: string): Promise<void> {
+    const b = mockDb.hostelBlocks.find(x => x.id === id);
+    if (b) await this.checkHostelAccess(b.schoolId);
     const { error } = await supabaseAdmin.from('hostel_blocks').delete().eq('id', id);
     if (error) throw new Error('Failed to delete block: ' + error.message);
-    const b = mockDb.hostelBlocks.find(x => x.id === id);
     mockDb.hostelBlocks = mockDb.hostelBlocks.filter(x => x.id !== id);
     mockDb.saveAll();
     if (b) this.clearHostelCache(b.schoolId);
@@ -10906,10 +11057,11 @@ export const mockApi = {
   },
 
   async updateHostelRoom(id: string, floor: number, roomNumber: string, status: 'ACTIVE' | 'INACTIVE'): Promise<void> {
+    const r = mockDb.hostelRooms.find(x => x.id === id);
+    if (r) await this.checkHostelAccess(r.schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error } = await supabaseAdmin.from('hostel_rooms').update({ floor, room_number: roomNumber, status, updated_by: operatorId }).eq('id', id);
     if (error) throw new Error('Failed to update room: ' + error.message);
-    const r = mockDb.hostelRooms.find(x => x.id === id);
     if (r) {
       r.floor = floor;
       r.roomNumber = roomNumber;
@@ -10921,9 +11073,10 @@ export const mockApi = {
   },
 
   async deleteHostelRoom(id: string): Promise<void> {
+    const r = mockDb.hostelRooms.find(x => x.id === id);
+    if (r) await this.checkHostelAccess(r.schoolId);
     const { error } = await supabaseAdmin.from('hostel_rooms').delete().eq('id', id);
     if (error) throw new Error('Failed to delete room: ' + error.message);
-    const r = mockDb.hostelRooms.find(x => x.id === id);
     mockDb.hostelRooms = mockDb.hostelRooms.filter(x => x.id !== id);
     mockDb.hostelBeds = mockDb.hostelBeds.filter(x => x.roomId !== id);
     mockDb.saveAll();
@@ -10954,10 +11107,11 @@ export const mockApi = {
   },
 
   async updateHostelBedStatus(id: string, status: 'VACANT' | 'OCCUPIED' | 'MAINTENANCE'): Promise<void> {
+    const b = mockDb.hostelBeds.find(x => x.id === id);
+    if (b) await this.checkHostelAccess(b.schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error } = await supabaseAdmin.from('hostel_beds').update({ status, updated_by: operatorId }).eq('id', id);
     if (error) throw new Error('Failed to update bed: ' + error.message);
-    const b = mockDb.hostelBeds.find(x => x.id === id);
     if (b) {
       b.status = status;
       mockDb.saveAll();
@@ -10966,9 +11120,10 @@ export const mockApi = {
   },
 
   async deleteHostelBed(id: string): Promise<void> {
+    const b = mockDb.hostelBeds.find(x => x.id === id);
+    if (b) await this.checkHostelAccess(b.schoolId);
     const { error } = await supabaseAdmin.from('hostel_beds').delete().eq('id', id);
     if (error) throw new Error('Failed to delete bed: ' + error.message);
-    const b = mockDb.hostelBeds.find(x => x.id === id);
     mockDb.hostelBeds = mockDb.hostelBeds.filter(x => x.id !== id);
     mockDb.saveAll();
     if (b) this.clearHostelCache(b.schoolId);
@@ -11009,12 +11164,11 @@ export const mockApi = {
       hostelId?: string | null;
     }
   ): Promise<void> {
-    const operatorId = getActiveUser()?.id || null;
-    
-    // Find the warden row to get user_id and schoolId
     const w = mockDb.hostelWardens.find(x => x.id === id);
     if (!w) throw new Error('Warden profile not found');
-
+    await this.checkHostelAccess(w.schoolId);
+    const operatorId = getActiveUser()?.id || null;
+    
     // Update hostel_wardens table
     const updateObj: any = {
       updated_by: operatorId
@@ -11067,6 +11221,7 @@ export const mockApi = {
   async deleteHostelWarden(id: string): Promise<void> {
     const w = mockDb.hostelWardens.find(x => x.id === id);
     if (!w) return;
+    await this.checkHostelAccess(w.schoolId);
 
     // Delete from users table (cascades to delete hostel_wardens)
     const { error } = await supabaseAdmin.from('users').delete().eq('id', w.userId);
@@ -11160,6 +11315,7 @@ export const mockApi = {
   async deleteHostelAdmission(id: string): Promise<void> {
     const ad = mockDb.hostelAdmissions.find(x => x.id === id);
     if (!ad) throw new Error('Admission record not found.');
+    await this.checkHostelAccess(ad.schoolId);
 
     const { error } = await supabaseAdmin.from('hostel_admissions').delete().eq('id', id);
     if (error) throw new Error('Failed to delete admission: ' + error.message);
@@ -11261,6 +11417,7 @@ export const mockApi = {
   async approveHostelLeaveRequest(id: string, approverRole: 'PARENT' | 'WARDEN' | 'HOSTEL_ADMIN' | 'SCHOOL_ADMIN', approvalStatus: 'APPROVED' | 'REJECTED' | 'HOLD', approverUserId: string): Promise<void> {
     const l = mockDb.hostelLeaveRequests.find(x => x.id === id);
     if (!l) throw new Error('Leave request not found.');
+    await this.checkHostelAccess(l.schoolId);
 
     const operatorId = getActiveUser()?.id || null;
     const updateObj: any = {};
@@ -11399,6 +11556,8 @@ export const mockApi = {
   },
 
   async updateHostelComplaint(id: string, status: 'SUBMITTED' | 'ASSIGNED' | 'RESOLVED' | 'CLOSED', assignedStaff?: string, resolutionNotes?: string): Promise<void> {
+    const c = mockDb.hostelComplaints.find(x => x.id === id);
+    if (c) await this.checkHostelAccess(c.schoolId);
     const operatorId = getActiveUser()?.id || null;
     const { error } = await supabaseAdmin.from('hostel_complaints').update({
       status,
@@ -11408,7 +11567,6 @@ export const mockApi = {
     }).eq('id', id);
 
     if (error) throw new Error('Failed to update complaint: ' + error.message);
-    const c = mockDb.hostelComplaints.find(x => x.id === id);
     if (c) {
       c.status = status;
       c.assignedStaff = assignedStaff;
@@ -11421,6 +11579,7 @@ export const mockApi = {
 
   async deleteHostelComplaint(id: string): Promise<void> {
     const c = mockDb.hostelComplaints.find(x => x.id === id);
+    if (c) await this.checkHostelAccess(c.schoolId);
     const { error } = await supabaseAdmin.from('hostel_complaints').delete().eq('id', id);
     if (error) throw new Error('Failed to delete complaint: ' + error.message);
     mockDb.hostelComplaints = mockDb.hostelComplaints.filter(x => x.id !== id);

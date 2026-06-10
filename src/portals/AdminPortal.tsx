@@ -20,8 +20,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const { session, setSession, syncSubscriptionPlan } = useStore();
   const adminId = session?.user.id;
   const isAcademicOrSchoolAdmin = session?.user.role === 'ADMIN' || session?.user.role === 'ACADEMIC_ADMIN';
+  const canManageTransport = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'ADMIN' || session?.user.role === 'TRANSPORT_MANAGER';
   const cachedSchool = session?.user.schoolId ? mockDb.schools.find(s => s.id === session.user.schoolId) : null;
-  const currentPlanName = (cachedSchool?.subscriptionPlan || session?.schoolSubscriptionPlan || 'freemium').toLowerCase();
+  const currentPlanName = (session?.schoolSubscriptionPlan || cachedSchool?.subscriptionPlan || 'freemium').toLowerCase();
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
 
   // Datasets
@@ -57,6 +58,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [studentMarks, setStudentMarks] = useState<any[]>([]);
   const [examSubjects, setExamSubjects] = useState<any[]>([]);
   const [driverSalaryPayouts, setDriverSalaryPayouts] = useState<DriverSalaryPayout[]>([]);
+  const [transportFeeRecords, setTransportFeeRecords] = useState<any[]>([]);
+  const [transportSubTab, setTransportSubTab] = useState<'fleet' | 'staff' | 'financials'>(
+    session?.user.role === 'FINANCE_ADMIN' ? 'financials' : 'fleet'
+  );
   const [disbursingDriverId, setDisbursingDriverId] = useState<string | null>(null);
 
   // Hostel Module state variables
@@ -1079,7 +1084,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
         try {
           const [
             perms, ops, logs, inv, rc, dr, pk, da,
-            busList, routeList, assignmentList, maintList, drAttList,
+            busList, routeList, assignmentList, maintList, drAttList, tfrList,
             categoryList, issueList, fineList, exList, exResList, qResList,
             marksList, examSubList, payoutList, booksList,
             hList, hbList, hrList, hbedList, hwList, hadmList, hattList, hfeeList, hpayList, hleaveList, hvisList, hcompList, hmenuList
@@ -1097,6 +1102,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
             mockApi.fetchTransportAssignments(session.user.schoolId),
             mockApi.fetchMaintenanceLogs(session.user.schoolId),
             mockApi.fetchDriverAttendance(session.user.schoolId),
+            mockApi.fetchTransportFeeRecords(session.user.schoolId),
             mockApi.fetchBookCategories(session.user.schoolId),
             mockApi.fetchBookIssues(session.user.schoolId),
             mockApi.fetchLibraryFines(session.user.schoolId),
@@ -1136,6 +1142,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           const uniqueMaint = Array.from(new Map((maintList || []).map((m: any) => [m.id, m])).values());
           const uniqueDrAtt = Array.from(new Map((drAttList || []).map((da: any) => [da.id, da])).values());
           const uniquePayouts = Array.from(new Map((payoutList || []).map((p: any) => [p.id, p])).values());
+          const uniqueTfr = Array.from(new Map((tfrList || []).map((t: any) => [t.id, t])).values());
           
           const uniqueCategories = Array.from(new Map((categoryList || []).map((c: any) => [c.id, c])).values());
           const uniqueIssues = Array.from(new Map((issueList || []).map((i: any) => [i.id, i])).values());
@@ -1167,6 +1174,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           setMaintenanceLogs(uniqueMaint);
           setDriverAttendanceList(uniqueDrAtt);
           setDriverSalaryPayouts(uniquePayouts);
+          setTransportFeeRecords(uniqueTfr);
           setBookCategories(uniqueCategories);
           setBookIssues(uniqueIssues);
           setLibraryFines(uniqueFines);
@@ -1711,6 +1719,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   // --- Transport Handlers ---
   const handleCreateBus = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageTransport) {
+      alert('You do not have permission to manage transport registry.');
+      return;
+    }
     if (!session?.user.schoolId || !busPlate.trim()) return;
     try {
       await mockApi.createBus(session.user.schoolId, busPlate.trim(), busCapacity, busStatus, busDriverId || null);
@@ -1726,6 +1738,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleDeleteBus = async (id: string) => {
+    if (!canManageTransport) {
+      alert('You do not have permission to manage transport registry.');
+      return;
+    }
     if (!window.confirm('Delete this bus?')) return;
     try {
       await mockApi.deleteBus(id);
@@ -1737,6 +1753,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
   const handleCreateRoute = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageTransport) {
+      alert('You do not have permission to manage transport routes.');
+      return;
+    }
     if (!session?.user.schoolId || !rtName.trim() || !rtCode.trim()) return;
     try {
       await mockApi.createRoute(session.user.schoolId, rtName.trim(), rtCode.trim(), rtStart.trim(), rtEnd.trim(), rtFare);
@@ -1753,6 +1773,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleDeleteRoute = async (id: string) => {
+    if (!canManageTransport) {
+      alert('You do not have permission to manage transport routes.');
+      return;
+    }
     if (!window.confirm('Delete this route?')) return;
     try {
       await mockApi.deleteRoute(id);
@@ -1764,6 +1788,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
   const handleCreatePickupPoint = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageTransport) {
+      alert('You do not have permission to manage transit stops.');
+      return;
+    }
     if (!session?.user.schoolId || !ppName.trim() || !ppRouteId) return;
     try {
       await mockApi.createPickupPoint(
@@ -1785,6 +1813,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleDeletePickupPoint = async (id: string) => {
+    if (!canManageTransport) {
+      alert('You do not have permission to manage transit stops.');
+      return;
+    }
     if (!window.confirm('Delete this pickup point?')) return;
     try {
       await mockApi.deletePickupPoint(id);
@@ -1796,6 +1828,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
   const handleRegisterDriver = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageTransport) {
+      alert('You do not have permission to manage transit drivers.');
+      return;
+    }
     if (!session?.user.schoolId || !drName.trim() || !drLicense.trim()) return;
     try {
       await mockApi.createDriver(session.user.schoolId, session.user.academicSessionId || '', drName.trim(), drLicense.trim(), drPhone.trim());
@@ -1811,6 +1847,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
   const handleCreateTransportAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageTransport) {
+      alert('You do not have permission to assign transit stops.');
+      return;
+    }
     if (!session?.user.schoolId || !taStudentId || !taRouteId || !taBusId || !taPickupPointId) return;
     try {
       await mockApi.createTransportAssignment(session.user.schoolId, taStudentId, taRouteId, taBusId, taPickupPointId);
@@ -1826,6 +1866,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleDeleteTransportAssignment = async (id: string) => {
+    if (!canManageTransport) {
+      alert('You do not have permission to delete transit stop assignments.');
+      return;
+    }
     if (!window.confirm('Remove student transport assignment?')) return;
     try {
       await mockApi.deleteTransportAssignment(id);
@@ -1837,6 +1881,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
   const handleCreateMaintenanceLog = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageTransport) {
+      alert('You do not have permission to log maintenance expenses.');
+      return;
+    }
     if (!session?.user.schoolId || !maintBusId || !maintDesc.trim() || maintCost <= 0) return;
     try {
       await mockApi.createMaintenanceLog(session.user.schoolId, maintBusId, maintDate || new Date().toISOString().split('T')[0], maintDesc.trim(), maintCost);
@@ -1851,6 +1899,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleMarkDriverAttendance = async (driverId: string, status: string) => {
+    if (!canManageTransport) {
+      alert('You do not have permission to update driver attendance.');
+      return;
+    }
     if (!session?.user.schoolId) return;
     try {
       const todayStr = new Date().toISOString().split('T')[0];
@@ -1949,6 +2001,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
   const handleUpdateTransportAssignment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!canManageTransport) {
+      alert('You do not have permission to update transit stop assignments.');
+      return;
+    }
     if (!editingTransportAssignment) return;
     try {
       await mockApi.updateTransportAssignment(editingTransportAssignment.id, editTaBusId, editTaRouteId, editTaPickupPointId);
@@ -2668,6 +2724,21 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       alert(err.message || 'Error disbursing salary');
     } finally {
       setDisbursingDriverId(null);
+    }
+  };
+
+  const handleToggleTransportFeePayment = async (id: string, currentStatus: string) => {
+    const canToggleFeeStatus = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN';
+    if (!canToggleFeeStatus) {
+      alert('You do not have permission to modify fee payment status.');
+      return;
+    }
+    try {
+      await mockApi.toggleTransportFeePayment(id, currentStatus);
+      loadData();
+      alert('Payment status updated successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to update payment status');
     }
   };
 
@@ -5263,9 +5334,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
       {/* ── 1. EMAIL & SMS COMMUNICATION CENTER ── */}
       {activeTab === 'communications' && (
-        currentPlanName !== 'enterprise' ? (
+        currentPlanName === 'freemium' ? (
           <div className="max-w-lg mx-auto py-12 text-center animate-fade-in">
-            <PremiumLock isLocked={true} requiredTier="enterprise" featureName="Email & SMS Communication Center">
+            <PremiumLock isLocked={true} requiredTier="Basic" featureName="Email & SMS Communication Center">
               <div />
             </PremiumLock>
           </div>
@@ -6633,387 +6704,706 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
       {activeTab === 'transport' && (
         <PremiumLock 
-          isLocked={currentPlanName === 'freemium'} 
-          requiredTier="Basic" 
+          isLocked={currentPlanName !== 'enterprise'} 
+          requiredTier="Enterprise" 
           featureName="Transit & Transport Management"
         >
           <div className="space-y-6 animate-fade-in text-xs">
             {/* Header */}
             <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
-            <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
-                <Layers className="text-brand-400" size={20} />
+              <div className="flex items-center gap-3">
+                <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                  <Layers className="text-brand-400" size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-100 text-sm">School Transit & Transport Management</h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Manage the transit fleet, plan bus routes, log maintenance costs, assign student stops, and check driver attendance.</p>
+                </div>
               </div>
-              <div>
-                <h3 className="font-bold text-slate-100 text-sm">School Transit & Transport Management</h3>
-                <p className="text-[10px] text-slate-400 mt-0.5">Manage the transit fleet, plan bus routes, log maintenance costs, assign student stops, and check driver attendance.</p>
-              </div>
-            </div>
-          </GlassCard>
-
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-            {/* COLUMN 1: Fleet Manager & Maintenance */}
-            <div className="space-y-6">
-              <GlassCard className="space-y-4">
-                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                  <Layers className="text-brand-400" size={15} />
-                  Buses Fleet Registry
-                </h4>
-                <form onSubmit={handleCreateBus} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Register New Vehicle</p>
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Plate Number</label>
-                    <input type="text" placeholder="e.g. MH-12-AB-3456" value={busPlate} onChange={(e) => setBusPlate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">Capacity</label>
-                      <input type="number" value={busCapacity} onChange={(e) => setBusCapacity(parseInt(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">Status</label>
-                      <select value={busStatus} onChange={(e) => setBusStatus(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
-                        <option value="ACTIVE">Active</option>
-                        <option value="MAINTENANCE">Maintenance</option>
-                        <option value="INACTIVE">Inactive</option>
-                      </select>
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Assigned Driver</label>
-                    <select value={busDriverId} onChange={(e) => setBusDriverId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
-                      <option value="">-- No Driver --</option>
-                      {driversList.map(d => (
-                        <option key={d.id} value={d.id}>{d.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Add Bus</button>
-                </form>
-
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {buses.map(b => {
-                    const dr = driversList.find(d => d.id === b.driverId);
-                    return (
-                      <div key={b.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-slate-200">{b.numberPlate}</p>
-                          <p className="text-[9px] text-slate-400">Cap: {b.capacity} seats | Driver: {dr ? dr.name : 'Unassigned'}</p>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${b.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{b.status}</span>
-                          <button onClick={() => handleDeleteBus(b.id)} className="p-1 rounded hover:bg-red-500/10 text-slate-500 hover:text-red-400"><Trash2 size={12} /></button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </GlassCard>
-
-              <GlassCard className="space-y-4">
-                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                  <Sliders className="text-brand-400" size={15} />
-                  Maintenance Expense Log
-                </h4>
-                <form onSubmit={handleCreateMaintenanceLog} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Bus</label>
-                    <select value={maintBusId} onChange={(e) => setMaintBusId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
-                      <option value="">-- Choose Bus --</option>
-                      {buses.map(b => (
-                        <option key={b.id} value={b.id}>{b.numberPlate}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">Date</label>
-                      <input type="date" value={maintDate} onChange={(e) => setMaintDate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">Cost ($)</label>
-                      <input type="number" value={maintCost} onChange={(e) => setMaintCost(parseFloat(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                    </div>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Work Description</label>
-                    <input type="text" placeholder="e.g. Brake replacement" value={maintDesc} onChange={(e) => setMaintDesc(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                  </div>
-                  <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Log Expense</button>
-                </form>
-
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {maintenanceLogs.map(ml => {
-                    const bus = buses.find(b => b.id === ml.busId);
-                    return (
-                      <div key={ml.id} className="p-2 bg-slate-900/30 border border-slate-850/50 rounded-lg flex justify-between text-[10px]">
-                        <div>
-                          <p className="font-semibold text-slate-300">{ml.description}</p>
-                          <p className="text-[8px] text-slate-500">Bus: {bus ? bus.numberPlate : 'Unknown'} | Date: {ml.logDate}</p>
-                        </div>
-                        <p className="font-mono text-brand-400 font-bold">${Number(ml.cost).toFixed(2)}</p>
-                      </div>
-                    );
-                  })}
-                </div>
-              </GlassCard>
-            </div>
-
-            {/* COLUMN 2: Driver Register, Attendance, and Routing */}
-            <div className="space-y-6">
-              <GlassCard className="space-y-4">
-                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                  <UsersRound className="text-brand-400" size={15} />
-                  Driver Registry & Daily Attendance
-                </h4>
-                <form onSubmit={handleRegisterDriver} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
-                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Register New Driver</p>
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Name</label>
-                    <input type="text" placeholder="Full name" value={drName} onChange={(e) => setDrName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                  </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">License Number</label>
-                      <input type="text" placeholder="DL-XXXX" value={drLicense} onChange={(e) => setDrLicense(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">Phone</label>
-                      <input type="text" placeholder="+1 555-..." value={drPhone} onChange={(e) => setDrPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                    </div>
-                  </div>
-                  <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Register Driver</button>
-                </form>
-
-                <div className="space-y-2 max-h-48 overflow-y-auto">
-                  {driversList.map(d => {
-                    const todayStr = new Date().toISOString().split('T')[0];
-                    const att = driverAttendanceList.find(a => a.driverId === d.id && a.date === todayStr);
-                    const status = att ? att.status : 'UNMARKED';
-                    return (
-                      <div key={d.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
-                        <div>
-                          <p className="font-bold text-slate-200">{d.name}</p>
-                          <p className="text-[9px] text-slate-400">License: {d.licenseNumber} | Phone: {d.phone}</p>
-                        </div>
-                        <div className="flex items-center gap-1.5">
-                          <button onClick={() => handleMarkDriverAttendance(d.id, 'PRESENT')} className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${status === 'PRESENT' ? 'bg-green-600 text-slate-100' : 'bg-slate-900 border border-slate-800 text-slate-400'}`}>Present</button>
-                          <button onClick={() => handleMarkDriverAttendance(d.id, 'ABSENT')} className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${status === 'ABSENT' ? 'bg-red-600 text-slate-100' : 'bg-slate-900 border border-slate-800 text-slate-400'}`}>Absent</button>
-                        </div>
-                      </div>
-                    );
-                  })}
-                </div>
-              </GlassCard>
-            </div>
-
-            {/* COLUMN 3: Routes & Pickup Points Planner */}
-            <div className="space-y-6">
-              <GlassCard className="space-y-4">
-                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                  <Layers className="text-brand-400" size={15} />
-                  Transit Routes Planner
-                </h4>
-                <form onSubmit={handleCreateRoute} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">Route Name</label>
-                      <input type="text" placeholder="e.g. North Expressway" value={rtName} onChange={(e) => setRtName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">Route Code</label>
-                      <input type="text" placeholder="e.g. R-101" value={rtCode} onChange={(e) => setRtCode(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                    </div>
-                  </div>
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">Start Point</label>
-                      <input type="text" placeholder="Start" value={rtStart} onChange={(e) => setRtStart(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">End Point</label>
-                      <input type="text" placeholder="Campus" value={rtEnd} onChange={(e) => setRtEnd(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
-                    </div>
-                    <div className="space-y-1">
-                      <label className="text-[9px] text-slate-500 font-bold uppercase">Fare ($)</label>
-                      <input type="number" value={rtFare} onChange={(e) => setRtFare(parseFloat(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                    </div>
-                  </div>
-                  <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Add Route</button>
-                </form>
-
-                <div className="space-y-2 max-h-40 overflow-y-auto">
-                  {routes.map(r => (
-                    <div key={r.id} className="p-2 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
-                      <div>
-                        <p className="font-bold text-slate-250">{r.name} ({r.routeCode})</p>
-                        <p className="text-[8px] text-slate-500">From: {r.startPoint} {'\u2192'} To: {r.endPoint} | Fare: ${Number(r.fare).toFixed(2)}</p>
-                      </div>
-                      <button onClick={() => handleDeleteRoute(r.id)} className="p-1 text-slate-500 hover:text-red-400 rounded"><Trash2 size={12} /></button>
-                    </div>
-                  ))}
-                </div>
-              </GlassCard>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Route Stops Pickup Points */}
-            <GlassCard className="space-y-4">
-              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                <Layers className="text-brand-400" size={15} />
-                Route Pickup Stops Coordinates
-              </h4>
-              <form onSubmit={handleCreatePickupPoint} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Stop/Pickup Name</label>
-                    <input type="text" placeholder="e.g. Park Street Gate" value={ppName} onChange={(e) => setPpName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Assign to Route</label>
-                    <select value={ppRouteId} onChange={(e) => setPpRouteId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
-                      <option value="">-- Choose Route --</option>
-                      {routes.map(r => (
-                        <option key={r.id} value={r.id}>{r.name} ({r.routeCode})</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Latitude (Optional)</label>
-                    <input type="text" placeholder="e.g. 40.7128" value={ppLat} onChange={(e) => setPpLat(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Longitude (Optional)</label>
-                    <input type="text" placeholder="e.g. -74.0060" value={ppLng} onChange={(e) => setPpLng(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
-                  </div>
-                </div>
-                <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Add Stop</button>
-              </form>
-
-              <div className="overflow-x-auto border border-slate-850/50 rounded-xl">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
-                      <th className="py-2.5 px-3">Stop Name</th>
-                      <th className="py-2.5 px-3">Route Code</th>
-                      <th className="py-2.5 px-3">Coordinates</th>
-                      <th className="py-2.5 px-3 text-right">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-850/40 text-slate-350">
-                    {pickupPointsList.map(pp => {
-                      const route = routes.find(r => r.id === pp.routeId);
-                      return (
-                        <tr key={pp.id} className="hover:bg-slate-900/10">
-                          <td className="py-2 px-3 font-semibold text-slate-200">{pp.name}</td>
-                          <td className="py-2 px-3">{route ? route.routeCode : 'Unlinked'}</td>
-                          <td className="py-2 px-3 font-mono text-[9px]">{pp.latitude ?? 'N/A'}, {pp.longitude ?? 'N/A'}</td>
-                          <td className="py-2 px-3 text-right">
-                            <button onClick={() => handleDeletePickupPoint(pp.id)} className="text-slate-500 hover:text-red-400 p-1"><Trash2 size={12} /></button>
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
+              {!canManageTransport && (
+                <span className="text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20 px-2 py-1 rounded-lg">VIEW-ONLY MODE</span>
+              )}
             </GlassCard>
 
-            {/* Student Bus Assignments */}
-            <GlassCard className="space-y-4">
-              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                <Users className="text-brand-400" size={15} />
-                Student Transit Assignments Map
-              </h4>
-              <form onSubmit={handleCreateTransportAssignment} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Student</label>
-                    <select value={taStudentId} onChange={(e) => setTaStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
-                      <option value="">-- Choose Student --</option>
-                      {students.map(s => (
-                        <option key={s.id} value={s.id}>{s.userDetails?.firstName} {s.userDetails?.lastName} ({s.admissionNumber})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Bus Fleet</label>
-                    <select value={taBusId} onChange={(e) => setTaBusId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
-                      <option value="">-- Choose Bus --</option>
-                      {buses.map(b => (
-                        <option key={b.id} value={b.id}>{b.numberPlate}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Route</label>
-                    <select value={taRouteId} onChange={(e) => setTaRouteId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
-                      <option value="">-- Choose Route --</option>
-                      {routes.map(r => (
-                        <option key={r.id} value={r.id}>{r.name} ({r.routeCode})</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-[9px] text-slate-500 font-bold uppercase">Select Stop Point</label>
-                    <select value={taPickupPointId} onChange={(e) => setTaPickupPointId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
-                      <option value="">-- Choose Stop --</option>
-                      {pickupPointsList
-                        .filter(pp => pp.routeId === taRouteId)
-                        .map(pp => (
-                          <option key={pp.id} value={pp.id}>{pp.name}</option>
-                        ))}
-                    </select>
-                  </div>
-                </div>
-                <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Assign Student Stop</button>
-              </form>
+            {/* Sub-Tab Navigation */}
+            <div className="flex items-center gap-1 p-1 bg-slate-900/60 border border-slate-850 rounded-xl w-fit">
+              {[
+                { id: 'fleet' as const, label: 'Fleet & Routes', icon: '🚌' },
+                { id: 'staff' as const, label: 'Staff & Passenger Maps', icon: '👥' },
+                { id: 'financials' as const, label: 'Transport Financials', icon: '💰' },
+              ].map(tab => (
+                <button
+                  key={tab.id}
+                  onClick={() => setTransportSubTab(tab.id)}
+                  className={`px-3 py-1.5 rounded-lg text-[10px] font-bold transition-all ${
+                    transportSubTab === tab.id
+                      ? 'bg-brand-600 text-slate-100 shadow-lg shadow-brand-600/20'
+                      : 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <span className="mr-1.5">{tab.icon}</span>{tab.label}
+                </button>
+              ))}
+            </div>
 
-              <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-56">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
-                      <th className="py-2.5 px-3">Student</th>
-                      <th className="py-2.5 px-3">Bus Plate</th>
-                      <th className="py-2.5 px-3">RouteStop</th>
-                      <th className="py-2.5 px-3 text-right">Remove</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-850/40 text-slate-350">
-                    {transportAssignments.map(ta => {
-                      const student = students.find(s => s.id === ta.studentId);
-                      const bus = buses.find(b => b.id === ta.busId);
-                      const route = routes.find(r => r.id === ta.routeId);
-                      const pp = pickupPointsList.find(p => p.id === ta.pickupPointId);
-                      return (
-                        <tr key={ta.id} className="hover:bg-slate-900/10">
-                          <td className="py-2 px-3 font-semibold text-slate-200">
-                            {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}
-                          </td>
-                          <td className="py-2 px-3 font-mono">{bus ? bus.numberPlate : 'N/A'}</td>
-                          <td className="py-2 px-3">
-                            <span className="text-brand-400 font-bold">[{route ? route.routeCode : 'N/A'}]</span> {pp ? pp.name : 'N/A'}
-                          </td>
-                          <td className="py-2 px-3 text-right">
-                            <div className="flex items-center justify-end gap-1.5">
-                              <button type="button" onClick={() => { setEditingTransportAssignment(ta); setEditTaBusId(ta.busId); setEditTaRouteId(ta.routeId); setEditTaPickupPointId(ta.pickupPointId || ''); }} className="text-brand-400 hover:text-brand-300 p-0.5" title="Edit"><Edit size={11} /></button>
-                              <button type="button" onClick={() => handleDeleteTransportAssignment(ta.id)} className="text-slate-550 hover:text-red-400 p-1" title="Delete"><Trash2 size={12} /></button>
+            {transportSubTab === 'fleet' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                {/* COLUMN 1: Buses Fleet Registry */}
+                <div className="space-y-6">
+                  <GlassCard className="space-y-4">
+                    <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                      <Layers className="text-brand-400" size={15} />
+                      Buses Fleet Registry
+                    </h4>
+                    {canManageTransport ? (
+                      <form onSubmit={handleCreateBus} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                        <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Register New Vehicle</p>
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-slate-500 font-bold uppercase">Plate Number</label>
+                          <input type="text" placeholder="e.g. MH-12-AB-3456" value={busPlate} onChange={(e) => setBusPlate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Capacity</label>
+                            <input type="number" value={busCapacity} onChange={(e) => setBusCapacity(parseInt(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Status</label>
+                            <select value={busStatus} onChange={(e) => setBusStatus(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                              <option value="ACTIVE">Active</option>
+                              <option value="MAINTENANCE">Maintenance</option>
+                              <option value="INACTIVE">Inactive</option>
+                            </select>
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-slate-500 font-bold uppercase">Assigned Driver</label>
+                          <select value={busDriverId} onChange={(e) => setBusDriverId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none">
+                            <option value="">-- No Driver --</option>
+                            {driversList.map(d => (
+                              <option key={d.id} value={d.id}>{d.name}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Add Bus</button>
+                      </form>
+                    ) : (
+                      <p className="text-[10px] text-slate-400 italic bg-slate-950/10 p-3 border border-slate-850 rounded-xl">Vehicle registrations are view-only.</p>
+                    )}
+
+                    <div className="space-y-2 max-h-48 overflow-y-auto">
+                      {buses.map(b => {
+                        const dr = driversList.find(d => d.id === b.driverId);
+                        return (
+                          <div key={b.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
+                            <div>
+                              <p className="font-bold text-slate-200">{b.numberPlate}</p>
+                              <p className="text-[9px] text-slate-400">Cap: {b.capacity} seats | Driver: {dr ? dr.name : 'Unassigned'}</p>
                             </div>
-                          </td>
-                        </tr>
+                            <div className="flex items-center gap-2">
+                              <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${b.status === 'ACTIVE' ? 'bg-green-500/10 text-green-400' : 'bg-orange-500/10 text-orange-400'}`}>{b.status}</span>
+                              {canManageTransport && (
+                                <button onClick={() => handleDeleteBus(b.id)} className="p-1 rounded hover:bg-red-500/10 text-slate-500 hover:text-red-400"><Trash2 size={12} /></button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </GlassCard>
+                </div>
+
+                {/* COLUMN 2: Maintenance Expense Log */}
+                <div className="space-y-6">
+                  <GlassCard className="space-y-4">
+                    <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                      <Sliders className="text-brand-400" size={15} />
+                      Maintenance Expense Log
+                    </h4>
+                    {canManageTransport ? (
+                      <form onSubmit={handleCreateMaintenanceLog} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-slate-500 font-bold uppercase">Select Bus</label>
+                          <select value={maintBusId} onChange={(e) => setMaintBusId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                            <option value="">-- Choose Bus --</option>
+                            {buses.map(b => (
+                              <option key={b.id} value={b.id}>{b.numberPlate}</option>
+                            ))}
+                          </select>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Date</label>
+                            <input type="date" value={maintDate} onChange={(e) => setMaintDate(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Cost ($)</label>
+                            <input type="number" value={maintCost} onChange={(e) => setMaintCost(parseFloat(e.target.value))} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                          </div>
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-slate-500 font-bold uppercase">Work Description</label>
+                          <input type="text" placeholder="e.g. Brake replacement" value={maintDesc} onChange={(e) => setMaintDesc(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                        </div>
+                        <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Log Expense</button>
+                      </form>
+                    ) : (
+                      <p className="text-[10px] text-slate-400 italic bg-slate-950/10 p-3 border border-slate-850 rounded-xl">Maintenance logs are view-only.</p>
+                    )}
+
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {maintenanceLogs.map(ml => {
+                        const bus = buses.find(b => b.id === ml.busId);
+                        return (
+                          <div key={ml.id} className="p-2 bg-slate-900/30 border border-slate-850/50 rounded-lg flex justify-between text-[10px]">
+                            <div>
+                              <p className="font-semibold text-slate-300">{ml.description}</p>
+                              <p className="text-[8px] text-slate-500">Bus: {bus ? bus.numberPlate : 'Unknown'} | Date: {ml.logDate}</p>
+                            </div>
+                            <p className="font-mono text-brand-400 font-bold">${Number(ml.cost).toFixed(2)}</p>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </GlassCard>
+                </div>
+
+                {/* COLUMN 3: Transit Routes Planner */}
+                <div className="space-y-6">
+                  <GlassCard className="space-y-4">
+                    <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                      <Layers className="text-brand-400" size={15} />
+                      Transit Routes Planner
+                    </h4>
+                    {canManageTransport ? (
+                      <form onSubmit={handleCreateRoute} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Route Name</label>
+                            <input type="text" placeholder="e.g. North Expressway" value={rtName} onChange={(e) => setRtName(e.target.value)} className="w-full bg-slate-900 border border-slate-850 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500" required />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Route Code</label>
+                            <input type="text" placeholder="e.g. R-101" value={rtCode} onChange={(e) => setRtCode(e.target.value)} className="w-full bg-slate-900 border border-slate-850 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500" required />
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-3 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Start Point</label>
+                            <input type="text" placeholder="Start" value={rtStart} onChange={(e) => setRtStart(e.target.value)} className="w-full bg-slate-900 border border-slate-850 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">End Point</label>
+                            <input type="text" placeholder="Campus" value={rtEnd} onChange={(e) => setRtEnd(e.target.value)} className="w-full bg-slate-900 border border-slate-850 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Fare ($)</label>
+                            <input type="number" value={rtFare} onChange={(e) => setRtFare(parseFloat(e.target.value))} className="w-full bg-slate-900 border border-slate-850 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500" required />
+                          </div>
+                        </div>
+                        <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Add Route</button>
+                      </form>
+                    ) : (
+                      <p className="text-[10px] text-slate-400 italic bg-slate-950/10 p-3 border border-slate-850 rounded-xl">Route planning is view-only.</p>
+                    )}
+
+                    <div className="space-y-2 max-h-40 overflow-y-auto">
+                      {routes.map(r => (
+                        <div key={r.id} className="p-2 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
+                          <div>
+                            <p className="font-bold text-slate-250">{r.name} ({r.routeCode})</p>
+                            <p className="text-[8px] text-slate-500">From: {r.startPoint} {'\u2192'} To: {r.endPoint} | Fare: ${Number(r.fare).toFixed(2)}</p>
+                          </div>
+                          {canManageTransport && (
+                            <button onClick={() => handleDeleteRoute(r.id)} className="p-1 text-slate-500 hover:text-red-400 rounded"><Trash2 size={12} /></button>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </GlassCard>
+                </div>
+              </div>
+            )}
+
+            {transportSubTab === 'staff' && (
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                {/* Driver Registry & Daily Attendance */}
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                    <UsersRound className="text-brand-400" size={15} />
+                    Driver Registry & Daily Attendance
+                  </h4>
+                  {canManageTransport ? (
+                    <form onSubmit={handleRegisterDriver} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Register New Driver</p>
+                      <div className="space-y-1">
+                        <label className="text-[9px] text-slate-500 font-bold uppercase">Name</label>
+                        <input type="text" placeholder="Full name" value={drName} onChange={(e) => setDrName(e.target.value)} className="w-full bg-slate-900 border border-slate-850 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500" required />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-slate-500 font-bold uppercase">License Number</label>
+                          <input type="text" placeholder="DL-XXXX" value={drLicense} onChange={(e) => setDrLicense(e.target.value)} className="w-full bg-slate-900 border border-slate-850 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500" required />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] text-slate-500 font-bold uppercase">Phone</label>
+                          <input type="text" placeholder="+1 555-..." value={drPhone} onChange={(e) => setDrPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-850 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500" required />
+                        </div>
+                      </div>
+                      <button type="submit" className="w-full py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-700 text-slate-100 transition-colors">Register Driver</button>
+                    </form>
+                  ) : (
+                    <p className="text-[10px] text-slate-400 italic bg-slate-950/10 p-3 border border-slate-850 rounded-xl">Driver registrations are view-only.</p>
+                  )}
+
+                  <div className="space-y-2 max-h-48 overflow-y-auto">
+                    {driversList.map(d => {
+                      const todayStr = new Date().toISOString().split('T')[0];
+                      const att = driverAttendanceList.find(a => a.driverId === d.id && a.date === todayStr);
+                      const status = att ? att.status : 'UNMARKED';
+                      return (
+                        <div key={d.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
+                          <div>
+                            <p className="font-bold text-slate-200">{d.name}</p>
+                            <p className="text-[9px] text-slate-400">License: {d.licenseNumber} | Phone: {d.phone}</p>
+                          </div>
+                          {canManageTransport ? (
+                            <div className="flex items-center gap-1.5">
+                              <button onClick={() => handleMarkDriverAttendance(d.id, 'PRESENT')} className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${status === 'PRESENT' ? 'bg-green-600 text-slate-100' : 'bg-slate-900 border border-slate-800 text-slate-400'}`}>Present</button>
+                              <button onClick={() => handleMarkDriverAttendance(d.id, 'ABSENT')} className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${status === 'ABSENT' ? 'bg-red-600 text-slate-100' : 'bg-slate-900 border border-slate-800 text-slate-400'}`}>Absent</button>
+                            </div>
+                          ) : (
+                            <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${status === 'PRESENT' ? 'bg-green-500/10 text-green-400' : status === 'ABSENT' ? 'bg-red-500/10 text-red-400' : 'bg-slate-500/10 text-slate-400'}`}>
+                              {status}
+                            </span>
+                          )}
+                        </div>
                       );
                     })}
-                  </tbody>
-                </table>
+                  </div>
+                </GlassCard>
+
+                {/* Route Pickup Stops Coordinates */}
+                <div className="space-y-6">
+                  <GlassCard className="space-y-4">
+                    <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                      <Layers className="text-brand-400" size={15} />
+                      Route Pickup Stops Coordinates
+                    </h4>
+                    {canManageTransport ? (
+                      <form onSubmit={handleCreatePickupPoint} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Stop/Pickup Name</label>
+                            <input type="text" placeholder="e.g. Park Street Gate" value={ppName} onChange={(e) => setPpName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Assign to Route</label>
+                            <select value={ppRouteId} onChange={(e) => setPpRouteId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                              <option value="">-- Choose Route --</option>
+                              {routes.map(r => (
+                                <option key={r.id} value={r.id}>{r.name} ({r.routeCode})</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Latitude (Optional)</label>
+                            <input type="text" placeholder="e.g. 40.7128" value={ppLat} onChange={(e) => setPpLat(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Longitude (Optional)</label>
+                            <input type="text" placeholder="e.g. -74.0060" value={ppLng} onChange={(e) => setPpLng(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" />
+                          </div>
+                        </div>
+                        <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Add Stop</button>
+                      </form>
+                    ) : (
+                      <p className="text-[10px] text-slate-400 italic bg-slate-950/10 p-3 border border-slate-850 rounded-xl">Transit stops planning is view-only.</p>
+                    )}
+
+                    <div className="overflow-x-auto border border-slate-850/50 rounded-xl">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                            <th className="py-2.5 px-3">Stop Name</th>
+                            <th className="py-2.5 px-3">Route Code</th>
+                            <th className="py-2.5 px-3">Coordinates</th>
+                            {canManageTransport && <th className="py-2.5 px-3 text-right">Action</th>}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                          {pickupPointsList.map(pp => {
+                            const route = routes.find(r => r.id === pp.routeId);
+                            return (
+                              <tr key={pp.id} className="hover:bg-slate-900/10">
+                                <td className="py-2 px-3 font-semibold text-slate-200">{pp.name}</td>
+                                <td className="py-2 px-3">{route ? route.routeCode : 'Unlinked'}</td>
+                                <td className="py-2 px-3 font-mono text-[9px]">{pp.latitude ?? 'N/A'}, {pp.longitude ?? 'N/A'}</td>
+                                {canManageTransport && (
+                                  <td className="py-2 px-3 text-right">
+                                    <button onClick={() => handleDeletePickupPoint(pp.id)} className="text-slate-550 hover:text-red-400 p-1"><Trash2 size={12} /></button>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </GlassCard>
+
+                  {/* Student Bus Assignments */}
+                  <GlassCard className="space-y-4">
+                    <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                      <Users className="text-brand-400" size={15} />
+                      Student Transit Assignments Map
+                    </h4>
+                    {canManageTransport ? (
+                      <form onSubmit={handleCreateTransportAssignment} className="space-y-3 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Select Student</label>
+                            <select value={taStudentId} onChange={(e) => setTaStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                              <option value="">-- Choose Student --</option>
+                              {students.map(s => (
+                                <option key={s.id} value={s.id}>{s.userDetails?.firstName} {s.userDetails?.lastName} ({s.admissionNumber})</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Select Bus Fleet</label>
+                            <select value={taBusId} onChange={(e) => setTaBusId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                              <option value="">-- Choose Bus --</option>
+                              {buses.map(b => (
+                                <option key={b.id} value={b.id}>{b.numberPlate}</option>
+                              ))}
+                            </select>
+                          </div>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Select Route</label>
+                            <select value={taRouteId} onChange={(e) => setTaRouteId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                              <option value="">-- Choose Route --</option>
+                              {routes.map(r => (
+                                <option key={r.id} value={r.id}>{r.name} ({r.routeCode})</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="space-y-1">
+                            <label className="text-[9px] text-slate-500 font-bold uppercase">Select Stop Point</label>
+                            <select value={taPickupPointId} onChange={(e) => setTaPickupPointId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
+                              <option value="">-- Choose Stop --</option>
+                              {pickupPointsList
+                                .filter(pp => pp.routeId === taRouteId)
+                                .map(pp => (
+                                  <option key={pp.id} value={pp.id}>{pp.name}</option>
+                                ))}
+                            </select>
+                          </div>
+                        </div>
+                        <button type="submit" className="w-full py-1.5 bg-brand-600 hover:bg-brand-700 rounded-lg font-bold text-slate-100 transition-colors">Assign Student Stop</button>
+                      </form>
+                    ) : (
+                      <p className="text-[10px] text-slate-400 italic bg-slate-950/10 p-3 border border-slate-850 rounded-xl">Transit stop assignments are view-only.</p>
+                    )}
+
+                    <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-56">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                            <th className="py-2.5 px-3">Student</th>
+                            <th className="py-2.5 px-3">Bus Plate</th>
+                            <th className="py-2.5 px-3">RouteStop</th>
+                            {canManageTransport && <th className="py-2.5 px-3 text-right">Actions</th>}
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                          {transportAssignments.map(ta => {
+                            const student = students.find(s => s.id === ta.studentId);
+                            const bus = buses.find(b => b.id === ta.busId);
+                            const route = routes.find(r => r.id === ta.routeId);
+                            const pp = pickupPointsList.find(p => p.id === ta.pickupPointId);
+                            return (
+                              <tr key={ta.id} className="hover:bg-slate-900/10">
+                                <td className="py-2 px-3 font-semibold text-slate-200">
+                                  {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}
+                                </td>
+                                <td className="py-2 px-3 font-mono">{bus ? bus.numberPlate : 'N/A'}</td>
+                                <td className="py-2 px-3">
+                                  <span className="text-brand-400 font-bold">[{route ? route.routeCode : 'N/A'}]</span> {pp ? pp.name : 'N/A'}
+                                </td>
+                                {canManageTransport && (
+                                  <td className="py-2 px-3 text-right">
+                                    <div className="flex items-center justify-end gap-1.5">
+                                      <button type="button" onClick={() => { setEditingTransportAssignment(ta); setEditTaBusId(ta.busId); setEditTaRouteId(ta.routeId); setEditTaPickupPointId(ta.pickupPointId || ''); }} className="text-brand-400 hover:text-brand-300 p-0.5" title="Edit"><Edit size={11} /></button>
+                                      <button type="button" onClick={() => handleDeleteTransportAssignment(ta.id)} className="text-slate-550 hover:text-red-400 p-1" title="Delete"><Trash2 size={12} /></button>
+                                    </div>
+                                  </td>
+                                )}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </GlassCard>
+                </div>
               </div>
-            </GlassCard>
+            )}
+
+            {transportSubTab === 'financials' && (
+              <div className="space-y-6">
+                {/* Transport Fee Collections */}
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                    <DollarSign className="text-brand-400" size={15} />
+                    Transport Fee Collections Ledger
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-3">
+                    <div className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl text-center">
+                      <p className="text-[9px] text-slate-500 font-bold uppercase">Total Records</p>
+                      <p className="text-lg font-bold text-slate-200">{transportFeeRecords.length}</p>
+                    </div>
+                    <div className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl text-center">
+                      <p className="text-[9px] text-slate-500 font-bold uppercase">Total Billed</p>
+                      <p className="text-lg font-bold text-brand-400">${transportFeeRecords.reduce((s: number, r: any) => s + Number(r.amount || 0), 0).toFixed(2)}</p>
+                    </div>
+                    <div className="p-2.5 bg-green-950/30 border border-green-500/20 rounded-xl text-center">
+                      <p className="text-[9px] text-green-500 font-bold uppercase">Paid</p>
+                      <p className="text-lg font-bold text-green-400">${transportFeeRecords.filter((r: any) => r.status === 'PAID').reduce((s: number, r: any) => s + Number(r.amount || 0), 0).toFixed(2)}</p>
+                    </div>
+                    <div className="p-2.5 bg-red-950/30 border border-red-500/20 rounded-xl text-center">
+                      <p className="text-[9px] text-red-500 font-bold uppercase">Unpaid</p>
+                      <p className="text-lg font-bold text-red-400">${transportFeeRecords.filter((r: any) => r.status === 'UNPAID').reduce((s: number, r: any) => s + Number(r.amount || 0), 0).toFixed(2)}</p>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-64">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                          <th className="py-2.5 px-3">Student</th>
+                          <th className="py-2.5 px-3">Route</th>
+                          <th className="py-2.5 px-3">Amount</th>
+                          <th className="py-2.5 px-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                        {transportFeeRecords.map((rec: any) => {
+                          const student = students.find(s => s.id === rec.studentId);
+                          const route = routes.find(r => r.id === rec.routeId);
+                          return (
+                            <tr key={rec.id} className="hover:bg-slate-900/10">
+                              <td className="py-2 px-3 font-semibold text-slate-200">
+                                {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : rec.studentId?.slice(0, 8) + '…'}
+                              </td>
+                              <td className="py-2 px-3">{route ? `${route.name} (${route.routeCode})` : 'N/A'}</td>
+                              <td className="py-2 px-3 font-mono text-brand-400 font-bold">${Number(rec.amount || 0).toFixed(2)}</td>
+                              <td className="py-2 px-3">
+                                {(() => {
+                                  const canToggleFeeStatus = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN';
+                                  return canToggleFeeStatus ? (
+                                    <button
+                                      onClick={() => handleToggleTransportFeePayment(rec.id, rec.status || 'UNPAID')}
+                                      className={`px-1.5 py-0.5 rounded text-[8px] font-bold transition-all hover:scale-105 ${
+                                        rec.status === 'PAID'
+                                          ? 'bg-green-500/10 text-green-400 border border-green-500/30'
+                                          : 'bg-red-500/10 text-red-400 border border-red-500/30'
+                                      }`}
+                                    >
+                                      {rec.status || 'UNPAID'} 🔄
+                                    </button>
+                                  ) : (
+                                    <span
+                                      className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${
+                                        rec.status === 'PAID' ? 'bg-green-500/10 text-green-400' : 'bg-red-500/10 text-red-400'
+                                      }`}
+                                    >
+                                      {rec.status || 'UNPAID'}
+                                    </span>
+                                  );
+                                })()}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {transportFeeRecords.length === 0 && (
+                          <tr><td colSpan={4} className="py-6 text-center text-slate-500 font-mono">No transport fee records found.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </GlassCard>
+
+                {/* Maintenance Expense Journal */}
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                    <Sliders className="text-brand-400" size={15} />
+                    Maintenance Expense Journal
+                  </h4>
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 mb-3">
+                    <div className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl text-center">
+                      <p className="text-[9px] text-slate-500 font-bold uppercase">Total Entries</p>
+                      <p className="text-lg font-bold text-slate-200">{maintenanceLogs.length}</p>
+                    </div>
+                    <div className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl text-center">
+                      <p className="text-[9px] text-slate-500 font-bold uppercase">Total Spend</p>
+                      <p className="text-lg font-bold text-red-400">${maintenanceLogs.reduce((s: number, ml: any) => s + Number(ml.cost || 0), 0).toFixed(2)}</p>
+                    </div>
+                    <div className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl text-center">
+                      <p className="text-[9px] text-slate-500 font-bold uppercase">Active Fleet</p>
+                      <p className="text-lg font-bold text-brand-400">{buses.filter((b: any) => b.status === 'ACTIVE').length}/{buses.length}</p>
+                    </div>
+                  </div>
+                  <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-56">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                          <th className="py-2.5 px-3">Bus</th>
+                          <th className="py-2.5 px-3">Description</th>
+                          <th className="py-2.5 px-3">Date</th>
+                          <th className="py-2.5 px-3 text-right">Cost</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                        {maintenanceLogs.map((ml: any) => {
+                          const bus = buses.find((b: any) => b.id === ml.busId);
+                          return (
+                            <tr key={ml.id} className="hover:bg-slate-900/10">
+                              <td className="py-2 px-3 font-mono text-slate-200">{bus ? bus.numberPlate : 'Unknown'}</td>
+                              <td className="py-2 px-3 font-semibold text-slate-300">{ml.description}</td>
+                              <td className="py-2 px-3 text-slate-400">{ml.logDate || ml.createdAt?.split('T')[0] || '-'}</td>
+                              <td className="py-2 px-3 text-right font-mono text-red-400 font-bold">${Number(ml.cost || 0).toFixed(2)}</td>
+                            </tr>
+                          );
+                        })}
+                        {maintenanceLogs.length === 0 && (
+                          <tr><td colSpan={4} className="py-6 text-center text-slate-500 font-mono">No maintenance records.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </GlassCard>
+
+                {/* Driver Attendance & Salary Disbursal Controls */}
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                    <UsersRound className="text-brand-400" size={15} />
+                    Driver Salary Disbursal Controls
+                  </h4>
+                  <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-56">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                          <th className="py-2.5 px-3">Driver Name</th>
+                          <th className="py-2.5 px-3">License</th>
+                          <th className="py-2.5 px-3">Present Days</th>
+                          <th className="py-2.5 px-3">Unpaid Days</th>
+                          <th className="py-2.5 px-3">Pending</th>
+                          <th className="py-2.5 px-3 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                        {driversList.map(driver => {
+                          const driverPresentRecords = driverAttendanceList.filter(
+                            a => a.driverId === driver.id && a.status === 'PRESENT'
+                          );
+                          const unpaidRecords = driverPresentRecords.filter(
+                            rec => !driverSalaryPayouts.some(
+                              p => p.attendanceRecordId === rec.id || 
+                              (p.driverId === driver.id && rec.date <= p.payoutDate.split('T')[0])
+                            )
+                          );
+                          const presentCount = driverPresentRecords.length;
+                          const unpaidCount = unpaidRecords.length;
+                          const dailyRate = 45.00;
+                          const pendingPayout = unpaidCount * dailyRate;
+                          const isDisbursing = disbursingDriverId === driver.id;
+                          const canDisburse = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN';
+
+                          return (
+                            <tr key={driver.id} className="hover:bg-slate-900/10">
+                              <td className="py-2 px-3 font-semibold text-slate-200">
+                                {driver.name}
+                              </td>
+                              <td className="py-2 px-3 font-mono text-[10px]">{driver.licenseNumber}</td>
+                              <td className="py-2 px-3 font-mono">{presentCount} Days</td>
+                              <td className="py-2 px-3">
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${unpaidCount > 0 ? 'bg-amber-500/10 text-amber-400' : 'bg-slate-500/10 text-slate-400'}`}>
+                                  {unpaidCount} Days
+                                </span>
+                              </td>
+                              <td className="py-2 px-3 font-mono font-bold text-brand-400">${pendingPayout.toFixed(2)}</td>
+                              <td className="py-2 px-3 text-right">
+                                {canDisburse ? (
+                                  <button
+                                    onClick={() => handleDisburseDriverSalary(driver.id, pendingPayout, unpaidRecords[0]?.id || null)}
+                                    disabled={pendingPayout === 0 || isDisbursing}
+                                    className={`px-2 py-0.5 rounded text-[8px] font-bold transition-all ${
+                                      pendingPayout === 0 || isDisbursing
+                                        ? 'bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed'
+                                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/10 active:scale-95'
+                                    }`}
+                                  >
+                                    {isDisbursing ? 'Disbursing...' : 'Disburse'}
+                                  </button>
+                                ) : (
+                                  <span className="text-[8px] text-slate-500 italic">No Perms</span>
+                                )}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {driversList.length === 0 && (
+                          <tr><td colSpan={6} className="py-6 text-center text-slate-500 font-mono">No active drivers registered.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </GlassCard>
+
+                {/* Driver Salary Payout Ledger */}
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                    <UsersRound className="text-brand-400" size={15} />
+                    Driver Salary Payout Ledger
+                  </h4>
+                  <div className="overflow-x-auto border border-slate-850/50 rounded-xl max-h-56">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                          <th className="py-2.5 px-3">Driver</th>
+                          <th className="py-2.5 px-3">Month</th>
+                          <th className="py-2.5 px-3">Amount</th>
+                          <th className="py-2.5 px-3">Status</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850/40 text-slate-350">
+                        {driverSalaryPayouts.map((dp: any) => {
+                          const driver = driversList.find((d: any) => d.id === dp.driverId);
+                          return (
+                            <tr key={dp.id} className="hover:bg-slate-900/10">
+                              <td className="py-2 px-3 font-semibold text-slate-200">{driver ? driver.name : dp.driverId?.slice(0, 8) + '…'}</td>
+                              <td className="py-2 px-3 text-slate-400">{dp.month || dp.payoutMonth || '-'}</td>
+                              <td className="py-2 px-3 font-mono text-brand-400 font-bold">${Number(dp.amount || 0).toFixed(2)}</td>
+                              <td className="py-2 px-3">
+                                <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold ${dp.status === 'PAID' ? 'bg-green-500/10 text-green-400' : 'bg-amber-500/10 text-amber-400'}`}>{dp.status || 'PENDING'}</span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                        {driverSalaryPayouts.length === 0 && (
+                          <tr><td colSpan={4} className="py-6 text-center text-slate-500 font-mono">No salary payouts recorded yet.</td></tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </GlassCard>
+              </div>
+            )}
           </div>
-        </div>
         </PremiumLock>
       )}
 
@@ -9974,7 +10364,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       )}
 
       {/* ── Edit Transport Assignment Modal Overlay ── */}
-      {editingTransportAssignment && (
+      {editingTransportAssignment && canManageTransport && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-sm p-4 animate-fade-in text-xs">
           <GlassCard className="w-full max-w-md border border-brand-500/30 p-6 space-y-4 shadow-2xl">
             <div className="flex justify-between items-center pb-2 border-b border-slate-800">
