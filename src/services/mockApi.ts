@@ -10803,7 +10803,12 @@ export const mockApi = {
 
   async syncHostelData(schoolId: string): Promise<void> {
     if (!schoolId) return;
-    await this.checkHostelAccess(schoolId);
+    try {
+      await this.checkHostelAccess(schoolId);
+    } catch (err) {
+      console.warn("Skipping hostel data sync (non-Enterprise subscription):", err);
+      return;
+    }
     if (syncHostelDataPromises[schoolId]) {
       return syncHostelDataPromises[schoolId]!;
     }
