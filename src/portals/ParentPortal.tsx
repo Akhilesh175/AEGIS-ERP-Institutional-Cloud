@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
+import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 
 const renderVideoPlayer = (url: string) => {
   if (!url) return null;
@@ -1266,38 +1267,20 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                           <div className="pt-2 border-t border-slate-850/60 flex items-center justify-between">
                             <span className="text-[10px] text-slate-500">Issued: {new Date(rc.createdAt).toLocaleDateString()}</span>
                             <button
-                              onClick={() => {
-                                const filename = `report_card_${rc.term.toLowerCase().replace(/\s+/g, '_')}.txt`;
-                                const content = `==================================================
-              AEGIS INSTITUTIONAL ERP
-             OFFICIAL TERM REPORT CARD
-==================================================
-School ID:      ${rc.schoolId || 'N/A'}
-Student Name:   ${rc.studentName || 'N/A'}
-Term:           ${rc.term}
---------------------------------------------------
-Academic Performance summary:
-Grade Point Average (GPA): ${rc.gradePointAverage.toFixed(2)} / 4.00
-Attendance Percentage:     ${rc.attendancePercentage.toFixed(1)}%
---------------------------------------------------
-Teacher Remarks:
-${rc.remarks || 'No remarks provided.'}
---------------------------------------------------
-Date of Issue: ${new Date(rc.createdAt).toLocaleDateString()}
-Status:        OFFICIALLY PUBLISHED
-==================================================`;
-                                const blob = new Blob([content], { type: 'text/plain' });
-                                const link = document.createElement('a');
-                                link.href = URL.createObjectURL(blob);
-                                link.download = filename;
-                                document.body.appendChild(link);
-                                link.click();
-                                document.body.removeChild(link);
+                              onClick={async () => {
+                                if (!selectedStudent) return;
+                                try {
+                                  const marksheetData = await mockApi.getStudentMarksheetData(selectedStudent, rc.term);
+                                  await downloadMarksheetPdf(rc.studentName || 'Student', rc.term, marksheetData);
+                                } catch (err: any) {
+                                  console.error(err);
+                                  alert('Failed to generate marksheet: ' + err.message);
+                                }
                               }}
                               className="px-2.5 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded-lg flex items-center gap-1.5 font-semibold text-[10px] cursor-pointer active:scale-95 transition-all animate-pulse-subtle"
                             >
                               <Download size={11} />
-                              Download Report Card
+                              Download Marksheet (PDF)
                             </button>
                           </div>
                         </div>

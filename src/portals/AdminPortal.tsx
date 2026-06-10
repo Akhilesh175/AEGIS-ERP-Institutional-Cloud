@@ -14,6 +14,7 @@ import {
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 import { OfflineSyncManager } from '../components/OfflineSyncManager';
+import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 
 export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawActiveTab }) => {
   const activeTab = rawActiveTab.split('/')[0];
@@ -9637,7 +9638,23 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                               <td className="py-2 px-3 text-center font-mono font-bold text-emerald-400">{rc.gradePointAverage.toFixed(2)}</td>
                               <td className="py-2 px-3 text-slate-350 italic max-w-[150px] truncate">{rc.remarks || '—'}</td>
                               <td className="py-2 px-3 text-center">
-                                <div className="flex items-center justify-center gap-1.5">
+                                <div className="flex items-center justify-center gap-2">
+                                  <button 
+                                    type="button" 
+                                    onClick={async () => {
+                                      try {
+                                        const marksheetData = await mockApi.getStudentMarksheetData(rc.studentId, rc.term);
+                                        await downloadMarksheetPdf(student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Student', rc.term, marksheetData);
+                                      } catch (err: any) {
+                                        console.error(err);
+                                        alert('Failed to generate marksheet: ' + err.message);
+                                      }
+                                    }} 
+                                    className="text-emerald-400 hover:text-emerald-300 p-0.5" 
+                                    title="Download Marksheet (PDF)"
+                                  >
+                                    <Download size={11} />
+                                  </button>
                                   <button type="button" onClick={() => { setEditingReportCard(rc); setEditRcTerm(rc.term); setEditRcAttendance(rc.attendancePercentage); setEditRcGpa(rc.gradePointAverage); setEditRcRemarks(rc.remarks || ''); }} className="text-brand-400 hover:text-brand-300 p-0.5" title="Edit"><Edit size={11} /></button>
                                   <button type="button" onClick={() => handleDeleteReportCard(rc.id)} className="text-red-400 hover:text-red-300 p-0.5" title="Delete"><Trash2 size={11} /></button>
                                 </div>

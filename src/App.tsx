@@ -33,6 +33,8 @@ const getTabsForRole = (role: string, planName: string): string[] => {
   }
 };
 
+import { MarksheetVerificationPage } from './components/MarksheetVerificationPage';
+
 export const App: React.FC = () => {
   const { session, theme, toggleTheme, setSession, initializeStore } = useStore();
   
@@ -206,6 +208,11 @@ export const App: React.FC = () => {
     setEmail(roleEmail);
     setPassword('password');
   };
+
+  if (activeTab.startsWith('verify/marksheet/')) {
+    const code = activeTab.replace('verify/marksheet/', '');
+    return <MarksheetVerificationPage code={code} onBack={() => { window.location.hash = 'dashboard'; setActiveTab('dashboard'); }} />;
+  }
 
   if (!session) {
     return (

@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
+import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 
 export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: string) => void }> = ({ activeTab, setActiveTab }) => {
   const { session, syncSubscriptionPlan } = useStore();
@@ -2569,8 +2570,25 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                     </table>
                   </div>
                   {hmReportCard.length > 0 && (
-                    <div className="flex justify-end pt-4">
-                      <button type="submit" className="glass-btn-primary text-xs flex items-center gap-1.5">
+                    <div className="flex justify-end pt-4 gap-3">
+                      <button 
+                        type="button"
+                        onClick={async () => {
+                          try {
+                            const exam = hmExams.find(e => e.id === hmSelectedExam);
+                            const termName = exam?.term || 'TERM 1';
+                            const marksheetData = await mockApi.getStudentMarksheetData(hmSelectedStudent, termName);
+                            await downloadMarksheetPdf(marksheetData.student.name, termName, marksheetData);
+                          } catch (err: any) {
+                            console.error(err);
+                            alert('Failed to generate marksheet: ' + err.message);
+                          }
+                        }}
+                        className="px-4 py-2 border border-brand-500/30 text-brand-400 bg-brand-500/5 hover:bg-brand-500/10 rounded-xl text-xs font-bold transition-all active:scale-[0.98] flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <FileText size={14} /> Download Marksheet (PDF)
+                      </button>
+                      <button type="submit" className="glass-btn-primary text-xs flex items-center gap-1.5 cursor-pointer">
                         <Save size={14} /> Save Report Card
                       </button>
                     </div>
