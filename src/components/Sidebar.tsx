@@ -133,10 +133,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'attendance', label: 'Attendance Roll', icon: Layers, locked: planName === 'freemium' },
           { id: 'grades', label: 'Gradebook Matrix', icon: Award },
           { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'analytics', label: 'Class Analytics', icon: Activity, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'assignments', label: 'Assignment Creator', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
+          { id: 'analytics', label: 'Class Analytics', icon: Activity, locked: planName !== 'enterprise' },
+          { id: 'assignments', label: 'Assignment Creator', icon: PenTool, locked: planName !== 'enterprise' },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: planName === 'freemium' || planName === 'basic' },
+          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: planName !== 'enterprise' },
           { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: planName === 'freemium' }
         ];
       }

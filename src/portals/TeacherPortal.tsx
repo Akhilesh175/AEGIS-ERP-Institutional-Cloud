@@ -2576,9 +2576,10 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       )}
       {activeTab === 'assignments' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
-          requiredTier="Pro"
+          isLocked={currentPlanName !== 'enterprise'}
+          requiredTier="Enterprise"
           featureName="Assignment Creator"
+          customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
         >
           <div className="animate-fade-in">
             <GlassCard className="space-y-4 max-w-xl mx-auto">
@@ -3035,9 +3036,10 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       )}
       {activeTab === 'materials' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
-          requiredTier="Pro"
+          isLocked={currentPlanName !== 'enterprise'}
+          requiredTier="Enterprise"
           featureName="Study Materials Upload"
+          customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
         >
           <GlassCard className="space-y-4 max-w-xl mx-auto">
             <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
@@ -4370,9 +4372,10 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       )}
       {activeTab === 'analytics' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
-          requiredTier="Pro"
+          isLocked={currentPlanName !== 'enterprise'}
+          requiredTier="Enterprise"
           featureName="Class Academic Analytics"
+          customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
         >
           <div className="space-y-6 animate-fade-in">
           {/* Header */}

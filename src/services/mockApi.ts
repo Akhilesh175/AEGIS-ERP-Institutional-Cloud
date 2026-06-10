@@ -198,11 +198,11 @@ const PLAN_HIERARCHY: Record<string, number> = {
 };
 
 export const mockApi = {
-  async validateEnterpriseSubscription(schoolId: string, featureName: string): Promise<void> {
+  async validateEnterpriseSubscription(schoolId: string, featureName?: string): Promise<void> {
     const livePlan = (await this.getLiveSchoolSubscriptionPlan(schoolId) || 'freemium').toLowerCase();
     const liveLevel = PLAN_HIERARCHY[livePlan] ?? 0;
     if (liveLevel < 3) {
-      throw new Error(`Security Policy Violation: Accessing ${featureName} requires an active Enterprise Tier subscription.`);
+      throw new Error(`403 Forbidden: Accessing ${featureName || 'this premium feature'} requires an active Enterprise Tier subscription.`);
     }
   },
 
@@ -494,6 +494,7 @@ export const mockApi = {
   },
 
   async teacherInsertHomeworkAttachmentMetadata(schoolId: string, homeworkId: string, teacherId: string, fileUrl: string, fileName: string, mimeType: string): Promise<HomeworkAttachment> {
+    await this.validateEnterpriseSubscription(schoolId);
     const academicSessionId = await this.resolveActiveSessionId(schoolId);
 
     const { data: dbAttachment, error: dbError } = await supabaseAdmin
@@ -535,6 +536,7 @@ export const mockApi = {
   },
 
   async teacherUploadHomeworkAttachment(schoolId: string, homeworkId: string, teacherId: string, file: File): Promise<HomeworkAttachment> {
+    await this.validateEnterpriseSubscription(schoolId);
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     if (!isUUID(schoolId) || !isUUID(homeworkId) || !isUUID(teacherId)) {
       throw new Error('Invalid format for IDs. Must be UUID.');
@@ -632,6 +634,29 @@ export const mockApi = {
 
   async teacherDeleteHomeworkAttachment(attachmentId: string): Promise<void> {
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    
+    // Fetch attachment metadata from database or cache to validate subscription
+    let schoolId: string | null | undefined = null;
+    if (isUUID(attachmentId)) {
+      const { data: dbAttachment } = await supabaseAdmin
+        .from('homework_attachments')
+        .select('school_id')
+        .eq('id', attachmentId)
+        .maybeSingle();
+      if (dbAttachment) {
+        schoolId = dbAttachment.school_id;
+      }
+    }
+    if (!schoolId) {
+      const att = mockDb.homeworkAttachments.find(a => a.id === attachmentId);
+      if (att) {
+        schoolId = att.schoolId;
+      }
+    }
+    if (schoolId) {
+      await this.validateEnterpriseSubscription(schoolId);
+    }
+
     if (!isUUID(attachmentId)) {
       // Local mockup cleanup
       mockDb.homeworkAttachments = mockDb.homeworkAttachments.filter(att => att.id !== attachmentId);
@@ -2897,6 +2922,8 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher not found.');
 
+    await this.validateEnterpriseSubscription(teacher.schoolId);
+
     const cls = mockDb.classes.find(c => c.id === classId);
     if (!cls) throw new Error('Class not found.');
 
@@ -3177,6 +3204,7 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId)!;
     if (!teacher) throw new Error('Teacher not found.');
     const schoolId = teacher.schoolId;
+    await this.validateEnterpriseSubscription(schoolId);
     const academicSessionId = await this.resolveActiveSessionId(schoolId);
 
     const { data: dbAssign, error } = await supabaseAdmin
@@ -3311,6 +3339,15 @@ export const mockApi = {
   async teacherEditAssignment(assignmentId: string, classId: string, subjectId: string, title: string, description: string, dueDate: string, isHomework: boolean, sectionId?: string | null): Promise<Assignment> {
     await delay(500);
 
+    const { data: currentAssign } = await supabaseAdmin
+      .from('homeworks')
+      .select('school_id')
+      .eq('id', assignmentId)
+      .maybeSingle();
+    if (currentAssign) {
+      await this.validateEnterpriseSubscription(currentAssign.school_id);
+    }
+
     const { data: dbAssign, error } = await supabaseAdmin
       .from('homeworks')
       .update({
@@ -3361,6 +3398,15 @@ export const mockApi = {
 
   async teacherDeleteAssignment(assignmentId: string): Promise<void> {
     await delay(500);
+
+    const { data: currentAssign } = await supabaseAdmin
+      .from('homeworks')
+      .select('school_id')
+      .eq('id', assignmentId)
+      .maybeSingle();
+    if (currentAssign) {
+      await this.validateEnterpriseSubscription(currentAssign.school_id);
+    }
 
     const { error } = await supabaseAdmin
       .from('homeworks')
@@ -8025,15 +8071,7 @@ export const mockApi = {
     if (!schoolId) throw new Error('Teacher has no school association.');
 
     // Plan check
-    const { data: dbSchool } = await supabaseAdmin
-      .from('schools')
-      .select('subscription_plan')
-      .eq('id', schoolId)
-      .maybeSingle();
-    const planName = dbSchool?.subscription_plan?.toLowerCase() || 'freemium';
-    if (planName !== 'enterprise') {
-      throw new Error('Study Materials upload features are only available in the Enterprise subscription plan.');
-    }
+    await this.validateEnterpriseSubscription(schoolId);
 
     let finalFileUrl = fileUrl;
     let mimeType = 'url/stream';
@@ -8154,6 +8192,15 @@ export const mockApi = {
   ): Promise<StudyMaterial> {
     await delay(500);
 
+    const { data: currentMaterial } = await supabaseAdmin
+      .from('study_materials')
+      .select('school_id')
+      .eq('id', materialId)
+      .maybeSingle();
+    if (currentMaterial) {
+      await this.validateEnterpriseSubscription(currentMaterial.school_id);
+    }
+
     const { data: dbMaterial, error } = await supabaseAdmin
       .from('study_materials')
       .update({
@@ -8204,6 +8251,15 @@ export const mockApi = {
 
   async teacherDeleteStudyMaterial(materialId: string): Promise<void> {
     await delay(500);
+
+    const { data: currentMaterial } = await supabaseAdmin
+      .from('study_materials')
+      .select('school_id')
+      .eq('id', materialId)
+      .maybeSingle();
+    if (currentMaterial) {
+      await this.validateEnterpriseSubscription(currentMaterial.school_id);
+    }
 
     const { error } = await supabaseAdmin
       .from('study_materials')
