@@ -70,3 +70,47 @@ export const subscriptionPlans: Record<string, SubscriptionConfig> = {
     }
   }
 };
+
+export const isTabLocked = (role: string, tabId: string, planName: string): boolean => {
+  const plan = planName.toLowerCase();
+  if (role === 'STUDENT') {
+    if (tabId === 'materials') return plan !== 'enterprise';
+    if (tabId === 'library') return plan !== 'enterprise';
+    if (tabId === 'transit') return plan !== 'enterprise';
+    if (tabId === 'hostel') return plan !== 'enterprise';
+    if (tabId === 'quizzes') return plan === 'freemium' || plan === 'basic';
+    if (tabId === 'forums') return plan === 'freemium';
+    if (tabId === 'fees') return plan === 'freemium';
+  }
+  if (role === 'PARENT') {
+    if (tabId === 'homework') return plan !== 'enterprise';
+    if (tabId === 'materials') return plan !== 'enterprise';
+    if (tabId === 'library') return plan !== 'enterprise';
+    if (tabId === 'transit') return plan !== 'enterprise';
+    if (tabId === 'hostel') return plan !== 'enterprise';
+    if (tabId === 'quizzes') return plan === 'freemium' || plan === 'basic';
+    if (tabId === 'forums') return plan === 'freemium';
+    if (tabId === 'fees') return plan === 'freemium';
+  }
+  if (role === 'TEACHER') {
+    if (tabId === 'classroster') return plan === 'freemium';
+    if (tabId === 'attendance') return plan === 'freemium';
+    if (tabId === 'marksheets') return plan === 'freemium' || plan === 'basic';
+    if (tabId === 'analytics') return plan !== 'enterprise';
+    if (tabId === 'assignments') return plan !== 'enterprise';
+    if (tabId === 'quizzes') return plan === 'freemium' || plan === 'basic';
+    if (tabId === 'materials') return plan !== 'enterprise';
+    if (tabId === 'forums') return plan === 'freemium';
+  }
+  if (role === 'ADMIN') {
+    if (tabId === 'attendance') return plan === 'freemium';
+    if (tabId === 'fees') return plan === 'freemium';
+    if (tabId === 'hostel') return plan !== 'enterprise';
+    if (tabId === 'communications') return plan === 'freemium';
+    if (tabId === 'analytics') return plan === 'freemium' || plan === 'basic';
+    if (tabId === 'rbac') return plan !== 'enterprise' && plan !== 'pro';
+    if (tabId === 'backups') return plan !== 'enterprise';
+  }
+  return false;
+};
+

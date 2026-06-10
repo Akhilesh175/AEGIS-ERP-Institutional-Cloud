@@ -1,7 +1,7 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
 import { mockDb } from '../services/mockDb';
-import { subscriptionPlans } from '../services/subscriptionConfig';
+import { subscriptionPlans, isTabLocked } from '../services/subscriptionConfig';
 import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare, 
@@ -97,50 +97,54 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
   const getTabs = (): Array<{ id: string; label: string; icon: any; locked?: boolean }> => {
     switch (role) {
       case 'STUDENT': {
+        const lock = (tabId: string) => isTabLocked('STUDENT', tabId, planName);
         return [
           { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
           { id: 'timetable', label: 'Schedule', icon: Calendar },
           { id: 'grades', label: 'Report Cards', icon: Award },
-          { id: 'materials', label: 'Materials', icon: BookOpen, locked: planName !== 'enterprise' },
-          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName !== 'enterprise' },
-          { id: 'transit', label: 'School Transit', icon: Layers, locked: planName !== 'enterprise' },
-          { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: planName !== 'enterprise' },
-          { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: planName === 'freemium' },
-          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: planName === 'freemium' }
+          { id: 'materials', label: 'Materials', icon: BookOpen, locked: lock('materials') },
+          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
+          { id: 'library', label: 'Library Books', icon: BookMarked, locked: lock('library') },
+          { id: 'transit', label: 'School Transit', icon: Layers, locked: lock('transit') },
+          { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: lock('hostel') },
+          { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: lock('forums') },
+          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: lock('fees') }
         ];
       }
       case 'PARENT': {
+        const lock = (tabId: string) => isTabLocked('PARENT', tabId, planName);
         return [
           { id: 'dashboard', label: 'Child Tracker', icon: Eye },
-          { id: 'homework', label: 'Homework', icon: BookMarked, locked: planName !== 'enterprise' },
+          { id: 'homework', label: 'Homework', icon: BookMarked, locked: lock('homework') },
           { id: 'timetable', label: 'Class Schedule', icon: Calendar },
           { id: 'grades', label: 'Grades Progress', icon: Award },
-          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: planName === 'freemium' },
-          { id: 'materials', label: 'Materials', icon: BookOpen, locked: planName !== 'enterprise' },
-          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'library', label: 'Library Books', icon: BookMarked, locked: planName !== 'enterprise' },
-          { id: 'transit', label: 'School Transit', icon: Layers, locked: planName !== 'enterprise' },
-          { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: planName !== 'enterprise' },
-          { id: 'forums', label: 'Forums', icon: MessageSquare, locked: planName === 'freemium' }
+          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: lock('fees') },
+          { id: 'materials', label: 'Materials', icon: BookOpen, locked: lock('materials') },
+          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
+          { id: 'library', label: 'Library Books', icon: BookMarked, locked: lock('library') },
+          { id: 'transit', label: 'School Transit', icon: Layers, locked: lock('transit') },
+          { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: lock('hostel') },
+          { id: 'forums', label: 'Forums', icon: MessageSquare, locked: lock('forums') }
         ];
       }
       case 'TEACHER': {
+        const lock = (tabId: string) => isTabLocked('TEACHER', tabId, planName);
         return [
           { id: 'dashboard', label: 'Classes Taught', icon: LayoutDashboard },
           { id: 'timetable', label: 'Teaching Schedule', icon: Calendar },
-          { id: 'classroster', label: 'Class Roster', icon: Users, locked: planName === 'freemium' },
-          { id: 'attendance', label: 'Attendance Roll', icon: Layers, locked: planName === 'freemium' },
+          { id: 'classroster', label: 'Class Roster', icon: Users, locked: lock('classroster') },
+          { id: 'attendance', label: 'Attendance Roll', icon: Layers, locked: lock('attendance') },
           { id: 'grades', label: 'Gradebook Matrix', icon: Award },
-          { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'analytics', label: 'Class Analytics', icon: Activity, locked: planName !== 'enterprise' },
-          { id: 'assignments', label: 'Assignment Creator', icon: PenTool, locked: planName !== 'enterprise' },
-          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: planName !== 'enterprise' },
-          { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: planName === 'freemium' }
+          { id: 'marksheets', label: 'Homeroom Marksheets', icon: ClipboardList, locked: lock('marksheets') },
+          { id: 'analytics', label: 'Class Analytics', icon: Activity, locked: lock('analytics') },
+          { id: 'assignments', label: 'Assignment Creator', icon: PenTool, locked: lock('assignments') },
+          { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
+          { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: lock('materials') },
+          { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: lock('forums') }
         ];
       }
       case 'ADMIN': {
+        const lock = (tabId: string) => isTabLocked('ADMIN', tabId, planName);
         return [
           { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard },
           { id: 'students', label: 'Student Directory', icon: Users },
@@ -149,13 +153,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'classes', label: 'Classes & Sections', icon: Layers },
           { id: 'subjects', label: 'Subject Catalog', icon: BookMarked },
           { id: 'academicsessions', label: 'Academic Sessions', icon: Calendar },
-          { id: 'attendance', label: 'Student Attendance', icon: Layers, locked: planName === 'freemium' },
-          { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: planName === 'freemium' },
-          { id: 'hostel', label: 'Hostel Registry', icon: Home, locked: planName !== 'enterprise' },
-          { id: 'communications', label: 'Communication Center', icon: Mail, locked: planName === 'freemium' },
-          { id: 'analytics', label: 'Institutional Analytics', icon: Activity, locked: planName === 'freemium' || planName === 'basic' },
-          { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: planName !== 'enterprise' && planName !== 'pro' },
-          { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database, locked: planName !== 'enterprise' },
+          { id: 'attendance', label: 'Student Attendance', icon: Layers, locked: lock('attendance') },
+          { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: lock('fees') },
+          { id: 'hostel', label: 'Hostel Registry', icon: Home, locked: lock('hostel') },
+          { id: 'communications', label: 'Communication Center', icon: Mail, locked: lock('communications') },
+          { id: 'analytics', label: 'Institutional Analytics', icon: Activity, locked: lock('analytics') },
+          { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: lock('rbac') },
+          { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database, locked: lock('backups') },
           { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
           { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert }
         ];

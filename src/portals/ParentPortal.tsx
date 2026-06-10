@@ -70,12 +70,11 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   // States
   const [assignedStudents, setAssignedStudents] = useState<(Student & { userDetails: User; className: string })[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
-  const [schoolSubscriptionPlan, setSchoolSubscriptionPlan] = useState<string>('freemium');
   
-  // Dynamically resolve school subscription plan from selected student's school context
+  // Compute plan directly from Zustand session (single source of truth), with mockDb fallback
   const studentObj = mockDb.students.find(s => s.id === selectedStudent);
   const studentSchool = studentObj ? mockDb.schools.find(sch => sch.id === studentObj.schoolId) : null;
-  const currentPlanName = (schoolSubscriptionPlan || studentSchool?.subscriptionPlan || session?.schoolSubscriptionPlan || 'freemium').toLowerCase();
+  const currentPlanName = (session?.schoolSubscriptionPlan || studentSchool?.subscriptionPlan || 'freemium').toLowerCase();
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
   const [academicRecord, setAcademicRecord] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
@@ -172,13 +171,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
       setError(null);
       setMaterialsLoading(true);
       
-      const studentObj = mockDb.students.find(s => s.id === selectedStudent);
-      if (studentObj) {
-        const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(studentObj.schoolId);
-        if (livePlan) {
-          setSchoolSubscriptionPlan(livePlan.toLowerCase());
-        }
-      }
+      // Sync the subscription plan from DB into Zustand store (single source of truth)
+      await syncSubscriptionPlan();
 
       const data = await mockApi.parentGetStudentAcademicRecord(parentId, selectedStudent);
       

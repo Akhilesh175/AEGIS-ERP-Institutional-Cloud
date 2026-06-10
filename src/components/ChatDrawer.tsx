@@ -14,7 +14,7 @@ interface ChatDrawerProps {
 }
 
 export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
-  const { session } = useStore();
+  const { session, syncSubscriptionPlan } = useStore();
   const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
 
@@ -51,6 +51,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
 
   useEffect(() => {
     if (isOpen) {
+      syncSubscriptionPlan(); // Ensure latest subscription plan is loaded
       loadContacts();
     }
   }, [isOpen, session]);

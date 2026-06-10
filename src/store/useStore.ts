@@ -135,45 +135,54 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
   syncSubscriptionPlan: async () => {
     const sess = get().session;
     if (!sess) return;
-    if (sess?.user?.schoolId) {
-      try {
-        const { mockApi } = await import('../services/mockApi');
-        const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(sess.user.schoolId);
-        if (!get().session || !localStorage.getItem('aegis_session')) {
-          console.log('Session was cleared during syncSubscriptionPlan. Aborting.');
-          return;
-        }
-        if (livePlan) {
-          const planNormalized = livePlan.toLowerCase();
-          const updatedSession = { ...sess, schoolSubscriptionPlan: planNormalized };
-          set({ session: updatedSession });
-          localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
-          
-          // Force sync the local mockDb school registry as well
-          const dbSchoolsRaw = localStorage.getItem('aegis_erp_db_schools');
-          if (dbSchoolsRaw) {
-            try {
-              const dbSchools = JSON.parse(dbSchoolsRaw);
-              const idx = dbSchools.findIndex((s: any) => s.id === sess.user.schoolId);
-              if (idx !== -1 && dbSchools[idx].subscriptionPlan !== planNormalized) {
-                dbSchools[idx].subscriptionPlan = planNormalized;
-                localStorage.setItem('aegis_erp_db_schools', JSON.stringify(dbSchools));
-              }
-              
-              // Keep the in-memory mockDb singleton in sync!
-              const { mockDb } = await import('../services/mockDb');
-              const memIdx = mockDb.schools.findIndex((s: any) => s.id === sess.user.schoolId);
-              if (memIdx !== -1) {
-                mockDb.schools[memIdx].subscriptionPlan = planNormalized;
-              }
-            } catch (err) {
-              console.error('Failed to sync mockDb schools local storage:', err);
+    const schoolId = sess?.user?.schoolId;
+    if (!schoolId) return;
+    
+    try {
+      const { mockApi } = await import('../services/mockApi');
+      const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(schoolId);
+      
+      // Re-read session FRESH after the async call to avoid overwriting concurrent changes
+      const currentSession = get().session;
+      if (!currentSession || !localStorage.getItem('aegis_session')) {
+        console.log('Session was cleared during syncSubscriptionPlan. Aborting.');
+        return;
+      }
+      
+      if (livePlan) {
+        const planNormalized = livePlan.toLowerCase();
+        
+        // Only update if plan actually changed to avoid unnecessary re-renders
+        if (currentSession.schoolSubscriptionPlan === planNormalized) return;
+        
+        const updatedSession = { ...currentSession, schoolSubscriptionPlan: planNormalized };
+        set({ session: updatedSession });
+        localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+        
+        // Force sync the local mockDb school registry as well
+        const dbSchoolsRaw = localStorage.getItem('aegis_erp_db_schools');
+        if (dbSchoolsRaw) {
+          try {
+            const dbSchools = JSON.parse(dbSchoolsRaw);
+            const idx = dbSchools.findIndex((s: any) => s.id === schoolId);
+            if (idx !== -1 && dbSchools[idx].subscriptionPlan !== planNormalized) {
+              dbSchools[idx].subscriptionPlan = planNormalized;
+              localStorage.setItem('aegis_erp_db_schools', JSON.stringify(dbSchools));
             }
+            
+            // Keep the in-memory mockDb singleton in sync!
+            const { mockDb } = await import('../services/mockDb');
+            const memIdx = mockDb.schools.findIndex((s: any) => s.id === schoolId);
+            if (memIdx !== -1) {
+              mockDb.schools[memIdx].subscriptionPlan = planNormalized;
+            }
+          } catch (err) {
+            console.error('Failed to sync mockDb schools local storage:', err);
           }
         }
-      } catch (e) {
-        console.error('Failed to sync subscription plan in polling loop:', e);
       }
+    } catch (e) {
+      console.error('Failed to sync subscription plan in polling loop:', e);
     }
   }
 }));
