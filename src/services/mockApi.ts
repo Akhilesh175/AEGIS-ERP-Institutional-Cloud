@@ -7178,23 +7178,45 @@ export const mockApi = {
         .update({ status: 'INACTIVE' })
         .eq('school_id', schoolId);
 
-      // 2. If the new plan is a paid plan, upsert it as ACTIVE
+      // 2. If the new plan is a paid plan, insert or update it as ACTIVE
       const upperPlan = subscriptionPlan.toUpperCase();
       if (['BASIC', 'PRO', 'ENTERPRISE'].includes(upperPlan)) {
         const oneYearLaterStr = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        await supabaseAdmin
+        
+        // Safe check-then-insert/update flow to bypass unique constraint mismatch error 42P10
+        const { data: existing } = await supabaseAdmin
           .from('school_subscriptions')
-          .upsert({
-            school_id: schoolId,
-            plan: upperPlan,
-            status: 'ACTIVE',
-            expiry_date: oneYearLaterStr
-          }, {
-            onConflict: 'school_id,plan'
-          });
+          .select('*')
+          .eq('school_id', schoolId)
+          .eq('plan', upperPlan)
+          .limit(1);
+          
+        if (existing && existing.length > 0) {
+          const { error: updateErr } = await supabaseAdmin
+            .from('school_subscriptions')
+            .update({
+              status: 'ACTIVE',
+              expiry_date: oneYearLaterStr
+            })
+            .eq('id', existing[0].id);
+            
+          if (updateErr) throw updateErr;
+        } else {
+          const { error: insertErr } = await supabaseAdmin
+            .from('school_subscriptions')
+            .insert({
+              school_id: schoolId,
+              plan: upperPlan,
+              status: 'ACTIVE',
+              expiry_date: oneYearLaterStr
+            });
+            
+          if (insertErr) throw insertErr;
+        }
       }
     } catch (e) {
-      console.warn('Failed to update school_subscriptions table in Supabase:', e);
+      console.error('Failed to update school_subscriptions table in Supabase:', e);
+      throw e;
     }
 
     // Invalidate cached subscription-related telemetry
@@ -8682,9 +8704,6 @@ export const mockApi = {
           
         if (dbSchool) {
           plan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
-          if (plan === 'enterprise') {
-            plan = 'freemium'; // Force non-enterprise fallback to keep enterprise gated
-          }
         }
       }
       
