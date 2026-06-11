@@ -13005,13 +13005,27 @@ export const mockApi = {
   },
 
   async getStudentMarksheetData(studentId: string, termName: string): Promise<any> {
-    const student = mockDb.students.find(s => s.id === studentId);
-    if (!student) throw new Error('Student not found');
-    const schoolId = student.schoolId;
-    const sessionId = student.academicSessionId;
+    const studentCheck = mockDb.students.find(s => s.id === studentId);
+    if (!studentCheck) throw new Error('Student not found');
+    const schoolId = studentCheck.schoolId;
+    const sessionId = studentCheck.academicSessionId;
 
-    await this.ensureCbseStructure(schoolId, sessionId);
+    // Sync all core database tables from Supabase before marksheet generation
+    await this.syncSchoolsData(schoolId).catch(console.error);
+    await this.syncStudentsData(schoolId).catch(console.error);
+    await this.syncUsersData(schoolId).catch(console.error);
+    await this.syncClassesData(schoolId).catch(console.error);
+    await this.syncTeachersData(schoolId).catch(console.error);
+    await this.syncParentsData(schoolId).catch(console.error);
+    await this.syncParentStudentMappingsData(schoolId).catch(console.error);
+    await this.syncAttendanceData(schoolId).catch(console.error);
+    await this.syncSubjectsData(schoolId).catch(console.error);
+    await this.syncExamsData(schoolId).catch(console.error);
+    await this.syncExamSchedulesData(schoolId).catch(console.error);
+    await this.fetchAllStudentMarks(schoolId).catch(console.error);
+    await this.fetchReportCards(schoolId, studentId).catch(console.error);
 
+    // 1. School Validation
     let school = mockDb.schools.find(s => s.id === schoolId);
     const { data: dbSchool } = await supabaseAdmin.from('schools').select('*').eq('id', schoolId).single();
     if (dbSchool) {
@@ -13034,17 +13048,98 @@ export const mockApi = {
         sealUploadedAt: dbSchool.seal_uploaded_at || ''
       };
     }
+    if (!school || !school.name) {
+      throw new Error('Marksheet generation failed: School profile details are missing in the database.');
+    }
+    if (!school.logoUrl) {
+      throw new Error('Marksheet generation failed: School logo is missing in the database. Please upload a logo in branding configuration.');
+    }
+    if (!school.sealUrl) {
+      throw new Error('Marksheet generation failed: School seal is missing in the database. Please upload a seal in branding configuration.');
+    }
 
+    // 2. Student Validation
+    const student = mockDb.students.find(s => s.id === studentId);
+    if (!student) {
+      throw new Error('Marksheet generation failed: Student profile not found.');
+    }
     const studentUser = mockDb.users.find(u => u.id === student.userId);
-    const cls = mockDb.classes.find(c => c.id === student.classId);
-    const className = cls?.name || 'Grade 9';
-    const sec = mockDb.sections.find(s => s.id === student.sectionId);
-    const sectionName = sec?.name || '';
+    if (!studentUser || !studentUser.firstName) {
+      throw new Error('Marksheet generation failed: Student user account details are missing in the database.');
+    }
 
+    // 3. Class and Section Validation
+    const cls = mockDb.classes.find(c => c.id === student.classId);
+    if (!cls) {
+      throw new Error('Marksheet generation failed: Class assignment not found.');
+    }
+    const sec = mockDb.sections.find(s => s.id === student.sectionId);
+    if (!sec) {
+      throw new Error('Marksheet generation failed: Section assignment not found.');
+    }
+    const className = cls.name;
+    const sectionName = sec.name;
+
+    // 4. Class Teacher Validation
+    if (!cls.classTeacherId) {
+      throw new Error('Marksheet generation failed: No Class Teacher has been assigned to this class.');
+    }
+    const teacher = mockDb.teachers.find(t => t.id === cls.classTeacherId);
+    if (!teacher) {
+      throw new Error('Marksheet generation failed: Assigned Class Teacher profile not found.');
+    }
+    const teacherUser = mockDb.users.find(u => u.id === teacher.userId);
+    if (!teacherUser) {
+      throw new Error('Marksheet generation failed: Class Teacher user account details are missing in the database.');
+    }
+    let teacherSignatureUrl = teacher.signatureUrl || '';
+    try {
+      const { data: dbTeacher } = await supabaseAdmin
+        .from('teachers')
+        .select('signature_url')
+        .eq('id', cls.classTeacherId)
+        .maybeSingle();
+      if (dbTeacher?.signature_url) {
+        teacherSignatureUrl = dbTeacher.signature_url;
+      }
+    } catch (err) {
+      console.error('Failed to fetch teacher signature:', err);
+    }
+    if (!teacherSignatureUrl) {
+      throw new Error('Marksheet generation failed: Class Teacher signature asset is missing in the database. Please upload a signature in Teacher settings.');
+    }
+    const teacherName = `${teacherUser.firstName} ${teacherUser.lastName}`;
+
+    // 5. Principal Signature Validation
+    let principalSignatureUrl = '';
+    let principalName = '';
+    const { data: dbAdmin } = await supabaseAdmin
+      .from('school_admins')
+      .select('signature_url, users(first_name, last_name)')
+      .eq('school_id', schoolId)
+      .eq('status', 'ACTIVE')
+      .maybeSingle();
+    if (dbAdmin) {
+      if (dbAdmin.signature_url) {
+        principalSignatureUrl = dbAdmin.signature_url;
+      }
+      if (dbAdmin.users) {
+        const u = dbAdmin.users as any;
+        principalName = `${u.first_name} ${u.last_name}`;
+      }
+    }
+    if (!principalSignatureUrl) {
+      throw new Error('Marksheet generation failed: Principal signature asset is missing in the database. Please upload a signature in School Admin settings.');
+    }
+    if (!principalName) {
+      throw new Error('Marksheet generation failed: Active School Administrator (Principal) user details not found.');
+    }
+
+    // 6. Parent Details
     const mappings = mockDb.parentStudentMappings.filter(m => m.studentId === studentId);
     let fatherName = '';
     let motherName = '';
-    let address = school?.address || '';
+    let address = school.address || '';
 
     for (const m of mappings) {
       const parent = mockDb.parents.find(p => p.id === m.parentId);
@@ -13061,9 +13156,13 @@ export const mockApi = {
       }
     }
 
+    // 7. Exam and Marks Validation
     const sessionObj = mockDb.academicSessions.find(s => s.id === sessionId);
     const sessionName = sessionObj?.name || '2025-2026';
     const subjects = mockDb.subjects.filter(s => s.schoolId === schoolId);
+    if (subjects.length === 0) {
+      throw new Error('Marksheet generation failed: No subjects are registered for this school.');
+    }
     const studentMarks = mockDb.studentMarks.filter(sm => sm.studentId === studentId);
     const exams = mockDb.exams.filter(e => e.schoolId === schoolId && e.academicSessionId === sessionId);
 
@@ -13073,12 +13172,29 @@ export const mockApi = {
     const annualExam = exams.find(e => e.name.toLowerCase().includes('annual') || e.name.toLowerCase().includes('final'));
     const practicalExam = exams.find(e => e.name.toLowerCase().includes('practical'));
 
+    if (!preMidExam || !midTermExam || !postMidExam || !annualExam || !practicalExam) {
+      throw new Error('Marksheet generation failed: Required CBSE exam schedules (Pre-Mid, Mid-Term, Post-Mid, Annual, Practical) are not fully configured in the database.');
+    }
+
+    // Verify marks exist for all subjects in all exams
+    for (const sub of subjects) {
+      const hasPreMid = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === preMidExam.id);
+      const hasMidTerm = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === midTermExam.id);
+      const hasPostMid = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === postMidExam.id);
+      const hasAnnual = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === annualExam.id);
+      const hasPractical = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === practicalExam.id);
+
+      if (!hasPreMid || !hasMidTerm || !hasPostMid || !hasAnnual || !hasPractical) {
+        throw new Error(`Marksheet generation failed: Incomplete marks records. Subject "${sub.name}" is missing required exam grades in the database.`);
+      }
+    }
+
     const scholasticData = subjects.map(sub => {
-      const preMid = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === preMidExam?.id);
-      const midTerm = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === midTermExam?.id);
-      const postMid = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === postMidExam?.id);
-      const annual = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === annualExam?.id);
-      const practical = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === practicalExam?.id);
+      const preMid = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === preMidExam.id);
+      const midTerm = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === midTermExam.id);
+      const postMid = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === postMidExam.id);
+      const annual = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === annualExam.id);
+      const practical = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === practicalExam.id);
 
       const preMidMarks = preMid ? preMid.marksObtained : 0;
       const midTermMarks = midTerm ? midTerm.marksObtained : 0;
@@ -13115,11 +13231,11 @@ export const mockApi = {
       const csMarks = mockDb.studentMarks.filter(sm => sm.studentId === cs.id);
       let totalScore = 0;
       subjects.forEach(sub => {
-        const preMid = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === preMidExam?.id);
-        const midTerm = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === midTermExam?.id);
-        const postMid = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === postMidExam?.id);
-        const annual = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === annualExam?.id);
-        const practical = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === practicalExam?.id);
+        const preMid = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === preMidExam.id);
+        const midTerm = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === midTermExam.id);
+        const postMid = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === postMidExam.id);
+        const annual = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === annualExam.id);
+        const practical = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === practicalExam.id);
 
         totalScore += (preMid?.marksObtained || 0) + (midTerm?.marksObtained || 0) + (postMid?.marksObtained || 0) + (annual?.marksObtained || 0) + (practical?.marksObtained || 0);
       });
@@ -13131,12 +13247,24 @@ export const mockApi = {
     const classRank = myRankIndex >= 0 ? myRankIndex + 1 : 1;
 
     const attendanceLogs = mockDb.attendance.filter(a => a.studentId === studentId && a.academicSessionId === sessionId);
-    const totalWorkingDays = attendanceLogs.length > 0 ? attendanceLogs.length : 120;
-    const presentDays = attendanceLogs.length > 0 ? attendanceLogs.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length : 112;
-    const attendancePercentage = Math.round((presentDays / totalWorkingDays) * 100);
-
     const reportCard = mockDb.reportCards.find(rc => rc.studentId === studentId && rc.schoolId === schoolId && rc.term === termName);
-    
+
+    let totalWorkingDays = attendanceLogs.length;
+    let presentDays = attendanceLogs.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
+    let attendancePercentage = totalWorkingDays > 0 ? Math.round((presentDays / totalWorkingDays) * 100) : 0;
+
+    if (reportCard && reportCard.attendancePercentage !== undefined && reportCard.attendancePercentage !== null) {
+      attendancePercentage = reportCard.attendancePercentage;
+      if (totalWorkingDays === 0) {
+        totalWorkingDays = 120; // Default total scale
+        presentDays = Math.round((attendancePercentage / 100) * totalWorkingDays);
+      }
+    }
+
+    if (totalWorkingDays === 0 && attendancePercentage === 0) {
+      throw new Error('Marksheet generation failed: Attendance records are missing in the database.');
+    }
+
     let parsedRemarks: any = null;
     if (reportCard?.remarks) {
       try {
@@ -13156,56 +13284,44 @@ export const mockApi = {
       discipline: { term1: parsedRemarks?.coScholastic?.discipline?.term1 || 'A', term2: parsedRemarks?.coScholastic?.discipline?.term2 || 'B' }
     };
 
-    let teacherName = 'Signature of Class Teacher';
-    let teacherSignatureUrl = '';
-    if (cls?.classTeacherId) {
-      const teacher = mockDb.teachers.find(t => t.id === cls.classTeacherId);
-      if (teacher) {
-        const u = mockDb.users.find(usr => usr.id === teacher.userId);
-        if (u) teacherName = `${u.firstName} ${u.lastName}`;
-      }
+    let reopeningDate = parsedRemarks?.reopeningDate || '';
+    if (!reopeningDate && sessionObj) {
       try {
-        const { data: dbTeacher } = await supabaseAdmin
-          .from('teachers')
-          .select('signature_url')
-          .eq('id', cls.classTeacherId)
-          .maybeSingle();
-        if (dbTeacher?.signature_url) {
-          teacherSignatureUrl = dbTeacher.signature_url;
-        }
-      } catch (err) {
-        console.error('Failed to fetch teacher signature:', err);
+        const sessionEnd = new Date(sessionObj.endDate);
+        const reopen = new Date(sessionEnd.getTime() + 60 * 24 * 3600 * 1000); // 2 months later
+        reopeningDate = reopen.toLocaleDateString('en-GB') + ' (Monday)';
+      } catch {
+        reopeningDate = '';
       }
     }
 
-    let principalSignatureUrl = '';
-    let principalName = parsedRemarks?.principalName || 'Dr. Richard Hendricks';
-    try {
-      const { data: dbAdmin } = await supabaseAdmin
-        .from('school_admins')
-        .select('signature_url, users(first_name, last_name)')
-        .eq('school_id', schoolId)
-        .eq('status', 'ACTIVE')
-        .maybeSingle();
-      if (dbAdmin) {
-        if (dbAdmin.signature_url) {
-          principalSignatureUrl = dbAdmin.signature_url;
-        }
-        if (dbAdmin.users && !parsedRemarks?.principalName) {
-          const u = dbAdmin.users as any;
-          principalName = `${u.first_name} ${u.last_name}`;
-        }
+    let promotedClass = parsedRemarks?.promotedClass || '';
+    if (!promotedClass && className) {
+      const match = className.match(/\d+/);
+      if (match) {
+        const currentNum = parseInt(match[0]);
+        const nextNum = currentNum + 1;
+        promotedClass = className.replace(String(currentNum), String(nextNum));
+      } else {
+        promotedClass = 'Next Grade';
       }
-    } catch (err) {
-      console.error('Failed to fetch principal signature:', err);
     }
+
+    const failedSubjectsCount = scholasticData.filter(s => s.total < 33).length;
+    let computedResult = 'Pass';
+    if (failedSubjectsCount === 1) {
+      computedResult = 'Compartment';
+    } else if (failedSubjectsCount >= 2) {
+      computedResult = 'Fail';
+    }
+    const resultStatus = parsedRemarks?.resultStatus || computedResult;
 
     const remarks = {
-      classTeacherRemarks: parsedRemarks?.classTeacherRemarks || 'An Above Average Child. Has Ability To Do Much Better. Work Harder. Congratulation!',
-      dateOfIssue: parsedRemarks?.dateOfIssue || new Date().toLocaleDateString(),
-      reopeningDate: parsedRemarks?.reopeningDate || '03-04-2023 (Monday)',
-      promotedClass: parsedRemarks?.promotedClass || (className.includes('9') ? 'Class X' : 'Next Grade'),
-      resultStatus: parsedRemarks?.resultStatus || (scholasticData.every(s => s.total >= 33) ? 'Pass' : 'Compartment')
+      classTeacherRemarks: parsedRemarks?.classTeacherRemarks || reportCard?.remarks || 'Progress is satisfactory.',
+      dateOfIssue: parsedRemarks?.dateOfIssue || new Date().toLocaleDateString('en-GB'),
+      reopeningDate: reopeningDate,
+      promotedClass: promotedClass,
+      resultStatus: resultStatus
     };
 
     const signatures = {
@@ -13220,26 +13336,26 @@ export const mockApi = {
     return {
       school: {
         id: schoolId,
-        name: school?.name || 'PARANTAP PUBLIC SCHOOL',
-        address: school?.address || 'gram- shahanshahpur, Varanasi, UP, India',
-        phone: school?.phone || '+91 93363 57874',
-        email: `info@${(school?.name || 'parantappublicschool').toLowerCase().replace(/[^a-z0-9]/g, '')}.edu.in`,
+        name: school.name,
+        address: school.address,
+        phone: school.phone,
+        email: school.email || `info@${school.name.toLowerCase().replace(/[^a-z0-9]/g, '')}.edu.in`,
         sessionName: sessionName,
-        logoUrl: school?.logoUrl || '',
-        sealUrl: school?.sealUrl || ''
+        logoUrl: school.logoUrl,
+        sealUrl: school.sealUrl
       },
       student: {
         id: studentId,
-        name: studentUser ? `${studentUser.firstName} ${studentUser.lastName}` : 'Unknown Student',
+        name: `${studentUser.firstName} ${studentUser.lastName}`,
         admissionNumber: student.admissionNumber,
         rollNumber: student.rollNumber,
         className: className,
         sectionName: sectionName,
         dateOfBirth: student.dateOfBirth,
-        fatherName: fatherName || 'Robert da Vinci',
-        motherName: motherName || 'Clara da Vinci',
+        fatherName: fatherName,
+        motherName: motherName,
         address: address,
-        avatarUrl: studentUser?.avatarUrl || ''
+        avatarUrl: studentUser.avatarUrl || ''
       },
       academic: {
         term: termName,

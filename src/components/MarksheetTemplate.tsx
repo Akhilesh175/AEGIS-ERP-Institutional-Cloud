@@ -301,13 +301,20 @@ export const MarksheetTemplate: React.FC<MarksheetTemplateProps> = ({ data }) =>
           <span>Promoted To Class: </span>
           <span className="underline text-brand-700">{data.remarks.promotedClass}</span>
         </div>
-        <div>
+        <div className="flex items-center gap-1.5">
           <span>Class Rank: </span>
-          <span className="font-mono bg-slate-100 border border-slate-300 rounded px-1.5 py-0.5">{data.academic.classRank}</span>
+          <span className="font-mono bg-slate-100 border border-slate-300 rounded px-2 py-0.5 min-w-[40px] text-center inline-block">{data.academic.classRank}</span>
         </div>
-        <div>
+        <div className="flex items-center gap-1.5">
           <span>Result: </span>
-          <span className={`px-2 py-0.5 rounded ${data.remarks.resultStatus.toLowerCase() === 'pass' ? 'bg-emerald-100 text-emerald-800 border border-emerald-250' : 'bg-red-100 text-red-800'}`}>
+          <span className={`px-2.5 py-0.5 rounded border inline-block text-center whitespace-nowrap min-w-[90px] ${
+            data.remarks.resultStatus.toLowerCase() === 'pass' ? 'bg-emerald-100 text-emerald-800 border-emerald-250' :
+            data.remarks.resultStatus.toLowerCase() === 'promoted' ? 'bg-emerald-100 text-emerald-800 border-emerald-250' :
+            data.remarks.resultStatus.toLowerCase() === 'fail' ? 'bg-red-100 text-red-800 border-red-200' :
+            data.remarks.resultStatus.toLowerCase() === 'compartment' ? 'bg-amber-100 text-amber-850 border-amber-250' :
+            data.remarks.resultStatus.toLowerCase() === 'supplementary' ? 'bg-orange-100 text-orange-850 border-orange-250' :
+            'bg-slate-100 text-slate-800 border-slate-200'
+          }`}>
             {data.remarks.resultStatus}
           </span>
         </div>
@@ -329,37 +336,48 @@ export const MarksheetTemplate: React.FC<MarksheetTemplateProps> = ({ data }) =>
           </div>
         </div>
         {/* Signatures Row */}
-        <div className="flex text-center">
-          <div className="w-[28%] bg-[#ffeb3b]/15 border-r border-slate-400 p-3 flex flex-col justify-between h-20">
+        <div className="flex text-center items-stretch">
+          <div className="w-[28%] bg-[#ffeb3b]/15 border-r border-slate-400 p-3 flex flex-col justify-between">
             <span className="font-bold text-slate-650 text-[10px]">Date of Issue</span>
-            <span className="font-mono text-slate-900 font-semibold">{data.remarks.dateOfIssue}</span>
+            <span className="font-mono text-slate-900 font-semibold mb-2">{data.remarks.dateOfIssue}</span>
           </div>
-          <div className="flex-1 border-r border-slate-400 p-3 flex flex-col justify-between h-20 relative">
-            {data.signatures.classTeacherSignatureUrl ? (
-              <div className="h-10 flex items-center justify-center overflow-hidden">
-                <img src={data.signatures.classTeacherSignatureUrl} alt="Class Teacher Signature" className="max-h-full max-w-[150px] object-contain" />
-              </div>
-            ) : (
-              <span className="font-cursive text-indigo-800 text-lg leading-none pt-2">{data.signatures.classTeacherName}</span>
-            )}
+          <div className="flex-1 border-r border-slate-400 p-3 flex flex-col justify-between">
+            <div className="flex-1 flex flex-col justify-center min-h-[50px]">
+              {data.signatures.classTeacherSignatureUrl ? (
+                <div className="h-10 flex items-center justify-center overflow-hidden">
+                  <img src={data.signatures.classTeacherSignatureUrl} alt="Class Teacher Signature" className="max-h-full max-w-[150px] object-contain" />
+                </div>
+              ) : (
+                <span className="font-cursive text-indigo-800 text-lg leading-none pt-2">{data.signatures.classTeacherName}</span>
+              )}
+            </div>
             <span className="text-[10px] font-bold text-slate-500 border-t border-slate-200 pt-1">Signature of Class Teacher</span>
+            <div className="h-14"></div>
           </div>
-          <div className="flex-1 p-3 flex flex-col justify-between h-20 relative overflow-visible">
-            {data.school.sealUrl && (
-              <img 
-                src={data.school.sealUrl} 
-                alt="School Seal" 
-                className="absolute right-2 top-1 w-12 h-12 opacity-80 pointer-events-none object-contain" 
-              />
-            )}
-            {data.signatures.principalSignatureUrl ? (
-              <div className="h-10 flex items-center justify-center overflow-hidden">
-                <img src={data.signatures.principalSignatureUrl} alt="Principal Signature" className="max-h-full max-w-[150px] object-contain" />
-              </div>
-            ) : (
-              <span className="font-cursive text-indigo-800 text-lg leading-none pt-2">{data.signatures.principalName}</span>
-            )}
+          <div className="flex-1 p-3 flex flex-col justify-between relative">
+            <div className="flex-1 flex flex-col justify-center min-h-[50px]">
+              {data.signatures.principalSignatureUrl ? (
+                <div className="h-10 flex items-center justify-center overflow-hidden">
+                  <img src={data.signatures.principalSignatureUrl} alt="Principal Signature" className="max-h-full max-w-[150px] object-contain" />
+                </div>
+              ) : (
+                <span className="font-cursive text-indigo-800 text-lg leading-none pt-2">{data.signatures.principalName}</span>
+              )}
+            </div>
             <span className="text-[10px] font-bold text-slate-500 border-t border-slate-200 pt-1">Signature of Principal</span>
+            
+            {/* School Seal directly centered below Principal Signature */}
+            <div className="h-14 flex items-center justify-center mt-2">
+              {data.school.sealUrl ? (
+                <img 
+                  src={data.school.sealUrl} 
+                  alt="School Seal" 
+                  className="w-12 h-12 object-contain" 
+                />
+              ) : (
+                <div className="w-12 h-12"></div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -424,6 +442,21 @@ export const downloadMarksheetPdf = async (studentName: string, term: string, ma
   // Wait, let's render the HTML structure matching MarksheetTemplate manually to avoid react-dom portal issues
   const verificationUrl = `${window.location.origin}/#verify/marksheet/${marksheetData.verificationCode}`;
   const qrCodeUrl = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&data=${encodeURIComponent(verificationUrl)}`;
+
+  const getResultStyle = (status: string) => {
+    const s = (status || '').toLowerCase();
+    if (s === 'pass' || s === 'promoted') {
+      return 'background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0;';
+    } else if (s === 'fail') {
+      return 'background-color: #fee2e2; color: #991b1b; border: 1px solid #fca5a5;';
+    } else if (s === 'compartment') {
+      return 'background-color: #fef3c7; color: #92400e; border: 1px solid #fde68a;';
+    } else if (s === 'supplementary') {
+      return 'background-color: #ffedd5; color: #c2410c; border: 1px solid #fed7aa;';
+    } else {
+      return 'background-color: #f1f5f9; color: #334155; border: 1px solid #cbd5e1;';
+    }
+  };
 
   const gradingScale = [
     { range: '91-100', grade: 'A1' },
@@ -600,13 +633,13 @@ export const downloadMarksheetPdf = async (studentName: string, term: string, ma
         <span>Promoted To Class: </span>
         <span style="text-decoration: underline; color: #312e81;">${marksheetData.remarks.promotedClass}</span>
       </div>
-      <div>
+      <div style="display: flex; align-items: center; gap: 6px;">
         <span>Class Rank: </span>
-        <span style="font-family: monospace; background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 1px 6px;">${marksheetData.academic.classRank}</span>
+        <span style="font-family: monospace; background-color: #f1f5f9; border: 1px solid #cbd5e1; border-radius: 4px; padding: 2px 6px; display: inline-block; min-width: 40px; text-align: center; box-sizing: border-box;">${marksheetData.academic.classRank}</span>
       </div>
-      <div>
+      <div style="display: flex; align-items: center; gap: 6px;">
         <span>Result: </span>
-        <span style="padding: 1px 8px; border-radius: 4px; background-color: #d1fae5; color: #065f46; border: 1px solid #a7f3d0;">${marksheetData.remarks.resultStatus}</span>
+        <span style="padding: 2px 8px; border-radius: 4px; display: inline-block; text-align: center; white-space: nowrap; min-width: 90px; box-sizing: border-box; ${getResultStyle(marksheetData.remarks.resultStatus)}">${marksheetData.remarks.resultStatus}</span>
       </div>
     </div>
 
@@ -623,33 +656,40 @@ export const downloadMarksheetPdf = async (studentName: string, term: string, ma
           "${marksheetData.remarks.classTeacherRemarks}"
         </div>
       </div>
-      <div style="display: flex; text-align: center;">
-        <div style="width: 28%; background-color: rgba(255, 235, 59, 0.08); border-right: 1px solid #94a3b8; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; height: 70px; box-sizing: border-box;">
+      <div style="display: flex; text-align: center; align-items: stretch;">
+        <div style="width: 28%; background-color: rgba(255, 235, 59, 0.08); border-right: 1px solid #94a3b8; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box;">
           <span style="font-weight: bold; color: #475569; font-size: 9px; font-family: sans-serif;">Date of Issue</span>
-          <span style="font-family: monospace; color: #0f172a; font-weight: 600;">${marksheetData.remarks.dateOfIssue}</span>
+          <span style="font-family: monospace; color: #0f172a; font-weight: 600; margin-bottom: 8px;">${marksheetData.remarks.dateOfIssue}</span>
         </div>
-        <div style="flex: 1; border-right: 1px solid #94a3b8; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; height: 70px; box-sizing: border-box; position: relative;">
-          ${marksheetData.signatures.classTeacherSignatureUrl ? `
-            <div style="height: 32px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-top: 4px;">
-              <img src="${marksheetData.signatures.classTeacherSignatureUrl}" style="max-height: 100%; max-width: 120px; object-fit: contain;" />
-            </div>
-          ` : `
-            <span style="font-family: 'Brush Script MT', cursive, sans-serif; color: #312e81; font-size: 16px; padding-top: 4px;">${marksheetData.signatures.classTeacherName}</span>
-          `}
+        <div style="flex: 1; border-right: 1px solid #94a3b8; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box;">
+          <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 50px;">
+            ${marksheetData.signatures.classTeacherSignatureUrl ? `
+              <div style="height: 32px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-top: 4px;">
+                <img src="${marksheetData.signatures.classTeacherSignatureUrl}" style="max-height: 100%; max-width: 120px; object-fit: contain;" />
+              </div>
+            ` : `
+              <span style="font-family: 'Brush Script MT', cursive, sans-serif; color: #312e81; font-size: 16px; padding-top: 4px;">${marksheetData.signatures.classTeacherName}</span>
+            `}
+          </div>
           <span style="font-size: 9px; font-weight: bold; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 4px; font-family: sans-serif;">Signature of Class Teacher</span>
+          <div style="height: 48px; margin-top: 8px;"></div>
         </div>
-        <div style="flex: 1; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; height: 70px; box-sizing: border-box; position: relative;">
-          ${marksheetData.school.sealUrl ? `
-            <img src="${marksheetData.school.sealUrl}" style="position: absolute; right: 8px; top: 4px; width: 44px; height: 44px; opacity: 0.8; pointer-events: none; object-fit: contain;" />
-          ` : ''}
-          ${marksheetData.signatures.principalSignatureUrl ? `
-            <div style="height: 32px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-top: 4px;">
-              <img src="${marksheetData.signatures.principalSignatureUrl}" style="max-height: 100%; max-width: 120px; object-fit: contain;" />
-            </div>
-          ` : `
-            <span style="font-family: 'Brush Script MT', cursive, sans-serif; color: #312e81; font-size: 16px; padding-top: 4px;">${marksheetData.signatures.principalName}</span>
-          `}
+        <div style="flex: 1; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; box-sizing: border-box;">
+          <div style="flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 50px;">
+            ${marksheetData.signatures.principalSignatureUrl ? `
+              <div style="height: 32px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-top: 4px;">
+                <img src="${marksheetData.signatures.principalSignatureUrl}" style="max-height: 100%; max-width: 120px; object-fit: contain;" />
+              </div>
+            ` : `
+              <span style="font-family: 'Brush Script MT', cursive, sans-serif; color: #312e81; font-size: 16px; padding-top: 4px;">${marksheetData.signatures.principalName}</span>
+            `}
+          </div>
           <span style="font-size: 9px; font-weight: bold; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 4px; font-family: sans-serif;">Signature of Principal</span>
+          <div style="height: 48px; display: flex; align-items: center; justify-content: center; margin-top: 8px;">
+            ${marksheetData.school.sealUrl ? `
+              <img src="${marksheetData.school.sealUrl}" style="width: 44px; height: 44px; object-fit: contain;" />
+            ` : ''}
+          </div>
         </div>
       </div>
     </div>
