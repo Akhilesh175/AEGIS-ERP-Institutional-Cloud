@@ -155,33 +155,23 @@ export async function validateTeacherForTimetable(teacherId: string, schoolId: s
     throw new Error('Selected teacher is invalid or no longer available. Please select an active teacher from your school.');
   }
 
-  // Query Supabase directly to ensure absolute freshness of teacher status
+  // Query Supabase directly using inner join to ensure teacher is active
   const { data: teacher, error } = await supabaseAdmin
     .from('teachers')
-    .select('id, school_id, user_id, status, deleted_at')
+    .select('id, school_id, user_id, users!inner(is_active)')
     .eq('id', teacherId)
+    .eq('users.is_active', true)
     .single();
 
-  if (error || !teacher || teacher.school_id !== schoolId || teacher.status === 'INACTIVE' || teacher.deleted_at !== null) {
-    throw new Error('Selected teacher is invalid or no longer available. Please select an active teacher from your school.');
-  }
-
-  // Query corresponding user status in Supabase
-  const { data: user, error: userError } = await supabaseAdmin
-    .from('users')
-    .select('id, is_active')
-    .eq('id', teacher.user_id)
-    .single();
-
-  if (userError || !user || !user.is_active) {
+  if (error || !teacher || teacher.school_id !== schoolId) {
     throw new Error('Selected teacher is invalid or no longer available. Please select an active teacher from your school.');
   }
 
   // Self-heal/update the local mockDb.teachers cache if needed
   const localTeacherIdx = mockDb.teachers.findIndex(t => t.id === teacherId);
   if (localTeacherIdx !== -1) {
-    mockDb.teachers[localTeacherIdx].status = teacher.status as 'ACTIVE' | 'INACTIVE';
-    mockDb.teachers[localTeacherIdx].deletedAt = teacher.deleted_at;
+    mockDb.teachers[localTeacherIdx].status = 'ACTIVE';
+    mockDb.teachers[localTeacherIdx].deletedAt = null;
   }
 }
 
@@ -2733,10 +2723,9 @@ export const mockApi = {
     try {
       const { data: dbTeachers } = await supabaseAdmin
         .from('teachers')
-        .select('*')
+        .select('*, users!inner(is_active)')
         .eq('school_id', schoolId)
-        .eq('status', 'ACTIVE')
-        .is('deleted_at', null);
+        .eq('users.is_active', true);
 
       if (dbTeachers) {
         dbTeachers.forEach((r: any) => {
@@ -2749,8 +2738,8 @@ export const mockApi = {
             joiningDate: r.joining_date || '',
             specialization: r.specialization || '',
             createdAt: r.created_at,
-            status: r.status,
-            deletedAt: r.deleted_at
+            status: 'ACTIVE' as const,
+            deletedAt: null
           };
           const idx = mockDb.teachers.findIndex(t => t.id === tc.id);
           if (idx === -1) mockDb.teachers.push(tc);
@@ -4764,12 +4753,11 @@ export const mockApi = {
     const { data: teacherRows, error } = await supabase
       .from('teachers')
       .select(`
-        id, user_id, school_id, employee_id, qualification, joining_date, specialization, created_at, status, deleted_at,
+        id, user_id, school_id, employee_id, qualification, joining_date, specialization, created_at,
         users!inner(id, email, first_name, last_name, phone, avatar_url, role, school_id, is_active, created_at)
       `)
       .eq('school_id', schoolId)
-      .eq('status', 'ACTIVE')
-      .is('deleted_at', null);
+      .eq('users.is_active', true);
 
     if (error || !teacherRows || teacherRows.length === 0) {
       // Graceful fallback to local seed data
@@ -4800,8 +4788,8 @@ export const mockApi = {
         employeeId: row.employee_id, qualification: row.qualification || '',
         joiningDate: row.joining_date || '', specialization: row.specialization || '',
         createdAt: row.created_at,
-        status: row.status,
-        deletedAt: row.deleted_at
+        status: 'ACTIVE',
+        deletedAt: null
       };
       const existingTeacher = mockDb.teachers.findIndex(t => t.id === row.id);
       if (existingTeacher === -1) mockDb.teachers.push(teacherMapped);
