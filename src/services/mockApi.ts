@@ -7959,6 +7959,9 @@ export const mockApi = {
     // Keep local exam marks clean for this student but preserve seed marks for others
     mockDb.examMarks = mockDb.examMarks.filter(m => m.studentId === studentId ? isUUID(m.id) : true);
 
+    const resolvedScheduleIds: Record<string, string> = {};
+    const saveErrors: string[] = [];
+
     for (const data of marksData) {
       try {
         let dbScheduleId: string | null = null;
@@ -7980,7 +7983,32 @@ export const mockApi = {
               let dbSubject = mockDb.subjects.find(s => s.schoolId === cls.schoolId && isUUID(s.id) && s.name.toLowerCase() === localSubject.name.toLowerCase());
               if (!dbSubject) {
                 const { data: dbSubjects } = await supabaseAdmin.from('subjects').select('*').eq('school_id', cls.schoolId);
-                dbSubject = dbSubjects?.find((s: any) => s.name.toLowerCase() === localSubject.name.toLowerCase()) || dbSubjects?.[0];
+                dbSubject = dbSubjects?.find((s: any) => s.name.toLowerCase() === localSubject.name.toLowerCase());
+                if (!dbSubject) {
+                  // Auto-create missing subject in database
+                  const { data: newSub, error: newSubErr } = await supabaseAdmin.from('subjects').insert({
+                    school_id: cls.schoolId,
+                    name: localSubject.name,
+                    code: localSubject.code || localSubject.name.substring(0, 3).toUpperCase(),
+                    description: localSubject.description || ''
+                  }).select().single();
+                  if (newSubErr) {
+                    throw new Error(`Failed to create missing subject "${localSubject.name}": ${newSubErr.message}`);
+                  }
+                  dbSubject = newSub;
+                  // Sync local cache
+                  if (dbSubject) {
+                    const localSubObj = {
+                      id: dbSubject.id,
+                      schoolId: cls.schoolId,
+                      name: dbSubject.name,
+                      code: dbSubject.code,
+                      description: dbSubject.description || ''
+                    };
+                    mockDb.subjects.push(localSubObj);
+                    mockDb.saveAll();
+                  }
+                }
               }
               if (dbSubject) {
                 dbSubjectId = dbSubject.id;
@@ -7990,29 +8018,31 @@ export const mockApi = {
         }
 
         if (!dbSubjectId) {
-          console.warn('Unable to resolve subject ID for schedule:', data.scheduleId);
-          continue;
+          throw new Error(`Unable to resolve subject ID for schedule: ${data.scheduleId}`);
         }
 
         // Ensure exam_subjects mapping exists
         const { data: existingES } = await supabaseAdmin.from('exam_subjects').select('id').eq('exam_id', dbExamId).eq('subject_id', dbSubjectId).eq('school_id', cls.schoolId);
         if (!existingES || existingES.length === 0) {
-          await supabaseAdmin.from('exam_subjects').insert({
+          const { error: esErr } = await supabaseAdmin.from('exam_subjects').insert({
             school_id: cls.schoolId,
             exam_id: dbExamId,
             subject_id: dbSubjectId,
             max_marks: localMaxMarks,
             passing_marks: Math.round(localMaxMarks * 0.4)
           });
+          if (esErr) {
+            throw new Error(`Failed to map exam subject: ${esErr.message}`);
+          }
         }
 
-        // Resolve or create exam_schedules row
+        // Resolve or create exam_schedules row via UPSERT to prevent race conditions
         if (!dbScheduleId) {
           const { data: existingSched } = await supabaseAdmin.from('exam_schedules').select('id').eq('exam_id', dbExamId).eq('class_id', classId).eq('subject_id', dbSubjectId);
           if (existingSched && existingSched.length > 0) {
             dbScheduleId = existingSched[0].id;
           } else {
-            const { data: newSched } = await supabaseAdmin.from('exam_schedules').insert({
+            const { data: newSched, error: newSchedErr } = await supabaseAdmin.from('exam_schedules').upsert({
               exam_id: dbExamId,
               class_id: classId,
               subject_id: dbSubjectId,
@@ -8021,74 +8051,77 @@ export const mockApi = {
               start_time: '09:00',
               end_time: '12:00',
               classroom: 'Classroom'
-            }).select().single();
-            if (newSched) dbScheduleId = newSched.id;
+            }, { onConflict: 'exam_id,class_id,subject_id' }).select().maybeSingle();
+            
+            if (newSchedErr) {
+              throw new Error(`Failed to create exam schedule: ${newSchedErr.message}`);
+            }
+            dbScheduleId = newSched?.id || null;
           }
         }
 
-        if (dbScheduleId && dbSubjectId) {
-          // Save to exam_marks
-          const { data: dbMarkRecord } = await supabaseAdmin
-            .from('exam_marks')
-            .select('id')
-            .eq('exam_schedule_id', dbScheduleId)
-            .eq('student_id', studentId);
-          
-          let resolvedMarkId = '';
-          if (dbMarkRecord && dbMarkRecord.length > 0) {
-            resolvedMarkId = dbMarkRecord[0].id;
-            await supabaseAdmin
-              .from('exam_marks')
-              .update({
-                marks_obtained: data.marksObtained,
-                remarks: data.remarks,
-                graded_by: teacherId
-              })
-              .eq('id', resolvedMarkId);
-          } else {
-            const { data: insertedMark } = await supabaseAdmin
-              .from('exam_marks')
-              .insert({
-                exam_schedule_id: dbScheduleId,
-                student_id: studentId,
-                marks_obtained: data.marksObtained,
-                remarks: data.remarks,
-                graded_by: teacherId
-              }).select('id').single();
-            resolvedMarkId = insertedMark ? insertedMark.id : ('em-' + Math.random().toString(36).substr(2, 9));
-          }
+        if (!dbScheduleId) {
+          throw new Error(`Unable to resolve or create exam schedule for subject ID ${dbSubjectId}`);
+        }
 
-          // Instantly sync to mockDb.examMarks in-memory cache
-          const localMark = {
-            id: resolvedMarkId,
-            examScheduleId: dbScheduleId,
-            studentId: studentId,
-            marksObtained: Number(data.marksObtained || 0),
+        // Save mock mapping
+        resolvedScheduleIds[data.scheduleId] = dbScheduleId;
+
+        // Save to exam_marks using atomic UPSERT
+        const { data: upsertedMark, error: upsertErr } = await supabaseAdmin
+          .from('exam_marks')
+          .upsert({
+            exam_schedule_id: dbScheduleId,
+            student_id: studentId,
+            marks_obtained: Number(data.marksObtained || 0),
             remarks: data.remarks || '',
-            gradedBy: teacherId,
-            createdAt: new Date().toISOString()
-          };
-          const mIdx = mockDb.examMarks.findIndex(m => m.examScheduleId === dbScheduleId && m.studentId === studentId);
-          if (mIdx === -1) {
-            mockDb.examMarks.push(localMark);
-          } else {
-            mockDb.examMarks[mIdx] = localMark;
-          }
-          mockDb.saveAll();
+            graded_by: teacherId
+          }, { onConflict: 'exam_schedule_id,student_id' })
+          .select()
+          .maybeSingle();
 
-          // Save to student_marks
-          await this.enterStudentMarks(cls.schoolId, dbExamId, dbSubjectId, studentId, data.marksObtained, data.remarks);
+        if (upsertErr) {
+          throw new Error(`Failed to upsert exam mark: ${upsertErr.message}`);
         }
-      } catch (err) {
+
+        const resolvedMarkId = upsertedMark?.id || ('em-' + Math.random().toString(36).substr(2, 9));
+
+        // Instantly sync to mockDb.examMarks in-memory cache
+        const localMark = {
+          id: resolvedMarkId,
+          examScheduleId: dbScheduleId,
+          studentId: studentId,
+          marksObtained: Number(data.marksObtained || 0),
+          remarks: data.remarks || '',
+          gradedBy: teacherId,
+          createdAt: new Date().toISOString()
+        };
+        const mIdx = mockDb.examMarks.findIndex(m => m.examScheduleId === dbScheduleId && m.studentId === studentId);
+        if (mIdx === -1) {
+          mockDb.examMarks.push(localMark);
+        } else {
+          mockDb.examMarks[mIdx] = localMark;
+        }
+        mockDb.saveAll();
+
+        // Save to student_marks
+        await this.enterStudentMarks(cls.schoolId, dbExamId, dbSubjectId, studentId, data.marksObtained, data.remarks);
+      } catch (err: any) {
         console.error('Failed to save exam mark in database:', err);
+        saveErrors.push(err.message || String(err));
       }
+    }
+
+    if (saveErrors.length > 0) {
+      throw new Error(`Failed to save marks for one or more subjects: ${saveErrors.join('; ')}`);
     }
 
     // Upsert Report Card term summary record
     try {
       const resolvedSessionId = await this.resolveActiveSessionId(cls.schoolId);
       const totalMax = marksData.reduce((sum, item) => {
-        const sched = mockDb.examSchedules.find(s => s.id === item.scheduleId) || SEED_EXAM_SCHEDULES.find(s => s.id === item.scheduleId);
+        const lookupId = resolvedScheduleIds[item.scheduleId] || item.scheduleId;
+        const sched = mockDb.examSchedules.find(s => s.id === lookupId) || SEED_EXAM_SCHEDULES.find(s => s.id === lookupId);
         return sum + (sched?.maxMarks || 100);
       }, 0);
       const totalObtained = marksData.reduce((sum, item) => sum + (item.marksObtained || 0), 0);
@@ -13163,18 +13196,7 @@ export const mockApi = {
     // 7. Exam and Marks Validation
     const sessionObj = mockDb.academicSessions.find(s => s.id === sessionId);
     const sessionName = sessionObj?.name || '2025-2026';
-    const subjects = mockDb.subjects.filter(s => s.schoolId === schoolId);
-    if (subjects.length === 0) {
-      throw new Error('Marksheet generation failed: No subjects are registered for this school.');
-    }
-    const studentMarks = mockDb.studentMarks.filter(sm => sm.studentId === studentId);
     const exams = mockDb.exams.filter(e => e.schoolId === schoolId && e.academicSessionId === sessionId);
-
-    const preMidExam = exams.find(e => e.name.toLowerCase().includes('pre-mid') || e.name.toLowerCase().includes('pre mid'));
-    const midTermExam = exams.find(e => e.name.toLowerCase().includes('mid-term') || e.name.toLowerCase().includes('midterm') || e.name.toLowerCase().includes('mid term'));
-    const postMidExam = exams.find(e => e.name.toLowerCase().includes('post-mid') || e.name.toLowerCase().includes('post mid'));
-    const annualExam = exams.find(e => e.name.toLowerCase().includes('annual') || e.name.toLowerCase().includes('final'));
-    const practicalExam = exams.find(e => e.name.toLowerCase().includes('practical'));
 
     // Resolve the selected exam using termName argument (which can be a UUID or a name/term string)
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
@@ -13189,12 +13211,35 @@ export const mockApi = {
       throw new Error('Marksheet generation failed: Selected exam not found.');
     }
 
-    // Verify marks exist for all subjects ONLY for the selected exam
+    // Fetch subjects assigned to the student's class for the selected exam
+    const classSchedules = mockDb.examSchedules.filter(es => es.examId === selectedExam.id && es.classId === student.classId);
+    const assignedSubjectIds = Array.from(new Set(classSchedules.map(es => es.subjectId)));
+    const subjects = mockDb.subjects.filter(s => assignedSubjectIds.includes(s.id));
+
+    if (subjects.length === 0) {
+      throw new Error('Marksheet cannot be generated because no subjects are assigned to the student\'s class for the selected exam.');
+    }
+
+    const studentMarks = mockDb.studentMarks.filter(sm => sm.studentId === studentId);
+
+    const preMidExam = exams.find(e => e.name.toLowerCase().includes('pre-mid') || e.name.toLowerCase().includes('pre mid'));
+    const midTermExam = exams.find(e => e.name.toLowerCase().includes('mid-term') || e.name.toLowerCase().includes('midterm') || e.name.toLowerCase().includes('mid term'));
+    const postMidExam = exams.find(e => e.name.toLowerCase().includes('post-mid') || e.name.toLowerCase().includes('post mid'));
+    const annualExam = exams.find(e => e.name.toLowerCase().includes('annual') || e.name.toLowerCase().includes('final'));
+    const practicalExam = exams.find(e => e.name.toLowerCase().includes('practical'));
+
+    // Compare assigned subjects vs saved marks records
+    const missingSubjects: string[] = [];
     for (const sub of subjects) {
       const hasMark = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === selectedExam.id);
       if (!hasMark) {
-        throw new Error(`Marksheet generation failed: Incomplete marks records. Subject "${sub.name}" is missing required exam grades in the database.`);
+        missingSubjects.push(sub.name);
       }
+    }
+
+    if (missingSubjects.length > 0) {
+      const missingList = missingSubjects.map(s => `• ${s}`).join('\n');
+      throw new Error(`Marksheet cannot be generated because marks are missing for one or more subjects in the selected exam. Please complete marks entry and try again.\n\nThe following subjects do not have marks entered for the selected exam:\n\n${missingList}\n\nPlease complete marks entry before generating the marksheet.`);
     }
 
     const scholasticData = subjects.map(sub => {
