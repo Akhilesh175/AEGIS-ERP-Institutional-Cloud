@@ -7942,6 +7942,7 @@ export const mockApi = {
     teacherId: string,
     classId: string,
     studentId: string,
+    examId: string,
     marksData: { scheduleId: string; marksObtained: number; remarks: string }[]
   ): Promise<void> {
     await delay(300);
@@ -7952,24 +7953,7 @@ export const mockApi = {
 
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     
-    // Resolve active exam from DB or mock
-    let dbExamId: string | null = null;
-    const { data: dbExams } = await supabaseAdmin.from('exams').select('*').eq('school_id', cls.schoolId);
-    if (dbExams && dbExams.length > 0) {
-      dbExamId = dbExams[0].id;
-    } else {
-      const activeSession = await this.resolveActiveSessionId(cls.schoolId);
-      const { data: newExam } = await supabaseAdmin.from('exams').insert({
-        school_id: cls.schoolId,
-        academic_session_id: activeSession,
-        name: 'Midterm Assessments 2026',
-        start_date: new Date().toISOString().split('T')[0],
-        end_date: new Date(Date.now() + 10 * 24 * 3600 * 1000).toISOString().split('T')[0],
-        term: 'MID-TERM'
-      }).select().single();
-      if (newExam) dbExamId = newExam.id;
-    }
-
+    const dbExamId = examId;
     if (!dbExamId) throw new Error('Unable to resolve active exam reference in database.');
 
     // Keep local exam marks clean for this student but preserve seed marks for others
@@ -8050,7 +8034,9 @@ export const mockApi = {
             .eq('exam_schedule_id', dbScheduleId)
             .eq('student_id', studentId);
           
+          let resolvedMarkId = '';
           if (dbMarkRecord && dbMarkRecord.length > 0) {
+            resolvedMarkId = dbMarkRecord[0].id;
             await supabaseAdmin
               .from('exam_marks')
               .update({
@@ -8058,9 +8044,9 @@ export const mockApi = {
                 remarks: data.remarks,
                 graded_by: teacherId
               })
-              .eq('id', dbMarkRecord[0].id);
+              .eq('id', resolvedMarkId);
           } else {
-            await supabaseAdmin
+            const { data: insertedMark } = await supabaseAdmin
               .from('exam_marks')
               .insert({
                 exam_schedule_id: dbScheduleId,
@@ -8068,8 +8054,27 @@ export const mockApi = {
                 marks_obtained: data.marksObtained,
                 remarks: data.remarks,
                 graded_by: teacherId
-              });
+              }).select('id').single();
+            resolvedMarkId = insertedMark ? insertedMark.id : ('em-' + Math.random().toString(36).substr(2, 9));
           }
+
+          // Instantly sync to mockDb.examMarks in-memory cache
+          const localMark = {
+            id: resolvedMarkId,
+            examScheduleId: dbScheduleId,
+            studentId: studentId,
+            marksObtained: Number(data.marksObtained || 0),
+            remarks: data.remarks || '',
+            gradedBy: teacherId,
+            createdAt: new Date().toISOString()
+          };
+          const mIdx = mockDb.examMarks.findIndex(m => m.examScheduleId === dbScheduleId && m.studentId === studentId);
+          if (mIdx === -1) {
+            mockDb.examMarks.push(localMark);
+          } else {
+            mockDb.examMarks[mIdx] = localMark;
+          }
+          mockDb.saveAll();
 
           // Save to student_marks
           await this.enterStudentMarks(cls.schoolId, dbExamId, dbSubjectId, studentId, data.marksObtained, data.remarks);
@@ -13171,29 +13176,33 @@ export const mockApi = {
     const annualExam = exams.find(e => e.name.toLowerCase().includes('annual') || e.name.toLowerCase().includes('final'));
     const practicalExam = exams.find(e => e.name.toLowerCase().includes('practical'));
 
-    if (!preMidExam || !midTermExam || !postMidExam || !annualExam || !practicalExam) {
-      throw new Error('Marksheet generation failed: Required CBSE exam schedules (Pre-Mid, Mid-Term, Post-Mid, Annual, Practical) are not fully configured in the database.');
+    // Resolve the selected exam using termName argument (which can be a UUID or a name/term string)
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    let selectedExam: any = null;
+    if (isUUID(termName)) {
+      selectedExam = exams.find(e => e.id === termName);
+    } else {
+      selectedExam = exams.find(e => e.name === termName || e.term === termName) || exams[0];
     }
 
-    // Verify marks exist for all subjects in all exams
-    for (const sub of subjects) {
-      const hasPreMid = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === preMidExam.id);
-      const hasMidTerm = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === midTermExam.id);
-      const hasPostMid = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === postMidExam.id);
-      const hasAnnual = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === annualExam.id);
-      const hasPractical = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === practicalExam.id);
+    if (!selectedExam) {
+      throw new Error('Marksheet generation failed: Selected exam not found.');
+    }
 
-      if (!hasPreMid || !hasMidTerm || !hasPostMid || !hasAnnual || !hasPractical) {
+    // Verify marks exist for all subjects ONLY for the selected exam
+    for (const sub of subjects) {
+      const hasMark = studentMarks.some(sm => sm.subjectId === sub.id && sm.examId === selectedExam.id);
+      if (!hasMark) {
         throw new Error(`Marksheet generation failed: Incomplete marks records. Subject "${sub.name}" is missing required exam grades in the database.`);
       }
     }
 
     const scholasticData = subjects.map(sub => {
-      const preMid = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === preMidExam.id);
-      const midTerm = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === midTermExam.id);
-      const postMid = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === postMidExam.id);
-      const annual = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === annualExam.id);
-      const practical = studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === practicalExam.id);
+      const preMid = preMidExam ? studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === preMidExam.id) : null;
+      const midTerm = midTermExam ? studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === midTermExam.id) : null;
+      const postMid = postMidExam ? studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === postMidExam.id) : null;
+      const annual = annualExam ? studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === annualExam.id) : null;
+      const practical = practicalExam ? studentMarks.find(sm => sm.subjectId === sub.id && sm.examId === practicalExam.id) : null;
 
       const preMidMarks = preMid ? preMid.marksObtained : 0;
       const midTermMarks = midTerm ? midTerm.marksObtained : 0;
@@ -13230,11 +13239,11 @@ export const mockApi = {
       const csMarks = mockDb.studentMarks.filter(sm => sm.studentId === cs.id);
       let totalScore = 0;
       subjects.forEach(sub => {
-        const preMid = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === preMidExam.id);
-        const midTerm = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === midTermExam.id);
-        const postMid = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === postMidExam.id);
-        const annual = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === annualExam.id);
-        const practical = csMarks.find(sm => sm.subjectId === sub.id && sm.examId === practicalExam.id);
+        const preMid = preMidExam ? csMarks.find(sm => sm.subjectId === sub.id && sm.examId === preMidExam.id) : null;
+        const midTerm = midTermExam ? csMarks.find(sm => sm.subjectId === sub.id && sm.examId === midTermExam.id) : null;
+        const postMid = postMidExam ? csMarks.find(sm => sm.subjectId === sub.id && sm.examId === postMidExam.id) : null;
+        const annual = annualExam ? csMarks.find(sm => sm.subjectId === sub.id && sm.examId === annualExam.id) : null;
+        const practical = practicalExam ? csMarks.find(sm => sm.subjectId === sub.id && sm.examId === practicalExam.id) : null;
 
         totalScore += (preMid?.marksObtained || 0) + (midTerm?.marksObtained || 0) + (postMid?.marksObtained || 0) + (annual?.marksObtained || 0) + (practical?.marksObtained || 0);
       });

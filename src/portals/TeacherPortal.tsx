@@ -521,7 +521,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     } else {
       setHmReportCard([]);
     }
-  }, [teacherId, selectedManagedClass, hmSelectedStudent, hmSelectedExam]);
+  }, [teacherId, selectedManagedClass, hmSelectedStudent, hmSelectedExam, refreshTrigger]);
 
   const loadTeacherAttendanceDetails = async () => {
     if (!teacherId || !selectedManagedClass) return;
@@ -1366,9 +1366,11 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
         teacherId,
         selectedManagedClass,
         hmSelectedStudent,
+        hmSelectedExam,
         marksData
       );
       alert('Report card marks saved successfully!');
+      setRefreshTrigger(prev => prev + 1);
     } catch (err: any) {
       alert(err.message || 'Error saving marks');
     }
