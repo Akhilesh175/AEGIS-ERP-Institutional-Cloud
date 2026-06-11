@@ -2084,10 +2084,9 @@ export const mockApi = {
       // Fetch active, non-deleted teachers for this school to check for orphaned records
       const { data: dbActiveTeachers } = await supabaseAdmin
         .from('teachers')
-        .select('id')
+        .select('id, users!inner(is_active)')
         .eq('school_id', schoolId)
-        .eq('status', 'ACTIVE')
-        .is('deleted_at', null);
+        .eq('users.is_active', true);
 
       const activeTeacherIds = dbActiveTeachers ? dbActiveTeachers.map(t => t.id) : [];
       const fallbackTeacherId = activeTeacherIds.length > 0 ? activeTeacherIds[0] : null;

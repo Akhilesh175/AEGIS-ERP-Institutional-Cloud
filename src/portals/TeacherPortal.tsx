@@ -469,6 +469,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
           await mockApi.syncTeacherClassSubjectMappingsData(schoolId);
           await mockApi.syncAcademicSessionsData(schoolId);
           await mockApi.syncStudentsData(schoolId);
+          await mockApi.syncTimetablesData(schoolId).catch(console.error);
           
           mockApi.classTeacherGetExams(schoolId).then(setHmExams);
           mockApi.syncQuizzesData(schoolId).catch(console.error);
