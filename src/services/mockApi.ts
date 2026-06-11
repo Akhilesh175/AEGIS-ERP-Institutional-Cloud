@@ -149,18 +149,39 @@ export const checkCoreAdminOrAcademicAdmin = (): void => {
   }
 };
 
-export function validateTeacherForTimetable(teacherId: string, schoolId: string): void {
+export async function validateTeacherForTimetable(teacherId: string, schoolId: string): Promise<void> {
   const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
   if (!teacherId || !isUUID(teacherId)) {
     throw new Error('Selected teacher is invalid or no longer available. Please select an active teacher from your school.');
   }
-  const teacher = mockDb.teachers.find(t => t.id === teacherId);
-  if (!teacher || teacher.schoolId !== schoolId) {
+
+  // Query Supabase directly to ensure absolute freshness of teacher status
+  const { data: teacher, error } = await supabaseAdmin
+    .from('teachers')
+    .select('id, school_id, user_id, status, deleted_at')
+    .eq('id', teacherId)
+    .single();
+
+  if (error || !teacher || teacher.school_id !== schoolId || teacher.status === 'INACTIVE' || teacher.deleted_at !== null) {
     throw new Error('Selected teacher is invalid or no longer available. Please select an active teacher from your school.');
   }
-  const user = mockDb.users.find(u => u.id === teacher.userId);
-  if (!user || !user.isActive) {
+
+  // Query corresponding user status in Supabase
+  const { data: user, error: userError } = await supabaseAdmin
+    .from('users')
+    .select('id, is_active')
+    .eq('id', teacher.user_id)
+    .single();
+
+  if (userError || !user || !user.is_active) {
     throw new Error('Selected teacher is invalid or no longer available. Please select an active teacher from your school.');
+  }
+
+  // Self-heal/update the local mockDb.teachers cache if needed
+  const localTeacherIdx = mockDb.teachers.findIndex(t => t.id === teacherId);
+  if (localTeacherIdx !== -1) {
+    mockDb.teachers[localTeacherIdx].status = teacher.status as 'ACTIVE' | 'INACTIVE';
+    mockDb.teachers[localTeacherIdx].deletedAt = teacher.deleted_at;
   }
 }
 
@@ -2070,13 +2091,53 @@ export const mockApi = {
         .select('*')
         .in('class_id', classIds);
 
+      // Fetch active, non-deleted teachers for this school to check for orphaned records
+      const { data: dbActiveTeachers } = await supabaseAdmin
+        .from('teachers')
+        .select('id')
+        .eq('school_id', schoolId)
+        .eq('status', 'ACTIVE')
+        .is('deleted_at', null);
+
+      const activeTeacherIds = dbActiveTeachers ? dbActiveTeachers.map(t => t.id) : [];
+      const fallbackTeacherId = activeTeacherIds.length > 0 ? activeTeacherIds[0] : null;
+
       if (dbTimetables) {
-        dbTimetables.forEach((r: any) => {
+        for (const r of dbTimetables) {
+          let currentTeacherId = r.teacher_id;
+          
+          // If the teacher assigned to this timetable is not in our active teachers list
+          if (!activeTeacherIds.includes(currentTeacherId)) {
+            if (fallbackTeacherId) {
+              console.warn(`Repairing orphan timetable record: reassigned ${r.id} from inactive/deleted teacher ${currentTeacherId} to active teacher ${fallbackTeacherId}`);
+              const { error: updateError } = await supabaseAdmin
+                .from('timetables')
+                .update({ teacher_id: fallbackTeacherId })
+                .eq('id', r.id);
+              if (!updateError) {
+                currentTeacherId = fallbackTeacherId;
+              }
+            } else {
+              console.warn(`Deleting orphan timetable record ${r.id}: no active teacher available for reassignment`);
+              await supabaseAdmin
+                .from('timetables')
+                .delete()
+                .eq('id', r.id);
+              
+              // Remove from local cache if it exists
+              const localIdx = mockDb.timetables.findIndex(t => t.id === r.id);
+              if (localIdx !== -1) {
+                mockDb.timetables.splice(localIdx, 1);
+              }
+              continue;
+            }
+          }
+
           const tt: Timetable = {
             id: r.id,
             classId: r.class_id,
             subjectId: r.subject_id,
-            teacherId: r.teacher_id,
+            teacherId: currentTeacherId,
             dayOfWeek: r.day_of_week,
             startTime: r.start_time,
             endTime: r.end_time,
@@ -2086,7 +2147,11 @@ export const mockApi = {
           const idx = mockDb.timetables.findIndex(t => t.id === tt.id);
           if (idx === -1) mockDb.timetables.push(tt);
           else mockDb.timetables[idx] = tt;
-        });
+        }
+
+        // Filter local cache to match only existing synced records
+        const syncedIds = new Set(dbTimetables.map(t => t.id));
+        mockDb.timetables = mockDb.timetables.filter(t => !classIds.includes(t.classId) || syncedIds.has(t.id));
         mockDb.saveAll();
       }
     } catch (e) {
@@ -2377,7 +2442,9 @@ export const mockApi = {
               classId: r.class_id || null,
               subjectId: r.subject_id || null,
               name: r.name,
-              description: r.description
+              description: r.description,
+              status: r.status || 'ACTIVE',
+              deletedAt: r.deleted_at || null
             };
             const idx = mockDb.forumCategories.findIndex(c => c.id === cat.id);
             if (idx === -1) mockDb.forumCategories.push(cat);
@@ -2399,7 +2466,9 @@ export const mockApi = {
             classId: r.class_id || null,
             subjectId: r.subject_id || null,
             name: r.name,
-            description: r.description
+            description: r.description,
+            status: r.status || 'ACTIVE',
+            deletedAt: r.deleted_at || null
           };
           const idx = mockDb.forumCategories.findIndex(c => c.id === cat.id);
           if (idx === -1) mockDb.forumCategories.push(cat);
@@ -2441,7 +2510,9 @@ export const mockApi = {
             title: r.title,
             content: r.content,
             academicSessionId: r.academic_session_id || null,
-            createdAt: r.created_at
+            createdAt: r.created_at,
+            status: r.status || 'ACTIVE',
+            deletedAt: r.deleted_at || null
           };
           const idx = mockDb.forumPosts.findIndex(p => p.id === post.id);
           if (idx === -1) mockDb.forumPosts.push(post);
@@ -2663,7 +2734,9 @@ export const mockApi = {
       const { data: dbTeachers } = await supabaseAdmin
         .from('teachers')
         .select('*')
-        .eq('school_id', schoolId);
+        .eq('school_id', schoolId)
+        .eq('status', 'ACTIVE')
+        .is('deleted_at', null);
 
       if (dbTeachers) {
         dbTeachers.forEach((r: any) => {
@@ -2675,7 +2748,9 @@ export const mockApi = {
             qualification: r.qualification || '',
             joiningDate: r.joining_date || '',
             specialization: r.specialization || '',
-            createdAt: r.created_at
+            createdAt: r.created_at,
+            status: r.status,
+            deletedAt: r.deleted_at
           };
           const idx = mockDb.teachers.findIndex(t => t.id === tc.id);
           if (idx === -1) mockDb.teachers.push(tc);
@@ -4689,15 +4764,17 @@ export const mockApi = {
     const { data: teacherRows, error } = await supabase
       .from('teachers')
       .select(`
-        id, user_id, school_id, employee_id, qualification, joining_date, specialization, created_at,
+        id, user_id, school_id, employee_id, qualification, joining_date, specialization, created_at, status, deleted_at,
         users!inner(id, email, first_name, last_name, phone, avatar_url, role, school_id, is_active, created_at)
       `)
-      .eq('school_id', schoolId);
+      .eq('school_id', schoolId)
+      .eq('status', 'ACTIVE')
+      .is('deleted_at', null);
 
     if (error || !teacherRows || teacherRows.length === 0) {
       // Graceful fallback to local seed data
       const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
-      const localT = mockDb.teachers.filter(t => t.schoolId === schoolId && isUUID(t.id));
+      const localT = mockDb.teachers.filter(t => t.schoolId === schoolId && isUUID(t.id) && (t.status === undefined || t.status === 'ACTIVE') && !t.deletedAt);
       return localT.map(t => {
         const u = mockDb.users.find(usr => usr.id === t.userId) || {
           id: t.userId, email: 'teacher@example.com', role: 'TEACHER', firstName: 'Teacher', lastName: 'Name', phone: '', avatarUrl: '', isActive: true, schoolId, password: '', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
@@ -4722,7 +4799,9 @@ export const mockApi = {
         id: row.id, userId: row.user_id, schoolId: row.school_id,
         employeeId: row.employee_id, qualification: row.qualification || '',
         joiningDate: row.joining_date || '', specialization: row.specialization || '',
-        createdAt: row.created_at
+        createdAt: row.created_at,
+        status: row.status,
+        deletedAt: row.deleted_at
       };
       const existingTeacher = mockDb.teachers.findIndex(t => t.id === row.id);
       if (existingTeacher === -1) mockDb.teachers.push(teacherMapped);
@@ -4993,7 +5072,7 @@ export const mockApi = {
     checkCoreAdminOrAcademicAdmin();
     const cls = mockDb.classes.find(c => c.id === classId);
     if (!cls) throw new Error('Class not found');
-    validateTeacherForTimetable(teacherId, cls.schoolId);
+    await validateTeacherForTimetable(teacherId, cls.schoolId);
     
     try {
       const { error } = await supabaseAdmin
@@ -5186,7 +5265,7 @@ export const mockApi = {
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     const schoolId = teacher ? teacher.schoolId : getAdminSchoolId();
-    validateTeacherForTimetable(teacherId, schoolId);
+    await validateTeacherForTimetable(teacherId, schoolId);
 
     // Try to resolve existing mapping from cache or database
     let mappingId: string | null = null;
@@ -8086,7 +8165,7 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
 
-    validateTeacherForTimetable(teacherId, teacher.schoolId);
+    await validateTeacherForTimetable(teacherId, teacher.schoolId);
 
     const mappingExists = mockDb.teacherClassSubjectMappings.some(
       m => m.teacherId === teacherId && m.classId === classId && m.subjectId === subjectId
@@ -8191,7 +8270,7 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
 
-    validateTeacherForTimetable(assignedTeacherId, teacher.schoolId);
+    await validateTeacherForTimetable(assignedTeacherId, teacher.schoolId);
     const validTeacherId = assignedTeacherId;
 
     try {
@@ -8292,7 +8371,7 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
 
-    validateTeacherForTimetable(assignedTeacherId, teacher.schoolId);
+    await validateTeacherForTimetable(assignedTeacherId, teacher.schoolId);
     const validTeacherId = assignedTeacherId;
 
     const checkIsUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
@@ -8348,26 +8427,34 @@ export const mockApi = {
 
   async getForumCategories(schoolId?: string): Promise<ForumCategory[]> {
     await delay();
+    let cats = mockDb.forumCategories;
     if (schoolId) {
-      return mockDb.forumCategories.filter(c => c.schoolId === schoolId);
+      cats = cats.filter(c => c.schoolId === schoolId);
     }
-    return mockDb.forumCategories;
+    return cats.filter(c => (c.status === undefined || c.status === 'ACTIVE') && !c.deletedAt);
   },
 
   async getForumPosts(): Promise<(ForumPost & { schoolId: string; authorName: string; categoryName: string; repliesCount: number })[]> {
     await delay();
-    return mockDb.forumPosts.map(p => {
-      const u = mockDb.users.find(usr => usr.id === p.authorId);
-      const cat = mockDb.forumCategories.find(c => c.id === p.categoryId);
-      const reps = mockDb.forumReplies.filter(r => r.postId === p.id).length;
-      return {
-        ...p,
-        schoolId: cat ? cat.schoolId : '',
-        authorName: u ? `${u.firstName} ${u.lastName}` : 'Aegis Scholar',
-        categoryName: cat ? cat.name : 'General Discussion',
-        repliesCount: reps
-      };
-    });
+    return mockDb.forumPosts
+      .filter(p => (p.status === undefined || p.status === 'ACTIVE') && !p.deletedAt)
+      .map(p => {
+        const u = mockDb.users.find(usr => usr.id === p.authorId);
+        const cat = mockDb.forumCategories.find(c => c.id === p.categoryId);
+        const reps = mockDb.forumReplies.filter(r => r.postId === p.id).length;
+        return {
+          ...p,
+          schoolId: cat ? cat.schoolId : '',
+          authorName: u ? `${u.firstName} ${u.lastName}` : 'Aegis Scholar',
+          categoryName: cat ? cat.name : 'General Discussion',
+          repliesCount: reps
+        };
+      })
+      .filter(p => {
+        const cat = mockDb.forumCategories.find(c => c.id === p.categoryId);
+        if (!cat) return false;
+        return (cat.status === undefined || cat.status === 'ACTIVE') && !cat.deletedAt;
+      });
   },
 
   async getForumPostReplies(postId: string): Promise<(ForumReply & { authorName: string; authorAvatar: string; authorRole: string })[]> {

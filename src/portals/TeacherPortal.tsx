@@ -647,6 +647,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
     const channel = supabase
       .channel('teacher-academic-realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'teachers' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'homeworks' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'homework_attachments' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'homework_submissions' }, handleAcademicSync)

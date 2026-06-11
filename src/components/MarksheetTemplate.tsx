@@ -706,10 +706,52 @@ export const downloadMarksheetPdf = async (studentName: string, term: string, ma
 
     const pdfWidth = pdf.internal.pageSize.getWidth();
     const pdfHeight = pdf.internal.pageSize.getHeight();
-    const imgWidth = 210; // A4 standard width is 210mm
-    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const topMargin = 12;
+    const bottomMargin = 12;
+    const leftMargin = 10;
+    const rightMargin = 10;
 
-    pdf.addImage(imgData, 'PNG', 0, 0, imgWidth, imgHeight);
+    const imgWidth = pdfWidth - leftMargin - rightMargin;
+    const imgHeight = (canvas.height * imgWidth) / canvas.width;
+    const contentHeightPerPage = pdfHeight - topMargin - bottomMargin;
+
+    let heightLeft = imgHeight;
+    let pageIndex = 0;
+
+    while (heightLeft > 0) {
+      if (pageIndex > 0) {
+        pdf.addPage();
+      }
+
+      const position = topMargin - (pageIndex * contentHeightPerPage);
+      pdf.addImage(imgData, 'PNG', leftMargin, position, imgWidth, imgHeight);
+
+      // Draw protective white rectangles over margins to cover any image overflow
+      pdf.setFillColor(255, 255, 255);
+      // Top margin cover
+      pdf.rect(0, 0, pdfWidth, topMargin, 'F');
+      // Bottom margin cover
+      pdf.rect(0, pdfHeight - bottomMargin, pdfWidth, bottomMargin, 'F');
+      // Left margin cover
+      pdf.rect(0, 0, leftMargin, pdfHeight, 'F');
+      // Right margin cover
+      pdf.rect(pdfWidth - rightMargin, 0, rightMargin, pdfHeight, 'F');
+
+      // Draw subtle border around content area for a premium feel
+      pdf.setDrawColor(226, 232, 240);
+      pdf.setLineWidth(0.2);
+      pdf.rect(leftMargin, topMargin, imgWidth, contentHeightPerPage, 'S');
+
+      // Draw page number in the bottom margin
+      pdf.setFont('helvetica', 'normal');
+      pdf.setFontSize(8);
+      pdf.setTextColor(148, 163, 184); // slate-400
+      pdf.text(`Page ${pageIndex + 1}`, pdfWidth / 2, pdfHeight - 6, { align: 'center' });
+
+      heightLeft -= contentHeightPerPage;
+      pageIndex++;
+    }
+
     pdf.save(`marksheet_${studentName.toLowerCase().replace(/\s+/g, '_')}_${term.toLowerCase().replace(/\s+/g, '_')}.pdf`);
   } catch (err) {
     console.error('Failed to export PDF:', err);

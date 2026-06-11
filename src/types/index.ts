@@ -117,6 +117,8 @@ export interface Teacher {
   createdAt: string;
   signatureUrl?: string;
   signatureUploadedAt?: string;
+  status?: 'ACTIVE' | 'INACTIVE';
+  deletedAt?: string | null;
 }
 
 export interface SchoolAdmin {
@@ -367,6 +369,8 @@ export interface ForumCategory {
   classId?: string | null;
   subjectId?: string | null;
   academicSessionId?: string | null;
+  status?: string;
+  deletedAt?: string | null;
 }
 
 export interface ForumPost {
@@ -377,6 +381,8 @@ export interface ForumPost {
   content: string;
   academicSessionId?: string | null;
   createdAt: string;
+  status?: string;
+  deletedAt?: string | null;
 }
 
 export interface ForumReply {
