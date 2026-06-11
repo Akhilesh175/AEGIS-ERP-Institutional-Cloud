@@ -816,7 +816,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                 </div>
 
                 <div className="space-y-4">
-                  {[1, 2, 3, 4, 5].map(dayNum => {
+                  {[1, 2, 3, 4, 5, 6].map(dayNum => {
                     const dayLectures = mockDb.timetables
                       .filter(t => t.classId === academicRecord?.studentProfile?.classId && t.dayOfWeek === dayNum)
                       .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -824,7 +824,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                     const dayName = dayNum === 1 ? 'Monday' : 
                                     dayNum === 2 ? 'Tuesday' : 
                                     dayNum === 3 ? 'Wednesday' : 
-                                    dayNum === 4 ? 'Thursday' : 'Friday';
+                                    dayNum === 4 ? 'Thursday' : 
+                                    dayNum === 5 ? 'Friday' : 'Saturday';
 
                     return (
                       <div key={dayNum} className="space-y-2">

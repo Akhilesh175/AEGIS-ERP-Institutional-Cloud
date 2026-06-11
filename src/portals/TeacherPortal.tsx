@@ -1614,6 +1614,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                     <option value={3}>Wednesday</option>
                     <option value={4}>Thursday</option>
                     <option value={5}>Friday</option>
+                    <option value={6}>Saturday</option>
                   </select>
                 </div>
 
@@ -1663,7 +1664,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             </div>
 
             <div className="space-y-4">
-              {[1, 2, 3, 4, 5].map(dayNum => {
+              {[1, 2, 3, 4, 5, 6].map(dayNum => {
                 const dayLectures = mockDb.timetables
                   .filter(t => t.teacherId === teacherId && t.dayOfWeek === dayNum)
                   .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -1671,7 +1672,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 const dayName = dayNum === 1 ? 'Monday' : 
                                 dayNum === 2 ? 'Tuesday' : 
                                 dayNum === 3 ? 'Wednesday' : 
-                                dayNum === 4 ? 'Thursday' : 'Friday';
+                                dayNum === 4 ? 'Thursday' : 
+                                dayNum === 5 ? 'Friday' : 'Saturday';
 
                 return (
                   <div key={dayNum} className="space-y-2">
@@ -1821,6 +1823,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                       <option value={3}>Wednesday</option>
                       <option value={4}>Thursday</option>
                       <option value={5}>Friday</option>
+                      <option value={6}>Saturday</option>
                     </select>
                   </div>
 
@@ -1873,7 +1876,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">Current Weekly Student Schedule</p>
                 
                 <div className="space-y-4">
-                  {[1, 2, 3, 4, 5].map(dayNum => {
+                  {[1, 2, 3, 4, 5, 6].map(dayNum => {
                     const classLectures = mockDb.timetables
                       .filter(t => t.classId === selectedManagedClass && t.dayOfWeek === dayNum)
                       .sort((a, b) => a.startTime.localeCompare(b.startTime));
@@ -1881,7 +1884,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                     const dayName = dayNum === 1 ? 'Monday' : 
                                     dayNum === 2 ? 'Tuesday' : 
                                     dayNum === 3 ? 'Wednesday' : 
-                                    dayNum === 4 ? 'Thursday' : 'Friday';
+                                    dayNum === 4 ? 'Thursday' : 
+                                    dayNum === 5 ? 'Friday' : 'Saturday';
 
                     return (
                       <div key={dayNum} className="space-y-2">
@@ -4459,6 +4463,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                     <option value={3}>Wednesday</option>
                     <option value={4}>Thursday</option>
                     <option value={5}>Friday</option>
+                    <option value={6}>Saturday</option>
                   </select>
                 </div>
 

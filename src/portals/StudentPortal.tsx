@@ -919,7 +919,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                       <div key={t.id} className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl flex items-center justify-between">
                         <div className="flex items-center gap-3">
                           <span className="w-8 h-8 rounded bg-slate-800 flex items-center justify-center font-bold text-xs text-brand-400">
-                            {t.dayOfWeek === 1 ? 'M' : t.dayOfWeek === 2 ? 'T' : t.dayOfWeek === 3 ? 'W' : 'Th'}
+                            {t.dayOfWeek === 1 ? 'M' : t.dayOfWeek === 2 ? 'T' : t.dayOfWeek === 3 ? 'W' : t.dayOfWeek === 4 ? 'Th' : t.dayOfWeek === 5 ? 'F' : t.dayOfWeek === 6 ? 'Sa' : 'Su'}
                           </span>
                           <div>
                             <p className="font-semibold text-xs text-slate-200">{subject.name}</p>

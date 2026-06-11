@@ -211,7 +211,7 @@ export interface Timetable {
   classId: string;
   subjectId: string;
   teacherId: string | null;
-  dayOfWeek: number; // 1 = Monday, 5 = Friday
+  dayOfWeek: number; // 1 = Monday, 6 = Saturday
   startTime: string; // "HH:MM"
   endTime: string;
   classroomNumber?: string;
