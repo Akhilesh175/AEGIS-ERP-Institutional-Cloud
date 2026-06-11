@@ -13015,6 +13015,8 @@ export const mockApi = {
     await this.syncStudentsData(schoolId).catch(console.error);
     await this.syncUsersData(schoolId).catch(console.error);
     await this.syncClassesData(schoolId).catch(console.error);
+    await this.syncSectionsData(schoolId).catch(console.error);
+    await this.syncAcademicSessionsData(schoolId).catch(console.error);
     await this.syncTeachersData(schoolId).catch(console.error);
     await this.syncParentsData(schoolId).catch(console.error);
     await this.syncParentStudentMappingsData(schoolId).catch(console.error);
@@ -13073,12 +13075,9 @@ export const mockApi = {
     if (!cls) {
       throw new Error('Marksheet generation failed: Class assignment not found.');
     }
-    const sec = mockDb.sections.find(s => s.id === student.sectionId);
-    if (!sec) {
-      throw new Error('Marksheet generation failed: Section assignment not found.');
-    }
+    const sec = student.sectionId ? mockDb.sections.find(s => s.id === student.sectionId) : null;
     const className = cls.name;
-    const sectionName = sec.name;
+    const sectionName = sec?.name || '';
 
     // 4. Class Teacher Validation
     if (!cls.classTeacherId) {
