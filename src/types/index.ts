@@ -65,12 +65,19 @@ export interface School {
   name: string;
   address?: string;
   phone?: string;
+  email?: string;
   subscriptionPlan: string;
   createdAt: string;
   country?: string;
   currencyCode?: string;
   currencySymbol?: string;
   timezone?: string;
+  logoUrl?: string;
+  logoFileName?: string;
+  logoUploadedAt?: string;
+  sealUrl?: string;
+  sealFileName?: string;
+  sealUploadedAt?: string;
 }
 
 export interface AcademicSession {
@@ -108,6 +115,8 @@ export interface Teacher {
   joiningDate: string;
   specialization: string;
   createdAt: string;
+  signatureUrl?: string;
+  signatureUploadedAt?: string;
 }
 
 export interface SchoolAdmin {
@@ -118,7 +127,8 @@ export interface SchoolAdmin {
   permissions: Record<string, any>;
   status: string;
   createdAt: string;
-  updatedAt: string;
+  signatureUrl?: string;
+  signatureUploadedAt?: string;
 }
 
 export type PhoneNumberType = 'PRIMARY' | 'EMERGENCY' | 'HOME' | 'WORK';

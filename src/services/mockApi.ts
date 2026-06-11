@@ -477,6 +477,445 @@ export const mockApi = {
     }
   },
 
+  async ensureBrandingBucketsExist(): Promise<void> {
+    const buckets = ['school-assets', 'admin-signatures', 'teacher-signatures'];
+    for (const b of buckets) {
+      try {
+        const { data, error } = await supabaseAdmin.storage.getBucket(b);
+        if (error || !data) {
+          console.log(`Self-healing missing storage bucket: ${b}`);
+          await supabaseAdmin.storage.createBucket(b, {
+            public: true,
+            allowedMimeTypes: b === 'school-assets' 
+              ? ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp']
+              : ['image/png', 'image/jpeg', 'image/jpg'],
+            fileSizeLimit: 5242880 // 5MB
+          });
+        }
+      } catch (err) {
+        console.error(`Error ensuring bucket ${b} exists:`, err);
+      }
+    }
+  },
+
+  async uploadSchoolAsset(schoolId: string, assetType: 'logo' | 'seal', file: File, uploaderId: string): Promise<string> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(schoolId) || !isUUID(uploaderId)) {
+      throw new Error('Invalid school or uploader ID format. Must be UUID.');
+    }
+
+    await this.ensureBrandingBucketsExist();
+
+    // 1. Upload new asset exactly at schoolId/assetType.png
+    const extension = file.name.split('.').pop() || 'png';
+    const filePath = `${schoolId}/${assetType}.${extension}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('school-assets')
+      .upload(filePath, file, {
+        cacheControl: '0',
+        upsert: true
+      });
+
+    if (uploadError) {
+      throw new Error(`Failed to upload school ${assetType} to storage: ` + uploadError.message);
+    }
+
+    // 2. Resolve public URL
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('school-assets')
+      .getPublicUrl(filePath);
+
+    // 3. Update database schools table
+    const updatePayload: Record<string, any> = {};
+    if (assetType === 'logo') {
+      updatePayload.logo_url = publicUrl;
+      updatePayload.logo_file_name = file.name;
+      updatePayload.logo_uploaded_at = new Date().toISOString();
+    } else {
+      updatePayload.seal_url = publicUrl;
+      updatePayload.seal_file_name = file.name;
+      updatePayload.seal_uploaded_at = new Date().toISOString();
+    }
+
+    const { error: dbUpdateError } = await supabaseAdmin
+      .from('schools')
+      .update(updatePayload)
+      .eq('id', schoolId);
+
+    if (dbUpdateError) {
+      throw new Error(`Failed to save ${assetType} URL to database: ` + dbUpdateError.message);
+    }
+
+    // 4. Log to upload audit table
+    try {
+      await supabaseAdmin.from('file_upload_audit').insert({
+        school_id: schoolId,
+        uploaded_by: uploaderId,
+        file_type: assetType,
+        file_url: publicUrl
+      });
+    } catch (auditErr) {
+      console.error('Failed to log file upload audit record:', auditErr);
+    }
+
+    // 5. Update local client cache in mockDb.schools
+    const schIdx = mockDb.schools.findIndex(s => s.id === schoolId);
+    if (schIdx !== -1) {
+      if (assetType === 'logo') {
+        mockDb.schools[schIdx].logoUrl = publicUrl;
+        mockDb.schools[schIdx].logoFileName = file.name;
+        mockDb.schools[schIdx].logoUploadedAt = updatePayload.logo_uploaded_at;
+      } else {
+        mockDb.schools[schIdx].sealUrl = publicUrl;
+        mockDb.schools[schIdx].sealFileName = file.name;
+        mockDb.schools[schIdx].sealUploadedAt = updatePayload.seal_uploaded_at;
+      }
+      mockDb.saveAll();
+    }
+
+    return publicUrl;
+  },
+
+  async removeSchoolAsset(schoolId: string, assetType: 'logo' | 'seal', uploaderId: string): Promise<void> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(schoolId) || !isUUID(uploaderId)) {
+      throw new Error('Invalid school or uploader ID format. Must be UUID.');
+    }
+
+    // 1. Fetch current URL from db to locate file
+    const { data: schoolRow } = await supabaseAdmin
+      .from('schools')
+      .select('logo_url, seal_url')
+      .eq('id', schoolId)
+      .single();
+
+    const currentUrl = assetType === 'logo' ? schoolRow?.logo_url : schoolRow?.seal_url;
+    if (currentUrl) {
+      try {
+        const parts = currentUrl.split('/school-assets/');
+        if (parts.length > 1) {
+          const filePath = parts[1];
+          await supabaseAdmin.storage.from('school-assets').remove([filePath]);
+        }
+      } catch (err) {
+        console.error(`Failed to delete ${assetType} from storage:`, err);
+      }
+    }
+
+    // 2. Set columns to NULL in database
+    const updatePayload: Record<string, any> = {};
+    if (assetType === 'logo') {
+      updatePayload.logo_url = null;
+      updatePayload.logo_file_name = null;
+      updatePayload.logo_uploaded_at = null;
+    } else {
+      updatePayload.seal_url = null;
+      updatePayload.seal_file_name = null;
+      updatePayload.seal_uploaded_at = null;
+    }
+
+    const { error: dbUpdateError } = await supabaseAdmin
+      .from('schools')
+      .update(updatePayload)
+      .eq('id', schoolId);
+
+    if (dbUpdateError) {
+      throw new Error(`Failed to clear ${assetType} from database: ` + dbUpdateError.message);
+    }
+
+    // 3. Log to upload audit table
+    try {
+      await supabaseAdmin.from('file_upload_audit').insert({
+        school_id: schoolId,
+        uploaded_by: uploaderId,
+        file_type: assetType,
+        file_url: null
+      });
+    } catch (auditErr) {
+      console.error('Failed to log file remove audit record:', auditErr);
+    }
+
+    // 4. Update local client cache in mockDb.schools
+    const schIdx = mockDb.schools.findIndex(s => s.id === schoolId);
+    if (schIdx !== -1) {
+      if (assetType === 'logo') {
+        mockDb.schools[schIdx].logoUrl = '';
+        mockDb.schools[schIdx].logoFileName = '';
+        mockDb.schools[schIdx].logoUploadedAt = '';
+      } else {
+        mockDb.schools[schIdx].sealUrl = '';
+        mockDb.schools[schIdx].sealFileName = '';
+        mockDb.schools[schIdx].sealUploadedAt = '';
+      }
+      mockDb.saveAll();
+    }
+  },
+
+  async uploadAdminSignature(adminId: string, file: File, uploaderId: string): Promise<string> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(adminId) || !isUUID(uploaderId)) {
+      throw new Error('Invalid IDs format. Must be UUID.');
+    }
+
+    await this.ensureBrandingBucketsExist();
+
+    // 1. Get school_id
+    const { data: adminRow } = await supabaseAdmin
+      .from('school_admins')
+      .select('school_id')
+      .eq('user_id', adminId)
+      .single();
+
+    const schoolId = adminRow?.school_id;
+    if (!schoolId) {
+      throw new Error('School Admin institution scope not found.');
+    }
+
+    // 2. Upload file
+    const extension = file.name.split('.').pop() || 'png';
+    const filePath = `${adminId}.${extension}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('admin-signatures')
+      .upload(filePath, file, {
+        cacheControl: '0',
+        upsert: true
+      });
+
+    if (uploadError) {
+      throw new Error('Failed to upload admin signature to storage: ' + uploadError.message);
+    }
+
+    // 3. Resolve public URL
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('admin-signatures')
+      .getPublicUrl(filePath);
+
+    // 4. Update database school_admins table
+    const { error: dbUpdateError } = await supabaseAdmin
+      .from('school_admins')
+      .update({
+        signature_url: publicUrl,
+        signature_uploaded_at: new Date().toISOString()
+      })
+      .eq('user_id', adminId);
+
+    if (dbUpdateError) {
+      throw new Error('Failed to save signature URL to database: ' + dbUpdateError.message);
+    }
+
+    // 5. Log audit
+    try {
+      await supabaseAdmin.from('file_upload_audit').insert({
+        school_id: schoolId,
+        uploaded_by: uploaderId,
+        file_type: 'school_admin_signature',
+        file_url: publicUrl
+      });
+    } catch (auditErr) {
+      console.error('Failed to log signature audit:', auditErr);
+    }
+
+    return publicUrl;
+  },
+
+  async removeAdminSignature(adminId: string, uploaderId: string): Promise<void> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(adminId) || !isUUID(uploaderId)) {
+      throw new Error('Invalid IDs format. Must be UUID.');
+    }
+
+    // 1. Get school_id and current url
+    const { data: adminRow } = await supabaseAdmin
+      .from('school_admins')
+      .select('school_id, signature_url')
+      .eq('user_id', adminId)
+      .single();
+
+    const schoolId = adminRow?.school_id;
+    if (!schoolId) {
+      throw new Error('School Admin institution scope not found.');
+    }
+
+    if (adminRow?.signature_url) {
+      try {
+        const parts = adminRow.signature_url.split('/admin-signatures/');
+        if (parts.length > 1) {
+          const filePath = parts[1];
+          await supabaseAdmin.storage.from('admin-signatures').remove([filePath]);
+        }
+      } catch (err) {
+        console.error('Failed to delete signature from storage:', err);
+      }
+    }
+
+    // 2. Set database to NULL
+    const { error: dbUpdateError } = await supabaseAdmin
+      .from('school_admins')
+      .update({
+        signature_url: null,
+        signature_uploaded_at: null
+      })
+      .eq('user_id', adminId);
+
+    if (dbUpdateError) {
+      throw new Error('Failed to clear signature from database: ' + dbUpdateError.message);
+    }
+
+    // 3. Log audit
+    try {
+      await supabaseAdmin.from('file_upload_audit').insert({
+        school_id: schoolId,
+        uploaded_by: uploaderId,
+        file_type: 'school_admin_signature',
+        file_url: null
+      });
+    } catch (auditErr) {
+      console.error('Failed to log signature remove audit:', auditErr);
+    }
+  },
+
+  async uploadTeacherSignature(teacherId: string, file: File, uploaderId: string): Promise<string> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(teacherId) || !isUUID(uploaderId)) {
+      throw new Error('Invalid IDs format. Must be UUID.');
+    }
+
+    await this.ensureBrandingBucketsExist();
+
+    // 1. Get teacher school_id
+    const { data: tcRow } = await supabaseAdmin
+      .from('teachers')
+      .select('school_id')
+      .eq('id', teacherId)
+      .single();
+
+    const schoolId = tcRow?.school_id;
+    if (!schoolId) {
+      throw new Error('Teacher school scope not found.');
+    }
+
+    // 2. Upload file
+    const extension = file.name.split('.').pop() || 'png';
+    const filePath = `${teacherId}.${extension}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('teacher-signatures')
+      .upload(filePath, file, {
+        cacheControl: '0',
+        upsert: true
+      });
+
+    if (uploadError) {
+      throw new Error('Failed to upload teacher signature to storage: ' + uploadError.message);
+    }
+
+    // 3. Resolve public URL
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('teacher-signatures')
+      .getPublicUrl(filePath);
+
+    // 4. Update database teachers table
+    const { error: dbUpdateError } = await supabaseAdmin
+      .from('teachers')
+      .update({
+        signature_url: publicUrl,
+        signature_uploaded_at: new Date().toISOString()
+      })
+      .eq('id', teacherId);
+
+    if (dbUpdateError) {
+      throw new Error('Failed to save teacher signature URL to database: ' + dbUpdateError.message);
+    }
+
+    // 5. Log audit
+    try {
+      await supabaseAdmin.from('file_upload_audit').insert({
+        school_id: schoolId,
+        uploaded_by: uploaderId,
+        file_type: 'teacher_signature',
+        file_url: publicUrl
+      });
+    } catch (auditErr) {
+      console.error('Failed to log teacher signature audit:', auditErr);
+    }
+
+    // 6. Update local client cache in mockDb.teachers
+    const tcIdx = mockDb.teachers.findIndex(t => t.id === teacherId);
+    if (tcIdx !== -1) {
+      mockDb.teachers[tcIdx].signatureUrl = publicUrl;
+      mockDb.teachers[tcIdx].signatureUploadedAt = new Date().toISOString();
+      mockDb.saveAll();
+    }
+
+    return publicUrl;
+  },
+
+  async removeTeacherSignature(teacherId: string, uploaderId: string): Promise<void> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(teacherId) || !isUUID(uploaderId)) {
+      throw new Error('Invalid IDs format. Must be UUID.');
+    }
+
+    // 1. Get teacher school_id and current url
+    const { data: tcRow } = await supabaseAdmin
+      .from('teachers')
+      .select('school_id, signature_url')
+      .eq('id', teacherId)
+      .single();
+
+    const schoolId = tcRow?.school_id;
+    if (!schoolId) {
+      throw new Error('Teacher school scope not found.');
+    }
+
+    if (tcRow?.signature_url) {
+      try {
+        const parts = tcRow.signature_url.split('/teacher-signatures/');
+        if (parts.length > 1) {
+          const filePath = parts[1];
+          await supabaseAdmin.storage.from('teacher-signatures').remove([filePath]);
+        }
+      } catch (err) {
+        console.error('Failed to delete teacher signature from storage:', err);
+      }
+    }
+
+    // 2. Set database to NULL
+    const { error: dbUpdateError } = await supabaseAdmin
+      .from('teachers')
+      .update({
+        signature_url: null,
+        signature_uploaded_at: null
+      })
+      .eq('id', teacherId);
+
+    if (dbUpdateError) {
+      throw new Error('Failed to clear teacher signature from database: ' + dbUpdateError.message);
+    }
+
+    // 3. Log audit
+    try {
+      await supabaseAdmin.from('file_upload_audit').insert({
+        school_id: schoolId,
+        uploaded_by: uploaderId,
+        file_type: 'teacher_signature',
+        file_url: null
+      });
+    } catch (auditErr) {
+      console.error('Failed to log teacher signature remove audit:', auditErr);
+    }
+
+    // 4. Update local client cache in mockDb.teachers
+    const tcIdx = mockDb.teachers.findIndex(t => t.id === teacherId);
+    if (tcIdx !== -1) {
+      mockDb.teachers[tcIdx].signatureUrl = '';
+      mockDb.teachers[tcIdx].signatureUploadedAt = '';
+      mockDb.saveAll();
+    }
+  },
+
   async uploadHomeworkSubmissionFile(schoolId: string, homeworkId: string, studentId: string, file: File): Promise<string> {
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     if (!isUUID(schoolId) || !isUUID(homeworkId) || !isUUID(studentId)) {
@@ -908,7 +1347,9 @@ export const mockApi = {
             id: fullTc.id, userId: fullTc.user_id, schoolId: fullTc.school_id,
             employeeId: fullTc.employee_id, qualification: fullTc.qualification || '',
             joiningDate: fullTc.joining_date || '', specialization: fullTc.specialization || '',
-            createdAt: fullTc.created_at
+            createdAt: fullTc.created_at,
+            signatureUrl: fullTc.signature_url || '',
+            signatureUploadedAt: fullTc.signature_uploaded_at || ''
           };
           const existingTeacher = mockDb.teachers.findIndex(t => t.id === fullTc.id);
           if (existingTeacher === -1) mockDb.teachers.push(teacherMapped);
@@ -959,7 +1400,13 @@ export const mockApi = {
           country: dbSchool.country || 'USA',
           currencyCode: dbSchool.currency_code || 'USD',
           currencySymbol: dbSchool.currency_symbol || '$',
-          timezone: dbSchool.timezone || 'America/New_York'
+          timezone: dbSchool.timezone || 'America/New_York',
+          logoUrl: dbSchool.logo_url || '',
+          logoFileName: dbSchool.logo_file_name || '',
+          logoUploadedAt: dbSchool.logo_uploaded_at || '',
+          sealUrl: dbSchool.seal_url || '',
+          sealFileName: dbSchool.seal_file_name || '',
+          sealUploadedAt: dbSchool.seal_uploaded_at || ''
         };
         const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
         if (idx === -1) mockDb.schools.push(schoolMapped);
@@ -2163,7 +2610,13 @@ export const mockApi = {
           country: dbSchool.country || 'USA',
           currencyCode: dbSchool.currency_code || 'USD',
           currencySymbol: dbSchool.currency_symbol || '$',
-          timezone: dbSchool.timezone || 'America/New_York'
+          timezone: dbSchool.timezone || 'America/New_York',
+          logoUrl: dbSchool.logo_url || '',
+          logoFileName: dbSchool.logo_file_name || '',
+          logoUploadedAt: dbSchool.logo_uploaded_at || '',
+          sealUrl: dbSchool.seal_url || '',
+          sealFileName: dbSchool.seal_file_name || '',
+          sealUploadedAt: dbSchool.seal_uploaded_at || ''
         };
         const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
         if (idx === -1) mockDb.schools.push(schoolMapped);
@@ -3917,7 +4370,13 @@ export const mockApi = {
           country: dbSchool.country || 'USA',
           currencyCode: currencyCode,
           currencySymbol: currencySymbol,
-          timezone: dbSchool.timezone || 'America/New_York'
+          timezone: dbSchool.timezone || 'America/New_York',
+          logoUrl: dbSchool.logo_url || '',
+          logoFileName: dbSchool.logo_file_name || '',
+          logoUploadedAt: dbSchool.logo_uploaded_at || '',
+          sealUrl: dbSchool.seal_url || '',
+          sealFileName: dbSchool.seal_file_name || '',
+          sealUploadedAt: dbSchool.seal_uploaded_at || ''
         };
         const idx = mockDb.schools.findIndex(s => s.id === dbSchool.id);
         if (idx === -1) mockDb.schools.push(schoolMapped);
@@ -6815,7 +7274,13 @@ export const mockApi = {
         country: s.country || 'USA',
         currencyCode: s.currency_code || 'USD',
         currencySymbol: s.currency_symbol || '$',
-        timezone: s.timezone || 'America/New_York'
+        timezone: s.timezone || 'America/New_York',
+        logoUrl: s.logo_url || '',
+        logoFileName: s.logo_file_name || '',
+        logoUploadedAt: s.logo_uploaded_at || '',
+        sealUrl: s.seal_url || '',
+        sealFileName: s.seal_file_name || '',
+        sealUploadedAt: s.seal_uploaded_at || ''
       };
 
       const idx = mockDb.schools.findIndex(x => x.id === s.id);
@@ -6909,7 +7374,9 @@ export const mockApi = {
     country: string = 'USA',
     currencyCode: string = 'USD',
     currencySymbol: string = '$',
-    timezone: string = 'America/New_York'
+    timezone: string = 'America/New_York',
+    logoFile?: File | null,
+    sealFile?: File | null
   ): Promise<School> {
     const { data, error } = await supabaseAdmin.from('schools').insert({
       name,
@@ -6924,20 +7391,46 @@ export const mockApi = {
 
     if (error || !data) throw new Error('Failed to create school in database: ' + (error?.message || 'Unknown error'));
 
+    // Upload files if provided
+    if (logoFile) {
+      try {
+        await this.uploadSchoolAsset(data.id, 'logo', logoFile, superAdminId);
+      } catch (err) {
+        console.error('Failed to upload logo during school creation:', err);
+      }
+    }
+    if (sealFile) {
+      try {
+        await this.uploadSchoolAsset(data.id, 'seal', sealFile, superAdminId);
+      } catch (err) {
+        console.error('Failed to upload seal during school creation:', err);
+      }
+    }
+
+    // Refetch final record to resolve branding URLs
+    const { data: finalData } = await supabaseAdmin.from('schools').select('*').eq('id', data.id).single();
+    const activeData = finalData || data;
+
     const schoolMapped: School = {
-      id: data.id,
-      name: data.name,
-      address: data.address || '',
-      phone: data.phone || '',
-      subscriptionPlan: data.subscription_plan ? (data.subscription_plan.toLowerCase() as any) : 'freemium',
-      createdAt: data.created_at,
-      country: data.country || country,
-      currencyCode: data.currency_code || currencyCode,
-      currencySymbol: data.currency_symbol || currencySymbol,
-      timezone: data.timezone || timezone
+      id: activeData.id,
+      name: activeData.name,
+      address: activeData.address || '',
+      phone: activeData.phone || '',
+      subscriptionPlan: activeData.subscription_plan ? (activeData.subscription_plan.toLowerCase() as any) : 'freemium',
+      createdAt: activeData.created_at,
+      country: activeData.country || country,
+      currencyCode: activeData.currency_code || currencyCode,
+      currencySymbol: activeData.currency_symbol || currencySymbol,
+      timezone: activeData.timezone || timezone,
+      logoUrl: activeData.logo_url || '',
+      logoFileName: activeData.logo_file_name || '',
+      logoUploadedAt: activeData.logo_uploaded_at || '',
+      sealUrl: activeData.seal_url || '',
+      sealFileName: activeData.seal_file_name || '',
+      sealUploadedAt: activeData.seal_uploaded_at || ''
     };
 
-    const idx = mockDb.schools.findIndex(x => x.id === data.id);
+    const idx = mockDb.schools.findIndex(x => x.id === activeData.id);
     if (idx === -1) {
       mockDb.schools.push(schoolMapped);
     } else {
@@ -12446,22 +12939,26 @@ export const mockApi = {
     await this.ensureCbseStructure(schoolId, sessionId);
 
     let school = mockDb.schools.find(s => s.id === schoolId);
-    if (!school) {
-      const { data: dbSchool } = await supabaseAdmin.from('schools').select('*').eq('id', schoolId).single();
-      if (dbSchool) {
-        school = {
-          id: dbSchool.id,
-          name: dbSchool.name,
-          address: dbSchool.address || '',
-          phone: dbSchool.phone || '',
-          subscriptionPlan: dbSchool.subscription_plan || 'freemium',
-          createdAt: dbSchool.created_at,
-          country: dbSchool.country || '',
-          currencyCode: dbSchool.currency_code || '',
-          currencySymbol: dbSchool.currency_symbol || '',
-          timezone: dbSchool.timezone || ''
-        };
-      }
+    const { data: dbSchool } = await supabaseAdmin.from('schools').select('*').eq('id', schoolId).single();
+    if (dbSchool) {
+      school = {
+        id: dbSchool.id,
+        name: dbSchool.name,
+        address: dbSchool.address || '',
+        phone: dbSchool.phone || '',
+        subscriptionPlan: dbSchool.subscription_plan || 'freemium',
+        createdAt: dbSchool.created_at,
+        country: dbSchool.country || '',
+        currencyCode: dbSchool.currency_code || '',
+        currencySymbol: dbSchool.currency_symbol || '',
+        timezone: dbSchool.timezone || '',
+        logoUrl: dbSchool.logo_url || '',
+        logoFileName: dbSchool.logo_file_name || '',
+        logoUploadedAt: dbSchool.logo_uploaded_at || '',
+        sealUrl: dbSchool.seal_url || '',
+        sealFileName: dbSchool.seal_file_name || '',
+        sealUploadedAt: dbSchool.seal_uploaded_at || ''
+      };
     }
 
     const studentUser = mockDb.users.find(u => u.id === student.userId);
@@ -12586,12 +13083,47 @@ export const mockApi = {
     };
 
     let teacherName = 'Signature of Class Teacher';
+    let teacherSignatureUrl = '';
     if (cls?.classTeacherId) {
       const teacher = mockDb.teachers.find(t => t.id === cls.classTeacherId);
       if (teacher) {
         const u = mockDb.users.find(usr => usr.id === teacher.userId);
         if (u) teacherName = `${u.firstName} ${u.lastName}`;
       }
+      try {
+        const { data: dbTeacher } = await supabaseAdmin
+          .from('teachers')
+          .select('signature_url')
+          .eq('id', cls.classTeacherId)
+          .maybeSingle();
+        if (dbTeacher?.signature_url) {
+          teacherSignatureUrl = dbTeacher.signature_url;
+        }
+      } catch (err) {
+        console.error('Failed to fetch teacher signature:', err);
+      }
+    }
+
+    let principalSignatureUrl = '';
+    let principalName = parsedRemarks?.principalName || 'Dr. Richard Hendricks';
+    try {
+      const { data: dbAdmin } = await supabaseAdmin
+        .from('school_admins')
+        .select('signature_url, users(first_name, last_name)')
+        .eq('school_id', schoolId)
+        .eq('status', 'ACTIVE')
+        .maybeSingle();
+      if (dbAdmin) {
+        if (dbAdmin.signature_url) {
+          principalSignatureUrl = dbAdmin.signature_url;
+        }
+        if (dbAdmin.users && !parsedRemarks?.principalName) {
+          const u = dbAdmin.users as any;
+          principalName = `${u.first_name} ${u.last_name}`;
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch principal signature:', err);
     }
 
     const remarks = {
@@ -12604,7 +13136,9 @@ export const mockApi = {
 
     const signatures = {
       classTeacherName: teacherName,
-      principalName: parsedRemarks?.principalName || 'Dr. Richard Hendricks'
+      classTeacherSignatureUrl: teacherSignatureUrl,
+      principalName: principalName,
+      principalSignatureUrl: principalSignatureUrl
     };
 
     const verificationCode = `MS-${sessionName.slice(0, 4)}-${student.admissionNumber.replace(/[^a-zA-Z0-9]/g, '')}`;
@@ -12616,7 +13150,9 @@ export const mockApi = {
         address: school?.address || 'gram- shahanshahpur, Varanasi, UP, India',
         phone: school?.phone || '+91 93363 57874',
         email: `info@${(school?.name || 'parantappublicschool').toLowerCase().replace(/[^a-z0-9]/g, '')}.edu.in`,
-        sessionName: sessionName
+        sessionName: sessionName,
+        logoUrl: school?.logoUrl || '',
+        sealUrl: school?.sealUrl || ''
       },
       student: {
         id: studentId,

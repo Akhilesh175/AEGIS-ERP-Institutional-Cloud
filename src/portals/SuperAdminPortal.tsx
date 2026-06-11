@@ -53,6 +53,39 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
   const [schCurrencySymbol, setSchCurrencySymbol] = useState('$');
   const [schTimezone, setSchTimezone] = useState('America/New_York');
 
+  const [logoFile, setLogoFile] = useState<File | null>(null);
+  const [logoPreview, setLogoPreview] = useState<string>('');
+  const [sealFile, setSealFile] = useState<File | null>(null);
+  const [sealPreview, setSealPreview] = useState<string>('');
+
+  const handleLogoChange = (file: File | null) => {
+    if (!file) {
+      setLogoFile(null);
+      setLogoPreview('');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File exceeds 5MB size limit.');
+      return;
+    }
+    setLogoFile(file);
+    setLogoPreview(URL.createObjectURL(file));
+  };
+
+  const handleSealChange = (file: File | null) => {
+    if (!file) {
+      setSealFile(null);
+      setSealPreview('');
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File exceeds 5MB size limit.');
+      return;
+    }
+    setSealFile(file);
+    setSealPreview(URL.createObjectURL(file));
+  };
+
   const countryPresets = [
     { name: 'United States', code: 'USA', currency: 'USD', symbol: '$', timezone: 'America/New_York' },
     { name: 'United Kingdom', code: 'GBR', currency: 'GBP', symbol: '£', timezone: 'Europe/London' },
@@ -236,7 +269,9 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
         schCountry,
         schCurrencyCode,
         schCurrencySymbol,
-        schTimezone
+        schTimezone,
+        logoFile,
+        sealFile
       );
       setShowAddSchool(false);
       setSchName('');
@@ -246,6 +281,10 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
       setSchCurrencyCode('USD');
       setSchCurrencySymbol('$');
       setSchTimezone('America/New_York');
+      setLogoFile(null);
+      setLogoPreview('');
+      setSealFile(null);
+      setSealPreview('');
       loadData();
       alert('Institutional school node deployed to Aegis SaaS Cluster!');
     } catch (err: any) {
@@ -847,6 +886,56 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                 <div className="space-y-1">
                   <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Timezone</label>
                   <input type="text" value={schTimezone} onChange={(e) => setSchTimezone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none font-mono" required />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">School Logo (Max 5MB)</label>
+                  {logoPreview ? (
+                    <div className="relative w-full h-24 bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden flex items-center justify-center group">
+                      <img src={logoPreview} alt="Logo preview" className="max-h-full max-w-full object-contain" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <label className="bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold px-2 py-1 rounded cursor-pointer transition-colors">
+                          Change
+                          <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp" onChange={(e) => handleLogoChange(e.target.files?.[0] || null)} className="hidden" />
+                        </label>
+                        <button type="button" onClick={() => handleLogoChange(null)} className="bg-red-650 hover:bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded transition-colors">
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center w-full h-24 bg-slate-900 border border-dashed border-slate-800 hover:border-slate-700 rounded-xl cursor-pointer transition-colors group">
+                      <PlusCircle className="text-slate-550 group-hover:text-slate-450 mb-1" size={16} />
+                      <span className="text-[10px] text-slate-500 group-hover:text-slate-450 font-bold uppercase">Upload Logo</span>
+                      <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp" onChange={(e) => handleLogoChange(e.target.files?.[0] || null)} className="hidden" />
+                    </label>
+                  )}
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">School Seal (Max 5MB)</label>
+                  {sealPreview ? (
+                    <div className="relative w-full h-24 bg-slate-950/40 border border-slate-800 rounded-xl overflow-hidden flex items-center justify-center group">
+                      <img src={sealPreview} alt="Seal preview" className="max-h-full max-w-full object-contain" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                        <label className="bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold px-2 py-1 rounded cursor-pointer transition-colors">
+                          Change
+                          <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp" onChange={(e) => handleSealChange(e.target.files?.[0] || null)} className="hidden" />
+                        </label>
+                        <button type="button" onClick={() => handleSealChange(null)} className="bg-red-650 hover:bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded transition-colors">
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <label className="flex flex-col items-center justify-center w-full h-24 bg-slate-900 border border-dashed border-slate-800 hover:border-slate-700 rounded-xl cursor-pointer transition-colors group">
+                      <PlusCircle className="text-slate-550 group-hover:text-slate-450 mb-1" size={16} />
+                      <span className="text-[10px] text-slate-500 group-hover:text-slate-450 font-bold uppercase">Upload Seal</span>
+                      <input type="file" accept=".png,.jpg,.jpeg,.svg,.webp" onChange={(e) => handleSealChange(e.target.files?.[0] || null)} className="hidden" />
+                    </label>
+                  )}
                 </div>
               </div>
 

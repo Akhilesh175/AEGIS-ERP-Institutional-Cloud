@@ -146,6 +146,10 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [quizzesList, setQuizzesList] = useState<Quiz[]>([]);
   const [quizzesLoading, setQuizzesLoading] = useState(false);
 
+  // ── Teacher Signature States ───────────────────────
+  const [signatureUploading, setSignatureUploading] = useState(false);
+  const [teacherSignatureUrl, setTeacherSignatureUrl] = useState<string>('');
+
   // Edit Assignment modal
   const [editingAssignment, setEditingAssignment] = useState<(Assignment & { className: string; subjectName: string }) | null>(null);
   const [editAssignTitle, setEditAssignTitle] = useState('');
@@ -468,6 +472,19 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
           
           mockApi.classTeacherGetExams(schoolId).then(setHmExams);
           mockApi.syncQuizzesData(schoolId).catch(console.error);
+
+          if (teacherId) {
+            const { data: tcRow } = await supabase
+              .from('teachers')
+              .select('signature_url')
+              .eq('id', teacherId)
+              .maybeSingle();
+            if (tcRow?.signature_url) {
+              setTeacherSignatureUrl(tcRow.signature_url);
+            } else {
+              setTeacherSignatureUrl('');
+            }
+          }
         } catch (e) {
           console.error('Core sync failed in teacher portal:', e);
         }
@@ -1355,6 +1372,39 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     }
   };
 
+  const handleUploadSignature = async (file: File) => {
+    if (!teacherId || !session?.user?.id) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size exceeds 5MB limit.');
+      return;
+    }
+    try {
+      setSignatureUploading(true);
+      const url = await mockApi.uploadTeacherSignature(teacherId, file, session.user.id);
+      setTeacherSignatureUrl(url);
+      alert('Signature uploaded successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to upload signature');
+    } finally {
+      setSignatureUploading(false);
+    }
+  };
+
+  const handleRemoveSignature = async () => {
+    if (!teacherId || !session?.user?.id) return;
+    if (!window.confirm('Are you sure you want to remove your signature?')) return;
+    try {
+      setSignatureUploading(true);
+      await mockApi.removeTeacherSignature(teacherId, session.user.id);
+      setTeacherSignatureUrl('');
+      alert('Signature removed successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove signature');
+    } finally {
+      setSignatureUploading(false);
+    }
+  };
+
   const teacherEntity = mockDb.teachers.find(t => t.id === teacherId);
   const teacherUser = mockDb.users.find(u => u.id === session?.user?.id);
   const teacherSchool = mockDb.schools.find(s => s.id === teacherEntity?.schoolId) || mockDb.schools.find(s => s.id === teacherUser?.schoolId);
@@ -1433,6 +1483,73 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             </h3>
             <p className="text-xs text-slate-400 group-hover:text-slate-200 transition-colors">Weekly lectures assigned on master sheets</p>
           </GlassCard>
+
+          <div className="md:col-span-3 font-sans">
+            <GlassCard className="space-y-4">
+              <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+                <div>
+                  <h4 className="font-bold text-slate-100 text-sm flex items-center gap-1.5">
+                    <PenTool size={16} className="text-brand-500" />
+                    Teacher Signature Upload
+                  </h4>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Upload your official digital signature to authenticate student report cards, marksheets, and academic documents.
+                  </p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-center">
+                <div className="space-y-3">
+                  <div className="text-xs text-slate-350 space-y-2 leading-relaxed">
+                    <p>• Allowed formats: <strong>PNG, JPG, JPEG, SVG, WEBP</strong>.</p>
+                    <p>• Max file size: <strong>5 MB</strong>.</p>
+                    <p>• Ensure your signature has a transparent or solid white background for high quality scaling.</p>
+                  </div>
+                  
+                  <div className="flex gap-2">
+                    <label className="glass-btn-primary text-xs px-4 py-2 cursor-pointer inline-flex items-center gap-1.5">
+                      <UploadCloud size={14} />
+                      {teacherSignatureUrl ? 'Replace Signature' : 'Upload Signature'}
+                      <input 
+                        type="file" 
+                        accept=".png,.jpg,.jpeg,.svg,.webp" 
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) handleUploadSignature(file);
+                        }} 
+                        className="hidden" 
+                      />
+                    </label>
+                    {teacherSignatureUrl && (
+                      <button 
+                        type="button" 
+                        onClick={handleRemoveSignature} 
+                        className="text-red-400 hover:text-red-350 text-xs border border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 px-4 py-2 rounded-xl transition-all"
+                      >
+                        Remove Signature
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="h-32 bg-slate-950/45 border border-slate-800 rounded-2xl overflow-hidden flex items-center justify-center relative group p-4">
+                  {signatureUploading ? (
+                    <div className="flex flex-col items-center justify-center gap-2 text-slate-400">
+                      <Loader2 className="animate-spin text-brand-500" size={20} />
+                      <span className="text-[10px] font-bold uppercase tracking-wider">Uploading...</span>
+                    </div>
+                  ) : teacherSignatureUrl ? (
+                    <img src={teacherSignatureUrl} alt="Signature Preview" className="max-h-full max-w-full object-contain p-2" />
+                  ) : (
+                    <div className="text-center text-slate-550 space-y-1">
+                      <PenTool className="mx-auto text-slate-600 mb-1" size={24} />
+                      <span className="block text-[10px] font-bold uppercase tracking-wider">No Signature Uploaded</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </GlassCard>
+          </div>
         </div>
       )}
 

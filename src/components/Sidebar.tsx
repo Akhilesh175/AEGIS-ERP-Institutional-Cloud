@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare, 
   Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList, ShieldAlert, X,
-  Mail, Database, Key, Terminal, Home
+  Mail, Database, Key, Terminal, Home, FileText
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -112,6 +112,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
           { id: 'timetable', label: 'Schedule', icon: Calendar },
           { id: 'grades', label: 'Report Cards', icon: Award },
+          { id: 'documents', label: 'Documents Center', icon: FileText },
           { id: 'materials', label: 'Materials', icon: BookOpen, locked: lock('materials') },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
           { id: 'library', label: 'Library Books', icon: BookMarked, locked: lock('library') },
@@ -128,6 +129,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'homework', label: 'Homework', icon: BookMarked, locked: lock('homework') },
           { id: 'timetable', label: 'Class Schedule', icon: Calendar },
           { id: 'grades', label: 'Grades Progress', icon: Award },
+          { id: 'documents', label: 'Documents Center', icon: FileText },
           { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: lock('fees') },
           { id: 'materials', label: 'Materials', icon: BookOpen, locked: lock('materials') },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
@@ -163,6 +165,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'classes', label: 'Classes & Sections', icon: Layers },
           { id: 'subjects', label: 'Subject Catalog', icon: BookMarked },
           { id: 'academicsessions', label: 'Academic Sessions', icon: Calendar },
+          { id: 'documents', label: 'Documents Center', icon: FileText },
           { id: 'attendance', label: 'Student Attendance', icon: Layers, locked: lock('attendance') },
           { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: lock('fees') },
           { id: 'hostel', label: 'Hostel Registry', icon: Home, locked: lock('hostel') },

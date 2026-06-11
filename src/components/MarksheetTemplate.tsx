@@ -23,6 +23,8 @@ interface MarksheetData {
     phone: string;
     email: string;
     sessionName: string;
+    logoUrl?: string;
+    sealUrl?: string;
   };
   student: {
     id: string;
@@ -63,7 +65,9 @@ interface MarksheetData {
   };
   signatures: {
     classTeacherName: string;
+    classTeacherSignatureUrl?: string;
     principalName: string;
+    principalSignatureUrl?: string;
   };
   verificationCode: string;
 }
@@ -98,12 +102,10 @@ export const MarksheetTemplate: React.FC<MarksheetTemplateProps> = ({ data }) =>
       <div className="flex justify-between items-center border-b border-slate-350 pb-4 mb-4">
         {/* School Logo */}
         <div className="w-16 h-16 shrink-0 flex items-center justify-center rounded-full bg-slate-100 border border-slate-300 overflow-hidden">
-          {data.student.avatarUrl ? (
-            <div className="w-full h-full bg-gradient-to-tr from-brand-650 to-brand-450 flex items-center justify-center font-bold text-white text-2xl">
-              {data.school.name.substring(0, 1)}
-            </div>
+          {data.school.logoUrl ? (
+            <img src={data.school.logoUrl} alt="Logo" className="w-full h-full object-cover" />
           ) : (
-            <div className="w-12 h-12 rounded-full border-2 border-emerald-600 bg-emerald-50 flex items-center justify-center font-bold text-emerald-800 text-lg">
+            <div className="w-full h-full bg-gradient-to-tr from-brand-650 to-brand-450 flex items-center justify-center font-bold text-white text-2xl">
               {data.school.name.substring(0, 1)}
             </div>
           )}
@@ -332,12 +334,31 @@ export const MarksheetTemplate: React.FC<MarksheetTemplateProps> = ({ data }) =>
             <span className="font-bold text-slate-650 text-[10px]">Date of Issue</span>
             <span className="font-mono text-slate-900 font-semibold">{data.remarks.dateOfIssue}</span>
           </div>
-          <div className="flex-1 border-r border-slate-400 p-3 flex flex-col justify-between h-20">
-            <span className="font-cursive text-indigo-800 text-lg leading-none pt-2">{data.signatures.classTeacherName}</span>
+          <div className="flex-1 border-r border-slate-400 p-3 flex flex-col justify-between h-20 relative">
+            {data.signatures.classTeacherSignatureUrl ? (
+              <div className="h-10 flex items-center justify-center overflow-hidden">
+                <img src={data.signatures.classTeacherSignatureUrl} alt="Class Teacher Signature" className="max-h-full max-w-[150px] object-contain" />
+              </div>
+            ) : (
+              <span className="font-cursive text-indigo-800 text-lg leading-none pt-2">{data.signatures.classTeacherName}</span>
+            )}
             <span className="text-[10px] font-bold text-slate-500 border-t border-slate-200 pt-1">Signature of Class Teacher</span>
           </div>
-          <div className="flex-1 p-3 flex flex-col justify-between h-20">
-            <span className="font-cursive text-indigo-800 text-lg leading-none pt-2">{data.signatures.principalName}</span>
+          <div className="flex-1 p-3 flex flex-col justify-between h-20 relative overflow-visible">
+            {data.school.sealUrl && (
+              <img 
+                src={data.school.sealUrl} 
+                alt="School Seal" 
+                className="absolute right-2 top-1 w-12 h-12 opacity-80 pointer-events-none object-contain" 
+              />
+            )}
+            {data.signatures.principalSignatureUrl ? (
+              <div className="h-10 flex items-center justify-center overflow-hidden">
+                <img src={data.signatures.principalSignatureUrl} alt="Principal Signature" className="max-h-full max-w-[150px] object-contain" />
+              </div>
+            ) : (
+              <span className="font-cursive text-indigo-800 text-lg leading-none pt-2">{data.signatures.principalName}</span>
+            )}
             <span className="text-[10px] font-bold text-slate-500 border-t border-slate-200 pt-1">Signature of Principal</span>
           </div>
         </div>
@@ -424,7 +445,7 @@ export const downloadMarksheetPdf = async (studentName: string, term: string, ma
   root.innerHTML = `
     <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #cbd5e1; padding-bottom: 16px; margin-bottom: 16px;">
       <div style="width: 64px; height: 64px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background-color: #f1f5f9; border: 1px solid #cbd5e1; overflow: hidden; font-weight: bold; font-family: sans-serif; color: #059669; font-size: 24px;">
-        ${marksheetData.school.name.substring(0, 1)}
+        ${marksheetData.school.logoUrl ? `<img src="${marksheetData.school.logoUrl}" style="width: 100%; height: 100%; object-fit: cover;" />` : marksheetData.school.name.substring(0, 1)}
       </div>
       <div style="text-align: center; flex: 1; padding: 0 16px;">
         <h1 style="font-size: 20px; font-weight: 900; letter-spacing: 1.5px; color: #0f172a; margin: 0; font-family: sans-serif; text-transform: uppercase;">
@@ -607,12 +628,27 @@ export const downloadMarksheetPdf = async (studentName: string, term: string, ma
           <span style="font-weight: bold; color: #475569; font-size: 9px; font-family: sans-serif;">Date of Issue</span>
           <span style="font-family: monospace; color: #0f172a; font-weight: 600;">${marksheetData.remarks.dateOfIssue}</span>
         </div>
-        <div style="flex: 1; border-right: 1px solid #94a3b8; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; height: 70px; box-sizing: border-box;">
-          <span style="font-family: 'Brush Script MT', cursive, sans-serif; color: #312e81; font-size: 16px; padding-top: 4px;">${marksheetData.signatures.classTeacherName}</span>
+        <div style="flex: 1; border-right: 1px solid #94a3b8; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; height: 70px; box-sizing: border-box; position: relative;">
+          ${marksheetData.signatures.classTeacherSignatureUrl ? `
+            <div style="height: 32px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-top: 4px;">
+              <img src="${marksheetData.signatures.classTeacherSignatureUrl}" style="max-height: 100%; max-width: 120px; object-fit: contain;" />
+            </div>
+          ` : `
+            <span style="font-family: 'Brush Script MT', cursive, sans-serif; color: #312e81; font-size: 16px; padding-top: 4px;">${marksheetData.signatures.classTeacherName}</span>
+          `}
           <span style="font-size: 9px; font-weight: bold; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 4px; font-family: sans-serif;">Signature of Class Teacher</span>
         </div>
-        <div style="flex: 1; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; height: 70px; box-sizing: border-box;">
-          <span style="font-family: 'Brush Script MT', cursive, sans-serif; color: #312e81; font-size: 16px; padding-top: 4px;">${marksheetData.signatures.principalName}</span>
+        <div style="flex: 1; padding: 10px; display: flex; flex-direction: column; justify-content: space-between; height: 70px; box-sizing: border-box; position: relative;">
+          ${marksheetData.school.sealUrl ? `
+            <img src="${marksheetData.school.sealUrl}" style="position: absolute; right: 8px; top: 4px; width: 44px; height: 44px; opacity: 0.8; pointer-events: none; object-fit: contain;" />
+          ` : ''}
+          ${marksheetData.signatures.principalSignatureUrl ? `
+            <div style="height: 32px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-top: 4px;">
+              <img src="${marksheetData.signatures.principalSignatureUrl}" style="max-height: 100%; max-width: 120px; object-fit: contain;" />
+            </div>
+          ` : `
+            <span style="font-family: 'Brush Script MT', cursive, sans-serif; color: #312e81; font-size: 16px; padding-top: 4px;">${marksheetData.signatures.principalName}</span>
+          `}
           <span style="font-size: 9px; font-weight: bold; color: #64748b; border-top: 1px solid #e2e8f0; padding-top: 4px; font-family: sans-serif;">Signature of Principal</span>
         </div>
       </div>

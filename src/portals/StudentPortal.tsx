@@ -20,6 +20,11 @@ import {
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
+import { downloadReceiptPdf } from '../components/ReceiptTemplate';
+import { 
+  downloadStudentIdCardPdf, downloadAdmissionFormPdf, 
+  downloadBonafideCertificatePdf 
+} from '../components/DocumentTemplates';
 
 const renderVideoPlayer = (url: string) => {
   if (!url) return null;
@@ -82,6 +87,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
   const [forumPosts, setForumPosts] = useState<(ForumPost & { schoolId: string; authorName: string; categoryName: string; repliesCount: number })[]>([]);
   const [fees, setFees] = useState<{ structure: any; payment?: any }[]>([]);
   const [reportCards, setReportCards] = useState<any[]>([]);
+  const [docGenerating, setDocGenerating] = useState<string>('');
 
   // Dynamic Library & Transport States
   const [transitAssignment, setTransitAssignment] = useState<any>(null);
@@ -1762,31 +1768,30 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                         <div className="text-[10px] text-slate-500 border-t border-slate-850 pt-2 flex justify-between items-center">
                           <span>Receipt Download Ready</span>
                           <button
-                            onClick={() => {
-                              const filename = `receipt_${structure.description.toLowerCase().replace(/\s+/g, '_')}.txt`;
-                              const content = `==================================================
-              AEGIS INSTITUTIONAL ERP
-                 OFFICIAL RECEIPT
-==================================================
-School ID:      ${studentSchool?.id || 'N/A'}
-Student ID:     ${studentId}
-Student Name:   ${session?.user?.firstName || 'Student'} ${session?.user?.lastName || ''}
---------------------------------------------------
-Fee Component:  ${structure.description}
-Total Amount:   ${studentSchool?.currencySymbol || '$'}${structure.amount.toFixed(2)}
-Payment Date:   ${new Date(payment.paymentDate || Date.now()).toLocaleString()}
-Payment Status: PAID
---------------------------------------------------
-Thank you for your payment.
-This is a system-generated official receipt.
-==================================================`;
-                              const blob = new Blob([content], { type: 'text/plain' });
-                              const link = document.createElement('a');
-                              link.href = URL.createObjectURL(blob);
-                              link.download = filename;
-                              document.body.appendChild(link);
-                              link.click();
-                              document.body.removeChild(link);
+                            onClick={async () => {
+                              if (!studentSchool) return;
+                              const stObj = mockDb.students.find(s => s.id === studentId);
+                              const cls = stObj ? mockDb.classes.find(c => c.id === stObj.classId) : null;
+                              await downloadReceiptPdf({
+                                schoolId: studentSchool.id,
+                                schoolName: studentSchool.name,
+                                schoolAddress: studentSchool.address || '',
+                                schoolPhone: studentSchool.phone || '',
+                                schoolEmail: studentSchool.email || '',
+                                logoUrl: studentSchool.logoUrl || '',
+                                sealUrl: studentSchool.sealUrl || '',
+                                currencySymbol: studentSchool.currencySymbol || '$',
+                                studentName: `${session?.user?.firstName || 'Student'} ${session?.user?.lastName || ''}`,
+                                studentId: studentId || '',
+                                admissionNumber: stObj?.admissionNumber || '',
+                                className: cls?.name || '',
+                                sectionName: '',
+                                feeDescription: structure.description,
+                                amount: Number(structure.amount),
+                                paymentDate: payment.paymentDate || new Date().toISOString(),
+                                paymentMethod: payment.paymentMethod || 'ONLINE',
+                                transactionId: payment.transactionId
+                              });
                             }}
                             className="px-2 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded flex items-center gap-1 font-semibold cursor-pointer active:scale-95 transition-all text-[9px]"
                           >
@@ -1802,6 +1807,237 @@ This is a system-generated official receipt.
             )}
           </GlassCard>
         </PremiumLock>
+      )}
+
+      {activeTab === 'documents' && (
+        <div className="space-y-6 animate-fade-in text-xs font-sans">
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <FileText className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">My Documents Center</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Access and download your official institutional identity cards, certified enrollment sheets, and active credentials.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {/* ID Card Button */}
+            <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+              <div>
+                <h6 className="font-bold text-slate-200 text-xs">My Student ID Card (CR80)</h6>
+                <p className="text-[10px] text-slate-450 mt-1">High-fidelity portrait wallet ID card. Incorporates your photo, roll details, verified QR verification, logo, seal, and administrative signature.</p>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    setDocGenerating('idcard');
+                    if (!studentSchool || !studentEntity) return;
+                    
+                    // Fetch dynamic principal signature from database
+                    let pSig = '';
+                    let pName = 'Principal / School Admin';
+                    const { data: dbAdmin } = await supabase
+                      .from('school_admins')
+                      .select('signature_url, users(first_name, last_name)')
+                      .eq('school_id', studentSchool.id)
+                      .eq('status', 'ACTIVE')
+                      .maybeSingle();
+                    if (dbAdmin) {
+                      if (dbAdmin.signature_url) pSig = dbAdmin.signature_url;
+                      if (dbAdmin.users) {
+                        const u = dbAdmin.users as any;
+                        pName = `${u.first_name} ${u.last_name}`;
+                      }
+                    }
+
+                    const docSt = {
+                      id: studentEntity.id,
+                      fullName: studentName,
+                      admissionNumber: studentEntity.admissionNumber,
+                      rollNumber: studentEntity.rollNumber,
+                      className: className,
+                      sectionName: 'A',
+                      dateOfBirth: studentEntity.dateOfBirth,
+                      gender: studentEntity.gender,
+                      avatarUrl: studentUser?.avatarUrl,
+                      fatherName: 'Father Name',
+                      motherName: 'Mother Name',
+                      address: 'Student Residence, USA',
+                      phone: studentUser?.phone
+                    };
+
+                    const docSchool = {
+                      id: studentSchool.id,
+                      name: studentSchool.name,
+                      address: studentSchool.address,
+                      phone: studentSchool.phone,
+                      email: (studentSchool as any).email || 'billing@aegisacademy.edu',
+                      logoUrl: studentSchool.logoUrl,
+                      sealUrl: studentSchool.sealUrl,
+                      sessionName: '2025-2026'
+                    };
+
+                    await downloadStudentIdCardPdf(docSchool, docSt, pSig, pName);
+                  } catch (err) {
+                    console.error('Failed to generate ID Card:', err);
+                    alert('Error building ID Card.');
+                  } finally {
+                    setDocGenerating('');
+                  }
+                }}
+                disabled={!!docGenerating}
+                className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
+              >
+                {docGenerating === 'idcard' ? 'Generating...' : 'Download ID Card (PDF)'}
+              </button>
+            </div>
+
+            {/* Admission Form Button */}
+            <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+              <div>
+                <h6 className="font-bold text-slate-200 text-xs">My Admission Form Sheet</h6>
+                <p className="text-[10px] text-slate-450 mt-1">Pre-filled admission registry sheet. Displays all verified profile fields, parent contact metrics, logo, and seal.</p>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    setDocGenerating('admission');
+                    if (!studentSchool || !studentEntity) return;
+
+                    // Fetch dynamic principal signature from database
+                    let pSig = '';
+                    let pName = 'Registrar / School Admin';
+                    const { data: dbAdmin } = await supabase
+                      .from('school_admins')
+                      .select('signature_url, users(first_name, last_name)')
+                      .eq('school_id', studentSchool.id)
+                      .eq('status', 'ACTIVE')
+                      .maybeSingle();
+                    if (dbAdmin) {
+                      if (dbAdmin.signature_url) pSig = dbAdmin.signature_url;
+                      if (dbAdmin.users) {
+                        const u = dbAdmin.users as any;
+                        pName = `${u.first_name} ${u.last_name}`;
+                      }
+                    }
+
+                    const docSt = {
+                      id: studentEntity.id,
+                      fullName: studentName,
+                      admissionNumber: studentEntity.admissionNumber,
+                      rollNumber: studentEntity.rollNumber,
+                      className: className,
+                      sectionName: 'A',
+                      dateOfBirth: studentEntity.dateOfBirth,
+                      gender: studentEntity.gender,
+                      avatarUrl: studentUser?.avatarUrl,
+                      fatherName: 'Father Name',
+                      motherName: 'Mother Name',
+                      address: 'Student Residence, USA',
+                      phone: studentUser?.phone
+                    };
+
+                    const docSchool = {
+                      id: studentSchool.id,
+                      name: studentSchool.name,
+                      address: studentSchool.address,
+                      phone: studentSchool.phone,
+                      email: (studentSchool as any).email || 'billing@aegisacademy.edu',
+                      logoUrl: studentSchool.logoUrl,
+                      sealUrl: studentSchool.sealUrl,
+                      sessionName: '2025-2026'
+                    };
+
+                    await downloadAdmissionFormPdf(docSchool, docSt, undefined, pSig, pName);
+                  } catch (err) {
+                    console.error('Failed to generate Admission Form:', err);
+                    alert('Error building Admission Form.');
+                  } finally {
+                    setDocGenerating('');
+                  }
+                }}
+                disabled={!!docGenerating}
+                className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
+              >
+                {docGenerating === 'admission' ? 'Generating...' : 'Download Admission Record (PDF)'}
+              </button>
+            </div>
+
+            {/* Bonafide Certificate Button */}
+            <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+              <div>
+                <h6 className="font-bold text-slate-200 text-xs">My Bonafide Certificate</h6>
+                <p className="text-[10px] text-slate-450 mt-1">Officially signed letter verifying student's active registration status within the academic institution.</p>
+              </div>
+              <button
+                onClick={async () => {
+                  try {
+                    setDocGenerating('bonafide');
+                    if (!studentSchool || !studentEntity) return;
+
+                    // Fetch dynamic principal signature from database
+                    let pSig = '';
+                    let pName = 'Principal / School Admin';
+                    const { data: dbAdmin } = await supabase
+                      .from('school_admins')
+                      .select('signature_url, users(first_name, last_name)')
+                      .eq('school_id', studentSchool.id)
+                      .eq('status', 'ACTIVE')
+                      .maybeSingle();
+                    if (dbAdmin) {
+                      if (dbAdmin.signature_url) pSig = dbAdmin.signature_url;
+                      if (dbAdmin.users) {
+                        const u = dbAdmin.users as any;
+                        pName = `${u.first_name} ${u.last_name}`;
+                      }
+                    }
+
+                    const docSt = {
+                      id: studentEntity.id,
+                      fullName: studentName,
+                      admissionNumber: studentEntity.admissionNumber,
+                      rollNumber: studentEntity.rollNumber,
+                      className: className,
+                      sectionName: 'A',
+                      dateOfBirth: studentEntity.dateOfBirth,
+                      gender: studentEntity.gender,
+                      avatarUrl: studentUser?.avatarUrl,
+                      fatherName: 'Father Name',
+                      motherName: 'Mother Name',
+                      address: 'Student Residence, USA',
+                      phone: studentUser?.phone
+                    };
+
+                    const docSchool = {
+                      id: studentSchool.id,
+                      name: studentSchool.name,
+                      address: studentSchool.address,
+                      phone: studentSchool.phone,
+                      email: (studentSchool as any).email || 'billing@aegisacademy.edu',
+                      logoUrl: studentSchool.logoUrl,
+                      sealUrl: studentSchool.sealUrl,
+                      sessionName: '2025-2026'
+                    };
+
+                    await downloadBonafideCertificatePdf(docSchool, docSt, pSig, pName);
+                  } catch (err) {
+                    console.error('Failed to generate Bonafide Certificate:', err);
+                    alert('Error building Bonafide Certificate.');
+                  } finally {
+                    setDocGenerating('');
+                  }
+                }}
+                disabled={!!docGenerating}
+                className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
+              >
+                {docGenerating === 'bonafide' ? 'Generating...' : 'Download Bonafide Cert (PDF)'}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {activeTab === 'hostel' && (

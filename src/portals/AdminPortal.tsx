@@ -9,12 +9,18 @@ import {
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
   Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Lock, Trash2, AlertTriangle, CheckCircle, AlertCircle, XCircle, Edit, CreditCard,
   Mail, Send, RefreshCw, Play, FileSpreadsheet, FileText, CheckSquare, Sliders, HardDrive, Download, ChevronRight, BarChart2, Clock, Settings, Shield, Search, Activity,
-  Award, BookOpen, Home, UserCheck, UserX
+  Award, BookOpen, Home, UserCheck, UserX, Image, PlusCircle
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 import { OfflineSyncManager } from '../components/OfflineSyncManager';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
+import { downloadReceiptPdf } from '../components/ReceiptTemplate';
+import { 
+  downloadStudentIdCardPdf, downloadAdmissionFormPdf, 
+  downloadTransferCertificatePdf, downloadBonafideCertificatePdf, 
+  downloadCertificateOfExcellencePdf 
+} from '../components/DocumentTemplates';
 
 export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawActiveTab }) => {
   const activeTab = rawActiveTab.split('/')[0];
@@ -39,6 +45,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [parents, setParents] = useState<(Parent & { userDetails: User; linkedStudentNames: string[] })[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+
+  // Documents Center States
+  const [docSelectedStudentId, setDocSelectedStudentId] = useState<string>('');
+  const [docGenerating, setDocGenerating] = useState<string>('');
 
   // State variables for new transport, library, and exams modules
   const [buses, setBuses] = useState<any[]>([]);
@@ -242,6 +252,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [analyticsTeacherId, setAnalyticsTeacherId] = useState(() => localStorage.getItem('aegis_analytics_teacher_id') || 'all');
   const [showInvoicePdf, setShowInvoicePdf] = useState<any | null>(null);
   const [showReportCardPdf, setShowReportCardPdf] = useState<any | null>(null);
+
+  // ── Branding & Signature Upload States ───────────────
+  const [logoUploading, setLogoUploading] = useState(false);
+  const [sealUploading, setSealUploading] = useState(false);
+  const [signatureUploading, setSignatureUploading] = useState(false);
+  const [adminSignatureUrl, setAdminSignatureUrl] = useState<string>('');
 
 
   // --- Form input states for Transport, Library, and Exam modules ---
@@ -1051,6 +1067,105 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     }
   };
 
+  const handleUploadLogo = async (file: File) => {
+    if (!session?.user.schoolId || !session?.user.id) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size exceeds 5MB limit.');
+      return;
+    }
+    try {
+      setLogoUploading(true);
+      await mockApi.uploadSchoolAsset(session.user.schoolId, 'logo', file, session.user.id);
+      await loadData();
+      alert('School logo uploaded successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to upload school logo');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const handleRemoveLogo = async () => {
+    if (!session?.user.schoolId || !session?.user.id) return;
+    if (!window.confirm('Are you sure you want to remove the school logo?')) return;
+    try {
+      setLogoUploading(true);
+      await mockApi.removeSchoolAsset(session.user.schoolId, 'logo', session.user.id);
+      await loadData();
+      alert('School logo removed successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove school logo');
+    } finally {
+      setLogoUploading(false);
+    }
+  };
+
+  const handleUploadSeal = async (file: File) => {
+    if (!session?.user.schoolId || !session?.user.id) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size exceeds 5MB limit.');
+      return;
+    }
+    try {
+      setSealUploading(true);
+      await mockApi.uploadSchoolAsset(session.user.schoolId, 'seal', file, session.user.id);
+      await loadData();
+      alert('School seal uploaded successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to upload school seal');
+    } finally {
+      setSealUploading(false);
+    }
+  };
+
+  const handleRemoveSeal = async () => {
+    if (!session?.user.schoolId || !session?.user.id) return;
+    if (!window.confirm('Are you sure you want to remove the school seal?')) return;
+    try {
+      setSealUploading(true);
+      await mockApi.removeSchoolAsset(session.user.schoolId, 'seal', session.user.id);
+      await loadData();
+      alert('School seal removed successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove school seal');
+    } finally {
+      setSealUploading(false);
+    }
+  };
+
+  const handleUploadSignature = async (file: File) => {
+    if (!session?.user.id) return;
+    if (file.size > 5 * 1024 * 1024) {
+      alert('File size exceeds 5MB limit.');
+      return;
+    }
+    try {
+      setSignatureUploading(true);
+      await mockApi.uploadAdminSignature(session.user.id, file, session.user.id);
+      await loadData();
+      alert('Principal signature uploaded successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to upload signature');
+    } finally {
+      setSignatureUploading(false);
+    }
+  };
+
+  const handleRemoveSignature = async () => {
+    if (!session?.user.id) return;
+    if (!window.confirm('Are you sure you want to remove your signature?')) return;
+    try {
+      setSignatureUploading(true);
+      await mockApi.removeAdminSignature(session.user.id, session.user.id);
+      await loadData();
+      alert('Principal signature removed successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to remove signature');
+    } finally {
+      setSignatureUploading(false);
+    }
+  };
+
   const loadData = async () => {
     try {
       // Sync subscription plan in real time during load / poll
@@ -1075,6 +1190,23 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       setFeeStructures(Array.from(new Map((fees || []).map((f: any) => [f.id, f])).values()));
       setFeePayments(Array.from(new Map((pays || []).map((p: any) => [p.id, p])).values()));
       loadAcademicSessions();
+
+      if (session?.user.id) {
+        try {
+          const { data: adminRow } = await supabase
+            .from('school_admins')
+            .select('signature_url')
+            .eq('user_id', session.user.id)
+            .maybeSingle();
+          if (adminRow?.signature_url) {
+            setAdminSignatureUrl(adminRow.signature_url);
+          } else {
+            setAdminSignatureUrl('');
+          }
+        } catch (err) {
+          console.error('Failed to load admin signature:', err);
+        }
+      }
 
       // Load RBAC dynamic permissions, operators, and audit logs from Supabase
       if (session?.user.schoolId) {
@@ -3300,6 +3432,185 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               </div>
             </GlassCard>
           </div>
+
+          {session?.user.role === 'ADMIN' && (
+            <GlassCard className="space-y-6">
+              <div className="border-b border-slate-850 pb-3">
+                <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                  <Settings className="text-brand-500" size={18} />
+                  Institution Branding & Identity Settings
+                </h3>
+                <p className="text-xs text-slate-400 mt-1">
+                  Upload official institution assets and signatures to brand documents such as marksheets, receipts, certificates, and ID cards.
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Logo Card */}
+                <div className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-3 flex flex-col justify-between">
+                  <div>
+                    <h4 className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+                      <Image size={14} className="text-brand-400" />
+                      School Logo (Max 5MB)
+                    </h4>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Appears on marksheets, certificates, receipts, ID cards, and admission forms.</p>
+                  </div>
+                  <div className="h-32 bg-slate-950/45 border border-slate-800 rounded-xl overflow-hidden flex items-center justify-center relative group">
+                    {(() => {
+                      const school = mockDb.schools.find(s => s.id === session?.user.schoolId);
+                      const logoUrl = school?.logoUrl;
+                      if (logoUrl) {
+                        return (
+                          <>
+                            <img src={logoUrl} alt="School Logo" className="max-h-full max-w-full object-contain p-2" />
+                            <div className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <label className="bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold px-2 py-1 rounded cursor-pointer transition-colors">
+                                Replace
+                                <input 
+                                  type="file" 
+                                  accept=".png,.jpg,.jpeg,.svg,.webp" 
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleUploadLogo(file);
+                                  }} 
+                                  className="hidden" 
+                                />
+                              </label>
+                              <button type="button" onClick={handleRemoveLogo} className="bg-red-650 hover:bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded transition-colors">
+                                Remove
+                              </button>
+                            </div>
+                          </>
+                        );
+                      } else {
+                        return (
+                          <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer hover:bg-slate-900/40 transition-colors">
+                            <PlusCircle className="text-slate-550 mb-1" size={18} />
+                            <span className="text-[10px] text-slate-500 font-bold uppercase">Upload Logo</span>
+                            <input 
+                              type="file" 
+                              accept=".png,.jpg,.jpeg,.svg,.webp" 
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleUploadLogo(file);
+                              }} 
+                              className="hidden" 
+                            />
+                          </label>
+                        );
+                      }
+                    })()}
+                  </div>
+                </div>
+
+                {/* Seal Card */}
+                <div className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-3 flex flex-col justify-between">
+                  <div>
+                    <h4 className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+                      <Shield size={14} className="text-brand-400" />
+                      Official School Seal (Max 5MB)
+                    </h4>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Stamped officially on marksheets, certificates, and ID cards.</p>
+                  </div>
+                  <div className="h-32 bg-slate-950/45 border border-slate-800 rounded-xl overflow-hidden flex items-center justify-center relative group">
+                    {(() => {
+                      const school = mockDb.schools.find(s => s.id === session?.user.schoolId);
+                      const sealUrl = school?.sealUrl;
+                      if (sealUrl) {
+                        return (
+                          <>
+                            <img src={sealUrl} alt="School Seal" className="max-h-full max-w-full object-contain p-2" />
+                            <div className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                              <label className="bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold px-2 py-1 rounded cursor-pointer transition-colors">
+                                Replace
+                                <input 
+                                  type="file" 
+                                  accept=".png,.jpg,.jpeg,.svg,.webp" 
+                                  onChange={(e) => {
+                                    const file = e.target.files?.[0];
+                                    if (file) handleUploadSeal(file);
+                                  }} 
+                                  className="hidden" 
+                                />
+                              </label>
+                              <button type="button" onClick={handleRemoveSeal} className="bg-red-650 hover:bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded transition-colors">
+                                Remove
+                              </button>
+                            </div>
+                          </>
+                        );
+                      } else {
+                        return (
+                          <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer hover:bg-slate-900/40 transition-colors">
+                            <PlusCircle className="text-slate-550 mb-1" size={18} />
+                            <span className="text-[10px] text-slate-500 font-bold uppercase">Upload Seal</span>
+                            <input 
+                              type="file" 
+                              accept=".png,.jpg,.jpeg,.svg,.webp" 
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleUploadSeal(file);
+                              }} 
+                              className="hidden" 
+                            />
+                          </label>
+                        );
+                      }
+                    })()}
+                  </div>
+                </div>
+
+                {/* Principal Signature Card */}
+                <div className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl space-y-3 flex flex-col justify-between">
+                  <div>
+                    <h4 className="font-bold text-slate-200 text-xs flex items-center gap-1.5">
+                      <FileText size={14} className="text-brand-400" />
+                      Principal / Admin Signature (Max 5MB)
+                    </h4>
+                    <p className="text-[10px] text-slate-500 mt-0.5">Autographed dynamically on report cards, fee receipts, and certificates.</p>
+                  </div>
+                  <div className="h-32 bg-slate-950/45 border border-slate-800 rounded-xl overflow-hidden flex items-center justify-center relative group">
+                    {adminSignatureUrl ? (
+                      <>
+                        <img src={adminSignatureUrl} alt="Admin Signature" className="max-h-full max-w-full object-contain p-2" />
+                        <div className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center gap-2">
+                          <label className="bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold px-2 py-1 rounded cursor-pointer transition-colors">
+                            Replace
+                            <input 
+                              type="file" 
+                              accept=".png,.jpg,.jpeg,.svg,.webp" 
+                              onChange={(e) => {
+                                const file = e.target.files?.[0];
+                                if (file) handleUploadSignature(file);
+                              }} 
+                              className="hidden" 
+                            />
+                          </label>
+                          <button type="button" onClick={handleRemoveSignature} className="bg-red-650 hover:bg-red-500 text-white text-[10px] font-bold px-2 py-1 rounded transition-colors">
+                            Remove
+                          </button>
+                        </div>
+                      </>
+                    ) : (
+                      <label className="flex flex-col items-center justify-center w-full h-full cursor-pointer hover:bg-slate-900/40 transition-colors">
+                        <PlusCircle className="text-slate-550 mb-1" size={18} />
+                        <span className="text-[10px] text-slate-500 font-bold uppercase">Upload Signature</span>
+                        <input 
+                          type="file" 
+                          accept=".png,.jpg,.jpeg,.svg,.webp" 
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleUploadSignature(file);
+                          }} 
+                          className="hidden" 
+                        />
+                      </label>
+                    )}
+                  </div>
+                </div>
+              </div>
+            </GlassCard>
+          )}
 
           <OfflineSyncManager />
         </div>
@@ -6458,7 +6769,27 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
               <button 
                 onClick={() => {
-                  window.print();
+                  const school = mockDb.schools.find(s => s.id === session?.user.schoolId);
+                  downloadReceiptPdf({
+                    schoolId: session?.user.schoolId || '',
+                    schoolName: school?.name || 'Aegis Academy',
+                    schoolAddress: school?.address || 'Silicon Valley, Tech District, USA',
+                    schoolPhone: school?.phone || '+1-555-0199',
+                    schoolEmail: school?.email || 'billing@aegisacademy.edu',
+                    logoUrl: school?.logoUrl || '',
+                    sealUrl: school?.sealUrl || '',
+                    currencySymbol: overview?.currencySymbol || '$',
+                    studentName: 'Leo da Vinci',
+                    studentId: 'ST-009',
+                    admissionNumber: 'ADM-2026-004',
+                    className: 'Grade 10',
+                    sectionName: 'A',
+                    feeDescription: showInvoicePdf.name,
+                    amount: parseFloat(showInvoicePdf.amount.replace(/[^0-9.]/g, '')) || 0,
+                    paymentDate: showInvoicePdf.date,
+                    paymentMethod: 'ONLINE',
+                    transactionId: showInvoicePdf.code
+                  });
                 }}
                 className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors active:scale-[0.98]"
               >
@@ -8741,6 +9072,36 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                       <td className="p-2 font-mono font-bold text-green-400">{overview?.currencySymbol || '$'}{Number(p.amountPaid).toFixed(2)}</td>
                                       <td className="p-2 font-mono text-[9px]">{p.paymentMethod}</td>
                                       <td className="p-2 text-right">
+                                        <button 
+                                          onClick={async () => {
+                                            const school = mockDb.schools.find(s => s.id === session?.user.schoolId);
+                                            const cls = stObj ? mockDb.classes.find(c => c.id === stObj.classId) : null;
+                                            await downloadReceiptPdf({
+                                              schoolId: session?.user.schoolId || '',
+                                              schoolName: school?.name || 'Aegis Academy',
+                                              schoolAddress: school?.address || 'Silicon Valley, Tech District, USA',
+                                              schoolPhone: school?.phone || '+1-555-0199',
+                                              schoolEmail: school?.email || 'billing@aegisacademy.edu',
+                                              logoUrl: school?.logoUrl || '',
+                                              sealUrl: school?.sealUrl || '',
+                                              currencySymbol: overview?.currencySymbol || '$',
+                                              studentName: stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident',
+                                              studentId: p.studentId,
+                                              admissionNumber: stObj?.admissionNumber || '',
+                                              className: cls?.name || 'Hostel Resident',
+                                              sectionName: '',
+                                              feeDescription: p.fee ? p.fee.name : 'Hostel Fee',
+                                              amount: Number(p.amountPaid),
+                                              paymentDate: p.paymentDate || new Date().toISOString(),
+                                              paymentMethod: p.paymentMethod || 'CASH',
+                                              transactionId: p.transactionId
+                                            });
+                                          }} 
+                                          className="text-brand-400 hover:text-brand-300 p-1 mr-1"
+                                          title="Download PDF Receipt"
+                                        >
+                                          <FileText size={11} />
+                                        </button>
                                         <button onClick={() => { if (window.confirm('Delete payment record?')) { mockApi.deleteHostelPayment(p.id).then(() => loadData()); } }} className="text-slate-550 hover:text-red-400 p-1"><Trash2 size={11} /></button>
                                       </td>
                                     </tr>
@@ -10316,6 +10677,219 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               </div>
               <button type="submit" className="w-full py-2 bg-emerald-650 hover:bg-emerald-600 rounded-lg font-bold text-slate-100 transition-colors mt-2">Update Category</button>
             </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {activeTab === 'documents' && (
+        <div className="space-y-6 animate-fade-in text-xs font-sans">
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <FileText className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">Administrative Documents Center</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Generate and download official school branded documents, ID cards, certificates, and admission sheets for registered students.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <GlassCard className="space-y-6">
+            <div className="border-b border-slate-850 pb-3">
+              <h4 className="font-bold text-slate-200 text-sm">Select Student to Generate Documents</h4>
+              <p className="text-[10px] text-slate-400 mt-0.5">Select a student from the master directory below to provision their official records.</p>
+            </div>
+
+            <div className="flex flex-col sm:flex-row items-center gap-4">
+              <div className="w-full sm:w-80 space-y-1">
+                <label className="text-[9px] text-slate-500 font-bold uppercase">Student Directory</label>
+                <select
+                  value={docSelectedStudentId}
+                  onChange={(e) => setDocSelectedStudentId(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500"
+                >
+                  <option value="">-- Choose Student --</option>
+                  {students.map(s => (
+                    <option key={s.id} value={s.id}>
+                      {s.userDetails ? `${s.userDetails.firstName} ${s.userDetails.lastName}` : 'Resident'} — {s.admissionNumber} ({s.className})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            {docSelectedStudentId ? (
+              (() => {
+                const st = students.find(s => s.id === docSelectedStudentId);
+                if (!st) return null;
+                const school = mockDb.schools.find(sc => sc.id === session?.user.schoolId) || {
+                  id: session?.user.schoolId || '',
+                  name: 'Aegis Academy',
+                  address: 'Silicon Valley, Tech District, USA',
+                  phone: '+1-555-0199',
+                  email: 'admin@aegisacademy.edu',
+                  sessionName: '2025-2026',
+                  logoUrl: '',
+                  sealUrl: ''
+                };
+                
+                const handleDownload = async (type: string) => {
+                  try {
+                    setDocGenerating(type);
+                    
+                    // Fetch dynamic principal signature from database
+                    let pSig = '';
+                    let pName = 'Principal / School Admin';
+                    const { data: dbAdmin } = await supabase
+                      .from('school_admins')
+                      .select('signature_url, users(first_name, last_name)')
+                      .eq('school_id', school.id)
+                      .eq('status', 'ACTIVE')
+                      .maybeSingle();
+                    if (dbAdmin) {
+                      if (dbAdmin.signature_url) pSig = dbAdmin.signature_url;
+                      if (dbAdmin.users) {
+                        const u = dbAdmin.users as any;
+                        pName = `${u.first_name} ${u.last_name}`;
+                      }
+                    }
+
+                    // Setup student document object
+                    const docSt = {
+                      id: st.id,
+                      fullName: st.userDetails ? `${st.userDetails.firstName} ${st.userDetails.lastName}` : 'Student Name',
+                      admissionNumber: st.admissionNumber,
+                      rollNumber: st.rollNumber,
+                      className: st.className,
+                      sectionName: 'A',
+                      dateOfBirth: st.dateOfBirth,
+                      gender: st.gender,
+                      avatarUrl: st.userDetails?.avatarUrl,
+                      fatherName: 'Father Name',
+                      motherName: 'Mother Name',
+                      address: 'Student Residence, USA',
+                      phone: st.userDetails?.phone
+                    };
+
+                    const docSchool = {
+                      id: school.id,
+                      name: school.name,
+                      address: school.address,
+                      phone: school.phone,
+                      email: (school as any).email || 'admin@aegisacademy.edu',
+                      logoUrl: school.logoUrl,
+                      sealUrl: school.sealUrl,
+                      sessionName: (school as any).sessionName || '2025-2026'
+                    };
+
+                    if (type === 'idcard') {
+                      await downloadStudentIdCardPdf(docSchool, docSt, pSig, pName);
+                    } else if (type === 'admission') {
+                      await downloadAdmissionFormPdf(docSchool, docSt, undefined, pSig, pName);
+                    } else if (type === 'transfer') {
+                      await downloadTransferCertificatePdf(docSchool, docSt, pSig, pName);
+                    } else if (type === 'bonafide') {
+                      await downloadBonafideCertificatePdf(docSchool, docSt, pSig, pName);
+                    } else if (type === 'excellence') {
+                      await downloadCertificateOfExcellencePdf(docSchool, docSt, pSig, pName);
+                    }
+                  } catch (err) {
+                    console.error('Failed to generate document:', err);
+                    alert('Error building document PDF.');
+                  } finally {
+                    setDocGenerating('');
+                  }
+                };
+
+                return (
+                  <div className="pt-4 border-t border-slate-850 space-y-4 animate-fade-in">
+                    <h5 className="font-semibold text-slate-200 text-xs">Available Branded Assets & Documents for {st.userDetails ? `${st.userDetails.firstName} ${st.userDetails.lastName}` : 'Resident'}</h5>
+                    
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {/* ID Card Button */}
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <h6 className="font-bold text-slate-200 text-xs">Student ID Card (CR80)</h6>
+                          <p className="text-[10px] text-slate-450 mt-1">High-fidelity portrait wallet ID card. Incorporates student photo, QR verification, logo, seal, and administrative signature.</p>
+                        </div>
+                        <button
+                          onClick={() => handleDownload('idcard')}
+                          disabled={!!docGenerating}
+                          className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
+                        >
+                          {docGenerating === 'idcard' ? 'Generating...' : 'Download ID Card (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Admission Form Button */}
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <h6 className="font-bold text-slate-200 text-xs">Admission Form Record</h6>
+                          <p className="text-[10px] text-slate-450 mt-1">Pre-filled admission registry report sheet. Displays all verified profile fields, parent contact metrics, logo, and seal.</p>
+                        </div>
+                        <button
+                          onClick={() => handleDownload('admission')}
+                          disabled={!!docGenerating}
+                          className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
+                        >
+                          {docGenerating === 'admission' ? 'Generating...' : 'Download Admission Form (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Transfer Certificate Button */}
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <h6 className="font-bold text-slate-200 text-xs">Transfer / Leaving Certificate</h6>
+                          <p className="text-[10px] text-slate-450 mt-1">Official certificate of leaving character status. Displays CBSE rules structure, double border accents, and signature.</p>
+                        </div>
+                        <button
+                          onClick={() => handleDownload('transfer')}
+                          disabled={!!docGenerating}
+                          className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
+                        >
+                          {docGenerating === 'transfer' ? 'Generating...' : 'Download Leaving Cert (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Bonafide Certificate Button */}
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <h6 className="font-bold text-slate-200 text-xs">Bonafide Student Certificate</h6>
+                          <p className="text-[10px] text-slate-450 mt-1">Officially signed letter verifying student's active registration status within the academic institution.</p>
+                        </div>
+                        <button
+                          onClick={() => handleDownload('bonafide')}
+                          disabled={!!docGenerating}
+                          className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
+                        >
+                          {docGenerating === 'bonafide' ? 'Generating...' : 'Download Bonafide Cert (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Certificate of Excellence Button */}
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <h6 className="font-bold text-slate-200 text-xs">Certificate of Excellence</h6>
+                          <p className="text-[10px] text-slate-450 mt-1">Premium landscape citation designed with gold accents. Recognizes scholastic distinction, values, and work ethic.</p>
+                        </div>
+                        <button
+                          onClick={() => handleDownload('excellence')}
+                          disabled={!!docGenerating}
+                          className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
+                        >
+                          {docGenerating === 'excellence' ? 'Generating...' : 'Download Certificate (PDF)'}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()
+            ) : (
+              <div className="p-6 bg-slate-900/10 border border-dashed border-slate-850 rounded-2xl text-center text-slate-500">
+                Please select a student directory catalog entry to proceed.
+              </div>
+            )}
           </GlassCard>
         </div>
       )}
