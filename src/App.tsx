@@ -9,7 +9,7 @@ import { ParentPortal } from './portals/ParentPortal';
 import { TeacherPortal } from './portals/TeacherPortal';
 import { AdminPortal } from './portals/AdminPortal';
 import { SuperAdminPortal } from './portals/SuperAdminPortal';
-import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff } from 'lucide-react';
+import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff, Building2, GraduationCap, Users, BookOpen, Home, Key, UserCheck, Phone, MessageSquare, Instagram, CheckCircle2, ShieldAlert, Database, Network, Layers, FileText, CheckSquare, HelpCircle, Globe, Laptop, ArrowRight, ShieldCheck } from 'lucide-react';
 import { GlassCard } from './components/GlassCard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -41,7 +41,8 @@ export const App: React.FC = () => {
   
   // Auth Form states
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('password'); // mock default
+  const [password, setPassword] = useState('');
+  const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -217,149 +218,309 @@ export const App: React.FC = () => {
 
   if (!session) {
     return (
-      <div className="min-h-screen bg-[#070a13] flex flex-col items-center justify-center p-4 relative overflow-hidden font-sans">
-        {/* Background Gradients Orbs */}
-        <div className="absolute top-[-10%] left-[-10%] w-[50%] h-[50%] rounded-full bg-brand-500/10 blur-[120px]" />
-        <div className="absolute bottom-[-10%] right-[-10%] w-[50%] h-[50%] rounded-full bg-brand-600/10 blur-[120px]" />
+      <div className="min-h-screen bg-[#070a13] flex flex-col justify-between p-4 md:p-8 relative overflow-hidden font-sans text-slate-200 selection:bg-brand-500/30 selection:text-brand-200">
+        {/* Cyber Security Tech Background Graphics */}
+        <div className="absolute top-[-20%] left-[-15%] w-[60%] h-[60%] rounded-full bg-brand-500/10 blur-[130px] pointer-events-none" />
+        <div className="absolute bottom-[-20%] right-[-15%] w-[60%] h-[60%] rounded-full bg-brand-600/10 blur-[130px] pointer-events-none" />
+        
+        {/* Tech grid & concentric circular radar vectors */}
+        <svg className="absolute inset-0 w-full h-full opacity-20 pointer-events-none" xmlns="http://www.w3.org/2000/svg">
+          <defs>
+            <pattern id="cyber-grid" width="50" height="50" patternUnits="userSpaceOnUse">
+              <path d="M 50 0 L 0 0 0 50" fill="none" stroke="rgba(56, 176, 248, 0.07)" strokeWidth="1" />
+            </pattern>
+          </defs>
+          <rect width="100%" height="100%" fill="url(#cyber-grid)" />
+          
+          {/* Circular vector lines */}
+          <circle cx="15%" cy="35%" r="180" fill="none" stroke="rgba(56, 176, 248, 0.08)" strokeWidth="1.5" strokeDasharray="6 6" />
+          <circle cx="15%" cy="35%" r="120" fill="none" stroke="rgba(56, 176, 248, 0.04)" strokeWidth="1" />
+          
+          <circle cx="85%" cy="65%" r="300" fill="none" stroke="rgba(56, 176, 248, 0.05)" strokeWidth="2" />
+          <circle cx="85%" cy="65%" r="220" fill="none" stroke="rgba(56, 176, 248, 0.07)" strokeWidth="1.5" strokeDasharray="12 8" />
+          <circle cx="85%" cy="65%" r="150" fill="none" stroke="rgba(56, 176, 248, 0.03)" strokeWidth="1" />
+          
+          {/* Subtle diagonal grid line accents */}
+          <line x1="0" y1="0" x2="100%" y2="100%" stroke="rgba(56, 176, 248, 0.02)" strokeWidth="1" />
+          <line x1="100%" y1="0" x2="0" y2="100%" stroke="rgba(56, 176, 248, 0.02)" strokeWidth="1" />
+        </svg>
 
-        {/* Brand Header */}
-        <div className="text-center mb-8 space-y-2 animate-fade-in relative z-10">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-brand-600 to-brand-400 flex items-center justify-center shadow-2xl shadow-brand-500/35 mx-auto border border-white/10">
-            <Shield className="text-white" size={30} />
+        {/* Top Header Branding */}
+        <div className="w-full flex justify-between items-center max-w-6xl mx-auto mb-6 relative z-10 shrink-0">
+          <div className="flex items-center gap-3 animate-fade-in">
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-400 flex items-center justify-center shadow-lg shadow-brand-500/20 border border-brand-300/10">
+              <Shield className="text-white" size={24} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-1">
+                AEGIS <span className="text-brand-400 text-glow-brand font-light">ERP</span>
+              </h1>
+              <p className="text-[10px] text-brand-300/70 font-bold tracking-widest font-mono uppercase">Institutional Security Center</p>
+            </div>
           </div>
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-100 font-sans mt-3">
-            AEGIS <span className="text-brand-500 text-glow-brand font-medium">ERP</span>
-          </h1>
-          <p className="text-xs text-slate-400 font-semibold tracking-widest font-mono uppercase">Institutional Security Center</p>
+          
+          {/* Theme Switcher Toggle */}
+          <button 
+            onClick={toggleTheme}
+            className="p-2.5 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-brand-500/30 text-slate-400 hover:text-slate-200 transition-all duration-200 backdrop-blur-sm shadow-md"
+            title="Toggle System Theme"
+            type="button"
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
         </div>
 
-        {/* Login Panel Container */}
-        <div className="w-full max-w-4xl grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+        {/* Central Work Grid */}
+        <div className="w-full max-w-6xl mx-auto grid grid-cols-1 lg:grid-cols-12 gap-8 items-stretch relative z-10 my-auto py-4">
           
-          {/* Form Card */}
-          <GlassCard className="flex flex-col justify-between p-8 border-white/5 shadow-brand-500/5">
-            <div className="space-y-6">
-              <div>
-                <h2 className="text-lg font-bold text-slate-100 font-sans">Secure Authorization</h2>
-                <p className="text-xs text-slate-400 mt-1">Authenticate into your multi-tenant portal console.</p>
-              </div>
-
-              {error && (
-                <div className="p-3 bg-red-500/5 border border-red-500/20 text-red-400 text-xs rounded-xl flex items-center gap-2">
-                  <span>⚠️</span>
-                  <span className="font-semibold">{error}</span>
-                </div>
-              )}
-
-              <form onSubmit={handleLogin} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                    <Mail size={12} /> Email Account
-                  </label>
-                  <input 
-                    type="email"
-                    placeholder="name@aegis.com"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
-                    className="w-full bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-4 py-2.5 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all duration-200"
-                    required
-                  />
+          {/* Left Panel - Secure Authorization Form */}
+          <div className="lg:col-span-5 flex flex-col gap-6">
+            <GlassCard className="flex flex-col p-8 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-2xl relative overflow-hidden group">
+              <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-brand-600 via-brand-400 to-brand-600 opacity-80" />
+              
+              <div className="space-y-6">
+                <div>
+                  <div className="flex items-center gap-2">
+                    <div className="p-1 rounded bg-brand-500/10 text-brand-400">
+                      <Lock size={15} />
+                    </div>
+                    <h2 className="text-lg font-bold text-slate-100 font-sans tracking-wide">Secure Authorization</h2>
+                  </div>
+                  <p className="text-xs text-slate-400 mt-1">Authenticate credentials to access your multi-tenant portal.</p>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                    <Lock size={12} /> Encryption Key
-                  </label>
-                  <div className="relative">
+                {error && (
+                  <div className="p-3.5 bg-red-500/5 border border-red-500/20 text-red-400 text-xs rounded-xl flex items-start gap-2.5">
+                    <ShieldAlert size={16} className="shrink-0 mt-0.5" />
+                    <div className="font-medium">{error}</div>
+                  </div>
+                )}
+
+                <form onSubmit={handleLogin} className="space-y-4">
+                  <div className="space-y-1.5">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
+                      <Mail size={12} className="text-brand-400" /> Email Address
+                    </label>
                     <input 
-                      type={showPassword ? "text" : "password"}
-                      placeholder="••••••••"
-                      value={password}
-                      onChange={(e) => setPassword(e.target.value)}
-                      className="w-full bg-slate-900 border border-slate-800 text-slate-100 rounded-xl pl-4 pr-10 py-2.5 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all duration-200"
+                      type="email"
+                      placeholder="name@institution.edu"
+                      value={email}
+                      onChange={(e) => setEmail(e.target.value)}
+                      className="w-full bg-[#0a0e1a] border border-slate-805 text-slate-100 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_15px_rgba(14,160,235,0.15)] transition-all duration-200"
                       required
                     />
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-                      title={showPassword ? "Hide Password" : "Show Password"}
+                  </div>
+
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between items-center">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
+                        <Key size={12} className="text-brand-400" /> Password / Encryption Key
+                      </label>
+                    </div>
+                    <div className="relative">
+                      <input 
+                        type={showPassword ? "text" : "password"}
+                        placeholder="••••••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                        className="w-full bg-[#0a0e1a] border border-slate-805 text-slate-100 rounded-xl pl-4 pr-10 py-3 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_15px_rgba(14,160,235,0.15)] transition-all duration-200"
+                        required
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowPassword(!showPassword)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                        title={showPassword ? "Hide password" : "Show password"}
+                      >
+                        {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center justify-between pt-1.5 text-xs">
+                    <label className="flex items-center gap-2 text-slate-400 cursor-pointer group">
+                      <input 
+                        type="checkbox"
+                        checked={rememberMe}
+                        onChange={(e) => setRememberMe(e.target.checked)}
+                        className="rounded bg-[#0a0e1a] border-slate-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-0 focus:ring-0 focus:outline-none w-4 h-4 cursor-pointer"
+                      />
+                      <span className="text-xs group-hover:text-slate-300 transition-colors font-medium">Remember this device</span>
+                    </label>
+                    
+                    <a 
+                      href="#support" 
+                      onClick={() => setActiveTab('support')}
+                      className="text-xs text-brand-400 hover:text-brand-300 font-semibold hover:underline transition-colors animate-pulse-subtle"
                     >
-                      {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                    </button>
+                      Forgot Password?
+                    </a>
+                  </div>
+
+                  <button 
+                    type="submit"
+                    disabled={loading}
+                    className="w-full bg-gradient-to-r from-brand-600 via-brand-500 to-brand-600 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-lg shadow-brand-500/10 hover:shadow-brand-500/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] mt-3 flex items-center justify-center gap-2 border border-brand-400/20"
+                  >
+                    {loading ? (
+                      <span className="flex items-center gap-2">
+                        <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                        Verifying Signatures...
+                      </span>
+                    ) : (
+                      <>
+                        <span>Secure Login</span>
+                        <ArrowRight size={14} className="text-white group-hover:translate-x-0.5 transition-transform" />
+                      </>
+                    )}
+                  </button>
+                </form>
+              </div>
+            </GlassCard>
+
+            {/* Support Information Card */}
+            <div className="p-6 bg-[#0b101d]/65 border border-slate-850 rounded-2xl flex flex-col gap-4 backdrop-blur-sm shadow-xl">
+              <div className="flex items-center gap-2">
+                <HelpCircle size={15} className="text-brand-400" />
+                <h3 className="font-bold text-[10px] text-slate-350 uppercase tracking-widest font-mono">Need Help? Contact Support</h3>
+              </div>
+              
+              <div className="grid grid-cols-1 gap-2.5 text-xs">
+                {/* Email Support */}
+                <a href="mailto:aegis.erp.institutional.cloud@gmail.com" className="p-3 bg-slate-900/40 border border-slate-805 hover:border-brand-500/20 hover:bg-[#0a0e1a] rounded-xl transition-all flex items-start gap-3 group">
+                  <Mail size={15} className="text-brand-400 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="font-bold text-[9px] uppercase text-slate-500 font-mono leading-none">Email Support</p>
+                    <p className="text-[11px] text-slate-300 mt-1 truncate group-hover:text-brand-300 transition-colors">aegis.erp.institutional.cloud@gmail.com</p>
+                  </div>
+                </a>
+
+                {/* WhatsApp Support */}
+                <a href="https://wa.me/919336357874" target="_blank" rel="noreferrer" className="p-3 bg-slate-900/40 border border-slate-805 hover:border-green-500/20 hover:bg-[#0a0e1a] rounded-xl transition-all flex items-start gap-3 group">
+                  <MessageSquare size={15} className="text-green-400 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="font-bold text-[9px] uppercase text-slate-500 font-mono leading-none">WhatsApp Support</p>
+                    <p className="text-[11px] text-slate-300 mt-1 truncate group-hover:text-green-300 transition-colors">+91 93363 57874</p>
+                  </div>
+                </a>
+
+                {/* Phone Support */}
+                <div className="p-3 bg-slate-900/40 border border-slate-805 rounded-xl flex items-start gap-3">
+                  <Phone size={15} className="text-brand-400 shrink-0 mt-0.5" />
+                  <div className="min-w-0 w-full">
+                    <p className="font-bold text-[9px] uppercase text-slate-500 font-mono leading-none">Phone Support</p>
+                    <div className="flex flex-col gap-1 mt-1 text-[11px] text-slate-300 font-mono">
+                      <span>+91 93363 57874</span>
+                      <span>+91 93054 26744</span>
+                    </div>
                   </div>
                 </div>
 
-                <button 
-                  type="submit"
-                  disabled={loading}
-                  className="w-full bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-semibold text-xs py-3 rounded-xl transition-all shadow-lg hover:shadow-brand-500/20 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] mt-2 flex items-center justify-center gap-1.5"
-                >
-                  {loading ? 'Authenticating...' : (
-                    <>
-                      <span>Secure Login</span>
-                      <ChevronRight size={14} />
-                    </>
-                  )}
-                </button>
-              </form>
-            </div>
-
-            {/* Footer switcher */}
-            <div className="flex items-center justify-between border-t border-slate-850 pt-4 mt-6">
-              <span className="text-[10px] text-slate-500 font-mono">TLS 1.3 SECURE SHELL</span>
-              <button 
-                onClick={toggleTheme}
-                className="p-1.5 text-slate-400 hover:text-slate-200 transition-colors"
-                title="Toggle Theme"
-              >
-                {theme === 'dark' ? <Sun size={15} /> : <Moon size={15} />}
-              </button>
-            </div>
-          </GlassCard>
-
-          {/* Credentials Guide Card */}
-          <GlassCard className="flex flex-col justify-between p-8 border-white/5">
-            <div className="space-y-4">
-              <div className="flex items-center gap-1.5 text-brand-400">
-                <Sparkles size={16} />
-                <h3 className="font-bold text-slate-200 text-sm leading-none">Console Operator Guide</h3>
-              </div>
-              <p className="text-xs text-slate-400 leading-relaxed">
-                Evaluating the five role-based portals is simplified. Click any role below to pre-fill active seed credentials:
-              </p>
-
-              <div className="space-y-2">
-                {[
-                  { label: 'Super Admin', email: 'superadmin@aegis.com', desc: 'Manage all institutions, system audits, & SaaS stats.' },
-                  { label: 'School Admin', email: 'admin@aegis.com', desc: 'Full registry maps, timetables, CRUDs, & gateway login.' },
-                  { label: 'Hostel Admin', email: 'hosteladmin@aegis.com', desc: 'Manage building layout, room allocations & hostel fees.' },
-                  { label: 'Hostel Warden', email: 'warden@aegis.com', desc: 'Manage attendance, leave workflows, visitor logs & menu.' },
-                  { label: 'Faculty Teacher', email: 'teacher1@aegis.com', desc: 'Taught courses, grade rolls, mark attendance registers.' },
-                  { label: 'Parent Guardian', email: 'parent1@aegis.com', desc: 'Secure child portal child monitor (Leo & Albert).' },
-                  { label: 'Active Student', email: 'student1@aegis.com', desc: 'Hostel info, take online quizzes, forums, classes.' }
-                ].map((roleItem, idx) => (
-                  <div 
-                    key={idx}
-                    onClick={() => handlePreFill(roleItem.email)}
-                    className="p-2.5 bg-slate-900/30 border border-slate-850 hover:border-brand-500/20 rounded-xl cursor-pointer hover:bg-slate-900/50 transition-all flex justify-between items-center group active:scale-[0.99]"
-                  >
-                    <div>
-                      <h4 className="font-bold text-xs text-slate-200 group-hover:text-brand-400 transition-colors">{roleItem.label}</h4>
-                      <p className="text-[10px] text-slate-400 line-clamp-1 mt-0.5 leading-normal">{roleItem.desc}</p>
-                    </div>
-                    <span className="text-[9px] text-slate-500 font-mono bg-slate-900 px-2 py-0.5 rounded border border-slate-800 shrink-0">Pre-fill</span>
+                {/* Instagram */}
+                <a href="https://instagram.com/aegis.erp.institutional.cloud" target="_blank" rel="noreferrer" className="p-3 bg-slate-900/40 border border-slate-805 hover:border-pink-500/20 hover:bg-[#0a0e1a] rounded-xl transition-all flex items-start gap-3 group">
+                  <Instagram size={15} className="text-pink-400 shrink-0 mt-0.5" />
+                  <div className="min-w-0">
+                    <p className="font-bold text-[9px] uppercase text-slate-500 font-mono leading-none">Instagram</p>
+                    <p className="text-[11px] text-slate-300 mt-1 truncate group-hover:text-pink-300 transition-colors">@aegis.erp.institutional.cloud</p>
                   </div>
-                ))}
+                </a>
               </div>
             </div>
+          </div>
 
-            <p className="text-[9px] text-slate-500 text-center leading-normal mt-4">
-              All credentials are secure and loaded from institutional localStorage sandbox seeds.
-            </p>
+          {/* Right Panel - Portal Access Guide */}
+          <GlassCard className="lg:col-span-7 flex flex-col p-8 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-2xl relative overflow-hidden group">
+            <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-brand-500 via-brand-300 to-brand-500 opacity-80" />
+            
+            <div className="space-y-6 flex-1 flex flex-col">
+              <div>
+                <div className="flex items-center gap-2">
+                  <div className="p-1 rounded bg-brand-500/10 text-brand-400">
+                    <Globe size={15} />
+                  </div>
+                  <h2 className="text-lg font-bold text-slate-100 font-sans tracking-wide">Portal Access Guide</h2>
+                </div>
+                <p className="text-xs text-slate-400 mt-1">Review operational control scopes and authorized features per portal role.</p>
+              </div>
+
+              {/* Grid of Role Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5 flex-1">
+                {[
+                  { label: 'Super Admin', icon: ShieldCheck, desc: 'System auditing, global metrics, and SaaS tenant management.' },
+                  { label: 'School Admin', icon: Building2, desc: 'Timetables, class registries, staff directories, and gateway configuration.' },
+                  { label: 'Sub Admin', icon: UserCheck, desc: 'Access assigned department portals (Library, Finance, transport routes, and custom RBAC modules).' },
+                  { label: 'Teacher', icon: GraduationCap, desc: 'Class rosters, assignment grading, examinations, and attendance trackers.' },
+                  { label: 'Parent', icon: Users, desc: 'Student performance tracking, fee invoices, transit maps, and leave consent.' },
+                  { label: 'Student', icon: BookOpen, desc: 'Access course resources, take online quizzes, borrow books, and view check-ins.' },
+                  { label: 'Hostel Admin', icon: Home, desc: 'Admissions registry, building structure setup, and billing control.' },
+                  { label: 'Hostel Warden', icon: Key, desc: 'Leave workflow validation, dorm attendance logs, and visitor management.' }
+                ].map((roleItem, idx) => {
+                  const IconComp = roleItem.icon;
+                  return (
+                    <div 
+                      key={idx}
+                      className="p-4 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between gap-3 group/card transition-all duration-300 hover:bg-[#0a0e1a] hover:border-brand-500/25 relative overflow-hidden"
+                    >
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="p-2 rounded-lg bg-slate-950 border border-slate-800 text-brand-400 group-hover/card:text-brand-300 transition-colors shrink-0">
+                          <IconComp size={16} />
+                        </div>
+                        <div className="min-w-0">
+                          <h4 className="font-bold text-xs text-slate-200 group-hover/card:text-brand-400 transition-colors leading-none">{roleItem.label}</h4>
+                          <p className="text-[10px] text-slate-400 leading-normal mt-1.5 line-clamp-2">{roleItem.desc}</p>
+                        </div>
+                      </div>
+                      <ChevronRight size={14} className="text-slate-600 group-hover/card:text-brand-400 group-hover/card:translate-x-0.5 transition-all shrink-0" />
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
           </GlassCard>
 
         </div>
+
+        {/* Security Features Badges Section */}
+        <div className="w-full max-w-6xl mx-auto grid grid-cols-2 md:grid-cols-5 gap-3 mt-4 mb-6 relative z-10 shrink-0">
+          {[
+            { label: 'TLS 1.3 Encryption', icon: Lock, color: 'text-emerald-400 bg-emerald-500/5 border-emerald-500/10' },
+            { label: 'Role-Based Access Control', icon: Shield, color: 'text-brand-400 bg-brand-500/5 border-brand-500/10' },
+            { label: 'Multi-Tenant Architecture', icon: Network, color: 'text-pink-400 bg-pink-500/5 border-pink-500/10' },
+            { label: 'Audit Logging Enabled', icon: FileText, color: 'text-amber-400 bg-amber-500/5 border-amber-500/10' },
+            { label: 'Secure Session Management', icon: CheckSquare, color: 'text-cyan-400 bg-cyan-500/5 border-cyan-500/10' }
+          ].map((badge, idx) => {
+            const BadgeIcon = badge.icon;
+            return (
+              <div 
+                key={idx}
+                className={`py-2 px-3 border rounded-xl flex items-center justify-center gap-2 backdrop-blur-sm transition-all duration-300 hover:scale-[1.02] ${badge.color}`}
+              >
+                <BadgeIcon size={14} className="shrink-0" />
+                <span className="text-[10px] font-bold uppercase tracking-wider font-mono">{badge.label}</span>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* System Footer */}
+        <div className="w-full max-w-6xl mx-auto border-t border-slate-900 pt-5 mt-2 flex flex-col md:flex-row justify-between items-center gap-4 text-[10px] text-slate-500 font-mono relative z-10 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="font-semibold text-slate-400">Aegis ERP Institutional Cloud</span>
+            <span className="text-slate-700">|</span>
+            <span>Version 1.5.0</span>
+          </div>
+          
+          <div className="flex items-center gap-2 bg-slate-900/50 border border-slate-850 px-3 py-1 rounded-full backdrop-blur-sm">
+            <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span className="text-slate-400 font-semibold">All Services Operational</span>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-slate-400">
+            <Lock size={11} className="text-brand-400" />
+            <span>Secure Connection Protected by TLS 1.3</span>
+          </div>
+        </div>
+
       </div>
     );
   }
