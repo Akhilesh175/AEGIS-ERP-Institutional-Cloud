@@ -217,12 +217,12 @@ export const checkChatAllowed = (sender: any, receiver: any): boolean => {
       return rB === 'SUPER_ADMIN' || rB === 'TEACHER' || isSubAdmin(rB);
     }
     
-    // 3. SUB_ADMIN <-> ADMIN, TEACHER, STUDENT, PARENT
+    // 3. SUB_ADMIN <-> ADMIN, TEACHER, STUDENT, PARENT, OTHER SUB_ADMIN
     if (isSubAdmin(rA)) {
-      return rB === 'ADMIN' || rB === 'TEACHER' || rB === 'STUDENT' || rB === 'PARENT';
+      return rB === 'ADMIN' || rB === 'TEACHER' || rB === 'STUDENT' || rB === 'PARENT' || isSubAdmin(rB);
     }
     
-    // 4. TEACHER <-> ADMIN, SUB_ADMIN, STUDENT, PARENT, TEACHER (assigned to same class/section only)
+    // 4. TEACHER <-> ADMIN, SUB_ADMIN, STUDENT, PARENT, TEACHER (assigned to same class/section only or class teacher relationship)
     if (rA === 'TEACHER') {
       if (rB === 'ADMIN' || isSubAdmin(rB)) return true;
       if (rB === 'STUDENT') {
@@ -251,7 +251,20 @@ export const checkChatAllowed = (sender: any, receiver: any): boolean => {
         if (teacherA && teacherB) {
           const classesA = mockDb.teacherClassSubjectMappings.filter(m => m.teacherId === teacherA.id).map(m => m.classId);
           const classesB = mockDb.teacherClassSubjectMappings.filter(m => m.teacherId === teacherB.id).map(m => m.classId);
-          return classesA.some(cId => classesB.includes(cId));
+          
+          // Same class assignment
+          const sameClass = classesA.some(cId => classesB.includes(cId));
+          if (sameClass) return true;
+          
+          // B is Class Teacher of a class A is assigned to
+          const classObjsA = mockDb.classes.filter(c => classesA.includes(c.id));
+          const isBClassTeacherOfA = classObjsA.some(c => c.classTeacherId === teacherB.id);
+          if (isBClassTeacherOfA) return true;
+          
+          // A is Class Teacher of a class B is assigned to
+          const classObjsB = mockDb.classes.filter(c => classesB.includes(c.id));
+          const isAClassTeacherOfB = classObjsB.some(c => c.classTeacherId === teacherA.id);
+          if (isAClassTeacherOfB) return true;
         }
         return false;
       }
@@ -2871,18 +2884,25 @@ export const mockApi = {
     try {
       // 1. Get all channel IDs for the user
       const { data: participants, error: partError } = await supabaseAdmin
-        .from('messaging_participants')
+        .from('communication_participants')
         .select('channel_id')
         .eq('user_id', userId);
 
       if (partError) throw partError;
-      if (!participants || participants.length === 0) return;
+      
+      // Clear local chatMessages list so we discard any mock/residual messages
+      mockDb.chatMessages = [];
+
+      if (!participants || participants.length === 0) {
+        mockDb.saveAll();
+        return;
+      }
 
       const channelIds = participants.map((p: any) => p.channel_id);
 
       // 2. Fetch all participants of those channels
       const { data: allParticipants, error: allPartError } = await supabaseAdmin
-        .from('messaging_participants')
+        .from('communication_participants')
         .select('channel_id, user_id')
         .in('channel_id', channelIds);
 
@@ -2890,7 +2910,7 @@ export const mockApi = {
 
       // 3. Fetch all messages in those channels
       const { data: dbMessages, error: msgError } = await supabaseAdmin
-        .from('messages')
+        .from('communication_messages')
         .select('*')
         .in('channel_id', channelIds);
 
@@ -2908,15 +2928,14 @@ export const mockApi = {
 
         dbMessages.forEach((r: any) => {
           const chParts = participantsByChannel[r.channel_id] || [];
-          // The receiver is the other participant in the channel
-          const receiverId = chParts.find((uid: string) => uid !== r.sender_id) || r.sender_id;
+          const receiverId = r.receiver_id || chParts.find((uid: string) => uid !== r.sender_id) || r.sender_id;
 
           const msg: ChatMessage = {
             id: r.id,
             senderId: r.sender_id,
             receiverId: receiverId,
-            message: r.message,
-            isRead: r.is_read,
+            message: r.message_content,
+            isRead: r.is_read || r.read_status,
             createdAt: r.created_at
           };
           const idx = mockDb.chatMessages.findIndex(x => x.id === msg.id);
@@ -3664,6 +3683,34 @@ export const mockApi = {
         lateRecords: records.filter(r => r.status === 'LATE').map(r => ({ date: r.date, remarks: r.remarks || 'Late entry' }))
       };
     });
+
+    // Calculate aggregate metrics dynamically from database records
+    const filteredStudentIds = studentList.map(s => s.id);
+    let groupRecords = mockDb.attendance.filter(a => filteredStudentIds.includes(a.studentId));
+    if (classId) groupRecords = groupRecords.filter(a => a.classId === classId);
+    if (academicSessionId) groupRecords = groupRecords.filter(a => a.academicSessionId === academicSessionId);
+
+    const totalRecords = groupRecords.length;
+    const presentRecords = groupRecords.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
+    const overallPercentage = totalRecords > 0 ? (presentRecords / totalRecords) * 100 : 100;
+
+    const absentStudents = new Set(groupRecords.filter(r => r.status === 'ABSENT').map(r => r.studentId));
+    const absencesCount = absentStudents.size;
+
+    const tardyStudents = new Set(groupRecords.filter(r => r.status === 'LATE').map(r => r.studentId));
+    const tardyCount = tardyStudents.size;
+
+    const chronicAbsentList = computed
+      .filter(s => s.percentage < 90 && s.absentDays > 0)
+      .map(s => ({
+        student_name: s.studentName,
+        missed_count: s.absentDays
+      }));
+
+    (computed as any).overall_percentage = overallPercentage;
+    (computed as any).absences_count = absencesCount;
+    (computed as any).tardy_count = tardyCount;
+    (computed as any).chronic_absent = chronicAbsentList;
 
     attendanceAnalyticsCache[cacheKey] = {
       timestamp: Date.now(),
@@ -5720,6 +5767,20 @@ export const mockApi = {
             status: 'ACTIVE'
           });
         });
+
+        // Update blocks in cache and Supabase to link to this warden
+        const newBlockIds = assignedLocations.map((loc: any) => loc.blockId || loc.hostelBlockId).filter(Boolean);
+        for (const blockId of newBlockIds) {
+          const b = mockDb.hostelBlocks.find(x => x.id === blockId);
+          if (b) {
+            b.wardenId = wardenData.id;
+          }
+          try {
+            await supabaseAdmin.from('hostel_blocks').update({ warden_id: wardenData.id }).eq('id', blockId);
+          } catch (err) {
+            console.error('Failed to update hostel block warden:', err);
+          }
+        }
       }
     }
 
@@ -8709,16 +8770,49 @@ export const mockApi = {
     const currentUsr = mockDb.users.find(u => u.id === userId);
     if (!currentUsr) return [];
 
-    if (currentUsr.schoolId) {
+    if (currentUsr.role === 'SUPER_ADMIN') {
+      const { data: dbAdmins } = await supabaseAdmin
+        .from('users')
+        .select('*')
+        .eq('role', 'ADMIN');
+      if (dbAdmins) {
+        dbAdmins.forEach((r: any) => {
+          const user: User = {
+            id: r.id,
+            email: r.email,
+            role: r.role,
+            firstName: r.first_name,
+            lastName: r.last_name,
+            phone: r.phone || '',
+            avatarUrl: r.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+            isActive: r.is_active,
+            schoolId: r.school_id,
+            createdAt: r.created_at || new Date().toISOString(),
+            updatedAt: r.created_at || new Date().toISOString()
+          };
+          const idx = mockDb.users.findIndex(u => u.id === user.id);
+          if (idx === -1) mockDb.users.push(user);
+          else mockDb.users[idx] = user;
+        });
+        mockDb.saveAll();
+      }
+    } else if (currentUsr.schoolId) {
       await this.syncUsersData(currentUsr.schoolId);
       const planName = await this.getLiveSchoolSubscriptionPlan(currentUsr.schoolId);
-      if (planName !== 'enterprise' && currentUsr.role !== 'SUPER_ADMIN') {
+      if (planName !== 'enterprise' && (currentUsr.role as string) !== 'SUPER_ADMIN') {
         return []; // Hide related API data when locked
       }
     }
 
-    // Filter contacts based on permission matrix
-    const chats = mockDb.users.filter(u => checkChatAllowed(currentUsr, u));
+    // Identify active contact IDs from synchronized messages
+    const activeContactIds = new Set<string>();
+    mockDb.chatMessages.forEach(m => {
+      if (m.senderId === userId) activeContactIds.add(m.receiverId);
+      if (m.receiverId === userId) activeContactIds.add(m.senderId);
+    });
+
+    // Filter contacts based on permission matrix and active conversations
+    const chats = mockDb.users.filter(u => activeContactIds.has(u.id) && checkChatAllowed(currentUsr, u));
 
     return chats.map(u => {
       const msgs = mockDb.chatMessages.filter(
@@ -8736,21 +8830,60 @@ export const mockApi = {
     });
   },
 
+  async getAllowedContacts(userId: string): Promise<User[]> {
+    await delay();
+
+    const currentUsr = mockDb.users.find(u => u.id === userId);
+    if (!currentUsr) return [];
+
+    if ((currentUsr.role as string) === 'SUPER_ADMIN') {
+      const { data: dbAdmins } = await supabaseAdmin
+        .from('users')
+        .select('*')
+        .eq('role', 'ADMIN');
+      if (dbAdmins) {
+        dbAdmins.forEach((r: any) => {
+          const user: User = {
+            id: r.id,
+            email: r.email,
+            role: r.role,
+            firstName: r.first_name,
+            lastName: r.last_name,
+            phone: r.phone || '',
+            avatarUrl: r.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+            isActive: r.is_active,
+            schoolId: r.school_id,
+            createdAt: r.created_at || new Date().toISOString(),
+            updatedAt: r.created_at || new Date().toISOString()
+          };
+          const idx = mockDb.users.findIndex(u => u.id === user.id);
+          if (idx === -1) mockDb.users.push(user);
+          else mockDb.users[idx] = user;
+        });
+        mockDb.saveAll();
+      }
+    } else if (currentUsr.schoolId) {
+      await this.syncUsersData(currentUsr.schoolId);
+    }
+
+    return mockDb.users.filter(u => checkChatAllowed(currentUsr, u));
+  },
+
   async getChatHistory(senderId: string, receiverId: string): Promise<ChatMessage[]> {
     await delay();
     
     // Find DIRECT channel between senderId and receiverId
     const { data: senderChannels } = await supabaseAdmin
-      .from('messaging_participants')
-      .select('channel_id, messaging_channels!inner(channel_type)')
+      .from('communication_participants')
+      .select('channel_id, communication_channels!inner(channel_type)')
       .eq('user_id', senderId)
-      .eq('messaging_channels.channel_type', 'DIRECT');
+      .eq('communication_channels.channel_type', 'DIRECT');
 
     let channelId: string | null = null;
     if (senderChannels && senderChannels.length > 0) {
       const channelIds = senderChannels.map((sc: any) => sc.channel_id);
       const { data: receiverParticipants } = await supabaseAdmin
-        .from('messaging_participants')
+        .from('communication_participants')
         .select('channel_id')
         .eq('user_id', receiverId)
         .in('channel_id', channelIds);
@@ -8761,13 +8894,30 @@ export const mockApi = {
     }
 
     if (channelId) {
-      // Mark as read in messages table
+      // Mark as read in communication_messages table
       await supabaseAdmin
-        .from('messages')
-        .update({ is_read: true })
+        .from('communication_messages')
+        .update({ is_read: true, read_status: true })
         .eq('channel_id', channelId)
         .eq('sender_id', receiverId)
         .eq('is_read', false);
+
+      // Log reads in communication_message_reads
+      const unreadMsgs = mockDb.chatMessages.filter(
+        m => m.senderId === receiverId && m.receiverId === senderId && !m.isRead
+      );
+      if (unreadMsgs.length > 0) {
+        for (const msg of unreadMsgs) {
+          await supabaseAdmin
+            .from('communication_message_reads')
+            .insert({
+              message_id: msg.id,
+              user_id: senderId
+            })
+            .select()
+            .maybeSingle(); // conflict handled by DB
+        }
+      }
     }
 
     mockDb.chatMessages.forEach((m, idx) => {
@@ -8793,14 +8943,14 @@ export const mockApi = {
     if (!sender || !receiver) throw new Error('Sender or receiver not found');
 
     // Enforce school isolation
-    if (sender.role !== 'SUPER_ADMIN' && receiver.role !== 'SUPER_ADMIN') {
+    if ((sender.role as string) !== 'SUPER_ADMIN' && (receiver.role as string) !== 'SUPER_ADMIN') {
       if (sender.schoolId !== receiver.schoolId) {
         throw new Error('Messaging permission denied');
       }
     }
 
     // Enforce Enterprise subscription check
-    if (sender.role !== 'SUPER_ADMIN' && sender.schoolId) {
+    if ((sender.role as string) !== 'SUPER_ADMIN' && sender.schoolId) {
       const planName = await this.getLiveSchoolSubscriptionPlan(sender.schoolId);
       if (planName !== 'enterprise') {
         throw new Error('Messaging permission denied');
@@ -8814,16 +8964,16 @@ export const mockApi = {
 
     // Find or create DIRECT channel
     const { data: senderChannels } = await supabaseAdmin
-      .from('messaging_participants')
-      .select('channel_id, messaging_channels!inner(channel_type)')
+      .from('communication_participants')
+      .select('channel_id, communication_channels!inner(channel_type)')
       .eq('user_id', senderId)
-      .eq('messaging_channels.channel_type', 'DIRECT');
+      .eq('communication_channels.channel_type', 'DIRECT');
 
     let channelId: string | null = null;
     if (senderChannels && senderChannels.length > 0) {
       const channelIds = senderChannels.map((sc: any) => sc.channel_id);
       const { data: receiverParticipants } = await supabaseAdmin
-        .from('messaging_participants')
+        .from('communication_participants')
         .select('channel_id')
         .eq('user_id', receiverId)
         .in('channel_id', channelIds);
@@ -8837,7 +8987,7 @@ export const mockApi = {
     if (!channelId) {
       // Create channel
       const { data: newChannel, error: newChError } = await supabaseAdmin
-        .from('messaging_channels')
+        .from('communication_channels')
         .insert({
           school_id: schoolId,
           channel_type: 'DIRECT',
@@ -8854,7 +9004,7 @@ export const mockApi = {
 
       // Add participants
       const { error: partErr } = await supabaseAdmin
-        .from('messaging_participants')
+        .from('communication_participants')
         .insert([
           { channel_id: channelId, user_id: senderId, role: sender.role },
           { channel_id: channelId, user_id: receiverId, role: receiver.role }
@@ -8865,14 +9015,19 @@ export const mockApi = {
       }
     }
 
-    // Insert message
+    // Insert message into communication_messages
     const { data: r, error } = await supabaseAdmin
-      .from('messages')
+      .from('communication_messages')
       .insert([{
         channel_id: channelId,
         sender_id: senderId,
-        message,
-        is_read: false
+        sender_role: sender.role,
+        receiver_id: receiverId,
+        receiver_role: receiver.role,
+        message_content: message,
+        is_read: false,
+        read_status: false,
+        school_id: schoolId
       }])
       .select()
       .single();
@@ -8885,8 +9040,8 @@ export const mockApi = {
       id: r.id,
       senderId: r.sender_id,
       receiverId: receiverId,
-      message: r.message,
-      isRead: r.is_read,
+      message: r.message_content,
+      isRead: r.is_read || r.read_status,
       createdAt: r.created_at
     };
 
@@ -11800,7 +11955,7 @@ export const mockApi = {
           mockDb.hostelBuildings = mockDb.hostels;
         }
         if (bRes.data) {
-          mockDb.hostelBlocks = bRes.data.map(x => ({ id: x.id, schoolId: x.school_id, hostelId: x.hostel_id, name: x.name, status: x.status, createdBy: x.created_by, updatedBy: x.updated_by }));
+          mockDb.hostelBlocks = bRes.data.map(x => ({ id: x.id, schoolId: x.school_id, hostelId: x.hostel_id, name: x.name, status: x.status, wardenId: x.warden_id || null, createdBy: x.created_by, updatedBy: x.updated_by }));
         }
         if (rRes.data) {
           mockDb.hostelRooms = rRes.data.map(x => ({ id: x.id, schoolId: x.school_id, blockId: x.block_id, floor: Number(x.floor), roomNumber: x.room_number, capacity: Number(x.capacity), status: x.status, createdBy: x.created_by, updatedBy: x.updated_by }));
@@ -11865,6 +12020,19 @@ export const mockApi = {
               if (idx >= 0) mockDb.users[idx] = { ...mockDb.users[idx], ...userDetails };
             }
             
+            const wardenAssignments = mockDb.hostelWardenAssignments.filter(a => a.wardenId === x.id && a.status === 'ACTIVE');
+            const mappedLocations = wardenAssignments.map(a => ({
+              buildingId: a.buildingId,
+              blockId: a.blockId,
+              floor: null,
+              section: null
+            }));
+            const combinedLocations = [...(x.assigned_locations || [])];
+            mappedLocations.forEach(ml => {
+              const exists = combinedLocations.some(cl => cl.buildingId === ml.buildingId && cl.blockId === ml.blockId);
+              if (!exists) combinedLocations.push(ml);
+            });
+
             return {
               id: x.id,
               schoolId: x.school_id,
@@ -11874,7 +12042,7 @@ export const mockApi = {
               username: x.username || '',
               gender: x.gender || '',
               address: x.address || '',
-              assignedLocations: x.assigned_locations || [],
+              assignedLocations: combinedLocations,
               employeeId: x.employee_id || userDetails?.employeeId || '',
               firstName: x.first_name || userDetails?.firstName || '',
               lastName: x.last_name || userDetails?.lastName || '',
@@ -12236,6 +12404,17 @@ export const mockApi = {
 
     // Sync hostel_warden_assignments table in Supabase
     if (fields.assignedLocations !== undefined) {
+      // Find old blocks that currently point to this warden and clear them
+      const oldBlocks = mockDb.hostelBlocks.filter(b => b.wardenId === id);
+      for (const b of oldBlocks) {
+        b.wardenId = null;
+        try {
+          await supabaseAdmin.from('hostel_blocks').update({ warden_id: null }).eq('id', b.id);
+        } catch (err) {
+          console.error(err);
+        }
+      }
+
       await supabaseAdmin.from('hostel_warden_assignments').delete().eq('warden_id', id);
       const assignmentRows = fields.assignedLocations.map((loc: any) => ({
         warden_id: id,
@@ -12261,6 +12440,20 @@ export const mockApi = {
           status: 'ACTIVE'
         });
       });
+
+      // Update new blocks to point to this warden
+      const newBlockIds = fields.assignedLocations.map((loc: any) => loc.blockId).filter(Boolean);
+      for (const blockId of newBlockIds) {
+        const b = mockDb.hostelBlocks.find(x => x.id === blockId);
+        if (b) {
+          b.wardenId = id;
+        }
+        try {
+          await supabaseAdmin.from('hostel_blocks').update({ warden_id: id }).eq('id', blockId);
+        } catch (err) {
+          console.error(err);
+        }
+      }
     }
 
     // Update users table

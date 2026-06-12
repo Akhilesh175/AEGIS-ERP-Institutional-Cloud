@@ -744,6 +744,7 @@ export interface HostelBlock {
   hostelId: string;
   name: string;
   status: 'ACTIVE' | 'INACTIVE';
+  wardenId?: string | null;
   createdAt?: string;
   updatedAt?: string;
   createdBy?: string;

@@ -24,6 +24,8 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
   const [typedMessage, setTypedMessage] = useState('');
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const [searchQuery, setSearchQuery] = useState('');
+  const [allAllowedContacts, setAllAllowedContacts] = useState<User[]>([]);
 
   // Load Contacts
   const loadContacts = async () => {
@@ -32,6 +34,17 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
       await mockApi.syncChatMessagesData(session.user.id);
       const data = await mockApi.getChatInbox(session.user.id);
       setContacts(data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  // Load All Allowed Contacts (for search)
+  const loadAllAllowedContacts = async () => {
+    if (!session) return;
+    try {
+      const data = await mockApi.getAllowedContacts(session.user.id);
+      setAllAllowedContacts(data);
     } catch (err) {
       console.error(err);
     }
@@ -53,6 +66,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
     if (isOpen) {
       syncSubscriptionPlan(); // Ensure latest subscription plan is loaded
       loadContacts();
+      loadAllAllowedContacts();
     }
   }, [isOpen, session]);
 
@@ -64,11 +78,12 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
       .on('postgres_changes', { 
         event: '*', 
         schema: 'public', 
-        table: 'messages'
+        table: 'communication_messages'
       }, async (payload) => {
         console.log('Realtime message update detected! Syncing...', payload);
         await mockApi.syncChatMessagesData(session.user.id);
         loadContacts();
+        loadAllAllowedContacts();
         if (activeContact) {
           loadMessages(activeContact.id);
         }
@@ -112,6 +127,20 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
       console.error(err);
     }
   };
+
+  const filteredContacts = searchQuery.trim() === ''
+    ? contacts
+    : allAllowedContacts.filter(c => 
+        `${c.firstName} ${c.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        c.role.toLowerCase().includes(searchQuery.toLowerCase())
+      ).map(c => {
+        const existing = contacts.find(x => x.id === c.id);
+        return {
+          ...c,
+          lastMessage: existing?.lastMessage,
+          unreadCount: existing?.unreadCount || 0
+        };
+      });
 
   if (!isOpen) return null;
 
@@ -158,39 +187,61 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
             customMessage="Direct Messaging Channels are available only under the Enterprise Subscription."
           >
             {!activeContact ? (
-            // Contact list
-            contacts.length === 0 ? (
-              <div className="text-center py-12 text-slate-500 text-sm">No active channels found.</div>
-            ) : (
-              contacts.map(c => (
-                <div 
-                  key={c.id}
-                  onClick={() => setActiveContact(c)}
-                  className="flex items-center gap-3 p-3 rounded-xl border border-slate-800/40 hover:border-brand-500/20 bg-slate-900/20 hover:bg-slate-900/40 cursor-pointer active:scale-[0.99] transition-all duration-200"
-                >
-                  <img 
-                    src={c.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'} 
-                    alt="" 
-                    className="w-11 h-11 rounded-full object-cover border border-slate-800"
+              <>
+                {/* Search Bar */}
+                <div className="mb-4">
+                  <input
+                    type="text"
+                    placeholder="Search contacts to start chatting..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-slate-100 rounded-xl px-3 py-2 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-colors"
                   />
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between">
-                      <h4 className="font-medium text-slate-200 text-sm truncate">{c.firstName} {c.lastName}</h4>
-                      <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">{c.role}</span>
-                    </div>
-                    <p className="text-xs text-slate-400 truncate mt-0.5">
-                      {c.lastMessage || 'Start a new conversation...'}
-                    </p>
-                  </div>
-                  {c.unreadCount > 0 && (
-                    <span className="w-5 h-5 rounded-full bg-brand-500 text-[10px] font-bold text-white flex items-center justify-center animate-pulse">
-                      {c.unreadCount}
-                    </span>
-                  )}
                 </div>
-              ))
-            )
-          ) : (
+
+                {filteredContacts.length === 0 ? (
+                  <div className="text-center py-12 text-slate-500 text-sm">
+                    {searchQuery.trim() === '' ? 'No active channels found.' : 'No matching contacts found.'}
+                  </div>
+                ) : (
+                  filteredContacts.map(c => (
+                    <div 
+                      key={c.id}
+                      onClick={() => {
+                        setActiveContact(c);
+                        setSearchQuery('');
+                      }}
+                      className="flex items-center gap-3 p-3 mb-3 rounded-xl border border-slate-800/40 hover:border-brand-500/20 bg-slate-900/20 hover:bg-slate-900/40 cursor-pointer active:scale-[0.99] transition-all duration-200"
+                    >
+                      <div className="relative">
+                        <img 
+                          src={c.avatarUrl || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=150'} 
+                          alt="" 
+                          className="w-11 h-11 rounded-full object-cover border border-slate-800"
+                        />
+                        <span className={`absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full border-2 border-[#0b0f19] ${
+                          c.isActive ? 'bg-emerald-500' : 'bg-slate-500'
+                        }`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between">
+                          <h4 className="font-medium text-slate-200 text-sm truncate">{c.firstName} {c.lastName}</h4>
+                          <span className="text-[10px] uppercase font-bold tracking-wider text-slate-500">{c.role}</span>
+                        </div>
+                        <p className="text-xs text-slate-400 truncate mt-0.5">
+                          {c.lastMessage || 'Start a new conversation...'}
+                        </p>
+                      </div>
+                      {c.unreadCount > 0 && (
+                        <span className="w-5 h-5 rounded-full bg-brand-500 text-[10px] font-bold text-white flex items-center justify-center animate-pulse">
+                          {c.unreadCount}
+                        </span>
+                      )}
+                    </div>
+                  ))
+                )}
+              </>
+            ) : (
             // Conversations view
             <div className="h-full flex flex-col">
               <div ref={scrollRef} className="flex-1 overflow-y-auto space-y-3 pr-1 pb-4">

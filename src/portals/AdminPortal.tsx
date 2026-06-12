@@ -1418,6 +1418,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       syncSubscriptionPlan();
       loadData();
       loadAcademicSessions();
+      if (activeTab === 'attendance') {
+        loadAttendanceAnalytics(attendanceSectionId || undefined, undefined, attendanceSessionId || undefined);
+      }
     };
 
     const channel = supabase
@@ -1466,6 +1469,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_fees' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_payments' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'school_subscriptions' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, handleAdminSync)
       .subscribe();
 
     // Subscribe to manual broadcast channel for instant, guaranteed real-time updates!
@@ -1481,7 +1485,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       supabase.removeChannel(channel);
       supabase.removeChannel(broadcastChannel);
     };
-  }, [adminId, session, syncSubscriptionPlan]);
+  }, [adminId, session, syncSubscriptionPlan, activeTab, attendanceSectionId, attendanceSessionId]);
 
 
   // --- Hostel Handlers ---

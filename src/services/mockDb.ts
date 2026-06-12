@@ -510,7 +510,7 @@ class MockDatabase {
     this.forumCategories = getStorage<ForumCategory[]>('forum_categories', SEED_FORUM_CATEGORIES);
     this.forumPosts = getStorage<ForumPost[]>('forum_posts', SEED_FORUM_POSTS);
     this.forumReplies = getStorage<ForumReply[]>('forum_replies', SEED_FORUM_REPLIES);
-    this.chatMessages = getStorage<ChatMessage[]>('chat_messages', SEED_CHAT_MESSAGES);
+    this.chatMessages = getStorage<ChatMessage[]>('chat_messages', []);
     this.auditLogs = getStorage<AuditLog[]>('audit_logs', SEED_AUDIT_LOGS);
     this.phoneNumbers = getStorage<PhoneNumber[]>('phone_numbers', SEED_PHONE_NUMBERS);
     this.emailAddresses = getStorage<EmailAddress[]>('email_addresses', SEED_EMAIL_ADDRESSES);

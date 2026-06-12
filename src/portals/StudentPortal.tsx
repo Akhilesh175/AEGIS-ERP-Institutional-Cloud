@@ -285,6 +285,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
           const bl = blocks.find((x: any) => x.id === rm?.blockId);
           const bd = beds.find((x: any) => x.id === activeAd.bedId);
           const wd = wardens.find((w: any) => {
+            if (bl?.wardenId && w.id === bl.wardenId) return true;
             if (w.hostelId === activeAd.hostelId) return true;
             if (w.assignedLocations && Array.isArray(w.assignedLocations)) {
               return w.assignedLocations.some((loc: any) => {
@@ -422,6 +423,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_rooms' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_beds' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_wardens' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_warden_assignments' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_admissions' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_attendance' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_leave_requests' }, handleAcademicSync)
@@ -2079,23 +2081,62 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                   </GlassCard>
 
                   <GlassCard className="p-5 flex flex-col justify-between">
-                    <div className="space-y-2">
-                      <div className="flex items-center gap-2 text-teal-400">
+                    <div className="space-y-4">
+                      <div className="flex items-center gap-2 text-teal-400 border-b border-slate-850 pb-2">
                         <User size={18} />
                         <h4 className="font-bold text-xs uppercase tracking-wider">Hostel Warden Details</h4>
                       </div>
-                      {wardenDetails ? (
-                        <>
-                          <h3 className="text-lg font-bold text-slate-100">
-                            {wardenDetails.userDetails 
-                              ? `${wardenDetails.userDetails.firstName} ${wardenDetails.userDetails.lastName}` 
-                              : 'Assigned Warden'}
-                          </h3>
-                          <p className="text-xs text-slate-400">Warden Email: <span className="text-slate-200 font-medium">{wardenDetails.userDetails?.email || 'N/A'}</span></p>
-                          <p className="text-xs text-slate-400">Phone Contact: <span className="text-brand-400 font-bold font-mono">{wardenDetails.phone || 'N/A'}</span></p>
-                        </>
+                      {wardenDetails && wardenDetails.status === 'ACTIVE' ? (
+                        <div className="space-y-2.5">
+                          <div>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Name</p>
+                            <h3 className="text-base font-bold text-slate-100">
+                              {wardenDetails.firstName && wardenDetails.lastName 
+                                ? `${wardenDetails.firstName} ${wardenDetails.lastName}`
+                                : wardenDetails.userDetails 
+                                  ? `${wardenDetails.userDetails.firstName} ${wardenDetails.userDetails.lastName}` 
+                                  : 'Assigned Warden'}
+                            </h3>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Employee ID</p>
+                              <p className="text-xs text-slate-200 font-semibold font-mono">{wardenDetails.employeeId || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Designation</p>
+                              <p className="text-xs text-slate-200 font-semibold">{wardenDetails.designation || 'Hostel Warden'}</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Phone Number</p>
+                              <p className="text-xs text-brand-400 font-bold font-mono">{wardenDetails.phone || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Email Address</p>
+                              <p className="text-xs text-slate-200 font-semibold truncate">{wardenDetails.email || wardenDetails.userDetails?.email || 'N/A'}</p>
+                            </div>
+                          </div>
+                          <div className="grid grid-cols-2 gap-4">
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Assigned Block</p>
+                              <p className="text-xs text-slate-200 font-semibold">{blockDetails?.name || 'N/A'}</p>
+                            </div>
+                            <div>
+                              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Status</p>
+                              <span className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                {wardenDetails.status || 'ACTIVE'}
+                              </span>
+                            </div>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Joining Date</p>
+                            <p className="text-xs text-slate-200 font-medium">{wardenDetails.joiningDate ? new Date(wardenDetails.joiningDate).toLocaleDateString() : 'N/A'}</p>
+                          </div>
+                        </div>
                       ) : (
-                        <p className="text-xs text-slate-500 italic py-2">No specific warden assigned to this building structure yet.</p>
+                        <p className="text-xs text-slate-500 italic py-6 text-center">No specific warden assigned to this building structure yet.</p>
                       )}
                     </div>
                     <div className="border-t border-slate-850 pt-3 mt-4 text-[10px] text-slate-500 font-medium">
