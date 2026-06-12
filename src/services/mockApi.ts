@@ -1457,6 +1457,15 @@ export const mockApi = {
       schoolSubscriptionPlan: subscriptionPlan
     };
 
+    // ── Persist the logged-in user into mockDb.users so all subsequent
+    // mockDb.users.find(u => u.id === userId) lookups succeed immediately.
+    // Without this, ADMIN and SUPER_ADMIN see 0 contacts because their own
+    // record is missing from the cache, causing getAllowedContacts to bail early.
+    const selfIdx = mockDb.users.findIndex(u => u.id === user.id);
+    if (selfIdx === -1) mockDb.users.push(user);
+    else mockDb.users[selfIdx] = user;
+    mockDb.saveAll();
+
     localStorage.setItem(SESSION_KEY, JSON.stringify(session));
     mockDb.addLog(user.id, 'LOGIN_SUCCESS', { role: user.role });
 
@@ -8820,8 +8829,27 @@ export const mockApi = {
   async getChatInbox(userId: string): Promise<(User & { lastMessage?: string; unreadCount: number })[]> {
     await delay();
 
-    const currentUsr = mockDb.users.find(u => u.id === userId);
-    if (!currentUsr) return [];
+    let currentUsr = mockDb.users.find(u => u.id === userId);
+    if (!currentUsr) {
+      // Not in cache — re-fetch from DB (e.g. after hard refresh cleared localStorage)
+      const { data: dbSelf } = await supabaseAdmin.from('users').select('*').eq('id', userId).maybeSingle();
+      if (!dbSelf) {
+        console.warn('[getChatInbox] User not found in DB either:', userId);
+        return [];
+      }
+      currentUsr = {
+        id: dbSelf.id, email: dbSelf.email, role: dbSelf.role,
+        firstName: dbSelf.first_name, lastName: dbSelf.last_name,
+        phone: dbSelf.phone || '', avatarUrl: dbSelf.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+        isActive: dbSelf.is_active, schoolId: dbSelf.school_id,
+        createdAt: dbSelf.created_at || new Date().toISOString(),
+        updatedAt: dbSelf.updated_at || dbSelf.created_at || new Date().toISOString()
+      };
+      mockDb.users.push(currentUsr);
+      mockDb.saveAll();
+    }
+
+    console.log('[getChatInbox] currentUsr:', currentUsr.role, currentUsr.id, 'schoolId:', currentUsr.schoolId);
 
     if (currentUsr.role === 'SUPER_ADMIN') {
       const { data: dbAdmins } = await supabaseAdmin
@@ -8897,14 +8925,35 @@ export const mockApi = {
   async getAllowedContacts(userId: string): Promise<User[]> {
     await delay();
 
-    const currentUsr = mockDb.users.find(u => u.id === userId);
-    if (!currentUsr) return [];
+    let currentUsr = mockDb.users.find(u => u.id === userId);
+    if (!currentUsr) {
+      // Not in cache — re-fetch from DB (e.g. after hard refresh cleared localStorage)
+      const { data: dbSelf } = await supabaseAdmin.from('users').select('*').eq('id', userId).maybeSingle();
+      if (!dbSelf) {
+        console.warn('[getAllowedContacts] User not found in DB either:', userId);
+        return [];
+      }
+      currentUsr = {
+        id: dbSelf.id, email: dbSelf.email, role: dbSelf.role,
+        firstName: dbSelf.first_name, lastName: dbSelf.last_name,
+        phone: dbSelf.phone || '', avatarUrl: dbSelf.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+        isActive: dbSelf.is_active, schoolId: dbSelf.school_id,
+        createdAt: dbSelf.created_at || new Date().toISOString(),
+        updatedAt: dbSelf.updated_at || dbSelf.created_at || new Date().toISOString()
+      };
+      mockDb.users.push(currentUsr);
+      mockDb.saveAll();
+    }
+
+    console.log('[getAllowedContacts] currentUsr role:', currentUsr.role, '| schoolId:', currentUsr.schoolId, '| id:', currentUsr.id);
 
     if ((currentUsr.role as string) === 'SUPER_ADMIN') {
+      // Fetch ALL school admins (SUPER_ADMIN can communicate with all school-level admins)
       const { data: dbAdmins } = await supabaseAdmin
         .from('users')
         .select('*')
         .eq('role', 'ADMIN');
+      console.log('[getAllowedContacts] SUPER_ADMIN: fetched ADMIN users:', dbAdmins?.length ?? 0);
       if (dbAdmins) {
         dbAdmins.forEach((r: any) => {
           const user: User = {
@@ -8939,7 +8988,9 @@ export const mockApi = {
       ]);
     }
 
-    return mockDb.users.filter(u => checkChatAllowed(currentUsr, u));
+    const allowed = mockDb.users.filter(u => checkChatAllowed(currentUsr!, u));
+    console.log('[getAllowedContacts] contacts allowed for role', currentUsr.role, ':', allowed.length, allowed.map(u => u.role + ':' + u.firstName));
+    return allowed;
   },
 
   async getChatHistory(senderId: string, receiverId: string): Promise<ChatMessage[]> {
