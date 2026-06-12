@@ -13907,7 +13907,7 @@ export const mockApi = {
     subject: string,
     description: string,
     category: string,
-    priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+    priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL',
     attachmentUrl?: string
   ): Promise<void> {
     const activeUser = getActiveUser();
@@ -13962,6 +13962,23 @@ export const mockApi = {
           schoolName: schoolDetails?.name || undefined,
           replyCount: 0
         });
+
+        // Notify Super Admins
+        const { data: superAdmins } = await supabaseAdmin
+          .from('users')
+          .select('id')
+          .eq('role', 'SUPER_ADMIN');
+
+        if (superAdmins && superAdmins.length > 0) {
+          const notifInserts = superAdmins.map((admin: any) => ({
+            user_id: admin.id,
+            ticket_id: data.id,
+            title: `New Support Request (${data.ticket_number})`,
+            message: `A new ticket has been opened by ${userDetails?.firstName || ''} ${userDetails?.lastName || ''} (${activeUser.role}): "${subject.substring(0, 40)}..."`
+          }));
+          await supabaseAdmin.from('support_notifications').insert(notifInserts);
+        }
+
         mockDb.saveAll();
         return;
       }
@@ -13999,13 +14016,27 @@ export const mockApi = {
       schoolName: schoolDetails?.name || undefined,
       replyCount: 0
     });
+
+    const superAdmins = mockDb.users.filter(u => u.role === 'SUPER_ADMIN');
+    superAdmins.forEach(admin => {
+      mockDb.supportNotifications.push({
+        id: 'notif-' + Math.random().toString(36).substring(2, 9),
+        userId: admin.id,
+        ticketId: mockId,
+        title: `New Support Request (${ticketNumber})`,
+        message: `A new ticket has been opened by ${userDetails?.firstName || ''} ${userDetails?.lastName || ''} (${activeUser.role}): "${subject.substring(0, 40)}..."`,
+        isRead: false,
+        createdAt: new Date().toISOString()
+      });
+    });
+
     mockDb.saveAll();
   },
 
   async updateSupportTicketStatus(
     ticketId: string, 
     oldStatus: string, 
-    newStatus: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | 'REOPENED'
+    newStatus: 'OPEN' | 'IN_PROGRESS' | 'AWAITING_USER_RESPONSE' | 'RESOLVED' | 'CLOSED' | 'REOPENED'
   ): Promise<void> {
     const activeUser = getActiveUser();
     if (!activeUser) throw new Error('Unauthenticated');
@@ -14168,6 +14199,21 @@ export const mockApi = {
               title: `New Reply on Ticket ${ticket.ticketNumber}`,
               message: `${activeUser.role === 'SUPER_ADMIN' ? 'Support Helpdesk' : 'User'} replied: "${message.substring(0, 40)}..."`
             });
+        } else if (ticket.userId === activeUser.id) {
+          // Notify all Super Admins
+          const { data: superAdmins } = await supabaseAdmin
+            .from('users')
+            .select('id')
+            .eq('role', 'SUPER_ADMIN');
+          if (superAdmins && superAdmins.length > 0) {
+            const notifs = superAdmins.map((admin: any) => ({
+              user_id: admin.id,
+              ticket_id: ticketId,
+              title: `New Reply on Ticket ${ticket.ticketNumber}`,
+              message: `User replied: "${message.substring(0, 40)}..."`
+            }));
+            await supabaseAdmin.from('support_notifications').insert(notifs);
+          }
         }
       }
     } catch (err) {
@@ -14191,16 +14237,43 @@ export const mockApi = {
     if (t) {
       t.updatedAt = new Date().toISOString();
 
-      const targetUserId = t.userId === activeUser.id ? (t.assignedTo || 'admin') : t.userId;
-      mockDb.supportNotifications.push({
-        id: 'notif-' + Math.random().toString(36).substring(2, 9),
-        userId: targetUserId,
-        ticketId,
-        title: `New Reply on Ticket ${t.ticketNumber}`,
-        message: `${activeUser.role === 'SUPER_ADMIN' ? 'Support Helpdesk' : 'User'} replied: "${message.substring(0, 40)}..."`,
-        isRead: false,
-        createdAt: new Date().toISOString()
-      });
+      if (t.userId === activeUser.id) {
+        if (t.assignedTo) {
+          mockDb.supportNotifications.push({
+            id: 'notif-' + Math.random().toString(36).substring(2, 9),
+            userId: t.assignedTo,
+            ticketId,
+            title: `New Reply on Ticket ${t.ticketNumber}`,
+            message: `User replied: "${message.substring(0, 40)}..."`,
+            isRead: false,
+            createdAt: new Date().toISOString()
+          });
+        } else {
+          const superAdmins = mockDb.users.filter(u => u.role === 'SUPER_ADMIN');
+          superAdmins.forEach(admin => {
+            mockDb.supportNotifications.push({
+              id: 'notif-' + Math.random().toString(36).substring(2, 9),
+              userId: admin.id,
+              ticketId,
+              title: `New Reply on Ticket ${t.ticketNumber}`,
+              message: `User replied: "${message.substring(0, 40)}..."`,
+              isRead: false,
+              createdAt: new Date().toISOString()
+            });
+          });
+        }
+      } else {
+        // From Super Admin or other support agent -> notify ticket owner
+        mockDb.supportNotifications.push({
+          id: 'notif-' + Math.random().toString(36).substring(2, 9),
+          userId: t.userId,
+          ticketId,
+          title: `New Reply on Ticket ${t.ticketNumber}`,
+          message: `Support Helpdesk replied: "${message.substring(0, 40)}..."`,
+          isRead: false,
+          createdAt: new Date().toISOString()
+        });
+      }
     }
     mockDb.saveAll();
   },
@@ -14534,7 +14607,7 @@ export const mockApi = {
     mockDb.saveAll();
   },
 
-  async updateSupportTicketPriority(ticketId: string, newPriority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'): Promise<void> {
+  async updateSupportTicketPriority(ticketId: string, newPriority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'): Promise<void> {
     try {
       const { error } = await supabaseAdmin
         .from('support_tickets')

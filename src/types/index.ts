@@ -976,11 +976,11 @@ export interface SupportTicket {
   userId: string;
   userRole: string;
   category: string;
-  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
   subject: string;
   description: string;
   attachmentUrl?: string;
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | 'REOPENED';
+  status: 'OPEN' | 'IN_PROGRESS' | 'AWAITING_USER_RESPONSE' | 'RESOLVED' | 'CLOSED' | 'REOPENED';
   assignedTo?: string | null;
   createdAt: string;
   updatedAt: string;

@@ -72,7 +72,7 @@ export const HelpSupportPage: React.FC = () => {
   // Form: Support Ticket
   const [ticketSubject, setTicketSubject] = useState('');
   const [ticketCategory, setTicketCategory] = useState('General');
-  const [ticketPriority, setTicketPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'>('MEDIUM');
+  const [ticketPriority, setTicketPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL'>('MEDIUM');
   const [ticketDesc, setTicketDesc] = useState('');
   const [ticketAttachment, setTicketAttachment] = useState<File | null>(null);
 
@@ -363,7 +363,7 @@ export const HelpSupportPage: React.FC = () => {
   };
 
   // Change ticket priority
-  const handlePriorityChange = async (nextPriority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT') => {
+  const handlePriorityChange = async (nextPriority: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL') => {
     if (!selectedTicket) return;
     try {
       setError(null);
@@ -642,7 +642,7 @@ export const HelpSupportPage: React.FC = () => {
                       <option value="LOW">Low</option>
                       <option value="MEDIUM">Medium</option>
                       <option value="HIGH">High</option>
-                      <option value="URGENT">Urgent</option>
+                      <option value="CRITICAL">Critical</option>
                     </select>
                   </div>
 
@@ -1086,7 +1086,7 @@ export const HelpSupportPage: React.FC = () => {
                             <option value="LOW">Low</option>
                             <option value="MEDIUM">Medium</option>
                             <option value="HIGH">High</option>
-                            <option value="URGENT">Urgent</option>
+                            <option value="CRITICAL">Critical</option>
                           </select>
                         </div>
                       </div>
@@ -1426,7 +1426,7 @@ export const HelpSupportPage: React.FC = () => {
                           <option value="LOW">Low</option>
                           <option value="MEDIUM">Medium</option>
                           <option value="HIGH">High</option>
-                          <option value="URGENT">Urgent</option>
+                          <option value="CRITICAL">Critical</option>
                         </select>
                       </div>
 
@@ -1541,7 +1541,7 @@ export const HelpSupportPage: React.FC = () => {
                             </td>
                             <td className="py-3 px-2">
                               <span className={`px-2 py-0.5 rounded text-[9px] font-bold border uppercase tracking-wider ${
-                                t.priority === 'URGENT' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
+                                t.priority === 'CRITICAL' ? 'bg-red-500/10 text-red-400 border-red-500/20' :
                                 t.priority === 'HIGH' ? 'bg-amber-500/10 text-amber-400 border-amber-500/20' :
                                 t.priority === 'MEDIUM' ? 'bg-brand-500/10 text-brand-400 border-brand-500/20' :
                                 'bg-slate-800/40 text-slate-400 border-slate-850'
