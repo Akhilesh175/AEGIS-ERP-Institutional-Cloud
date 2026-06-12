@@ -47,6 +47,38 @@ export const App: React.FC = () => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Forgot Password / OTP Flow States
+  const [currentHash, setCurrentHash] = useState(() => window.location.hash);
+  const [forgotEmail, setForgotEmail] = useState('');
+  const [forgotLoading, setForgotLoading] = useState(false);
+  const [forgotError, setForgotError] = useState<string | null>(null);
+  const [forgotSuccess, setForgotSuccess] = useState<string | null>(null);
+
+  const [otpCode, setOtpCode] = useState('');
+  const [otpLoading, setOtpLoading] = useState(false);
+  const [otpError, setOtpError] = useState<string | null>(null);
+  const [otpSuccess, setOtpSuccess] = useState<string | null>(null);
+
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  const [resetLoading, setResetLoading] = useState(false);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+
+  useEffect(() => {
+    const handleHash = () => {
+      setCurrentHash(window.location.hash);
+    };
+    window.addEventListener('hashchange', handleHash);
+    return () => window.removeEventListener('hashchange', handleHash);
+  }, []);
+
+  const getParamsFromHash = (hashStr: string) => {
+    const parts = hashStr.split('?');
+    if (parts.length < 2) return {};
+    return Object.fromEntries(new URLSearchParams(parts[1]).entries());
+  };
+
   // Tab State
   const [activeTab, setActiveTab] = useState(() => {
     const hash = window.location.hash.substring(1);
@@ -206,9 +238,121 @@ export const App: React.FC = () => {
     }
   };
 
-  const handlePreFill = (roleEmail: string) => {
-    setEmail(roleEmail);
-    setPassword('password');
+  const handleRequestOtp = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!forgotEmail.trim()) return;
+
+    try {
+      setForgotLoading(true);
+      setForgotError(null);
+      setForgotSuccess(null);
+
+      const res = await fetch('/api/request-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to request verification code');
+      }
+
+      setForgotSuccess(data.message || 'Verification code sent successfully.');
+      setForgotLoading(false);
+      
+      // Redirect to OTP verification screen after 1.5 seconds
+      setTimeout(() => {
+        window.location.hash = `verify-otp?email=${encodeURIComponent(forgotEmail)}`;
+      }, 1500);
+    } catch (err: any) {
+      setForgotError(err.message || 'Error occurred while requesting OTP');
+      setForgotLoading(false);
+    }
+  };
+
+  const handleVerifyOtp = async (e: React.FormEvent, emailParam: string) => {
+    e.preventDefault();
+    if (!otpCode.trim() || !emailParam) return;
+
+    try {
+      setOtpLoading(true);
+      setOtpError(null);
+      setOtpSuccess(null);
+
+      const res = await fetch('/api/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailParam, otpCode })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Verification failed');
+      }
+
+      setOtpSuccess(data.message || 'OTP verified successfully.');
+      setOtpLoading(false);
+
+      // Redirect to reset password screen after 1.5 seconds
+      setTimeout(() => {
+        window.location.hash = `reset-password?email=${encodeURIComponent(emailParam)}&otpId=${data.otpId}`;
+      }, 1500);
+    } catch (err: any) {
+      setOtpError(err.message || 'OTP verification failed');
+      setOtpLoading(false);
+    }
+  };
+
+  const handleResetPassword = async (e: React.FormEvent, emailParam: string, otpIdParam: string) => {
+    e.preventDefault();
+    if (!newPassword || !confirmPassword || !emailParam || !otpIdParam) return;
+
+    if (newPassword !== confirmPassword) {
+      setResetError('Passwords do not match');
+      return;
+    }
+
+    if (newPassword.length < 6) {
+      setResetError('Password must be at least 6 characters');
+      return;
+    }
+
+    try {
+      setResetLoading(true);
+      setResetError(null);
+      setResetSuccess(null);
+
+      const res = await fetch('/api/reset-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: emailParam, otpId: otpIdParam, newPassword })
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to reset password');
+      }
+
+      setResetSuccess(data.message || 'Password reset successfully.');
+      setResetLoading(false);
+
+      // Redirect to login screen after 2 seconds
+      setTimeout(() => {
+        window.location.hash = '';
+        // Reset state values
+        setForgotEmail('');
+        setOtpCode('');
+        setNewPassword('');
+        setConfirmPassword('');
+        setForgotSuccess(null);
+        setOtpSuccess(null);
+        setResetSuccess(null);
+      }, 2000);
+    } catch (err: any) {
+      setResetError(err.message || 'Failed to update credentials');
+      setResetLoading(false);
+    }
   };
 
   if (activeTab.startsWith('verify/marksheet/')) {
@@ -275,108 +419,400 @@ export const App: React.FC = () => {
           
           {/* Left Panel - Secure Authorization Form */}
           <div className="lg:col-span-5 flex flex-col gap-6">
-            <GlassCard className="flex flex-col p-8 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-2xl relative overflow-hidden group">
-              <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-brand-600 via-brand-400 to-brand-600 opacity-80" />
-              
-              <div className="space-y-6">
-                <div>
-                  <div className="flex items-center gap-2">
-                    <div className="p-1 rounded bg-brand-500/10 text-brand-400">
-                      <Lock size={15} />
-                    </div>
-                    <h2 className="text-lg font-bold text-slate-100 font-sans tracking-wide">Secure Authorization</h2>
-                  </div>
-                  <p className="text-xs text-slate-400 mt-1">Authenticate credentials to access your multi-tenant portal.</p>
-                </div>
+            {(() => {
+              const hash = currentHash.substring(1);
+              const isForgot = hash === 'forgot';
+              const isOtp = hash.startsWith('verify-otp');
+              const isReset = hash.startsWith('reset-password');
 
-                {error && (
-                  <div className="p-3.5 bg-red-500/5 border border-red-500/20 text-red-400 text-xs rounded-xl flex items-start gap-2.5">
-                    <ShieldAlert size={16} className="shrink-0 mt-0.5" />
-                    <div className="font-medium">{error}</div>
-                  </div>
-                )}
-
-                <form onSubmit={handleLogin} className="space-y-4">
-                  <div className="space-y-1.5">
-                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
-                      <Mail size={12} className="text-brand-400" /> Email Address
-                    </label>
-                    <input 
-                      type="email"
-                      placeholder="name@institution.edu"
-                      value={email}
-                      onChange={(e) => setEmail(e.target.value)}
-                      className="w-full bg-[#0a0e1a] border border-slate-805 text-slate-100 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_15px_rgba(14,160,235,0.15)] transition-all duration-200"
-                      required
-                    />
-                  </div>
-
-                  <div className="space-y-1.5">
-                    <div className="flex justify-between items-center">
-                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
-                        <Key size={12} className="text-brand-400" /> Password / Encryption Key
-                      </label>
-                    </div>
-                    <div className="relative">
-                      <input 
-                        type={showPassword ? "text" : "password"}
-                        placeholder="••••••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                        className="w-full bg-[#0a0e1a] border border-slate-805 text-slate-100 rounded-xl pl-4 pr-10 py-3 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_15px_rgba(14,160,235,0.15)] transition-all duration-200"
-                        required
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowPassword(!showPassword)}
-                        className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
-                        title={showPassword ? "Hide password" : "Show password"}
-                      >
-                        {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-1.5 text-xs">
-                    <label className="flex items-center gap-2 text-slate-400 cursor-pointer group">
-                      <input 
-                        type="checkbox"
-                        checked={rememberMe}
-                        onChange={(e) => setRememberMe(e.target.checked)}
-                        className="rounded bg-[#0a0e1a] border-slate-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-0 focus:ring-0 focus:outline-none w-4 h-4 cursor-pointer"
-                      />
-                      <span className="text-xs group-hover:text-slate-300 transition-colors font-medium">Remember this device</span>
-                    </label>
+              if (isForgot) {
+                return (
+                  <GlassCard className="flex flex-col p-8 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-2xl relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-brand-600 via-brand-400 to-brand-600 opacity-80" />
                     
-                    <a 
-                      href="#support" 
-                      onClick={() => setActiveTab('support')}
-                      className="text-xs text-brand-400 hover:text-brand-300 font-semibold hover:underline transition-colors animate-pulse-subtle"
-                    >
-                      Forgot Password?
-                    </a>
-                  </div>
+                    <div className="space-y-6">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 rounded bg-brand-500/10 text-brand-400">
+                            <Lock size={15} />
+                          </div>
+                          <h2 className="text-lg font-bold text-slate-100 font-sans tracking-wide">Reset Password</h2>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">Enter your registered email to request a secure 6-digit verification code.</p>
+                      </div>
 
-                  <button 
-                    type="submit"
-                    disabled={loading}
-                    className="w-full bg-gradient-to-r from-brand-600 via-brand-500 to-brand-600 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-lg shadow-brand-500/10 hover:shadow-brand-500/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] mt-3 flex items-center justify-center gap-2 border border-brand-400/20"
-                  >
-                    {loading ? (
-                      <span className="flex items-center gap-2">
-                        <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
-                        Verifying Signatures...
-                      </span>
-                    ) : (
-                      <>
-                        <span>Secure Login</span>
-                        <ArrowRight size={14} className="text-white group-hover:translate-x-0.5 transition-transform" />
-                      </>
+                      {forgotError && (
+                        <div className="p-3.5 bg-red-500/5 border border-red-500/20 text-red-400 text-xs rounded-xl flex items-start gap-2.5">
+                          <ShieldAlert size={16} className="shrink-0 mt-0.5" />
+                          <div className="font-medium">{forgotError}</div>
+                        </div>
+                      )}
+
+                      {forgotSuccess && (
+                        <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/20 text-emerald-400 text-xs rounded-xl flex items-start gap-2.5">
+                          <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                          <div className="font-medium">{forgotSuccess}</div>
+                        </div>
+                      )}
+
+                      <form onSubmit={handleRequestOtp} className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
+                            <Mail size={12} className="text-brand-400" /> Registered Email Address
+                          </label>
+                          <input 
+                            type="email"
+                            placeholder="name@institution.edu"
+                            value={forgotEmail}
+                            onChange={(e) => setForgotEmail(e.target.value)}
+                            className="w-full bg-[#0a0e1a] border border-slate-805 text-slate-100 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_15px_rgba(14,160,235,0.15)] transition-all duration-200"
+                            required
+                          />
+                        </div>
+
+                        <button 
+                          type="submit"
+                          disabled={forgotLoading}
+                          className="w-full bg-gradient-to-r from-brand-600 via-brand-500 to-brand-600 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-lg shadow-brand-500/10 hover:shadow-brand-500/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] mt-3 flex items-center justify-center gap-2 border border-brand-400/20"
+                        >
+                          {forgotLoading ? (
+                            <span className="flex items-center gap-2">
+                              <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                              Generating Verification Session...
+                            </span>
+                          ) : (
+                            <>
+                              <span>Request Verification Code</span>
+                              <ArrowRight size={14} />
+                            </>
+                          )}
+                        </button>
+                      </form>
+
+                      <div className="text-center pt-2">
+                        <a 
+                          href="#" 
+                          className="text-xs text-brand-400 hover:text-brand-300 font-semibold transition-colors"
+                        >
+                          Back to Secure Login
+                        </a>
+                      </div>
+                    </div>
+                  </GlassCard>
+                );
+              }
+
+              if (isOtp) {
+                const params = getParamsFromHash(currentHash);
+                const emailParam = params.email || '';
+
+                const triggerResend = async (e: any) => {
+                  e.preventDefault();
+                  try {
+                    setOtpLoading(true);
+                    setOtpError(null);
+                    setOtpSuccess(null);
+                    const res = await fetch('/api/request-otp', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ email: emailParam })
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || 'Failed to resend code');
+                    setOtpSuccess('A new verification code has been delivered.');
+                    setOtpLoading(false);
+                  } catch (err: any) {
+                    setOtpError(err.message || 'Resend request failed');
+                    setOtpLoading(false);
+                  }
+                };
+
+                return (
+                  <GlassCard className="flex flex-col p-8 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-2xl relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-brand-600 via-brand-400 to-brand-600 opacity-80" />
+                    
+                    <div className="space-y-6">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 rounded bg-brand-500/10 text-brand-400">
+                            <CheckSquare size={15} />
+                          </div>
+                          <h2 className="text-lg font-bold text-slate-100 font-sans tracking-wide">Enter Verification Code</h2>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">
+                          A 6-digit OTP code has been delivered to <span className="text-brand-300 font-semibold">{emailParam}</span>.
+                        </p>
+                      </div>
+
+                      {otpError && (
+                        <div className="p-3.5 bg-red-500/5 border border-red-500/20 text-red-400 text-xs rounded-xl flex items-start gap-2.5">
+                          <ShieldAlert size={16} className="shrink-0 mt-0.5" />
+                          <div className="font-medium">{otpError}</div>
+                        </div>
+                      )}
+
+                      {otpSuccess && (
+                        <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/20 text-emerald-400 text-xs rounded-xl flex items-start gap-2.5">
+                          <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                          <div className="font-medium">{otpSuccess}</div>
+                        </div>
+                      )}
+
+                      <form onSubmit={(e) => handleVerifyOtp(e, emailParam)} className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
+                            <Key size={12} className="text-brand-400" /> 6-Digit Verification Code
+                          </label>
+                          <input 
+                            type="text"
+                            placeholder="••••••"
+                            maxLength={6}
+                            value={otpCode}
+                            onChange={(e) => setOtpCode(e.target.value.replace(/\D/g, ''))}
+                            className="w-full bg-[#0a0e1a] border border-slate-805 text-slate-100 rounded-xl px-4 py-3 text-xs tracking-[8px] text-center font-bold font-mono focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_15px_rgba(14,160,235,0.15)] transition-all duration-200"
+                            required
+                          />
+                        </div>
+
+                        <button 
+                          type="submit"
+                          disabled={otpLoading}
+                          className="w-full bg-gradient-to-r from-brand-600 via-brand-500 to-brand-600 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-lg shadow-brand-500/10 hover:shadow-brand-500/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] mt-3 flex items-center justify-center gap-2 border border-brand-400/20"
+                        >
+                          {otpLoading ? (
+                            <span className="flex items-center gap-2">
+                              <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                              Verifying Signature...
+                            </span>
+                          ) : (
+                            <>
+                              <span>Verify Code</span>
+                              <ArrowRight size={14} />
+                            </>
+                          )}
+                        </button>
+                      </form>
+
+                      <div className="flex items-center justify-between text-xs pt-2">
+                        <a 
+                          href="#forgot" 
+                          className="text-slate-400 hover:text-slate-200 font-semibold transition-colors"
+                        >
+                          Change Email
+                        </a>
+                        <a 
+                          href="#"
+                          onClick={triggerResend}
+                          className="text-brand-400 hover:text-brand-300 font-semibold transition-colors"
+                        >
+                          Resend Code
+                        </a>
+                      </div>
+                    </div>
+                  </GlassCard>
+                );
+              }
+
+              if (isReset) {
+                const params = getParamsFromHash(currentHash);
+                const emailParam = params.email || '';
+                const otpIdParam = params.otpId || '';
+
+                return (
+                  <GlassCard className="flex flex-col p-8 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-2xl relative overflow-hidden group">
+                    <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-brand-600 via-brand-400 to-brand-600 opacity-80" />
+                    
+                    <div className="space-y-6">
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 rounded bg-brand-500/10 text-brand-400">
+                            <Lock size={15} />
+                          </div>
+                          <h2 className="text-lg font-bold text-slate-100 font-sans tracking-wide">Establish Credentials</h2>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1">Set a secure new password for <span className="text-brand-300 font-semibold">{emailParam}</span>.</p>
+                      </div>
+
+                      {resetError && (
+                        <div className="p-3.5 bg-red-500/5 border border-red-500/20 text-red-400 text-xs rounded-xl flex items-start gap-2.5">
+                          <ShieldAlert size={16} className="shrink-0 mt-0.5" />
+                          <div className="font-medium">{resetError}</div>
+                        </div>
+                      )}
+
+                      {resetSuccess && (
+                        <div className="p-3.5 bg-emerald-500/5 border border-emerald-500/20 text-emerald-400 text-xs rounded-xl flex items-start gap-2.5">
+                          <CheckCircle2 size={16} className="shrink-0 mt-0.5" />
+                          <div className="font-medium">{resetSuccess}</div>
+                        </div>
+                      )}
+
+                      <form onSubmit={(e) => handleResetPassword(e, emailParam, otpIdParam)} className="space-y-4">
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
+                            <Lock size={12} className="text-brand-400" /> New Password
+                          </label>
+                          <input 
+                            type="password"
+                            placeholder="••••••••••••"
+                            value={newPassword}
+                            onChange={(e) => setNewPassword(e.target.value)}
+                            className="w-full bg-[#0a0e1a] border border-slate-805 text-slate-100 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_15px_rgba(14,160,235,0.15)] transition-all duration-200"
+                            required
+                          />
+                        </div>
+
+                        <div className="space-y-1.5">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
+                            <Lock size={12} className="text-brand-400" /> Confirm New Password
+                          </label>
+                          <input 
+                            type="password"
+                            placeholder="••••••••••••"
+                            value={confirmPassword}
+                            onChange={(e) => setConfirmPassword(e.target.value)}
+                            className="w-full bg-[#0a0e1a] border border-slate-805 text-slate-100 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_15px_rgba(14,160,235,0.15)] transition-all duration-200"
+                            required
+                          />
+                        </div>
+
+                        <button 
+                          type="submit"
+                          disabled={resetLoading}
+                          className="w-full bg-gradient-to-r from-brand-600 via-brand-500 to-brand-600 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-lg shadow-brand-500/10 hover:shadow-brand-500/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] mt-3 flex items-center justify-center gap-2 border border-brand-400/20"
+                        >
+                          {resetLoading ? (
+                            <span className="flex items-center gap-2">
+                              <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                              Updating Security Signatures...
+                            </span>
+                          ) : (
+                            <>
+                              <span>Save New Password</span>
+                              <ArrowRight size={14} />
+                            </>
+                          )}
+                        </button>
+                      </form>
+
+                      <div className="text-center pt-2">
+                        <a 
+                          href="#" 
+                          className="text-xs text-brand-400 hover:text-brand-300 font-semibold transition-colors"
+                        >
+                          Cancel and Return
+                        </a>
+                      </div>
+                    </div>
+                  </GlassCard>
+                );
+              }
+
+              // Default: Login Form Screen
+              return (
+                <GlassCard className="flex flex-col p-8 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-2xl relative overflow-hidden group">
+                  <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-brand-600 via-brand-400 to-brand-600 opacity-80" />
+                  
+                  <div className="space-y-6">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <div className="p-1 rounded bg-brand-500/10 text-brand-400">
+                          <Lock size={15} />
+                        </div>
+                        <h2 className="text-lg font-bold text-slate-100 font-sans tracking-wide">Secure Authorization</h2>
+                      </div>
+                      <p className="text-xs text-slate-400 mt-1">Authenticate credentials to access your multi-tenant portal.</p>
+                    </div>
+
+                    {error && (
+                      <div className="p-3.5 bg-red-500/5 border border-red-500/20 text-red-400 text-xs rounded-xl flex items-start gap-2.5">
+                        <ShieldAlert size={16} className="shrink-0 mt-0.5" />
+                        <div className="font-medium">{error}</div>
+                      </div>
                     )}
-                  </button>
-                </form>
-              </div>
-            </GlassCard>
+
+                    <form onSubmit={handleLogin} className="space-y-4">
+                      <div className="space-y-1.5">
+                        <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
+                          <Mail size={12} className="text-brand-400" /> Email Address
+                        </label>
+                        <input 
+                          type="email"
+                          placeholder="name@institution.edu"
+                          value={email}
+                          onChange={(e) => setEmail(e.target.value)}
+                          className="w-full bg-[#0a0e1a] border border-slate-805 text-slate-100 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_15px_rgba(14,160,235,0.15)] transition-all duration-200"
+                          required
+                        />
+                      </div>
+
+                      <div className="space-y-1.5">
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5 font-mono">
+                            <Key size={12} className="text-brand-400" /> Password / Encryption Key
+                          </label>
+                        </div>
+                        <div className="relative">
+                          <input 
+                            type={showPassword ? "text" : "password"}
+                            placeholder="••••••••••••"
+                            value={password}
+                            onChange={(e) => setPassword(e.target.value)}
+                            className="w-full bg-[#0a0e1a] border border-slate-805 text-slate-100 rounded-xl pl-4 pr-10 py-3 text-xs focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_15px_rgba(14,160,235,0.15)] transition-all duration-200"
+                            required
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setShowPassword(!showPassword)}
+                            className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors"
+                            title={showPassword ? "Hide password" : "Show password"}
+                          >
+                            {showPassword ? <EyeOff size={14} /> : <Eye size={14} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center justify-between pt-1.5 text-xs">
+                        <label className="flex items-center gap-2 text-slate-400 cursor-pointer group">
+                          <input 
+                            type="checkbox"
+                            checked={rememberMe}
+                            onChange={(e) => setRememberMe(e.target.checked)}
+                            className="rounded bg-[#0a0e1a] border-slate-800 text-brand-500 focus:ring-brand-500 focus:ring-offset-0 focus:ring-0 focus:outline-none w-4 h-4 cursor-pointer"
+                          />
+                          <span className="text-xs group-hover:text-slate-300 transition-colors font-medium">Remember this device</span>
+                        </label>
+                        
+                        <a 
+                          href="#forgot" 
+                          className="text-xs text-brand-400 hover:text-brand-300 font-semibold hover:underline transition-colors"
+                        >
+                          Forgot Password?
+                        </a>
+                      </div>
+
+                      <button 
+                        type="submit"
+                        disabled={loading}
+                        className="w-full bg-gradient-to-r from-brand-600 via-brand-500 to-brand-600 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-lg shadow-brand-500/10 hover:shadow-brand-500/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] mt-3 flex items-center justify-center gap-2 border border-brand-400/20"
+                      >
+                        {loading ? (
+                          <span className="flex items-center gap-2">
+                            <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                            Verifying Signatures...
+                          </span>
+                        ) : (
+                          <>
+                            <span>Secure Login</span>
+                            <ArrowRight size={14} className="text-white group-hover:translate-x-0.5 transition-transform" />
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+                </GlassCard>
+              );
+            })()}
 
             {/* Support Information Card */}
             <div className="p-6 bg-[#0b101d]/65 border border-slate-850 rounded-2xl flex flex-col gap-4 backdrop-blur-sm shadow-xl">
