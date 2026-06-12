@@ -10,7 +10,7 @@ import {
   HostelAttendance, HostelLeaveRequest, HostelVisitor, HostelComplaint,
   HostelFee, HostelPayment, HostelMessMenu,
   SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport,
-  SupportTicketMessage, SupportTicketStatusLog, SupportNotification
+  SupportTicketMessage, SupportTicketStatusLog, SupportNotification, SupportInternalNote
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
@@ -14005,7 +14005,7 @@ export const mockApi = {
   async updateSupportTicketStatus(
     ticketId: string, 
     oldStatus: string, 
-    newStatus: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
+    newStatus: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | 'REOPENED'
   ): Promise<void> {
     const activeUser = getActiveUser();
     if (!activeUser) throw new Error('Unauthenticated');
@@ -14440,6 +14440,169 @@ export const mockApi = {
       .getPublicUrl(filePath);
 
     return publicUrl;
+  },
+
+  async fetchInternalNotes(ticketId: string): Promise<SupportInternalNote[]> {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('support_internal_notes')
+        .select('*, senderDetails:users(*)')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      if (data) {
+        const mapped: SupportInternalNote[] = data.map((n: any) => ({
+          id: n.id,
+          ticketId: n.ticket_id,
+          senderId: n.sender_id,
+          noteText: n.note_text,
+          createdAt: n.created_at,
+          senderDetails: n.senderDetails ? {
+            firstName: n.senderDetails.first_name,
+            lastName: n.senderDetails.last_name,
+            avatarUrl: n.senderDetails.avatar_url
+          } : null
+        }));
+
+        mockDb.supportInternalNotes = [
+          ...mockDb.supportInternalNotes.filter(x => x.ticketId !== ticketId),
+          ...mapped
+        ];
+        mockDb.saveAll();
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch internal notes from Supabase:', err);
+    }
+
+    return mockDb.supportInternalNotes
+      .filter(n => n.ticketId === ticketId)
+      .map(n => {
+        const sender = mockDb.users.find(u => u.id === n.senderId);
+        return {
+          ...n,
+          senderDetails: sender ? {
+            firstName: sender.firstName,
+            lastName: sender.lastName,
+            avatarUrl: sender.avatarUrl
+          } : null
+        };
+      })
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  },
+
+  async createInternalNote(ticketId: string, noteText: string): Promise<void> {
+    const activeUser = getActiveUser();
+    if (!activeUser) throw new Error('Unauthenticated');
+
+    try {
+      const { error, data } = await supabaseAdmin
+        .from('support_internal_notes')
+        .insert({
+          ticket_id: ticketId,
+          sender_id: activeUser.id,
+          note_text: noteText
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (data) {
+        mockDb.supportInternalNotes.push({
+          id: data.id,
+          ticketId: data.ticket_id,
+          senderId: data.sender_id,
+          noteText: data.note_text,
+          createdAt: data.created_at
+        });
+        mockDb.saveAll();
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to insert internal note in Supabase:', err);
+    }
+
+    const mockId = 'note-' + Math.random().toString(36).substring(2, 9);
+    mockDb.supportInternalNotes.push({
+      id: mockId,
+      ticketId,
+      senderId: activeUser.id,
+      noteText,
+      createdAt: new Date().toISOString()
+    });
+    mockDb.saveAll();
+  },
+
+  async updateSupportTicketPriority(ticketId: string, newPriority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT'): Promise<void> {
+    try {
+      const { error } = await supabaseAdmin
+        .from('support_tickets')
+        .update({ priority: newPriority, updated_at: new Date().toISOString() })
+        .eq('id', ticketId);
+
+      if (error) throw error;
+    } catch (err) {
+      console.warn('Failed to update ticket priority in Supabase:', err);
+    }
+
+    const t = mockDb.supportTickets.find(x => x.id === ticketId);
+    if (t) {
+      t.priority = newPriority;
+      t.updatedAt = new Date().toISOString();
+      mockDb.saveAll();
+    }
+  },
+
+  async fetchTicketStatusLogs(ticketId: string): Promise<SupportTicketStatusLog[]> {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('support_ticket_status_logs')
+        .select('*, actorDetails:users(*)')
+        .eq('ticket_id', ticketId)
+        .order('changed_at', { ascending: true });
+
+      if (error) throw error;
+      if (data) {
+        const mapped: SupportTicketStatusLog[] = data.map((l: any) => ({
+          id: l.id,
+          ticketId: l.ticket_id,
+          oldStatus: l.old_status,
+          newStatus: l.new_status,
+          changedBy: l.changed_by,
+          changedAt: l.changed_at,
+          actorDetails: l.actorDetails ? {
+            firstName: l.actorDetails.first_name,
+            lastName: l.actorDetails.last_name,
+            role: l.actorDetails.role === 'ADMIN' ? 'School Admin' : l.actorDetails.role === 'SUPER_ADMIN' ? 'Super Admin' : l.actorDetails.role
+          } : null
+        }));
+
+        mockDb.supportTicketStatusLogs = [
+          ...mockDb.supportTicketStatusLogs.filter(x => x.ticketId !== ticketId),
+          ...mapped
+        ];
+        mockDb.saveAll();
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch status logs from Supabase:', err);
+    }
+
+    return mockDb.supportTicketStatusLogs
+      .filter(l => l.ticketId === ticketId)
+      .map(l => {
+        const actor = mockDb.users.find(u => u.id === l.changedBy);
+        return {
+          ...l,
+          actorDetails: actor ? {
+            firstName: actor.firstName,
+            lastName: actor.lastName,
+            role: actor.role === 'ADMIN' ? 'School Admin' : actor.role === 'SUPER_ADMIN' ? 'Super Admin' : actor.role
+          } : null
+        };
+      })
+      .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
   }
 };
 

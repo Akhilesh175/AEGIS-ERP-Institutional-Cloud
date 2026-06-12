@@ -980,7 +980,7 @@ export interface SupportTicket {
   subject: string;
   description: string;
   attachmentUrl?: string;
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | 'REOPENED';
   assignedTo?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -1017,6 +1017,24 @@ export interface SupportTicketStatusLog {
   newStatus: string;
   changedBy: string;
   changedAt: string;
+  actorDetails?: {
+    firstName: string;
+    lastName: string;
+    role: string;
+  } | null;
+}
+
+export interface SupportInternalNote {
+  id: string;
+  ticketId: string;
+  senderId: string;
+  noteText: string;
+  createdAt: string;
+  senderDetails?: {
+    firstName: string;
+    lastName: string;
+    avatarUrl?: string;
+  } | null;
 }
 
 export interface SupportNotification {

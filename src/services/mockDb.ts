@@ -10,7 +10,7 @@ import {
   MaintenanceLog, DriverAttendance, BookCategory, BookIssue, BookReturn, LibraryFine,
   LibraryInvoice, DigitalLibraryAsset, ExamSubject, StudentMark, ReportCard, ExamResult, QuizResult, DriverSalaryPayout,
   SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport,
-  SupportTicketMessage, SupportTicketStatusLog, SupportNotification
+  SupportTicketMessage, SupportTicketStatusLog, SupportNotification, SupportInternalNote
 } from '../types';
 
 // Storage keys
@@ -516,6 +516,7 @@ class MockDatabase {
   supportTickets: SupportTicket[];
   supportTicketMessages: SupportTicketMessage[];
   supportTicketStatusLogs: SupportTicketStatusLog[];
+  supportInternalNotes: SupportInternalNote[];
   supportNotifications: SupportNotification[];
   bugReports: BugReport[];
   systemStatuses: SystemStatus[];
@@ -622,6 +623,7 @@ class MockDatabase {
     this.supportTickets = getStorage<SupportTicket[]>('support_tickets', []);
     this.supportTicketMessages = getStorage<SupportTicketMessage[]>('support_ticket_messages', []);
     this.supportTicketStatusLogs = getStorage<SupportTicketStatusLog[]>('support_ticket_status_logs', []);
+    this.supportInternalNotes = getStorage<SupportInternalNote[]>('support_internal_notes', []);
     this.supportNotifications = getStorage<SupportNotification[]>('support_notifications', []);
     this.bugReports = getStorage<BugReport[]>('bug_reports', []);
     this.systemStatuses = getStorage<SystemStatus[]>('system_statuses', SEED_SYSTEM_STATUSES);
@@ -703,6 +705,7 @@ class MockDatabase {
     setStorage('support_tickets', this.supportTickets);
     setStorage('support_ticket_messages', this.supportTicketMessages);
     setStorage('support_ticket_status_logs', this.supportTicketStatusLogs);
+    setStorage('support_internal_notes', this.supportInternalNotes);
     setStorage('support_notifications', this.supportNotifications);
     setStorage('bug_reports', this.bugReports);
     setStorage('system_statuses', this.systemStatuses);

@@ -9,7 +9,7 @@ import {
   FileText, ArrowLeft, Filter, Calendar, BarChart2, Check, Download, ExternalLink
 } from 'lucide-react';
 import { GlassCard } from './GlassCard';
-import { SupportTicket, BugReport, SystemStatus, KnowledgeBaseArticle, SupportTicketMessage, SupportNotification } from '../types';
+import { SupportTicket, BugReport, SystemStatus, KnowledgeBaseArticle, SupportTicketMessage, SupportNotification, SupportInternalNote, SupportTicketStatusLog } from '../types';
 
 export const HelpSupportPage: React.FC = () => {
   const { session } = useStore();
@@ -37,6 +37,16 @@ export const HelpSupportPage: React.FC = () => {
   const [ticketMessages, setTicketMessages] = useState<SupportTicketMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [messageAttachment, setMessageAttachment] = useState<File | null>(null);
+
+  // Super Admin / Agent Ticket Drawer Tabs and Sub-resources
+  const [drawerTab, setDrawerTab] = useState<'chat' | 'notes' | 'logs'>('chat');
+  const [internalNotes, setInternalNotes] = useState<SupportInternalNote[]>([]);
+  const [statusLogs, setStatusLogs] = useState<SupportTicketStatusLog[]>([]);
+  const [newInternalNote, setNewInternalNote] = useState('');
+  const [submittingNote, setSubmittingNote] = useState(false);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [notesLoading, setNotesLoading] = useState(false);
+  const [recentMessages, setRecentMessages] = useState<any[]>([]);
 
   // States
   const [loading, setLoading] = useState(false);
@@ -103,6 +113,29 @@ export const HelpSupportPage: React.FC = () => {
         if (schoolsData) {
           setSchools(schoolsData);
         }
+
+        // Fetch recent global replies from database
+        try {
+          const { data: recentMsgsData } = await supabaseAdmin
+            .from('support_ticket_messages')
+            .select('*, senderDetails:users(*), ticket:support_tickets(ticket_number)')
+            .order('created_at', { ascending: false })
+            .limit(5);
+
+          if (recentMsgsData) {
+            setRecentMessages(recentMsgsData.map((m: any) => ({
+              id: m.id,
+              ticketId: m.ticket_id,
+              ticketNumber: m.ticket?.ticket_number || 'TKT-????',
+              senderName: m.senderDetails ? `${m.senderDetails.first_name} ${m.senderDetails.last_name}` : 'Support Agent',
+              senderRole: m.sender_role,
+              message: m.message,
+              createdAt: m.created_at
+            })));
+          }
+        } catch (msgErr) {
+          console.warn('Failed to load recent replies:', msgErr);
+        }
       }
     } catch (err: any) {
       setError(err.message || 'Failed to sync with helpdesk services.');
@@ -124,14 +157,48 @@ export const HelpSupportPage: React.FC = () => {
   const openTicketDetails = async (ticket: SupportTicket) => {
     setSelectedTicket(ticket);
     setTicketMessages([]);
+    setInternalNotes([]);
+    setStatusLogs([]);
+    setDrawerTab('chat');
     try {
       setMessagesLoading(true);
       const msgs = await mockApi.fetchTicketMessages(ticket.id);
       setTicketMessages(msgs);
+
+      if (isSuperAdmin) {
+        setNotesLoading(true);
+        const notesData = await mockApi.fetchInternalNotes(ticket.id);
+        setInternalNotes(notesData);
+        setNotesLoading(false);
+      }
+
+      setLogsLoading(true);
+      const logsData = await mockApi.fetchTicketStatusLogs(ticket.id);
+      setStatusLogs(logsData);
+      setLogsLoading(false);
     } catch (err: any) {
       setError('Failed to fetch conversation history.');
     } finally {
       setMessagesLoading(false);
+      setNotesLoading(false);
+      setLogsLoading(false);
+    }
+  };
+
+  const handleSendInternalNote = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedTicket || !newInternalNote.trim()) return;
+
+    try {
+      setSubmittingNote(true);
+      await mockApi.createInternalNote(selectedTicket.id, newInternalNote.trim());
+      setNewInternalNote('');
+      const notesData = await mockApi.fetchInternalNotes(selectedTicket.id);
+      setInternalNotes(notesData);
+    } catch (err) {
+      setError('Failed to transmit internal note.');
+    } finally {
+      setSubmittingNote(false);
     }
   };
 
@@ -256,11 +323,11 @@ export const HelpSupportPage: React.FC = () => {
   };
 
   // Change ticket status
-  const handleStatusChange = async (nextStatus: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED') => {
+  const handleStatusChange = async (nextStatus: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED' | 'REOPENED') => {
     if (!selectedTicket) return;
     try {
       setError(null);
-      await mockApi.updateSupportTicketStatus(selectedTicket.id, selectedTicket.status, nextStatus);
+      await mockApi.updateSupportTicketStatus(selectedTicket.id, selectedTicket.status as any, nextStatus);
       
       // Update local state
       setSelectedTicket(prev => prev ? { ...prev, status: nextStatus } : null);
@@ -268,6 +335,10 @@ export const HelpSupportPage: React.FC = () => {
       // Reload tickets
       const updatedTickets = await mockApi.fetchSupportTickets(schoolId);
       setTickets(updatedTickets);
+
+      // Reload status logs
+      const logsData = await mockApi.fetchTicketStatusLogs(selectedTicket.id);
+      setStatusLogs(logsData);
     } catch (err: any) {
       setError('Failed to update ticket status.');
     }
@@ -288,6 +359,24 @@ export const HelpSupportPage: React.FC = () => {
       setTickets(updatedTickets);
     } catch (err: any) {
       setError('Failed to update ticket assignment.');
+    }
+  };
+
+  // Change ticket priority
+  const handlePriorityChange = async (nextPriority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT') => {
+    if (!selectedTicket) return;
+    try {
+      setError(null);
+      await mockApi.updateSupportTicketPriority(selectedTicket.id, nextPriority);
+
+      // Update local state
+      setSelectedTicket(prev => prev ? { ...prev, priority: nextPriority } : null);
+
+      // Reload tickets
+      const updatedTickets = await mockApi.fetchSupportTickets(schoolId);
+      setTickets(updatedTickets);
+    } catch (err: any) {
+      setError('Failed to update ticket priority.');
     }
   };
 
@@ -386,6 +475,16 @@ export const HelpSupportPage: React.FC = () => {
   });
   const roleStats = Object.entries(roleStatsMap).map(([role, count]) => ({ role, count }));
 
+  // Recent Tickets
+  const recentTickets = [...tickets]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 5);
+
+  // Recent Bug Reports
+  const recentBugs = [...bugReports]
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    .slice(0, 5);
+
   return (
     <div className="space-y-6 animate-fade-in pb-12 font-sans text-slate-200">
       
@@ -474,6 +573,7 @@ export const HelpSupportPage: React.FC = () => {
                   <span className={`px-2 py-0.5 rounded text-[9px] font-bold border uppercase ${
                     selectedTicket.status === 'RESOLVED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
                     selectedTicket.status === 'CLOSED' ? 'bg-slate-900 text-slate-500 border-slate-800' :
+                    selectedTicket.status === 'REOPENED' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
                     selectedTicket.status === 'IN_PROGRESS' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' :
                     'bg-amber-500/10 text-amber-400 border-amber-500/20'
                   }`}>
@@ -514,150 +614,297 @@ export const HelpSupportPage: React.FC = () => {
 
               {/* Admin Actions Bar */}
               {isAdminOrSuperAdmin && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 bg-slate-900/20 border border-slate-850 p-3 rounded-xl mb-4 text-xs">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-900/20 border border-slate-850 p-3 rounded-xl mb-4 text-xs">
                   {/* Status update */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-bold uppercase text-slate-500">Ticket Status:</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-bold uppercase text-slate-500">Ticket Status:</span>
                     <select
                       value={selectedTicket.status}
                       onChange={(e) => handleStatusChange(e.target.value as any)}
-                      className="bg-slate-950 border border-slate-850 text-slate-300 rounded-lg px-2.5 py-1 text-xs focus:outline-none"
+                      className="w-full bg-slate-950 border border-slate-850 text-slate-300 rounded-lg px-2 py-1 text-[11px] focus:outline-none"
                     >
                       <option value="OPEN">Open</option>
                       <option value="IN_PROGRESS">In Progress</option>
                       <option value="RESOLVED">Resolved</option>
                       <option value="CLOSED">Closed</option>
+                      <option value="REOPENED">Reopened</option>
+                    </select>
+                  </div>
+
+                  {/* Priority update */}
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-bold uppercase text-slate-500">Priority Level:</span>
+                    <select
+                      value={selectedTicket.priority}
+                      onChange={(e) => handlePriorityChange(e.target.value as any)}
+                      className="w-full bg-slate-950 border border-slate-850 text-slate-300 rounded-lg px-2 py-1 text-[11px] focus:outline-none"
+                    >
+                      <option value="LOW">Low</option>
+                      <option value="MEDIUM">Medium</option>
+                      <option value="HIGH">High</option>
+                      <option value="URGENT">Urgent</option>
                     </select>
                   </div>
 
                   {/* Ticket Assignment */}
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="text-[10px] font-bold uppercase text-slate-500">Assign Agent:</span>
+                  <div className="flex flex-col gap-1">
+                    <span className="text-[9px] font-bold uppercase text-slate-500">Assign Agent:</span>
                     <select
                       value={selectedTicket.assignedTo || ''}
                       onChange={(e) => handleAssignChange(e.target.value || null)}
-                      className="bg-slate-950 border border-slate-850 text-slate-300 rounded-lg px-2.5 py-1 text-xs focus:outline-none"
+                      className="w-full bg-slate-950 border border-slate-850 text-slate-300 rounded-lg px-2 py-1 text-[11px] focus:outline-none"
                     >
                       <option value="">Unassigned</option>
                       <option value={userId}>Self (Super Admin)</option>
-                      {/* We could populate other support staff if available */}
                     </select>
                   </div>
                 </div>
               )}
 
-              {/* Scrollable Conversation Stream */}
-              <div className="flex-1 overflow-y-auto space-y-4 pr-1 mb-4 scrollbar-thin scrollbar-track-slate-950 scrollbar-thumb-slate-800">
-                {messagesLoading ? (
-                  <div className="h-full flex items-center justify-center text-xs text-slate-500 gap-2">
-                    <RefreshCw size={14} className="animate-spin text-brand-500" />
-                    <span>Loading conversation ledger...</span>
-                  </div>
-                ) : ticketMessages.length === 0 ? (
-                  <div className="h-full flex flex-col items-center justify-center text-center text-slate-600">
-                    <span className="text-2xl mb-1">💬</span>
-                    <p className="text-[10px] font-semibold">No replies yet. Super Admin support staff will reply shortly.</p>
-                  </div>
-                ) : (
-                  ticketMessages.map(m => {
-                    const isSelf = m.senderId === userId;
-                    return (
-                      <div 
-                        key={m.id} 
-                        className={`flex gap-3 max-w-[85%] ${isSelf ? 'ml-auto flex-row-reverse' : ''}`}
-                      >
-                        {/* Avatar */}
-                        <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-850 flex items-center justify-center shrink-0 text-slate-400 font-bold text-xs">
-                          {m.senderDetails?.firstName?.[0] || 'U'}
-                        </div>
-
-                        <div className="space-y-1">
-                          <div className={`flex items-center gap-1.5 text-[9px] text-slate-500 ${isSelf ? 'justify-end' : ''}`}>
-                            <span className="font-bold text-slate-400">{m.senderDetails?.firstName} {m.senderDetails?.lastName}</span>
-                            <span className="font-mono">({m.senderRole})</span>
-                            <span>•</span>
-                            <span>{new Date(m.createdAt).toLocaleTimeString()}</span>
-                          </div>
-
-                          <div className={`p-3 rounded-2xl text-xs font-sans whitespace-pre-line leading-relaxed border ${
-                            isSelf 
-                              ? 'bg-brand-600/10 border-brand-500/25 text-brand-200 rounded-tr-none' 
-                              : 'bg-slate-900/60 border-slate-850 text-slate-300 rounded-tl-none'
-                          }`}>
-                            {m.message}
-                            
-                            {m.attachmentUrl && (
-                              <div className="mt-2 pt-2 border-t border-slate-800/40 flex items-center gap-1">
-                                <a
-                                  href={m.attachmentUrl}
-                                  target="_blank"
-                                  rel="noopener noreferrer"
-                                  className="text-[9px] text-brand-400 hover:text-brand-300 underline flex items-center gap-0.5"
-                                >
-                                  <Download size={9} />
-                                  <span>Download Attachment</span>
-                                </a>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })
+              {/* Drawer Inner Sub-tabs Switcher */}
+              <div className="flex items-center gap-1 border-b border-slate-850 pb-2 mb-4 text-xs font-bold uppercase">
+                <button
+                  type="button"
+                  onClick={() => setDrawerTab('chat')}
+                  className={`px-3 py-1 border-b-2 transition-all ${
+                    drawerTab === 'chat' 
+                      ? 'border-brand-500 text-brand-400 font-extrabold' 
+                      : 'border-transparent text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  Conversation ({ticketMessages.length})
+                </button>
+                {isSuperAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setDrawerTab('notes')}
+                    className={`px-3 py-1 border-b-2 transition-all ${
+                      drawerTab === 'notes' 
+                        ? 'border-yellow-500 text-yellow-400 font-extrabold' 
+                        : 'border-transparent text-slate-500 hover:text-slate-300'
+                    }`}
+                  >
+                    Internal Notes ({internalNotes.length})
+                  </button>
                 )}
-                <div ref={messagesEndRef} />
+                <button
+                  type="button"
+                  onClick={() => setDrawerTab('logs')}
+                  className={`px-3 py-1 border-b-2 transition-all ${
+                    drawerTab === 'logs' 
+                      ? 'border-slate-400 text-slate-300 font-extrabold' 
+                      : 'border-transparent text-slate-500 hover:text-slate-300'
+                  }`}
+                >
+                  Audit Log ({statusLogs.length})
+                </button>
               </div>
 
-              {/* Reply Input Form */}
-              <form onSubmit={handleSendMessage} className="border-t border-slate-850 pt-4 space-y-3">
-                <div className="relative">
-                  <textarea
-                    rows={2}
-                    placeholder="Type a support response... (markdown supported)"
-                    value={newMessage}
-                    onChange={(e) => setNewMessage(e.target.value)}
-                    className="w-full bg-slate-950 border border-slate-850 text-slate-200 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-brand-500 transition-all pr-12"
-                  />
-                  
-                  <button
-                    type="submit"
-                    disabled={submittingMessage || (!newMessage.trim() && !messageAttachment)}
-                    className="absolute bottom-3 right-3 p-1.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-40 text-white rounded-lg transition-all"
-                  >
-                    <Send size={12} />
-                  </button>
-                </div>
+              {/* TAB RENDER: Conversation */}
+              {drawerTab === 'chat' && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="flex-1 overflow-y-auto space-y-4 pr-1 mb-4 scrollbar-thin scrollbar-track-slate-950 scrollbar-thumb-slate-800">
+                    {messagesLoading ? (
+                      <div className="h-full flex items-center justify-center text-xs text-slate-500 gap-2">
+                        <RefreshCw size={14} className="animate-spin text-brand-500" />
+                        <span>Loading conversation ledger...</span>
+                      </div>
+                    ) : ticketMessages.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center text-slate-600">
+                        <span className="text-2xl mb-1">💬</span>
+                        <p className="text-[10px] font-semibold">No replies yet. Support staff will reply shortly.</p>
+                      </div>
+                    ) : (
+                      ticketMessages.map(m => {
+                        const isSelf = m.senderId === userId;
+                        return (
+                          <div 
+                            key={m.id} 
+                            className={`flex gap-3 max-w-[85%] ${isSelf ? 'ml-auto flex-row-reverse' : ''}`}
+                          >
+                            <div className="w-8 h-8 rounded-lg bg-slate-900 border border-slate-850 flex items-center justify-center shrink-0 text-slate-400 font-bold text-xs">
+                              {m.senderDetails?.firstName?.[0] || 'U'}
+                            </div>
 
-                {/* Optional Message Attachment */}
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <label className="flex items-center gap-1 px-3 py-1 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-bold rounded-lg cursor-pointer transition-all">
-                      <Upload size={10} />
-                      <span>{messageAttachment ? 'Change File' : 'Attach File'}</span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        onChange={(e) => setMessageAttachment(e.target.files?.[0] || null)}
+                            <div className="space-y-1">
+                              <div className={`flex items-center gap-1.5 text-[9px] text-slate-500 ${isSelf ? 'justify-end' : ''}`}>
+                                <span className="font-bold text-slate-400">{m.senderDetails?.firstName} {m.senderDetails?.lastName}</span>
+                                <span className="font-mono">({m.senderRole})</span>
+                                <span>•</span>
+                                <span>{new Date(m.createdAt).toLocaleTimeString()}</span>
+                              </div>
+
+                              <div className={`p-3 rounded-2xl text-xs font-sans whitespace-pre-line leading-relaxed border ${
+                                isSelf 
+                                  ? 'bg-brand-600/10 border-brand-500/25 text-brand-200 rounded-tr-none' 
+                                  : 'bg-slate-900/60 border-slate-850 text-slate-300 rounded-tl-none'
+                              }`}>
+                                {m.message}
+                                
+                                {m.attachmentUrl && (
+                                  <div className="mt-2 pt-2 border-t border-slate-800/40 flex items-center gap-1">
+                                    <a
+                                      href={m.attachmentUrl}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="text-[9px] text-brand-400 hover:text-brand-300 underline flex items-center gap-0.5"
+                                    >
+                                      <Download size={9} />
+                                      <span>Download Attachment</span>
+                                    </a>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })
+                    )}
+                    <div ref={messagesEndRef} />
+                  </div>
+
+                  {/* Reply Input Form */}
+                  <form onSubmit={handleSendMessage} className="border-t border-slate-850 pt-4 space-y-3">
+                    <div className="relative">
+                      <textarea
+                        rows={2}
+                        placeholder="Type a support response... (markdown supported)"
+                        value={newMessage}
+                        onChange={(e) => setNewMessage(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-850 text-slate-200 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-brand-500 transition-all pr-12"
                       />
-                    </label>
+                      
+                      <button
+                        type="submit"
+                        disabled={submittingMessage || (!newMessage.trim() && !messageAttachment)}
+                        className="absolute bottom-3 right-3 p-1.5 bg-brand-600 hover:bg-brand-500 disabled:opacity-40 text-white rounded-lg transition-all"
+                      >
+                        <Send size={12} />
+                      </button>
+                    </div>
 
-                    {messageAttachment && (
-                      <span className="text-[10px] text-slate-500 font-mono truncate max-w-[200px] flex items-center gap-1.5">
-                        <span>{messageAttachment.name}</span>
-                        <button 
-                          onClick={() => setMessageAttachment(null)} 
-                          className="text-red-500 hover:text-red-400"
-                        >
-                          <X size={10} />
-                        </button>
-                      </span>
+                    {/* Optional Message Attachment */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <label className="flex items-center gap-1 px-3 py-1 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-400 hover:text-slate-200 text-[10px] font-bold rounded-lg cursor-pointer transition-all">
+                          <Upload size={10} />
+                          <span>{messageAttachment ? 'Change File' : 'Attach File'}</span>
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => setMessageAttachment(e.target.files?.[0] || null)}
+                          />
+                        </label>
+
+                        {messageAttachment && (
+                          <span className="text-[10px] text-slate-500 font-mono truncate max-w-[200px] flex items-center gap-1.5">
+                            <span>{messageAttachment.name}</span>
+                            <button 
+                              onClick={() => setMessageAttachment(null)} 
+                              className="text-red-500 hover:text-red-400"
+                            >
+                              <X size={10} />
+                            </button>
+                          </span>
+                        )}
+                      </div>
+                      
+                      <span className="text-[9px] text-slate-500 font-mono">TLS Channels Encrypted</span>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* TAB RENDER: Internal Notes */}
+              {drawerTab === 'notes' && isSuperAdmin && (
+                <div className="flex-1 flex flex-col min-h-0">
+                  <div className="flex-1 overflow-y-auto space-y-3 mb-4 pr-1 scrollbar-thin scrollbar-track-slate-950 scrollbar-thumb-slate-800">
+                    {notesLoading ? (
+                      <div className="h-full flex items-center justify-center text-xs text-slate-500 gap-2">
+                        <RefreshCw size={14} className="animate-spin text-yellow-500" />
+                        <span>Loading internal notes...</span>
+                      </div>
+                    ) : internalNotes.length === 0 ? (
+                      <div className="h-full flex flex-col items-center justify-center text-center text-slate-600">
+                        <span className="text-2xl mb-1">📝</span>
+                        <p className="text-[10px] font-semibold text-slate-500">No internal notes for this ticket yet.</p>
+                      </div>
+                    ) : (
+                      internalNotes.map(n => (
+                        <div key={n.id} className="p-3 bg-yellow-500/5 border border-yellow-500/20 rounded-xl space-y-1">
+                          <div className="flex items-center justify-between text-[9px] text-yellow-500/80 font-mono">
+                            <span className="font-bold">{n.senderDetails?.firstName} {n.senderDetails?.lastName || 'System Admin'}</span>
+                            <span>{new Date(n.createdAt).toLocaleString()}</span>
+                          </div>
+                          <p className="text-xs text-slate-300 font-sans leading-relaxed whitespace-pre-wrap">{n.noteText}</p>
+                        </div>
+                      ))
                     )}
                   </div>
-                  
-                  <span className="text-[9px] text-slate-500 font-mono">TLS Channels Encrypted</span>
+                  {/* New internal note form */}
+                  <form onSubmit={handleSendInternalNote} className="border-t border-slate-850 pt-4 space-y-3">
+                    <div className="relative">
+                      <textarea
+                        rows={2}
+                        placeholder="Write an internal note (visible only to support staff)..."
+                        value={newInternalNote}
+                        onChange={(e) => setNewInternalNote(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-850 text-slate-200 rounded-xl px-4 py-3 text-xs focus:outline-none focus:border-yellow-500 transition-all pr-12"
+                      />
+                      <button
+                        type="submit"
+                        disabled={submittingNote || !newInternalNote.trim()}
+                        className="absolute bottom-3 right-3 p-1.5 bg-yellow-600 hover:bg-yellow-500 disabled:opacity-40 text-white rounded-lg transition-all"
+                      >
+                        <Send size={12} />
+                      </button>
+                    </div>
+                  </form>
                 </div>
-              </form>
+              )}
+
+              {/* TAB RENDER: Audit Status Logs */}
+              {drawerTab === 'logs' && (
+                <div className="flex-1 overflow-y-auto space-y-4 pr-1 scrollbar-thin scrollbar-track-slate-950 scrollbar-thumb-slate-800">
+                  {logsLoading ? (
+                    <div className="h-full flex items-center justify-center text-xs text-slate-500 gap-2">
+                      <RefreshCw size={14} className="animate-spin text-slate-500" />
+                      <span>Loading audit logs...</span>
+                    </div>
+                  ) : statusLogs.length === 0 ? (
+                    <div className="h-full flex flex-col items-center justify-center text-center text-slate-600">
+                      <span className="text-2xl mb-1">📜</span>
+                      <p className="text-[10px] font-semibold text-slate-500">No status modifications recorded for this ticket.</p>
+                    </div>
+                  ) : (
+                    <div className="relative border-l border-slate-800 ml-3 pl-5 space-y-5 py-2">
+                      {statusLogs.map((log) => (
+                        <div key={log.id} className="relative">
+                          {/* Timeline Dot */}
+                          <span className="absolute -left-[27px] top-1 w-3 h-3 rounded-full bg-slate-950 border border-slate-700 flex items-center justify-center">
+                            <span className="w-1.5 h-1.5 rounded-full bg-brand-500" />
+                          </span>
+                          <div className="space-y-1">
+                            <div className="text-[10px] text-slate-400 font-mono flex items-center gap-1.5">
+                              <span className="font-bold text-slate-300">{log.actorDetails?.firstName} {log.actorDetails?.lastName || 'System Agent'}</span>
+                              <span className="text-slate-500">({log.actorDetails?.role || 'Staff'})</span>
+                              <span>•</span>
+                              <span>{new Date(log.changedAt).toLocaleString()}</span>
+                            </div>
+                            <p className="text-xs text-slate-300 font-semibold flex items-center gap-1.5">
+                              <span>Status Shifted:</span>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] border bg-slate-950 text-slate-500 border-slate-850 uppercase">{log.oldStatus}</span>
+                              <span className="text-slate-500">→</span>
+                              <span className="px-1.5 py-0.5 rounded text-[9px] border bg-brand-500/10 text-brand-400 border-brand-500/25 uppercase">{log.newStatus}</span>
+                            </p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
             </GlassCard>
           ) : null}
 
@@ -1505,6 +1752,94 @@ export const HelpSupportPage: React.FC = () => {
                     </div>
                   ))}
                   {roleStats.length === 0 && <span className="text-[10px] text-slate-500">No role distribution logs</span>}
+                </div>
+              </div>
+
+              {/* Recent Tickets Widget */}
+              <div className="space-y-3 border-t border-slate-850 pt-5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <History size={13} className="text-brand-400" />
+                  <span>Recent Tickets</span>
+                </span>
+                <div className="space-y-2">
+                  {recentTickets.map(t => (
+                    <div 
+                      key={t.id} 
+                      onClick={() => openTicketDetails(t)}
+                      className="p-2.5 bg-slate-950/40 border border-slate-900 rounded-lg hover:border-brand-500/30 cursor-pointer transition-all flex items-center justify-between text-xs"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="font-bold text-slate-300 truncate max-w-[140px]">{t.subject}</div>
+                        <div className="text-[9px] text-slate-500 font-mono mt-0.5">{t.ticketNumber} • {t.userRole}</div>
+                      </div>
+                      <span className={`px-1.5 py-0.5 rounded text-[8px] font-bold border uppercase shrink-0 ${
+                        t.status === 'RESOLVED' ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' :
+                        t.status === 'CLOSED' ? 'bg-slate-900 text-slate-500 border-slate-800' :
+                        t.status === 'REOPENED' ? 'bg-yellow-500/10 text-yellow-400 border-yellow-500/20' :
+                        t.status === 'IN_PROGRESS' ? 'bg-sky-500/10 text-sky-400 border-sky-500/20' :
+                        'bg-amber-500/10 text-amber-400 border-amber-500/20'
+                      }`}>
+                        {t.status}
+                      </span>
+                    </div>
+                  ))}
+                  {recentTickets.length === 0 && <span className="text-[10px] text-slate-500">No recent tickets</span>}
+                </div>
+              </div>
+
+              {/* Recent Replies Widget */}
+              <div className="space-y-3 border-t border-slate-850 pt-5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <MessageSquare size={13} className="text-brand-400" />
+                  <span>Recent Replies</span>
+                </span>
+                <div className="space-y-2">
+                  {recentMessages.map(msg => {
+                    const t = tickets.find(x => x.id === msg.ticketId);
+                    return (
+                      <div 
+                        key={msg.id}
+                        onClick={() => t && openTicketDetails(t)}
+                        className={`p-2.5 bg-slate-950/40 border border-slate-900 rounded-lg text-xs ${t ? 'hover:border-brand-500/30 cursor-pointer' : ''}`}
+                      >
+                        <div className="flex items-center justify-between font-bold text-slate-300 gap-2">
+                          <span className="truncate max-w-[100px]">{msg.senderName}</span>
+                          <span className="text-[9px] text-brand-400 font-mono shrink-0">{msg.ticketNumber}</span>
+                        </div>
+                        <p className="text-[10px] text-slate-400 truncate mt-1">"{msg.message}"</p>
+                        <span className="text-[8px] text-slate-500 font-mono mt-0.5 block">{new Date(msg.createdAt).toLocaleTimeString()}</span>
+                      </div>
+                    );
+                  })}
+                  {recentMessages.length === 0 && <span className="text-[10px] text-slate-500">No recent replies</span>}
+                </div>
+              </div>
+
+              {/* Recent Bug Reports Widget */}
+              <div className="space-y-3 border-t border-slate-850 pt-5">
+                <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                  <Bug size={13} className="text-brand-400" />
+                  <span>Recent Bug Reports</span>
+                </span>
+                <div className="space-y-2">
+                  {recentBugs.map(b => (
+                    <div 
+                      key={b.id}
+                      onClick={() => {
+                        setActiveSubTab('bugs');
+                      }}
+                      className="p-2.5 bg-slate-950/40 border border-slate-900 rounded-lg hover:border-brand-500/30 cursor-pointer transition-all flex items-center justify-between text-xs"
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="font-bold text-slate-300 truncate max-w-[140px]">{b.bugTitle}</div>
+                        <div className="text-[9px] text-slate-500 mt-0.5">{new Date(b.createdAt).toLocaleDateString()}</div>
+                      </div>
+                      <span className="px-1.5 py-0.5 rounded text-[8px] font-bold border uppercase shrink-0 bg-amber-500/10 text-amber-400 border-amber-500/20">
+                        {b.status}
+                      </span>
+                    </div>
+                  ))}
+                  {recentBugs.length === 0 && <span className="text-[10px] text-slate-500">No recent bug reports</span>}
                 </div>
               </div>
             </GlassCard>
