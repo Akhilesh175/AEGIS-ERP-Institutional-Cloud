@@ -718,6 +718,208 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     }
   };
 
+  const getFilteredClassIds = () => {
+    if (analyticsSection === 'all') {
+      return classes.map(c => c.id);
+    }
+    if (analyticsSection === '10a') {
+      const c10 = classes.find(c => c.name.toLowerCase().includes('10-a') || c.name.toLowerCase().includes('10a') || c.id === 'c-10a');
+      return c10 ? [c10.id] : [];
+    }
+    if (analyticsSection === '11b') {
+      const c11 = classes.find(c => c.name.toLowerCase().includes('11-b') || c.name.toLowerCase().includes('11b') || c.id === 'c-11b');
+      return c11 ? [c11.id] : [];
+    }
+    return [];
+  };
+
+  const filterByDateRange = (dateStr?: string) => {
+    if (!dateStr) return false;
+    if (analyticsDateRange === 'session') return true;
+    const date = new Date(dateStr);
+    const now = new Date();
+    const diffTime = Math.abs(now.getTime() - date.getTime());
+    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+    if (analyticsDateRange === '30d') return diffDays <= 30;
+    if (analyticsDateRange === '90d') return diffDays <= 90;
+    return true;
+  };
+
+  const getAttendanceStats = () => {
+    const c10 = classes.find(c => c.name.toLowerCase().includes('10-a') || c.name.toLowerCase().includes('10a') || c.id === 'c-10a');
+    const c11 = classes.find(c => c.name.toLowerCase().includes('11-b') || c.name.toLowerCase().includes('11b') || c.id === 'c-11b');
+
+    const filteredAttendance = attendanceList.filter(a => filterByDateRange(a.date));
+    
+    if (filteredAttendance.length === 0) return null;
+
+    const getPercentageForClass = (classId?: string) => {
+      const records = classId 
+        ? filteredAttendance.filter(a => a.classId === classId)
+        : filteredAttendance;
+      if (records.length === 0) return 0;
+      const present = records.filter(a => a.status !== 'ABSENT').length;
+      return (present / records.length) * 100;
+    };
+
+    const g10Val = c10 ? getPercentageForClass(c10.id) : 0;
+    const g11Val = c11 ? getPercentageForClass(c11.id) : 0;
+    const sysVal = getPercentageForClass();
+
+    return {
+      g10: g10Val,
+      g11: g11Val,
+      system: sysVal,
+      avg: sysVal
+    };
+  };
+
+  const getFeeStats = () => {
+    const classIds = getFilteredClassIds();
+    const filteredStudents = students.filter(s => s.classId && classIds.includes(s.classId));
+    const studentIds = filteredStudents.map(s => s.id);
+
+    // 1. Regular School Fees
+    const filteredStructures = feeStructures.filter(fs => classIds.includes(fs.classId));
+    const structureIds = filteredStructures.map(fs => fs.id);
+    const filteredPayments = feePayments.filter(p => structureIds.includes(p.feeStructureId) && filterByDateRange(p.createdAt || p.paymentDate));
+
+    let regularCollected = 0;
+    let regularPending = 0;
+    
+    filteredPayments.forEach(p => {
+      if (p.status === 'PAID') {
+        regularCollected += p.amountPaid;
+      } else {
+        const struct = feeStructures.find(fs => fs.id === p.feeStructureId);
+        regularPending += struct ? struct.amount : 0;
+      }
+    });
+
+    // 2. Transport Fees
+    const filteredTransport = transportFeeRecords.filter(t => studentIds.includes(t.studentId) && filterByDateRange(t.createdAt));
+    let transportCollected = 0;
+    let transportPending = 0;
+    
+    filteredTransport.forEach(t => {
+      if (t.status === 'PAID') {
+        transportCollected += t.amount;
+      } else {
+        transportPending += t.amount;
+      }
+    });
+
+    // 3. Hostel Fees
+    const filteredHostelPayments = hostelPayments.filter(p => studentIds.includes(p.studentId) && filterByDateRange(p.createdAt || p.paymentDate));
+    let hostelCollected = 0;
+    let hostelPending = 0;
+
+    filteredHostelPayments.forEach(p => {
+      if (p.status === 'PAID') {
+        hostelCollected += p.amountPaid;
+      } else {
+        const fee = hostelFees.find(f => f.id === p.feeId);
+        hostelPending += fee ? (fee.amount - p.amountPaid) : 0;
+      }
+    });
+
+    const totalCollected = regularCollected + transportCollected + hostelCollected;
+    const totalPending = regularPending + transportPending + hostelPending;
+    const totalRaised = totalCollected + totalPending;
+    const collectionPct = totalRaised > 0 ? (totalCollected / totalRaised) * 100 : 0;
+
+    if (totalRaised === 0) return null;
+
+    return {
+      collected: totalCollected,
+      pending: totalPending,
+      raised: totalRaised,
+      percentage: collectionPct
+    };
+  };
+
+  const getHomeworkStats = () => {
+    const classIds = getFilteredClassIds();
+
+    const filteredAssignments = assignments.filter(a => classIds.includes(a.classId) && filterByDateRange(a.createdAt));
+
+    if (filteredAssignments.length === 0) return null;
+
+    const statsMap = new Map<string, { totalPossible: number; completed: number; late: number }>();
+
+    filteredAssignments.forEach(a => {
+      const classStudents = students.filter(s => s.classId === a.classId);
+      const subject = subjects.find(s => s.id === a.subjectId);
+      const subName = subject?.name || 'General';
+
+      if (!statsMap.has(subName)) {
+        statsMap.set(subName, { totalPossible: 0, completed: 0, late: 0 });
+      }
+      const val = statsMap.get(subName)!;
+      val.totalPossible += classStudents.length;
+
+      const subs = assignmentSubmissions.filter(s => s.assignmentId === a.id);
+      val.completed += subs.length;
+      
+      subs.forEach(s => {
+        const isLate = s.submissionText?.toLowerCase().includes('late') || (s as any).submission_status === 'LATE' || (s.submittedAt && a.dueDate && new Date(s.submittedAt) > new Date(a.dueDate));
+        if (isLate) {
+          val.late++;
+        }
+      });
+    });
+
+    const subjectStats: { subjectName: string; completedPct: number; pendingPct: number; latePct: number }[] = [];
+    statsMap.forEach((val, subName) => {
+      if (val.totalPossible > 0) {
+        const completedPct = (val.completed / val.totalPossible) * 100;
+        const pendingPct = ((val.totalPossible - val.completed) / val.totalPossible) * 100;
+        const latePct = (val.late / val.totalPossible) * 100;
+        subjectStats.push({
+          subjectName: subName,
+          completedPct,
+          pendingPct,
+          latePct
+        });
+      }
+    });
+
+    return subjectStats;
+  };
+
+  const getGradeStats = () => {
+    const classIds = getFilteredClassIds();
+    const filteredStudents = students.filter(s => s.classId && classIds.includes(s.classId));
+    const studentIds = filteredStudents.map(s => s.id);
+
+    const filteredMarks = studentMarks.filter(m => studentIds.includes(m.studentId));
+
+    if (filteredMarks.length === 0) return null;
+
+    const statsMap = new Map<string, { sum: number; count: number }>();
+
+    filteredMarks.forEach(m => {
+      const subject = subjects.find(s => s.id === m.subjectId);
+      const subCode = subject?.code || 'GEN';
+      if (!statsMap.has(subCode)) {
+        statsMap.set(subCode, { sum: 0, count: 0 });
+      }
+      const val = statsMap.get(subCode)!;
+      val.sum += m.marksObtained;
+      val.count++;
+    });
+
+    const stats: { subjectCode: string; average: number }[] = [];
+    statsMap.forEach((val, subCode) => {
+      stats.push({
+        subjectCode: subCode,
+        average: val.sum / val.count
+      });
+    });
+
+    return stats;
+  };
+
   const exportStudentsToCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
     csvContent += "Admission Number,Roll Number,First Name,Last Name,Email,Gender,Class,Section\n";
@@ -1317,11 +1519,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           setExamSubjects(uniqueExamSubjects);
           setBooks(uniqueBooks);
 
-          // Sync student attendance, homeworks and homework submissions in background/parallel
+          // Sync student attendance, homeworks, homework submissions, and quizzes in background/parallel
           await Promise.all([
             mockApi.syncAttendanceData(session.user.schoolId),
             mockApi.syncAssignmentsData(session.user.schoolId),
-            mockApi.syncAssignmentSubmissionsData(session.user.schoolId)
+            mockApi.syncAssignmentSubmissionsData(session.user.schoolId),
+            mockApi.syncQuizzesData(session.user.schoolId)
           ]);
 
           const schoolStudentIds = mockDb.students.filter(s => s.schoolId === session.user.schoolId).map(s => s.id);
@@ -1496,6 +1699,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'assignment_submissions' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homeworks' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'homework_submissions' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'student_marks' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quizzes' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_attempts' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'quiz_results' }, handleAdminSync)
       .subscribe();
 
     // Subscribe to manual broadcast channel for instant, guaranteed real-time updates!
@@ -5957,120 +6166,146 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           {/* 4 Custom CSS Chart Grid */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {/* Chart 1: Attendance */}
-            <GlassCard className="space-y-4">
-              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
-                <span>Student Attendance Ratio</span>
-                <span className="text-[10px] text-green-400 font-mono">Avg: 94.2%</span>
-              </h4>
-              <div className="h-44 flex items-end justify-around gap-2 pt-6 pb-2 border-b border-slate-850">
-                <div className="w-12 flex flex-col items-center gap-2">
-                  <div className="w-full bg-slate-900 rounded-lg h-32 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-brand-600 to-indigo-500 rounded-lg" style={{ height: '96.2%' }} />
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-400">G10-A</span>
-                </div>
-                <div className="w-12 flex flex-col items-center gap-2">
-                  <div className="w-full bg-slate-900 rounded-lg h-32 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-brand-600 to-indigo-500 rounded-lg" style={{ height: '91.8%' }} />
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-400">G11-B</span>
-                </div>
-                <div className="w-12 flex flex-col items-center gap-2">
-                  <div className="w-full bg-slate-900 rounded-lg h-32 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-emerald-600 to-teal-500 rounded-lg" style={{ height: '94.5%' }} />
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-300">SYSTEM</span>
-                </div>
-              </div>
-            </GlassCard>
+            {(() => {
+              const attStats = getAttendanceStats();
+              return (
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                    <span>Student Attendance Ratio</span>
+                    <span className="text-[10px] text-green-400 font-mono">
+                      {attStats ? `Avg: ${attStats.avg.toFixed(1)}%` : 'No data available'}
+                    </span>
+                  </h4>
+                  {!attStats ? (
+                    <div className="h-44 flex items-center justify-center text-slate-500 text-xs italic">
+                      No data available.
+                    </div>
+                  ) : (
+                    <div className="h-44 flex items-end justify-around gap-2 pt-6 pb-2 border-b border-slate-850">
+                      <div className="w-12 flex flex-col items-center gap-2">
+                        <div className="w-full bg-slate-900 rounded-lg h-32 relative overflow-hidden">
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-brand-600 to-indigo-500 rounded-lg transition-all duration-300" style={{ height: `${attStats.g10}%` }} />
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-400">G10-A ({attStats.g10.toFixed(0)}%)</span>
+                      </div>
+                      <div className="w-12 flex flex-col items-center gap-2">
+                        <div className="w-full bg-slate-900 rounded-lg h-32 relative overflow-hidden">
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-brand-600 to-indigo-500 rounded-lg transition-all duration-300" style={{ height: `${attStats.g11}%` }} />
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-400">G11-B ({attStats.g11.toFixed(0)}%)</span>
+                      </div>
+                      <div className="w-12 flex flex-col items-center gap-2">
+                        <div className="w-full bg-slate-900 rounded-lg h-32 relative overflow-hidden">
+                          <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-emerald-600 to-teal-500 rounded-lg transition-all duration-300" style={{ height: `${attStats.system}%` }} />
+                        </div>
+                        <span className="text-[10px] font-mono text-slate-300">SYSTEM ({attStats.system.toFixed(0)}%)</span>
+                      </div>
+                    </div>
+                  )}
+                </GlassCard>
+              );
+            })()}
 
             {/* Chart 2: Fee Collections */}
-            <GlassCard className="space-y-4">
-              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
-                <span>Quarterly Fee Collections Ledger</span>
-                <span className="text-[10px] text-brand-400 font-mono">$2,850.00 Raised</span>
-              </h4>
-              <div className="h-44 flex flex-col justify-center gap-4">
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[11px] text-slate-400">
-                    <span>Tuition Quota Cleared</span>
-                    <span className="font-bold text-slate-200">$1,650.00 (66%)</span>
-                  </div>
-                  <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden">
-                    <div className="h-full w-[66%] bg-gradient-to-r from-brand-600 to-indigo-500 rounded-full" />
-                  </div>
-                </div>
+            {(() => {
+              const feeStats = getFeeStats();
+              return (
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                    <span>Quarterly Fee Collections Ledger</span>
+                    <span className="text-[10px] text-brand-400 font-mono">
+                      {feeStats ? `${overview?.currencySymbol || '$'}${feeStats.raised.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} Raised` : 'No data available'}
+                    </span>
+                  </h4>
+                  {!feeStats ? (
+                    <div className="h-44 flex items-center justify-center text-slate-500 text-xs italic">
+                      No data available.
+                    </div>
+                  ) : (
+                    <div className="h-44 flex flex-col justify-center gap-4">
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[11px] text-slate-400">
+                          <span>Tuition Quota Cleared</span>
+                          <span className="font-bold text-slate-200">{overview?.currencySymbol || '$'}{feeStats.collected.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({feeStats.percentage.toFixed(0)}%)</span>
+                        </div>
+                        <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-brand-600 to-indigo-500 rounded-full transition-all duration-300" style={{ width: `${feeStats.percentage}%` }} />
+                        </div>
+                      </div>
 
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[11px] text-slate-400">
-                    <span>Tuition Quota Pending / Late</span>
-                    <span className="font-bold text-slate-200">$1,200.00 (34%)</span>
-                  </div>
-                  <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden">
-                    <div className="h-full w-[34%] bg-gradient-to-r from-amber-600 to-orange-500 rounded-full" />
-                  </div>
-                </div>
-              </div>
-            </GlassCard>
+                      <div className="space-y-1">
+                        <div className="flex justify-between text-[11px] text-slate-400">
+                          <span>Tuition Quota Pending / Late</span>
+                          <span className="font-bold text-slate-200">{overview?.currencySymbol || '$'}{feeStats.pending.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ({(100 - feeStats.percentage).toFixed(0)}%)</span>
+                        </div>
+                        <div className="h-3 w-full bg-slate-900 rounded-full overflow-hidden">
+                          <div className="h-full bg-gradient-to-r from-amber-600 to-orange-500 rounded-full transition-all duration-300" style={{ width: `${100 - feeStats.percentage}%` }} />
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </GlassCard>
+              );
+            })()}
 
             {/* Chart 3: Homework Completion */}
-            <GlassCard className="space-y-4">
-              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
-                <span>Homework Completion Ratios</span>
-                <span className="text-[10px] text-emerald-400 font-mono">Target: &gt;90%</span>
-              </h4>
-              <div className="space-y-3 pt-2">
-                <div className="flex items-center gap-3">
-                  <span className="text-[11px] text-slate-400 w-24 truncate">Mathematics</span>
-                  <div className="flex-1 h-2 bg-slate-900 rounded-full overflow-hidden">
-                    <div className="h-full bg-brand-500 rounded-full" style={{ width: '92%' }} />
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-300 w-8 text-right">92%</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-[11px] text-slate-400 w-24 truncate">Physics</span>
-                  <div className="flex-1 h-2 bg-slate-900 rounded-full overflow-hidden">
-                    <div className="h-full bg-brand-500 rounded-full" style={{ width: '88%' }} />
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-300 w-8 text-right">88%</span>
-                </div>
-                <div className="flex items-center gap-3">
-                  <span className="text-[11px] text-slate-400 w-24 truncate">Computer Science</span>
-                  <div className="flex-1 h-2 bg-slate-900 rounded-full overflow-hidden">
-                    <div className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full" style={{ width: '95%' }} />
-                  </div>
-                  <span className="text-[10px] font-mono text-slate-300 w-8 text-right">95%</span>
-                </div>
-              </div>
-            </GlassCard>
+            {(() => {
+              const hwStats = getHomeworkStats();
+              return (
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                    <span>Homework Completion Ratios</span>
+                    <span className="text-[10px] text-emerald-400 font-mono">Target: &gt;90%</span>
+                  </h4>
+                  {!hwStats ? (
+                    <div className="h-44 flex items-center justify-center text-slate-500 text-xs italic">
+                      No data available.
+                    </div>
+                  ) : (
+                    <div className="space-y-3 pt-2 h-44 overflow-y-auto">
+                      {hwStats.map((item, idx) => (
+                        <div className="flex items-center gap-3 animate-fade-in" key={idx}>
+                          <span className="text-[11px] text-slate-400 w-24 truncate">{item.subjectName}</span>
+                          <div className="flex-1 h-2 bg-slate-900 rounded-full overflow-hidden">
+                            <div className="h-full bg-brand-500 rounded-full transition-all duration-300" style={{ width: `${item.completedPct}%` }} />
+                          </div>
+                          <span className="text-[10px] font-mono text-slate-300 w-8 text-right">{item.completedPct.toFixed(0)}%</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </GlassCard>
+              );
+            })()}
 
             {/* Chart 4: Subject Averages */}
-            <GlassCard className="space-y-4">
-              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
-                <span>Institutional Grade Averages</span>
-                <span className="text-[10px] text-indigo-400 font-mono">Term 1 Exam</span>
-              </h4>
-              <div className="h-44 flex items-end justify-around gap-4 pt-6 pb-2 border-b border-slate-850">
-                <div className="w-8 flex flex-col items-center gap-1.5">
-                  <div className="w-full bg-slate-900 rounded-t h-32 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-brand-500/80" style={{ height: '84.5%' }} />
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-500">MATH</span>
-                </div>
-                <div className="w-8 flex flex-col items-center gap-1.5">
-                  <div className="w-full bg-slate-900 rounded-t h-32 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-brand-500/80" style={{ height: '79.2%' }} />
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-500">PHYS</span>
-                </div>
-                <div className="w-8 flex flex-col items-center gap-1.5">
-                  <div className="w-full bg-slate-900 rounded-t h-32 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-indigo-500/80" style={{ height: '88.1%' }} />
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-500">CS</span>
-                </div>
-              </div>
-            </GlassCard>
+            {(() => {
+              const gradeStats = getGradeStats();
+              return (
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                    <span>Institutional Grade Averages</span>
+                    <span className="text-[10px] text-indigo-400 font-mono">Exam Assessment Marks</span>
+                  </h4>
+                  {!gradeStats ? (
+                    <div className="h-44 flex items-center justify-center text-slate-500 text-xs italic">
+                      No data available.
+                    </div>
+                  ) : (
+                    <div className="h-44 flex items-end justify-around gap-4 pt-6 pb-2 border-b border-slate-850 overflow-x-auto">
+                      {gradeStats.map((item, idx) => (
+                        <div className="w-8 flex flex-col items-center gap-1.5 animate-fade-in" key={idx}>
+                          <div className="w-full bg-slate-900 rounded-t h-32 relative overflow-hidden">
+                            <div className="absolute bottom-0 left-0 right-0 bg-brand-500/80 transition-all duration-300" style={{ height: `${item.average}%` }} />
+                          </div>
+                          <span className="text-[9px] font-mono text-slate-500" title={item.subjectCode}>{item.subjectCode} ({item.average.toFixed(0)})</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </GlassCard>
+              );
+            })()}
           </div>
 
           {/* Export Center */}
