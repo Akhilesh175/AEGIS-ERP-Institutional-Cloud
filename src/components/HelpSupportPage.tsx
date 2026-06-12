@@ -19,7 +19,7 @@ export const HelpSupportPage: React.FC = () => {
   const userRole = session?.user?.role || 'STUDENT';
   const isSuperAdmin = userRole === 'SUPER_ADMIN';
   const isAdmin = userRole === 'ADMIN';
-  const isAdminOrSuperAdmin = isSuperAdmin || isAdmin;
+  const isAdminOrSuperAdmin = isSuperAdmin;
 
   // Navigation Sub-tabs
   const [activeSubTab, setActiveSubTab] = useState<'kb' | 'new-request' | 'status' | 'history' | 'notifications' | 'bugs'>('kb');

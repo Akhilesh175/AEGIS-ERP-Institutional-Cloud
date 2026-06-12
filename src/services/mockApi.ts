@@ -13842,11 +13842,8 @@ export const mockApi = {
 
       if (activeUser.role === 'SUPER_ADMIN') {
         // Fetch all tickets globally
-      } else if (activeUser.role === 'ADMIN') {
-        // Fetch tickets belonging to this school
-        query = query.eq('school_id', schoolId);
       } else {
-        // Users fetch their own tickets
+        // School Admin (ADMIN) and all other users fetch their own tickets only
         query = query.eq('user_id', activeUser.id);
       }
 
@@ -13858,7 +13855,7 @@ export const mockApi = {
           ticketNumber: t.ticket_number,
           schoolId: t.school_id,
           userId: t.user_id,
-          userRole: t.user_role,
+          userRole: t.user_role === 'SCHOOL_ADMIN' ? 'ADMIN' : t.user_role,
           category: t.category,
           priority: t.priority,
           subject: t.subject,
@@ -13891,8 +13888,6 @@ export const mockApi = {
     let localList = [...mockDb.supportTickets];
     if (activeUser.role === 'SUPER_ADMIN') {
       // return all
-    } else if (activeUser.role === 'ADMIN') {
-      localList = localList.filter(t => t.schoolId === schoolId);
     } else {
       localList = localList.filter(t => t.userId === activeUser.id);
     }
@@ -13927,7 +13922,7 @@ export const mockApi = {
         .insert({
           school_id: validSchoolId,
           user_id: activeUser.id,
-          user_role: activeUser.role,
+          user_role: activeUser.role === 'ADMIN' ? 'SCHOOL_ADMIN' : activeUser.role,
           category,
           priority,
           subject,
@@ -13947,7 +13942,7 @@ export const mockApi = {
           ticketNumber: data.ticket_number,
           schoolId: data.school_id,
           userId: data.user_id,
-          userRole: data.user_role,
+          userRole: data.user_role === 'SCHOOL_ADMIN' ? 'ADMIN' : data.user_role,
           category: data.category,
           priority: data.priority,
           subject: data.subject,
@@ -14295,8 +14290,6 @@ export const mockApi = {
 
       if (activeUser.role === 'SUPER_ADMIN') {
         // Fetch all bug reports globally
-      } else if (activeUser.role === 'ADMIN') {
-        query = query.eq('school_id', schoolId);
       } else {
         query = query.eq('user_id', activeUser.id);
       }
@@ -14334,8 +14327,6 @@ export const mockApi = {
     let localList = [...mockDb.bugReports];
     if (activeUser.role === 'SUPER_ADMIN') {
       // return all
-    } else if (activeUser.role === 'ADMIN') {
-      localList = localList.filter(b => b.schoolId === schoolId);
     } else {
       localList = localList.filter(b => b.userId === activeUser.id);
     }
