@@ -13838,7 +13838,7 @@ export const mockApi = {
     try {
       let query = supabaseAdmin
         .from('support_tickets')
-        .select('*, userDetails:users(*), schoolDetails:schools(name), messages:support_ticket_messages(count)');
+        .select('*, userDetails:users!support_tickets_user_id_fkey(*), schoolDetails:schools(name), messages:support_ticket_messages(count)');
 
       if (activeUser.role === 'SUPER_ADMIN') {
         // Fetch all tickets globally
@@ -13916,6 +13916,8 @@ export const mockApi = {
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const validSchoolId = isUUID(schoolId) ? schoolId : null;
 
+    const ticketNumber = 'TKT-' + Date.now().toString().slice(-6) + Math.floor(10 + Math.random() * 90);
+
     try {
       const { error, data } = await supabaseAdmin
         .from('support_tickets')
@@ -13928,7 +13930,8 @@ export const mockApi = {
           subject,
           description,
           status: 'OPEN',
-          attachment_url: attachmentUrl || null
+          attachment_url: attachmentUrl || null,
+          ticket_number: ticketNumber
         })
         .select()
         .single();
@@ -13969,12 +13972,19 @@ export const mockApi = {
           .select('id')
           .eq('role', 'SUPER_ADMIN');
 
+        const { data: dbUser } = await supabaseAdmin
+          .from('users')
+          .select('first_name, last_name')
+          .eq('id', activeUser.id)
+          .single();
+        const requesterName = dbUser ? `${dbUser.first_name} ${dbUser.last_name}` : (userDetails ? `${userDetails.firstName} ${userDetails.lastName}` : 'System User');
+
         if (superAdmins && superAdmins.length > 0) {
           const notifInserts = superAdmins.map((admin: any) => ({
             user_id: admin.id,
             ticket_id: data.id,
             title: `New Support Request (${data.ticket_number})`,
-            message: `A new ticket has been opened by ${userDetails?.firstName || ''} ${userDetails?.lastName || ''} (${activeUser.role}): "${subject.substring(0, 40)}..."`
+            message: `A new ticket has been opened by ${requesterName} (${activeUser.role}): "${subject.substring(0, 40)}..."`
           }));
           await supabaseAdmin.from('support_notifications').insert(notifInserts);
         }
@@ -13986,15 +13996,14 @@ export const mockApi = {
       console.warn('Failed to create ticket on Supabase. Saving to local mockDb cache:', err);
     }
 
-    // Local DB Cache Fallback
     const mockId = 'stk-' + Math.random().toString(36).substring(2, 9);
-    const ticketNumber = 'TKT-' + (1001 + mockDb.supportTickets.length).toString();
+    const fallbackTicketNumber = 'TKT-' + (1001 + mockDb.supportTickets.length).toString();
     const userDetails = mockDb.users.find(u => u.id === activeUser.id);
     const schoolDetails = mockDb.schools.find(s => s.id === validSchoolId);
     
     mockDb.supportTickets.unshift({
       id: mockId,
-      ticketNumber,
+      ticketNumber: fallbackTicketNumber,
       schoolId: validSchoolId || undefined,
       userId: activeUser.id,
       userRole: activeUser.role,
@@ -14061,14 +14070,18 @@ export const mockApi = {
         });
 
       // Send status change notification to ticket creator
-      const ticket = mockDb.supportTickets.find(t => t.id === ticketId);
-      if (ticket) {
+      const { data: ticketData } = await supabaseAdmin
+        .from('support_tickets')
+        .select('user_id, ticket_number')
+        .eq('id', ticketId)
+        .single();
+      if (ticketData) {
         await supabaseAdmin
           .from('support_notifications')
           .insert({
-            user_id: ticket.userId,
+            user_id: ticketData.user_id,
             ticket_id: ticketId,
-            title: `Ticket Status Changed (${ticket.ticketNumber})`,
+            title: `Ticket Status Changed (${ticketData.ticket_number})`,
             message: `Your support request status has been updated from ${oldStatus} to ${newStatus}.`
           });
       }
@@ -14183,12 +14196,17 @@ export const mockApi = {
         .eq('id', ticketId);
 
       // Trigger notification dispatch
-      const ticket = mockDb.supportTickets.find(t => t.id === ticketId);
-      if (ticket) {
+      const { data: ticketData } = await supabaseAdmin
+        .from('support_tickets')
+        .select('user_id, assigned_to, ticket_number')
+        .eq('id', ticketId)
+        .single();
+
+      if (ticketData) {
         // If message is not from owner, notify owner. If from owner, notify the assigned agent/Super Admin
-        const targetUserId = ticket.userId === activeUser.id 
-          ? (ticket.assignedTo || '00000000-0000-0000-0000-000000000000') // Super Admin fallback
-          : ticket.userId;
+        const targetUserId = ticketData.user_id === activeUser.id 
+          ? (ticketData.assigned_to || '00000000-0000-0000-0000-000000000000') // Super Admin fallback
+          : ticketData.user_id;
 
         if (targetUserId && targetUserId !== '00000000-0000-0000-0000-000000000000') {
           await supabaseAdmin
@@ -14196,10 +14214,10 @@ export const mockApi = {
             .insert({
               user_id: targetUserId,
               ticket_id: ticketId,
-              title: `New Reply on Ticket ${ticket.ticketNumber}`,
+              title: `New Reply on Ticket ${ticketData.ticket_number}`,
               message: `${activeUser.role === 'SUPER_ADMIN' ? 'Support Helpdesk' : 'User'} replied: "${message.substring(0, 40)}..."`
             });
-        } else if (ticket.userId === activeUser.id) {
+        } else if (ticketData.user_id === activeUser.id) {
           // Notify all Super Admins
           const { data: superAdmins } = await supabaseAdmin
             .from('users')
@@ -14209,7 +14227,7 @@ export const mockApi = {
             const notifs = superAdmins.map((admin: any) => ({
               user_id: admin.id,
               ticket_id: ticketId,
-              title: `New Reply on Ticket ${ticket.ticketNumber}`,
+              title: `New Reply on Ticket ${ticketData.ticket_number}`,
               message: `User replied: "${message.substring(0, 40)}..."`
             }));
             await supabaseAdmin.from('support_notifications').insert(notifs);
