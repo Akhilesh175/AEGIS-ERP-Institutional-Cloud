@@ -2951,6 +2951,46 @@ export const mockApi = {
           if (idx === -1) mockDb.chatMessages.push(msg);
           else mockDb.chatMessages[idx] = msg;
         });
+
+        // Ensure all message participants are present in mockDb.users so getChatInbox can resolve them
+        const allUserIdsInMessages = new Set<string>();
+        dbMessages.forEach((r: any) => {
+          if (r.sender_id) allUserIdsInMessages.add(r.sender_id);
+          if (r.receiver_id) allUserIdsInMessages.add(r.receiver_id);
+        });
+        allParticipants.forEach((p: any) => {
+          if (p.user_id) allUserIdsInMessages.add(p.user_id);
+        });
+        const missingUserIds = [...allUserIdsInMessages].filter(
+          uid => uid !== userId && !mockDb.users.find(u => u.id === uid)
+        );
+        if (missingUserIds.length > 0) {
+          const { data: missingUsers } = await supabaseAdmin
+            .from('users')
+            .select('*')
+            .in('id', missingUserIds);
+          if (missingUsers) {
+            missingUsers.forEach((r: any) => {
+              const user: User = {
+                id: r.id,
+                email: r.email,
+                role: r.role,
+                firstName: r.first_name,
+                lastName: r.last_name,
+                phone: r.phone || '',
+                avatarUrl: r.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+                isActive: r.is_active,
+                schoolId: r.school_id,
+                createdAt: r.created_at || new Date().toISOString(),
+                updatedAt: r.updated_at || r.created_at || new Date().toISOString()
+              };
+              const idx = mockDb.users.findIndex(u => u.id === user.id);
+              if (idx === -1) mockDb.users.push(user);
+              else mockDb.users[idx] = user;
+            });
+          }
+        }
+
         mockDb.saveAll();
       }
     } catch (e) {
@@ -8815,6 +8855,15 @@ export const mockApi = {
       if (planName !== 'enterprise' && (currentUsr.role as string) !== 'SUPER_ADMIN') {
         return []; // Hide related API data when locked
       }
+      // Sync all dependency data so checkChatAllowed can resolve class/teacher/parent relationships
+      await Promise.all([
+        this.syncStudentsData(currentUsr.schoolId).catch(() => {}),
+        this.syncTeachersData(currentUsr.schoolId).catch(() => {}),
+        this.syncClassesData(currentUsr.schoolId).catch(() => {}),
+        this.syncTeacherClassSubjectMappingsData(currentUsr.schoolId).catch(() => {}),
+        this.syncParentsData(currentUsr.schoolId).catch(() => {}),
+        this.syncParentStudentMappingsData(currentUsr.schoolId).catch(() => {}),
+      ]);
     }
 
     await this.syncChatMessagesData(userId);
@@ -8878,9 +8927,16 @@ export const mockApi = {
         mockDb.saveAll();
       }
     } else if (currentUsr.schoolId) {
-      await this.syncUsersData(currentUsr.schoolId);
-      await this.syncStudentsData(currentUsr.schoolId).catch(() => {});
-      await this.syncTeachersData(currentUsr.schoolId).catch(() => {});
+      // Sync all dependency data so checkChatAllowed can resolve class/teacher/parent relationships
+      await Promise.all([
+        this.syncUsersData(currentUsr.schoolId),
+        this.syncStudentsData(currentUsr.schoolId).catch(() => {}),
+        this.syncTeachersData(currentUsr.schoolId).catch(() => {}),
+        this.syncClassesData(currentUsr.schoolId).catch(() => {}),
+        this.syncTeacherClassSubjectMappingsData(currentUsr.schoolId).catch(() => {}),
+        this.syncParentsData(currentUsr.schoolId).catch(() => {}),
+        this.syncParentStudentMappingsData(currentUsr.schoolId).catch(() => {}),
+      ]);
     }
 
     return mockDb.users.filter(u => checkChatAllowed(currentUsr, u));
@@ -9002,16 +9058,19 @@ export const mockApi = {
       }
     }
 
-    const schoolId = sender.schoolId || receiver.schoolId;
+    // schoolId: prefer receiver's schoolId for Super Admin who has no school
+    const schoolId = sender.schoolId || receiver.schoolId || null;
     if (!channelId) {
-      // Create channel
+      // Create channel — school_id may be null for Super Admin ↔ Admin cross-school channels
+      const channelInsertPayload: Record<string, any> = {
+        channel_type: 'DIRECT',
+        created_by: senderId
+      };
+      if (schoolId) channelInsertPayload.school_id = schoolId;
+
       const { data: newChannel, error: newChError } = await supabaseAdmin
         .from('communication_channels')
-        .insert({
-          school_id: schoolId,
-          channel_type: 'DIRECT',
-          created_by: senderId
-        })
+        .insert(channelInsertPayload)
         .select()
         .single();
 
@@ -9034,20 +9093,23 @@ export const mockApi = {
       }
     }
 
+    // Insert message — school_id may be null for Super Admin channels
+    const msgInsertPayload: Record<string, any> = {
+      channel_id: channelId,
+      sender_id: senderId,
+      sender_role: sender.role,
+      receiver_id: receiverId,
+      receiver_role: receiver.role,
+      message_content: message,
+      is_read: false,
+      read_status: false
+    };
+    if (schoolId) msgInsertPayload.school_id = schoolId;
+
     // Insert message into communication_messages
     const { data: r, error } = await supabaseAdmin
       .from('communication_messages')
-      .insert([{
-        channel_id: channelId,
-        sender_id: senderId,
-        sender_role: sender.role,
-        receiver_id: receiverId,
-        receiver_role: receiver.role,
-        message_content: message,
-        is_read: false,
-        read_status: false,
-        school_id: schoolId
-      }])
+      .insert([msgInsertPayload])
       .select()
       .single();
 
