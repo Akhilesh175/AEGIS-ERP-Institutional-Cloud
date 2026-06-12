@@ -1,6 +1,6 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+import admin from 'firebase-admin';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || '';
@@ -9,46 +9,45 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
   auth: { autoRefreshToken: false, persistSession: false }
 });
 
-// Exchange Google Service Account keys for a Firebase Messaging OAuth Access Token
-function getGoogleAccessToken(serviceAccount: any): Promise<string> {
-  return new Promise((resolve, reject) => {
-    try {
-      const jwtHeader = Buffer.from(JSON.stringify({ alg: 'RS256', typ: 'JWT' })).toString('base64url');
-      const now = Math.floor(Date.now() / 1000);
-      const jwtClaim = Buffer.from(JSON.stringify({
-        iss: serviceAccount.client_email,
-        scope: 'https://www.googleapis.com/auth/firebase.messaging',
-        aud: 'https://oauth2.googleapis.com/token',
-        exp: now + 3600,
-        iat: now
-      })).toString('base64url');
+// Helper to safely format private key
+function getPrivateKey(key: string) {
+  if (!key) return '';
+  return key.replace(/\\n/g, '\n');
+}
 
-      const sign = crypto.createSign('RSA-SHA256');
-      sign.update(`${jwtHeader}.${jwtClaim}`);
-      const signature = sign.sign(serviceAccount.private_key, 'base64url');
-      const jwt = `${jwtHeader}.${jwtClaim}.${signature}`;
-
-      fetch('https://oauth2.googleapis.com/token', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-        body: new URLSearchParams({
-          grant_type: 'urn:ietf:params:oauth:grant-type:jwt-bearer',
-          assertion: jwt
-        })
-      })
-      .then(res => res.json())
-      .then(data => {
-        if (data.access_token) {
-          resolve(data.access_token);
-        } else {
-          reject(new Error(data.error_description || 'OAuth token exchange failed'));
-        }
-      })
-      .catch(reject);
-    } catch (err) {
-      reject(err);
+// Initialize Firebase Admin SDK
+if (!admin.apps.length) {
+  try {
+    let credentialCert: admin.ServiceAccount | null = null;
+    
+    const serviceAccountStr = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
+    if (serviceAccountStr) {
+      credentialCert = JSON.parse(serviceAccountStr);
+    } else {
+      const projectId = process.env.FIREBASE_PROJECT_ID;
+      const clientEmail = process.env.FIREBASE_CLIENT_EMAIL;
+      const privateKey = process.env.FIREBASE_PRIVATE_KEY;
+      
+      if (projectId && clientEmail && privateKey) {
+        credentialCert = {
+          projectId,
+          clientEmail,
+          privateKey: getPrivateKey(privateKey)
+        };
+      }
     }
-  });
+
+    if (credentialCert) {
+      admin.initializeApp({
+        credential: admin.credential.cert(credentialCert)
+      });
+      console.log('Firebase Admin SDK initialized successfully.');
+    } else {
+      console.warn('Firebase Admin credentials missing from environment variables.');
+    }
+  } catch (err: any) {
+    console.error('Error initializing Firebase Admin SDK:', err.message);
+  }
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -123,61 +122,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const tokensList = tokensData?.map(t => t.token) || [];
 
     // 4. Send FCM Push Messages if tokens exist
-    let pushResult = { sentCount: 0, mockMode: true };
+    let pushResult = { sentCount: 0, failedCount: 0, success: false };
 
     if (tokensList.length > 0) {
-      const serviceAccountStr = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
-      
-      if (serviceAccountStr) {
+      if (admin.apps.length > 0) {
         try {
-          const serviceAccount = JSON.parse(serviceAccountStr);
-          const accessToken = await getGoogleAccessToken(serviceAccount);
-          const fcmUrl = `https://fcm.googleapis.com/v1/projects/${serviceAccount.project_id}/messages:send`;
-          
-          let successCount = 0;
+          const messages = tokensList.map(token => ({
+            token,
+            notification: { title, body: content },
+            data: { schoolId, type, title, content }
+          }));
 
-          // Dispatch to each token
-          for (const token of tokensList) {
-            const fcmRes = await fetch(fcmUrl, {
-              method: 'POST',
-              headers: {
-                'Authorization': `Bearer ${accessToken}`,
-                'Content-Type': 'application/json'
-              },
-              body: JSON.stringify({
-                message: {
-                  token,
-                  notification: { title, body: content },
-                  data: { schoolId, type, title, content }
-                }
-              })
-            });
-
-            if (fcmRes.ok) {
-              successCount++;
-            } else {
-              const errBody = await fcmRes.json().catch(() => ({}));
-              console.warn(`Failed to dispatch FCM push to token. Response:`, errBody);
-            }
-          }
-
-          pushResult = { sentCount: successCount, mockMode: false };
+          const response = await admin.messaging().sendEach(messages);
+          pushResult = {
+            sentCount: response.successCount,
+            failedCount: response.failureCount,
+            success: true
+          };
+          console.log(`Successfully dispatched FCM push: ${response.successCount} sent, ${response.failureCount} failed.`);
         } catch (fcmError: any) {
-          console.error('Firebase serverless OAuth/FCM dispatch error:', fcmError.message);
-          // Fall back gracefully to mock log
-          pushResult = { sentCount: tokensList.length, mockMode: true };
+          console.error('Firebase Admin SDK messaging send error:', fcmError.message);
+          throw fcmError;
         }
       } else {
-        // Fall back gracefully to mock log
-        pushResult = { sentCount: tokensList.length, mockMode: true };
-        console.log(`[FCM Mock Broadcast] Sent: "${title}" to tokens:`, tokensList);
+        return res.status(500).json({ error: 'Firebase Admin credentials are not configured on this Vercel deployment.' });
       }
     }
 
     return res.status(200).json({
       success: true,
       insertedCount: targetUserIds.length,
-      fcmBroadcase: pushResult
+      fcmBroadcast: pushResult
     });
   } catch (err: any) {
     console.error('Failed to dispatch notifications:', err.message);
