@@ -9,7 +9,8 @@ import {
   Hostel, HostelBlock, HostelRoom, HostelBed, HostelWarden, HostelAdmission,
   HostelAttendance, HostelLeaveRequest, HostelVisitor, HostelComplaint,
   HostelFee, HostelPayment, HostelMessMenu,
-  SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport
+  SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport,
+  SupportTicketMessage, SupportTicketStatusLog, SupportNotification
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
@@ -13837,15 +13838,15 @@ export const mockApi = {
     try {
       let query = supabaseAdmin
         .from('support_tickets')
-        .select('*, userDetails:users(*)');
+        .select('*, userDetails:users(*), schoolDetails:schools(name), messages:support_ticket_messages(count)');
 
       if (activeUser.role === 'SUPER_ADMIN') {
-        // Global tickets
+        // Fetch all tickets globally
       } else if (activeUser.role === 'ADMIN') {
-        // School-specific tickets
+        // Fetch tickets belonging to this school
         query = query.eq('school_id', schoolId);
       } else {
-        // Own tickets
+        // Users fetch their own tickets
         query = query.eq('user_id', activeUser.id);
       }
 
@@ -13854,15 +13855,17 @@ export const mockApi = {
       if (data) {
         const mapped = data.map((t: any) => ({
           id: t.id,
+          ticketNumber: t.ticket_number,
           schoolId: t.school_id,
           userId: t.user_id,
           userRole: t.user_role,
-          title: t.title,
-          description: t.description,
           category: t.category,
           priority: t.priority,
-          status: t.status,
+          subject: t.subject,
+          description: t.description,
           attachmentUrl: t.attachment_url,
+          status: t.status,
+          assignedTo: t.assigned_to,
           createdAt: t.created_at,
           updatedAt: t.updated_at,
           userDetails: t.userDetails ? {
@@ -13871,7 +13874,9 @@ export const mockApi = {
             firstName: t.userDetails.first_name,
             lastName: t.userDetails.last_name,
             avatarUrl: t.userDetails.avatar_url
-          } : null
+          } : null,
+          schoolName: t.schoolDetails?.name || undefined,
+          replyCount: t.messages?.[0]?.count || 0
         }));
 
         mockDb.supportTickets = mapped;
@@ -13882,18 +13887,29 @@ export const mockApi = {
       console.warn('Failed to fetch support tickets from Supabase. Falling back to local cache:', err);
     }
 
+    // Local DB Cache Fetch
+    let localList = [...mockDb.supportTickets];
     if (activeUser.role === 'SUPER_ADMIN') {
-      return mockDb.supportTickets;
+      // return all
     } else if (activeUser.role === 'ADMIN') {
-      return mockDb.supportTickets.filter(t => t.schoolId === schoolId);
+      localList = localList.filter(t => t.schoolId === schoolId);
     } else {
-      return mockDb.supportTickets.filter(t => t.userId === activeUser.id);
+      localList = localList.filter(t => t.userId === activeUser.id);
     }
+
+    return localList.map(t => {
+      const school = mockDb.schools.find(s => s.id === t.schoolId);
+      return {
+        ...t,
+        schoolName: school?.name || undefined,
+        replyCount: mockDb.supportTicketMessages.filter(m => m.ticketId === t.id).length
+      };
+    });
   },
 
   async createSupportTicket(
     schoolId: string,
-    title: string,
+    subject: string,
     description: string,
     category: string,
     priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
@@ -13912,10 +13928,10 @@ export const mockApi = {
           school_id: validSchoolId,
           user_id: activeUser.id,
           user_role: activeUser.role,
-          title,
-          description,
           category,
           priority,
+          subject,
+          description,
           status: 'OPEN',
           attachment_url: attachmentUrl || null
         })
@@ -13925,17 +13941,20 @@ export const mockApi = {
       if (error) throw error;
       if (data) {
         const userDetails = mockDb.users.find(u => u.id === activeUser.id);
+        const schoolDetails = mockDb.schools.find(s => s.id === validSchoolId);
         mockDb.supportTickets.unshift({
           id: data.id,
+          ticketNumber: data.ticket_number,
           schoolId: data.school_id,
           userId: data.user_id,
           userRole: data.user_role,
-          title: data.title,
-          description: data.description,
           category: data.category,
           priority: data.priority,
+          subject: data.subject,
+          description: data.description,
           status: data.status,
           attachmentUrl: data.attachment_url,
+          assignedTo: data.assigned_to,
           createdAt: data.created_at,
           updatedAt: data.updated_at,
           userDetails: userDetails ? {
@@ -13944,26 +13963,33 @@ export const mockApi = {
             firstName: userDetails.firstName,
             lastName: userDetails.lastName,
             avatarUrl: userDetails.avatarUrl
-          } : null
+          } : null,
+          schoolName: schoolDetails?.name || undefined,
+          replyCount: 0
         });
         mockDb.saveAll();
         return;
       }
     } catch (err) {
-      console.warn('Failed to create ticket on Supabase. Saving to local mockDb cache only:', err);
+      console.warn('Failed to create ticket on Supabase. Saving to local mockDb cache:', err);
     }
 
+    // Local DB Cache Fallback
     const mockId = 'stk-' + Math.random().toString(36).substring(2, 9);
+    const ticketNumber = 'TKT-' + (1001 + mockDb.supportTickets.length).toString();
     const userDetails = mockDb.users.find(u => u.id === activeUser.id);
+    const schoolDetails = mockDb.schools.find(s => s.id === validSchoolId);
+    
     mockDb.supportTickets.unshift({
       id: mockId,
+      ticketNumber,
       schoolId: validSchoolId || undefined,
       userId: activeUser.id,
       userRole: activeUser.role,
-      title,
-      description,
       category,
       priority,
+      subject,
+      description,
       status: 'OPEN',
       attachmentUrl,
       createdAt: new Date().toISOString(),
@@ -13974,38 +14000,367 @@ export const mockApi = {
         firstName: userDetails.firstName,
         lastName: userDetails.lastName,
         avatarUrl: userDetails.avatarUrl
-      } : null
+      } : null,
+      schoolName: schoolDetails?.name || undefined,
+      replyCount: 0
     });
     mockDb.saveAll();
   },
 
-  async updateSupportTicketStatus(ticketId: string, status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'): Promise<void> {
+  async updateSupportTicketStatus(
+    ticketId: string, 
+    oldStatus: string, 
+    newStatus: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'
+  ): Promise<void> {
+    const activeUser = getActiveUser();
+    if (!activeUser) throw new Error('Unauthenticated');
+
+    try {
+      // Update ticket status
+      const { error } = await supabaseAdmin
+        .from('support_tickets')
+        .update({ status: newStatus, updated_at: new Date().toISOString() })
+        .eq('id', ticketId);
+
+      if (error) throw error;
+
+      // Log status changes
+      await supabaseAdmin
+        .from('support_ticket_status_logs')
+        .insert({
+          ticket_id: ticketId,
+          old_status: oldStatus,
+          new_status: newStatus,
+          changed_by: activeUser.id
+        });
+
+      // Send status change notification to ticket creator
+      const ticket = mockDb.supportTickets.find(t => t.id === ticketId);
+      if (ticket) {
+        await supabaseAdmin
+          .from('support_notifications')
+          .insert({
+            user_id: ticket.userId,
+            ticket_id: ticketId,
+            title: `Ticket Status Changed (${ticket.ticketNumber})`,
+            message: `Your support request status has been updated from ${oldStatus} to ${newStatus}.`
+          });
+      }
+    } catch (err) {
+      console.warn('Failed to update status on Supabase. Falling back to local cache:', err);
+    }
+
+    // Local DB Cache Update
+    const t = mockDb.supportTickets.find(x => x.id === ticketId);
+    if (t) {
+      t.status = newStatus;
+      t.updatedAt = new Date().toISOString();
+
+      mockDb.supportTicketStatusLogs.push({
+        id: 'log-' + Math.random().toString(36).substring(2, 9),
+        ticketId,
+        oldStatus,
+        newStatus,
+        changedBy: activeUser.id,
+        changedAt: new Date().toISOString()
+      });
+
+      mockDb.supportNotifications.push({
+        id: 'notif-' + Math.random().toString(36).substring(2, 9),
+        userId: t.userId,
+        ticketId,
+        title: `Ticket Status Changed (${t.ticketNumber})`,
+        message: `Your support request status has been updated from ${oldStatus} to ${newStatus}.`,
+        isRead: false,
+        createdAt: new Date().toISOString()
+      });
+
+      mockDb.saveAll();
+    }
+  },
+
+  async fetchTicketMessages(ticketId: string): Promise<SupportTicketMessage[]> {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('support_ticket_messages')
+        .select('*, senderDetails:users(*)')
+        .eq('ticket_id', ticketId)
+        .order('created_at', { ascending: true });
+
+      if (error) throw error;
+      if (data) {
+        const mapped = data.map((m: any) => ({
+          id: m.id,
+          ticketId: m.ticket_id,
+          senderId: m.sender_id,
+          senderRole: m.sender_role,
+          message: m.message,
+          attachmentUrl: m.attachment_url,
+          createdAt: m.created_at,
+          senderDetails: m.senderDetails ? {
+            firstName: m.senderDetails.first_name,
+            lastName: m.senderDetails.last_name,
+            avatarUrl: m.senderDetails.avatar_url
+          } : null
+        }));
+
+        // Cache message locally
+        mockDb.supportTicketMessages = [
+          ...mockDb.supportTicketMessages.filter(msg => msg.ticketId !== ticketId),
+          ...mapped
+        ];
+        mockDb.saveAll();
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch ticket messages from Supabase:', err);
+    }
+
+    // Local mock DB lookup
+    return mockDb.supportTicketMessages
+      .filter(m => m.ticketId === ticketId)
+      .map(m => {
+        const sender = mockDb.users.find(u => u.id === m.senderId);
+        return {
+          ...m,
+          senderDetails: sender ? {
+            firstName: sender.firstName,
+            lastName: sender.lastName,
+            avatarUrl: sender.avatarUrl
+          } : null
+        };
+      })
+      .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
+  },
+
+  async sendTicketMessage(ticketId: string, message: string, attachmentUrl?: string): Promise<void> {
+    const activeUser = getActiveUser();
+    if (!activeUser) throw new Error('Unauthenticated');
+
+    try {
+      const { error } = await supabaseAdmin
+        .from('support_ticket_messages')
+        .insert({
+          ticket_id: ticketId,
+          sender_id: activeUser.id,
+          sender_role: activeUser.role,
+          message,
+          attachment_url: attachmentUrl || null
+        });
+
+      if (error) throw error;
+
+      // Update support ticket update time
+      await supabaseAdmin
+        .from('support_tickets')
+        .update({ updated_at: new Date().toISOString() })
+        .eq('id', ticketId);
+
+      // Trigger notification dispatch
+      const ticket = mockDb.supportTickets.find(t => t.id === ticketId);
+      if (ticket) {
+        // If message is not from owner, notify owner. If from owner, notify the assigned agent/Super Admin
+        const targetUserId = ticket.userId === activeUser.id 
+          ? (ticket.assignedTo || '00000000-0000-0000-0000-000000000000') // Super Admin fallback
+          : ticket.userId;
+
+        if (targetUserId && targetUserId !== '00000000-0000-0000-0000-000000000000') {
+          await supabaseAdmin
+            .from('support_notifications')
+            .insert({
+              user_id: targetUserId,
+              ticket_id: ticketId,
+              title: `New Reply on Ticket ${ticket.ticketNumber}`,
+              message: `${activeUser.role === 'SUPER_ADMIN' ? 'Support Helpdesk' : 'User'} replied: "${message.substring(0, 40)}..."`
+            });
+        }
+      }
+    } catch (err) {
+      console.warn('Failed to insert ticket message on Supabase. Saving locally:', err);
+    }
+
+    // Local DB Cache Update
+    const mockMsgId = 'msg-' + Math.random().toString(36).substring(2, 9);
+    const newMsg: SupportTicketMessage = {
+      id: mockMsgId,
+      ticketId,
+      senderId: activeUser.id,
+      senderRole: activeUser.role,
+      message,
+      attachmentUrl,
+      createdAt: new Date().toISOString()
+    };
+    mockDb.supportTicketMessages.push(newMsg);
+
+    const t = mockDb.supportTickets.find(x => x.id === ticketId);
+    if (t) {
+      t.updatedAt = new Date().toISOString();
+
+      const targetUserId = t.userId === activeUser.id ? (t.assignedTo || 'admin') : t.userId;
+      mockDb.supportNotifications.push({
+        id: 'notif-' + Math.random().toString(36).substring(2, 9),
+        userId: targetUserId,
+        ticketId,
+        title: `New Reply on Ticket ${t.ticketNumber}`,
+        message: `${activeUser.role === 'SUPER_ADMIN' ? 'Support Helpdesk' : 'User'} replied: "${message.substring(0, 40)}..."`,
+        isRead: false,
+        createdAt: new Date().toISOString()
+      });
+    }
+    mockDb.saveAll();
+  },
+
+  async assignTicket(ticketId: string, assignedToUserId: string | null): Promise<void> {
     try {
       const { error } = await supabaseAdmin
         .from('support_tickets')
-        .update({ status, updated_at: new Date().toISOString() })
+        .update({ assigned_to: assignedToUserId, updated_at: new Date().toISOString() })
         .eq('id', ticketId);
 
       if (error) throw error;
     } catch (err) {
-      console.warn('Failed to update support ticket status on Supabase. Updating local mockDb cache:', err);
+      console.warn('Failed to assign ticket on Supabase:', err);
     }
 
     const t = mockDb.supportTickets.find(x => x.id === ticketId);
     if (t) {
-      t.status = status;
+      t.assignedTo = assignedToUserId;
       t.updatedAt = new Date().toISOString();
       mockDb.saveAll();
     }
   },
 
+  async fetchSupportNotifications(): Promise<SupportNotification[]> {
+    const activeUser = getActiveUser();
+    if (!activeUser) return [];
+
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('support_notifications')
+        .select('*')
+        .eq('user_id', activeUser.id)
+        .eq('is_read', false)
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (data) {
+        const mapped = data.map((n: any) => ({
+          id: n.id,
+          userId: n.user_id,
+          ticketId: n.ticket_id,
+          title: n.title,
+          message: n.message,
+          isRead: n.is_read,
+          createdAt: n.created_at
+        }));
+        
+        mockDb.supportNotifications = mapped;
+        mockDb.saveAll();
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch support notifications from Supabase:', err);
+    }
+
+    return mockDb.supportNotifications.filter(n => n.userId === activeUser.id && !n.isRead);
+  },
+
+  async markSupportNotificationAsRead(notificationId: string): Promise<void> {
+    try {
+      const { error } = await supabaseAdmin
+        .from('support_notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId);
+
+      if (error) throw error;
+    } catch (err) {
+      console.warn('Failed to mark notification read on Supabase:', err);
+    }
+
+    const n = mockDb.supportNotifications.find(x => x.id === notificationId);
+    if (n) {
+      n.isRead = true;
+      mockDb.saveAll();
+    }
+  },
+
+  async fetchBugReports(schoolId: string): Promise<BugReport[]> {
+    const activeUser = getActiveUser();
+    if (!activeUser) return [];
+
+    try {
+      let query = supabaseAdmin
+        .from('bug_reports')
+        .select('*, userDetails:users(*), schoolDetails:schools(name)');
+
+      if (activeUser.role === 'SUPER_ADMIN') {
+        // Fetch all bug reports globally
+      } else if (activeUser.role === 'ADMIN') {
+        query = query.eq('school_id', schoolId);
+      } else {
+        query = query.eq('user_id', activeUser.id);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) {
+        const mapped = data.map((b: any) => ({
+          id: b.id,
+          schoolId: b.school_id,
+          userId: b.user_id,
+          pageUrl: b.page_url,
+          bugTitle: b.bug_title,
+          description: b.description,
+          screenshotUrl: b.screenshot_url,
+          status: b.status,
+          createdAt: b.created_at,
+          userDetails: b.userDetails ? {
+            firstName: b.userDetails.first_name,
+            lastName: b.userDetails.last_name,
+            email: b.userDetails.email
+          } : null,
+          schoolName: b.schoolDetails?.name || undefined
+        }));
+
+        mockDb.bugReports = mapped;
+        mockDb.saveAll();
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch bug reports from Supabase. Falling back to local cache:', err);
+    }
+
+    // Local DB Cache Fetch
+    let localList = [...mockDb.bugReports];
+    if (activeUser.role === 'SUPER_ADMIN') {
+      // return all
+    } else if (activeUser.role === 'ADMIN') {
+      localList = localList.filter(b => b.schoolId === schoolId);
+    } else {
+      localList = localList.filter(b => b.userId === activeUser.id);
+    }
+
+    return localList.map(b => {
+      const user = mockDb.users.find(u => u.id === b.userId);
+      const school = mockDb.schools.find(s => s.id === b.schoolId);
+      return {
+        ...b,
+        userDetails: user ? {
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email
+        } : null,
+        schoolName: school?.name || undefined
+      };
+    });
+  },
+
   async createBugReport(
     schoolId: string,
-    title: string,
+    pageUrl: string,
+    bugTitle: string,
     description: string,
-    stepsToReproduce: string,
-    severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL',
-    attachmentUrl?: string
+    screenshotUrl?: string
   ): Promise<void> {
     const activeUser = getActiveUser();
     if (!activeUser) throw new Error('Unauthenticated');
@@ -14019,54 +14374,51 @@ export const mockApi = {
         .insert({
           school_id: validSchoolId,
           user_id: activeUser.id,
-          user_role: activeUser.role,
-          title,
+          page_url: pageUrl,
+          bug_title: bugTitle,
           description,
-          steps_to_reproduce: stepsToReproduce,
-          severity,
-          status: 'NEW',
-          attachment_url: attachmentUrl || null
+          screenshot_url: screenshotUrl || null,
+          status: 'NEW'
         })
         .select()
         .single();
 
       if (error) throw error;
       if (data) {
+        const schoolDetails = mockDb.schools.find(s => s.id === validSchoolId);
         mockDb.bugReports.unshift({
           id: data.id,
           schoolId: data.school_id,
           userId: data.user_id,
-          userRole: data.user_role,
-          title: data.title,
+          pageUrl: data.page_url,
+          bugTitle: data.bug_title,
           description: data.description,
-          stepsToReproduce: data.steps_to_reproduce,
-          severity: data.severity,
+          screenshotUrl: data.screenshot_url,
           status: data.status,
-          attachmentUrl: data.attachment_url,
           createdAt: data.created_at,
-          updatedAt: data.updated_at
+          schoolName: schoolDetails?.name || undefined
         });
         mockDb.saveAll();
         return;
       }
     } catch (err) {
-      console.warn('Failed to create bug report on Supabase. Saving to local mockDb cache only:', err);
+      console.warn('Failed to create bug report on Supabase:', err);
     }
 
+    // Local DB Cache Fallback
     const mockId = 'bug-' + Math.random().toString(36).substring(2, 9);
+    const schoolDetails = mockDb.schools.find(s => s.id === validSchoolId);
     mockDb.bugReports.unshift({
       id: mockId,
       schoolId: validSchoolId || undefined,
       userId: activeUser.id,
-      userRole: activeUser.role,
-      title,
+      pageUrl,
+      bugTitle,
       description,
-      stepsToReproduce,
-      severity,
+      screenshotUrl,
       status: 'NEW',
-      attachmentUrl,
       createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString()
+      schoolName: schoolDetails?.name || undefined
     });
     mockDb.saveAll();
   },

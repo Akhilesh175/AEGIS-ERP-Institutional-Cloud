@@ -971,15 +971,17 @@ export interface KnowledgeBaseArticle {
 
 export interface SupportTicket {
   id: string;
+  ticketNumber: string;
   schoolId?: string;
   userId: string;
   userRole: string;
-  title: string;
-  description: string;
   category: string;
   priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
-  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+  subject: string;
+  description: string;
   attachmentUrl?: string;
+  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+  assignedTo?: string | null;
   createdAt: string;
   updatedAt: string;
   userDetails?: {
@@ -989,21 +991,60 @@ export interface SupportTicket {
     lastName: string;
     avatarUrl?: string;
   } | null;
+  schoolName?: string;
+  replyCount?: number;
+}
+
+export interface SupportTicketMessage {
+  id: string;
+  ticketId: string;
+  senderId: string;
+  senderRole: string;
+  message: string;
+  attachmentUrl?: string;
+  createdAt: string;
+  senderDetails?: {
+    firstName: string;
+    lastName: string;
+    avatarUrl?: string;
+  } | null;
+}
+
+export interface SupportTicketStatusLog {
+  id: string;
+  ticketId: string;
+  oldStatus: string;
+  newStatus: string;
+  changedBy: string;
+  changedAt: string;
+}
+
+export interface SupportNotification {
+  id: string;
+  userId: string;
+  ticketId: string;
+  title: string;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
 }
 
 export interface BugReport {
   id: string;
   schoolId?: string;
   userId: string;
-  userRole: string;
-  title: string;
+  pageUrl?: string;
+  bugTitle: string;
   description: string;
-  stepsToReproduce?: string;
-  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  screenshotUrl?: string;
   status: 'NEW' | 'INVESTIGATING' | 'FIXED' | 'CLOSED';
-  attachmentUrl?: string;
   createdAt: string;
-  updatedAt: string;
+  userDetails?: {
+    firstName: string;
+    lastName: string;
+    email: string;
+  } | null;
+  schoolName?: string;
 }
 
 

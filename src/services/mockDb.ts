@@ -9,7 +9,8 @@ import {
   Driver, Bus, Route, PickupPoint, TransportAssignment, TransportFeeRecord, VehicleLog,
   MaintenanceLog, DriverAttendance, BookCategory, BookIssue, BookReturn, LibraryFine,
   LibraryInvoice, DigitalLibraryAsset, ExamSubject, StudentMark, ReportCard, ExamResult, QuizResult, DriverSalaryPayout,
-  SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport
+  SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport,
+  SupportTicketMessage, SupportTicketStatusLog, SupportNotification
 } from '../types';
 
 // Storage keys
@@ -513,6 +514,9 @@ class MockDatabase {
   hostelComplaints: any[];
   hostelMessMenu: any[];
   supportTickets: SupportTicket[];
+  supportTicketMessages: SupportTicketMessage[];
+  supportTicketStatusLogs: SupportTicketStatusLog[];
+  supportNotifications: SupportNotification[];
   bugReports: BugReport[];
   systemStatuses: SystemStatus[];
   knowledgeBaseArticles: KnowledgeBaseArticle[];
@@ -616,6 +620,9 @@ class MockDatabase {
     this.hostelComplaints = getStorage<any[]>('hostel_complaints', []);
     this.hostelMessMenu = getStorage<any[]>('hostel_mess_menu', []);
     this.supportTickets = getStorage<SupportTicket[]>('support_tickets', []);
+    this.supportTicketMessages = getStorage<SupportTicketMessage[]>('support_ticket_messages', []);
+    this.supportTicketStatusLogs = getStorage<SupportTicketStatusLog[]>('support_ticket_status_logs', []);
+    this.supportNotifications = getStorage<SupportNotification[]>('support_notifications', []);
     this.bugReports = getStorage<BugReport[]>('bug_reports', []);
     this.systemStatuses = getStorage<SystemStatus[]>('system_statuses', SEED_SYSTEM_STATUSES);
     this.knowledgeBaseArticles = getStorage<KnowledgeBaseArticle[]>('knowledge_base_articles', SEED_KNOWLEDGE_BASE);
@@ -694,6 +701,9 @@ class MockDatabase {
     setStorage('hostel_complaints', this.hostelComplaints);
     setStorage('hostel_mess_menu', this.hostelMessMenu);
     setStorage('support_tickets', this.supportTickets);
+    setStorage('support_ticket_messages', this.supportTicketMessages);
+    setStorage('support_ticket_status_logs', this.supportTicketStatusLogs);
+    setStorage('support_notifications', this.supportNotifications);
     setStorage('bug_reports', this.bugReports);
     setStorage('system_statuses', this.systemStatuses);
     setStorage('knowledge_base_articles', this.knowledgeBaseArticles);
