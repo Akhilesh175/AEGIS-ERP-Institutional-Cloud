@@ -9448,11 +9448,21 @@ export const mockApi = {
   },
 
   async getNotifications(userId: string): Promise<Notification[]> {
-    await delay();
-    return mockDb.notifications.filter(n => n.userId === userId);
+    await this.syncNotificationsData(userId);
+    return mockDb.notifications
+      .filter(n => n.userId === userId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   },
 
   async markNotificationRead(notificationId: string): Promise<void> {
+    try {
+      await supabaseAdmin
+        .from('notifications')
+        .update({ is_read: true })
+        .eq('id', notificationId);
+    } catch (e) {
+      console.error('Failed to mark notification as read in DB:', e);
+    }
     const idx = mockDb.notifications.findIndex(n => n.id === notificationId);
     if (idx !== -1) {
       mockDb.notifications[idx].isRead = true;

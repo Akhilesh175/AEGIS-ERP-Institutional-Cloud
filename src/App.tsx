@@ -9,7 +9,7 @@ import { ParentPortal } from './portals/ParentPortal';
 import { TeacherPortal } from './portals/TeacherPortal';
 import { AdminPortal } from './portals/AdminPortal';
 import { SuperAdminPortal } from './portals/SuperAdminPortal';
-import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff, Building2, GraduationCap, Users, BookOpen, Home, Key, UserCheck, Phone, MessageSquare, Instagram, CheckCircle2, ShieldAlert, Database, Network, Layers, FileText, CheckSquare, HelpCircle, Globe, Laptop, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff, Building2, GraduationCap, Users, BookOpen, Home, Key, UserCheck, Phone, MessageSquare, Instagram, CheckCircle2, ShieldAlert, Database, Network, Layers, FileText, CheckSquare, HelpCircle, Globe, Laptop, ArrowRight, ShieldCheck, Bell } from 'lucide-react';
 import { GlassCard } from './components/GlassCard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
@@ -49,6 +49,57 @@ export const App: React.FC = () => {
   
   // Auth Form states
   const [email, setEmail] = useState('');
+  const [showPushPrompt, setShowPushPrompt] = useState(false);
+
+  useEffect(() => {
+    if (session?.user?.id) {
+      const checkPermissionAndRegister = async () => {
+        if (typeof window !== 'undefined' && 'Notification' in window) {
+          if (Notification.permission === 'granted') {
+            try {
+              const { requestNotificationPermission } = await import('./lib/firebase');
+              await requestNotificationPermission(session.user.id, session.user.role);
+            } catch (err) {
+              console.error('Failed to auto register FCM token:', err);
+            }
+          } else if (Notification.permission === 'default') {
+            const hasPrompted = localStorage.getItem(`aegis_push_prompted_${session.user.id}`);
+            if (!hasPrompted) {
+              setTimeout(() => {
+                setShowPushPrompt(true);
+              }, 4000);
+            }
+          }
+        }
+      };
+      checkPermissionAndRegister();
+    }
+  }, [session]);
+
+  const handleEnablePush = async () => {
+    setShowPushPrompt(false);
+    if (session) {
+      localStorage.setItem(`aegis_push_prompted_${session.user.id}`, 'true');
+      try {
+        const { requestNotificationPermission } = await import('./lib/firebase');
+        const token = await requestNotificationPermission(session.user.id, session.user.role);
+        if (token) {
+          alert('Push notifications enabled successfully!');
+        } else {
+          alert('Failed to configure Push notifications. Please verify browser notification settings.');
+        }
+      } catch (err) {
+        console.error('Failed to enable push notifications:', err);
+      }
+    }
+  };
+
+  const handleLaterPush = () => {
+    setShowPushPrompt(false);
+    if (session) {
+      localStorage.setItem(`aegis_push_prompted_${session.user.id}`, 'true');
+    }
+  };
   const [password, setPassword] = useState('');
   const [rememberMe, setRememberMe] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -1081,6 +1132,38 @@ export const App: React.FC = () => {
 
         </main>
       </div>
+      
+      {/* Push Notification Opt-in Prompt */}
+      {showPushPrompt && (
+        <div className="fixed bottom-6 right-6 z-50 max-w-sm w-full bg-[#0b101d]/95 border border-brand-500/30 rounded-2xl shadow-2xl p-5 backdrop-blur-md animate-slide-up">
+          <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-brand-600 to-indigo-500 rounded-t-2xl" />
+          <div className="flex items-start gap-4">
+            <div className="w-10 h-10 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400 shrink-0">
+              <Bell size={20} className="animate-pulse" />
+            </div>
+            <div className="space-y-1.5 flex-1 min-w-0">
+              <h4 className="font-bold text-xs text-slate-100 uppercase tracking-wider font-mono">Enable Push Alerts</h4>
+              <p className="text-[11px] text-slate-400 leading-normal">
+                Aegis ERP uses Google Cloud Messaging to dispatch Grade Releases, Timetable shifts, and Fee deadlines instantly to your device.
+              </p>
+              <div className="flex items-center gap-3 pt-2">
+                <button
+                  onClick={handleEnablePush}
+                  className="px-3.5 py-1.5 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold text-[10px] rounded-lg border border-brand-400/20 transition-all hover:from-brand-500 hover:to-brand-400 shadow-md shadow-brand-500/15"
+                >
+                  Enable Alerts
+                </button>
+                <button
+                  onClick={handleLaterPush}
+                  className="px-3 py-1.5 bg-slate-900 border border-slate-800 text-slate-400 font-semibold text-[10px] rounded-lg hover:text-slate-200 transition-colors"
+                >
+                  Later
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

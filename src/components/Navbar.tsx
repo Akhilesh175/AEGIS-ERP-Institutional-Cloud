@@ -1,7 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
-import { Notification } from '../types';
+import { supabase } from '../lib/supabase';
+import type { Notification } from '../types';
 import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, User as UserIcon, Shield, Camera, Upload, Trash2, X, Check, Menu, Settings } from 'lucide-react';
 import { ChatDrawer } from './ChatDrawer';
 
@@ -10,7 +11,12 @@ export const Navbar: React.FC = () => {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifyDrop, setShowNotifyDrop] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
-  const [prefPush, setPrefPush] = useState(true);
+  const [prefPush, setPrefPush] = useState(() => {
+    if (typeof window !== 'undefined' && 'Notification' in window) {
+      return Notification.permission === 'granted';
+    }
+    return false;
+  });
   const [prefEmail, setPrefEmail] = useState(true);
   const [prefSMS, setPrefSMS] = useState(false);
   const [showProfileDrop, setShowProfileDrop] = useState(false);
@@ -99,10 +105,60 @@ export const Navbar: React.FC = () => {
   };
 
   useEffect(() => {
+    if (!session?.user?.id) return;
     loadNotifications();
-    const interval = setInterval(loadNotifications, 8000); // Poll notifications
-    return () => clearInterval(interval);
+    
+    // Subscribe to real-time notification changes
+    const channel = supabase
+      .channel(`user-notifications-${session.user.id}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'notifications',
+          filter: `user_id=eq.${session.user.id}`
+        },
+        (payload) => {
+          console.log('Realtime notification received:', payload.new);
+          loadNotifications();
+          
+          if (Notification.permission === 'granted' && document.hidden) {
+            new Notification(payload.new.title, {
+              body: payload.new.content,
+              icon: '/logo.png'
+            });
+          }
+        }
+      )
+      .subscribe();
+
+    const interval = setInterval(loadNotifications, 12000); // Fallback poll
+    return () => {
+      supabase.removeChannel(channel);
+      clearInterval(interval);
+    };
   }, [session]);
+
+  const handlePushToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const checked = e.target.checked;
+    setPrefPush(checked);
+    if (checked && session) {
+      try {
+        const { requestNotificationPermission } = await import('../lib/firebase');
+        const token = await requestNotificationPermission(session.user.id, session.user.role);
+        if (token) {
+          alert('Browser Push Notifications configured successfully!');
+        } else {
+          alert('Failed to configure Push Notifications. Please verify browser permissions.');
+          setPrefPush(false);
+        }
+      } catch (err) {
+        console.error('Failed to register notifications:', err);
+        setPrefPush(false);
+      }
+    }
+  };
 
   const handleNotificationClick = async (id: string) => {
     try {
@@ -224,7 +280,7 @@ export const Navbar: React.FC = () => {
                         <input 
                           type="checkbox" 
                           checked={prefPush} 
-                          onChange={(e) => setPrefPush(e.target.checked)}
+                          onChange={handlePushToggle}
                           className="w-4 h-4 rounded text-brand-600 bg-slate-950 border-slate-800 focus:ring-brand-500 cursor-pointer"
                         />
                       </div>

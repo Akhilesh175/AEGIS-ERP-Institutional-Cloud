@@ -9,7 +9,7 @@ import {
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
   Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Lock, Trash2, AlertTriangle, CheckCircle, AlertCircle, XCircle, Edit, CreditCard,
   Mail, Send, RefreshCw, Play, FileSpreadsheet, FileText, CheckSquare, Sliders, HardDrive, Download, ChevronRight, BarChart2, Clock, Settings, Shield, Search, Activity,
-  Award, BookOpen, Home, UserCheck, UserX, Image, PlusCircle
+  Award, BookOpen, Home, UserCheck, UserX, Image, PlusCircle, Megaphone
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -233,6 +233,60 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     { id: '2', type: 'EMAIL', recipient: 'parent1@aegis.com', template: 'Payment Reminders', status: 'DELIVERED', timestamp: new Date(Date.now() - 7200000).toISOString(), rate: '100%' },
     { id: '3', type: 'SMS', recipient: '+1 (555) 444-2222', template: 'Homework Assigned', status: 'DELIVERED', timestamp: new Date(Date.now() - 12000000).toISOString(), rate: '100%' }
   ]);
+
+  const [broadcastRole, setBroadcastRole] = useState('STUDENT');
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastContent, setBroadcastContent] = useState('');
+  const [broadcastSending, setBroadcastSending] = useState(false);
+
+  const handleBroadcastSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!broadcastTitle.trim() || !broadcastContent.trim() || broadcastSending) return;
+
+    setBroadcastSending(true);
+    try {
+      const targetType = broadcastRole === 'all' ? 'school' : 'role';
+      const targetValue = broadcastRole === 'all' ? '' : broadcastRole;
+
+      const res = await fetch('/api/send-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          schoolId: session?.user?.schoolId || 'school-1',
+          targetType,
+          targetValue,
+          title: broadcastTitle,
+          content: broadcastContent,
+          type: 'ANNOUNCEMENT'
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Failed to dispatch broadcast');
+      }
+
+      alert(`Broadcast successfully sent to ${data.insertedCount || 0} active users!`);
+      setBroadcastTitle('');
+      setBroadcastContent('');
+
+      const newLog = {
+        id: Math.random().toString(),
+        type: 'PUSH',
+        recipient: broadcastRole === 'all' ? 'Entire School' : `Role: ${broadcastRole}`,
+        template: 'BROADCAST ALERT',
+        status: 'DELIVERED',
+        timestamp: new Date().toISOString(),
+        rate: '100%'
+      };
+      setCommLogs(prev => [newLog, ...prev]);
+
+    } catch (err: any) {
+      alert(err.message || 'Error sending broadcast.');
+    } finally {
+      setBroadcastSending(false);
+    }
+  };
 
   // ── Disaster Recovery Backup States ──────────────────
   const [backupPolicy, setBackupPolicy] = useState<'hourly' | 'daily' | 'weekly'>('daily');
@@ -6012,57 +6066,128 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               </form>
             </GlassCard>
 
-            {/* Delivery Stats Summary */}
-            <GlassCard className="space-y-4">
-              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
-                <Sliders className="text-brand-400" size={15} />
-                Simulated Gateway Telemetry
-              </h4>
+            {/* Right Column Stack */}
+            <div className="space-y-6">
+              {/* Custom Role-Based Broadcasts */}
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Megaphone className="text-brand-400" size={15} />
+                  Custom Role-Based Broadcasts
+                </h4>
+                <p className="text-[10px] text-slate-400 leading-normal">
+                  Dispatch instant push notifications and in-app alerts to all users under a specific role simultaneously.
+                </p>
 
-              <div className="space-y-3.5">
-                <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 font-semibold">Resend SMTP Gateway</span>
-                    <span className="text-green-400 font-bold">100% ONLINE</span>
+                <form onSubmit={handleBroadcastSubmit} className="space-y-3">
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Broadcast Target Role</label>
+                    <select
+                      value={broadcastRole}
+                      onChange={(e) => setBroadcastRole(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                    >
+                      <option value="STUDENT">All Students</option>
+                      <option value="TEACHER">All Teachers</option>
+                      <option value="PARENT">All Parents</option>
+                      <option value="all">Entire Institution (All Active Users)</option>
+                    </select>
                   </div>
-                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1.5">
-                    <div className="h-full w-[98.8%] bg-gradient-to-r from-green-500 to-emerald-400 rounded-full" />
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Alert Title</label>
+                    <input
+                      type="text"
+                      placeholder="e.g. System Maintenance Update"
+                      value={broadcastTitle}
+                      onChange={(e) => setBroadcastTitle(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                      required
+                    />
                   </div>
-                  <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
-                    <span>99.9% Uptime</span>
-                    <span>4,291 Dispatched</span>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Alert Message Body</label>
+                    <textarea
+                      placeholder="Enter message text..."
+                      value={broadcastContent}
+                      onChange={(e) => setBroadcastContent(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500 min-h-[70px]"
+                      required
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={broadcastSending}
+                    className="w-full bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold text-xs py-2 rounded-xl transition-all shadow-lg shadow-brand-500/10 hover:shadow-brand-500/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] border border-brand-400/20 flex items-center justify-center gap-2"
+                  >
+                    {broadcastSending ? (
+                      <>
+                        <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        <span>Broadcasting Alerts...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send size={13} />
+                        <span>Dispatch Broadcast</span>
+                      </>
+                    )}
+                  </button>
+                </form>
+              </GlassCard>
+
+              {/* Delivery Stats Summary */}
+              <GlassCard className="space-y-4">
+                <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                  <Sliders className="text-brand-400" size={15} />
+                  Simulated Gateway Telemetry
+                </h4>
+
+                <div className="space-y-3.5">
+                  <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-semibold">Resend SMTP Gateway</span>
+                      <span className="text-green-400 font-bold">100% ONLINE</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1.5">
+                      <div className="h-full w-[98.8%] bg-gradient-to-r from-green-500 to-emerald-400 rounded-full" />
+                    </div>
+                    <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
+                      <span>99.9% Uptime</span>
+                      <span>4,291 Dispatched</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-semibold">Twilio SMS Broker</span>
+                      <span className="text-green-400 font-bold">100% ONLINE</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1.5">
+                      <div className="h-full w-[100%] bg-gradient-to-r from-green-500 to-emerald-400 rounded-full" />
+                    </div>
+                    <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
+                      <span>100% Uptime</span>
+                      <span>18,290 Dispatched</span>
+                    </div>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
+                    <div className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-semibold">FCM Broker Queue</span>
+                      <span className="text-green-400 font-bold">100% ONLINE</span>
+                    </div>
+                    <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1.5">
+                      <div className="h-full w-[99.4%] bg-gradient-to-r from-green-500 to-emerald-400 rounded-full" />
+                    </div>
+                    <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
+                      <span>99.8% Uptime</span>
+                      <span>29,102 Dispatched</span>
+                    </div>
                   </div>
                 </div>
-
-                <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 font-semibold">Twilio SMS Broker</span>
-                    <span className="text-green-400 font-bold">100% ONLINE</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1.5">
-                    <div className="h-full w-[100%] bg-gradient-to-r from-green-500 to-emerald-400 rounded-full" />
-                  </div>
-                  <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
-                    <span>100% Uptime</span>
-                    <span>18,290 Dispatched</span>
-                  </div>
-                </div>
-
-                <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="text-slate-400 font-semibold">FCM Broker Queue</span>
-                    <span className="text-green-400 font-bold">100% ONLINE</span>
-                  </div>
-                  <div className="h-1.5 w-full bg-slate-950 rounded-full overflow-hidden mt-1.5">
-                    <div className="h-full w-[99.4%] bg-gradient-to-r from-green-500 to-emerald-400 rounded-full" />
-                  </div>
-                  <div className="flex justify-between text-[9px] text-slate-500 mt-1 font-mono">
-                    <span>99.8% Uptime</span>
-                    <span>29,102 Dispatched</span>
-                  </div>
-                </div>
-              </div>
-            </GlassCard>
+              </GlassCard>
+            </div>
           </div>
 
           {/* Dispatch Queue Log Table */}
