@@ -8879,6 +8879,8 @@ export const mockApi = {
       }
     } else if (currentUsr.schoolId) {
       await this.syncUsersData(currentUsr.schoolId);
+      await this.syncStudentsData(currentUsr.schoolId).catch(() => {});
+      await this.syncTeachersData(currentUsr.schoolId).catch(() => {});
     }
 
     return mockDb.users.filter(u => checkChatAllowed(currentUsr, u));

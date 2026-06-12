@@ -176,6 +176,11 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [hmSelectedExam, setHmSelectedExam] = useState('');
   const [hmSelectedStudent, setHmSelectedStudent] = useState('');
   const [hmReportCard, setHmReportCard] = useState<{ scheduleId: string; subjectId: string; subjectName: string; maxMarks: number; marksObtained?: number; remarks?: string }[]>([]);
+  const [selectedRcStudent, setSelectedRcStudent] = useState('');
+  const [selectedRcExam, setSelectedRcExam] = useState('');
+  const [rcLoading, setRcLoading] = useState(false);
+  const [rcError, setRcError] = useState('');
+  const [rcData, setRcData] = useState<any>(null);
 
   // Forum/Discussion states
   const [forumCategories, setForumCategories] = useState<any[]>([]);
@@ -201,6 +206,196 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [analyticsDateRange, setAnalyticsDateRange] = useState(() => localStorage.getItem('aegis_teacher_analytics_range') || '30d');
   const [analyticsClass, setAnalyticsClass] = useState(() => localStorage.getItem('aegis_teacher_analytics_class') || 'all');
   const [showReportCardPdf, setShowReportCardPdf] = useState<any | null>(null);
+
+  // Helper to filter items by selected analyticsDateRange
+  const filterByDateRange = (dateStr: string) => {
+    if (!dateStr) return false;
+    const date = new Date(dateStr);
+    const now = new Date();
+    if (analyticsDateRange === '30d') {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(now.getDate() - 30);
+      return date >= thirtyDaysAgo;
+    }
+    if (analyticsDateRange === '90d') {
+      const ninetyDaysAgo = new Date();
+      ninetyDaysAgo.setDate(now.getDate() - 90);
+      return date >= ninetyDaysAgo;
+    }
+    if (analyticsDateRange === 'session') {
+      const schoolId = session?.user.schoolId || '';
+      const activeSession = mockDb.academicSessions.find(s => s.schoolId === schoolId && s.isCurrent);
+      if (activeSession) {
+        return date >= new Date(activeSession.startDate) && date <= new Date(activeSession.endDate);
+      }
+    }
+    return true;
+  };
+
+  // Get dynamic attendance stats from DB records
+  const getAttendanceStats = () => {
+    if (!selectedMapping) return null;
+    const mapping = classMappings.find(m => m.id === selectedMapping);
+    if (!mapping) return null;
+    const schoolId = session?.user.schoolId || '';
+    const academicSessionId = session?.user.academicSessionId || '';
+
+    // Enforce multi-tenant school check
+    const classStudents = mockDb.students.filter(s => 
+      s.schoolId === schoolId && 
+      s.classId === mapping.classId
+    );
+    const studentIds = classStudents.map(s => s.id);
+    if (studentIds.length === 0) return null;
+
+    const records = mockDb.attendance.filter(a => 
+      studentIds.includes(a.studentId) &&
+      a.classId === mapping.classId &&
+      a.academicSessionId === academicSessionId &&
+      filterByDateRange(a.date)
+    );
+
+    if (records.length === 0) return null;
+
+    // Group by day of week or actual dates
+    // To show daily trends for the last 4 dates with marked attendance:
+    const dateMap = new Map<string, { present: number; absent: number; total: number }>();
+    records.forEach(r => {
+      if (!dateMap.has(r.date)) {
+        dateMap.set(r.date, { present: 0, absent: 0, total: 0 });
+      }
+      const val = dateMap.get(r.date)!;
+      if (r.status === 'PRESENT' || r.status === 'LATE') {
+        val.present++;
+      } else if (r.status === 'ABSENT') {
+        val.absent++;
+      }
+      val.total++;
+    });
+
+    const sortedDates = Array.from(dateMap.keys()).sort();
+    const lastDates = sortedDates.slice(-4); // last 4 active dates
+    const trends = lastDates.map(d => {
+      const val = dateMap.get(d)!;
+      const pct = val.total > 0 ? (val.present / val.total) * 100 : 100;
+      const dayName = new Date(d).toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+      return {
+        date: d,
+        dayName,
+        percentage: pct,
+        present: val.present,
+        absent: val.absent
+      };
+    });
+
+    const totalPresent = records.filter(r => r.status === 'PRESENT' || r.status === 'LATE').length;
+    const overallPct = (totalPresent / records.length) * 100;
+
+    return {
+      overallPct,
+      trends
+    };
+  };
+
+  // Get dynamic homework stats from DB records
+  const getHomeworkStats = () => {
+    if (!selectedMapping) return null;
+    const mapping = classMappings.find(m => m.id === selectedMapping);
+    if (!mapping) return null;
+    const schoolId = session?.user.schoolId || '';
+    const academicSessionId = session?.user.academicSessionId || '';
+
+    const classAssignments = mockDb.assignments.filter(a => 
+      a.schoolId === schoolId &&
+      a.classId === mapping.classId &&
+      a.subjectId === mapping.subjectId &&
+      a.academicSessionId === academicSessionId &&
+      filterByDateRange(a.createdAt || a.dueDate)
+    );
+
+    if (classAssignments.length === 0) return null;
+
+    const classStudents = mockDb.students.filter(s => 
+      s.schoolId === schoolId && 
+      s.classId === mapping.classId
+    );
+    const studentIds = classStudents.map(s => s.id);
+    const totalStudents = studentIds.length;
+    if (totalStudents === 0) return null;
+
+    const stats = classAssignments.map(a => {
+      const subs = mockDb.assignmentSubmissions.filter(sub => 
+        sub.assignmentId === a.id && 
+        studentIds.includes(sub.studentId)
+      );
+      const submittedCount = subs.length;
+      const pct = (submittedCount / totalStudents) * 100;
+      return {
+        id: a.id,
+        title: a.title,
+        percentage: pct
+      };
+    });
+
+    return {
+      totalAssignments: classAssignments.length,
+      stats
+    };
+  };
+
+  // Get dynamic quiz stats from DB records
+  const getQuizStats = () => {
+    if (!selectedMapping) return null;
+    const mapping = classMappings.find(m => m.id === selectedMapping);
+    if (!mapping) return null;
+    const schoolId = session?.user.schoolId || '';
+    const academicSessionId = session?.user.academicSessionId || '';
+
+    const classQuizzes = mockDb.quizzes.filter(q => 
+      q.schoolId === schoolId &&
+      q.classId === mapping.classId &&
+      q.subjectId === mapping.subjectId &&
+      q.academicSessionId === academicSessionId &&
+      filterByDateRange(q.createdAt)
+    );
+
+    if (classQuizzes.length === 0) return null;
+
+    const classStudents = mockDb.students.filter(s => 
+      s.schoolId === schoolId && 
+      s.classId === mapping.classId
+    );
+    const studentIds = classStudents.map(s => s.id);
+    const totalStudents = studentIds.length;
+    if (totalStudents === 0) return null;
+
+    const stats = classQuizzes.map(q => {
+      const attempts = mockDb.quizAttempts.filter(att => 
+        att.quizId === q.id && 
+        studentIds.includes(att.studentId)
+      );
+      const attemptsCount = attempts.length;
+      const scores = attempts.map(a => a.score);
+      const avgScore = attemptsCount > 0 ? scores.reduce((sum, s) => sum + s, 0) / attemptsCount : 0;
+      const pct = (avgScore / q.totalMarks) * 100;
+      return {
+        id: q.id,
+        title: q.title,
+        percentage: pct,
+        avgScore,
+        totalMarks: q.totalMarks
+      };
+    });
+
+    const overallAvgScore = stats.length > 0 ? stats.reduce((sum, q) => sum + q.avgScore, 0) / stats.length : 0;
+    const overallTotalMarks = stats.length > 0 ? stats.reduce((sum, q) => sum + q.totalMarks, 0) / stats.length : 10;
+
+    return {
+      overallAvgScore,
+      overallTotalMarks,
+      stats
+    };
+  };
 
   const exportClassRosterToCSV = () => {
     let csvContent = "data:text/csv;charset=utf-8,";
@@ -232,25 +427,42 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   };
 
   const exportClassGradesToCSV = () => {
-    let csvContent = "data:text/csv;charset=utf-8,";
-    csvContent += "Student Name,Roll Number,Subject,Max Marks,Marks Obtained,Remarks\n";
-    
-    const grades = [
-      { name: 'Leo da Vinci', roll: '10', subject: 'Mathematics', max: '100', obtained: '95', remarks: 'Excellent performance' },
-      { name: 'Albert Einstein', roll: '11', subject: 'Physics', max: '100', obtained: '98', remarks: 'Flawless calculations' },
-      { name: 'Marie Curie', roll: '1', subject: 'Chemistry', max: '100', obtained: '99', remarks: 'Superb dedication' }
-    ];
+    if (!selectedMapping) return;
+    const mapping = classMappings.find(m => m.id === selectedMapping);
+    if (!mapping) return;
 
-    grades.forEach(g => {
-      const row = [
-        g.name,
-        g.roll,
-        g.subject,
-        g.max,
-        g.obtained,
-        g.remarks
-      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(",");
-      csvContent += row + "\n";
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Student Name,Roll Number,Exam Name,Subject,Max Marks,Marks Obtained,Remarks\n";
+
+    const classStudents = mockDb.students.filter(s => s.classId === mapping.classId);
+    const subject = mockDb.subjects.find(sub => sub.id === mapping.subjectId);
+    const subjectName = subject ? subject.name : 'Unknown Subject';
+
+    classStudents.forEach(st => {
+      const user = mockDb.users.find(u => u.id === st.userId);
+      const studentName = user ? `${user.firstName} ${user.lastName}` : 'Unknown Student';
+      
+      // Get all marks for this student and subject
+      const marks = mockDb.studentMarks.filter(m => m.studentId === st.id && m.subjectId === mapping.subjectId);
+      
+      marks.forEach(m => {
+        const exam = mockDb.exams.find(e => e.id === m.examId);
+        const examName = exam ? exam.name : 'N/A';
+        // Get max marks from exam_subjects or default to 100
+        const examSub = mockDb.examSubjects.find(es => es.examId === m.examId && es.subjectId === mapping.subjectId);
+        const maxMarks = examSub ? examSub.maxMarks : 100;
+
+        const row = [
+          studentName,
+          st.rollNumber,
+          examName,
+          subjectName,
+          maxMarks,
+          m.marksObtained,
+          m.remarks || ''
+        ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(",");
+        csvContent += row + "\n";
+      });
     });
 
     const encodedUri = encodeURI(csvContent);
@@ -503,6 +715,28 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
     }, 10000);
     return () => clearInterval(interval);
   }, [syncSubscriptionPlan]);
+
+  useEffect(() => {
+    const fetchRcData = async () => {
+      if (!showReportCardPdf || !selectedRcStudent || !selectedRcExam) {
+        setRcData(null);
+        return;
+      }
+      setRcLoading(true);
+      setRcError('');
+      try {
+        const data = await mockApi.getStudentMarksheetData(selectedRcStudent, selectedRcExam);
+        setRcData(data);
+      } catch (err: any) {
+        console.error(err);
+        setRcError(err.message || 'Failed to fetch report card data.');
+        setRcData(null);
+      } finally {
+        setRcLoading(false);
+      }
+    };
+    fetchRcData();
+  }, [showReportCardPdf, selectedRcStudent, selectedRcExam]);
 
   useEffect(() => {
     if (selectedMapping) {
@@ -4561,88 +4795,109 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
           {/* 3 Custom CSS Charts */}
           <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Attendance Chart */}
-            <GlassCard className="space-y-4">
-              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
-                <span>Class Attendance Ratios</span>
-                <span className="text-[10px] text-green-450 font-mono">Avg: 95.8%</span>
-              </h4>
-              <div className="h-40 flex items-end justify-around gap-2 pt-4 pb-2 border-b border-slate-850">
-                <div className="w-10 flex flex-col items-center gap-1.5">
-                  <div className="w-full bg-slate-900 rounded h-28 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-brand-600/80 rounded" style={{ height: '98%' }} />
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-500">MON</span>
-                </div>
-                <div className="w-10 flex flex-col items-center gap-1.5">
-                  <div className="w-full bg-slate-900 rounded h-28 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-brand-600/80 rounded" style={{ height: '94%' }} />
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-500">TUE</span>
-                </div>
-                <div className="w-10 flex flex-col items-center gap-1.5">
-                  <div className="w-full bg-slate-900 rounded h-28 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-brand-600 to-indigo-500 rounded" style={{ height: '96%' }} />
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-400">WED</span>
-                </div>
-                <div className="w-10 flex flex-col items-center gap-1.5">
-                  <div className="w-full bg-slate-900 rounded h-28 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-brand-600/80 rounded" style={{ height: '95%' }} />
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-500">THU</span>
-                </div>
-              </div>
-            </GlassCard>
+            {(() => {
+              const att = getAttendanceStats();
+              return (
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                    <span>Class Attendance Ratios</span>
+                    <span className="text-[10px] text-green-450 font-mono">
+                      {att ? `Avg: ${att.overallPct.toFixed(1)}%` : 'No Data'}
+                    </span>
+                  </h4>
+                  {!att ? (
+                    <div className="h-40 flex items-center justify-center text-slate-500 text-xs italic">
+                      No Data Available
+                    </div>
+                  ) : (
+                    <div className="h-40 flex items-end justify-around gap-2 pt-4 pb-2 border-b border-slate-850">
+                      {att.trends.map((t, idx) => (
+                        <div key={idx} className="w-10 flex flex-col items-center gap-1.5 animate-fade-in">
+                          <div className="w-full bg-slate-900 rounded h-28 relative overflow-hidden">
+                            <div 
+                              className="absolute bottom-0 left-0 right-0 bg-brand-600/80 rounded transition-all duration-300" 
+                              style={{ height: `${t.percentage}%` }} 
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-slate-500" title={t.date}>{t.dayName}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </GlassCard>
+              );
+            })()}
 
             {/* Homework Submissions Chart */}
-            <GlassCard className="space-y-4">
-              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
-                <span>Homework Completion rates</span>
-                <span className="text-[10px] text-brand-400 font-mono">3 Assignments</span>
-              </h4>
-              <div className="h-40 flex flex-col justify-center gap-3">
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[10px] text-slate-450">
-                    <span>Doubly Linked Lists Reversed</span>
-                    <span className="font-bold text-slate-200">92% Done</span>
-                  </div>
-                  <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
-                    <div className="h-full w-[92%] bg-brand-500 rounded-full" />
-                  </div>
-                </div>
-                <div className="space-y-1">
-                  <div className="flex justify-between text-[10px] text-slate-455">
-                    <span>Matrix Addition proofs</span>
-                    <span className="font-bold text-slate-200">86% Done</span>
-                  </div>
-                  <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
-                    <div className="h-full w-[86%] bg-brand-500 rounded-full" />
-                  </div>
-                </div>
-              </div>
-            </GlassCard>
+            {(() => {
+              const hw = getHomeworkStats();
+              return (
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                    <span>Homework Completion rates</span>
+                    <span className="text-[10px] text-brand-400 font-mono">
+                      {hw ? `${hw.totalAssignments} ${hw.totalAssignments === 1 ? 'Assignment' : 'Assignments'}` : 'No Data'}
+                    </span>
+                  </h4>
+                  {!hw ? (
+                    <div className="h-40 flex items-center justify-center text-slate-500 text-xs italic">
+                      No Data Available
+                    </div>
+                  ) : (
+                    <div className="h-40 flex flex-col justify-center gap-3 overflow-y-auto">
+                      {hw.stats.map((item, idx) => (
+                        <div key={item.id} className="space-y-1 animate-fade-in">
+                          <div className="flex justify-between text-[10px] text-slate-450">
+                            <span className="truncate w-32" title={item.title}>{item.title}</span>
+                            <span className="font-bold text-slate-200">{item.percentage.toFixed(0)}% Done</span>
+                          </div>
+                          <div className="h-2 w-full bg-slate-900 rounded-full overflow-hidden">
+                            <div 
+                              className="h-full bg-brand-500 rounded-full transition-all duration-300" 
+                              style={{ width: `${item.percentage}%` }} 
+                            />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </GlassCard>
+              );
+            })()}
 
             {/* Class Marks Average */}
-            <GlassCard className="space-y-4">
-              <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
-                <span>Quiz & Online Test Averages</span>
-                <span className="text-[10px] text-indigo-400 font-mono">Avg Score: 8.8/10</span>
-              </h4>
-              <div className="h-40 flex items-end justify-around gap-2 pt-4 pb-2 border-b border-slate-850">
-                <div className="w-12 flex flex-col items-center gap-1">
-                  <div className="w-full bg-slate-900 rounded-t h-28 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-indigo-500/80" style={{ height: '88%' }} />
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-500">QUIZ 1</span>
-                </div>
-                <div className="w-12 flex flex-col items-center gap-1">
-                  <div className="w-full bg-slate-900 rounded-t h-28 relative overflow-hidden">
-                    <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-indigo-600 to-indigo-450" style={{ height: '82%' }} />
-                  </div>
-                  <span className="text-[9px] font-mono text-slate-500">QUIZ 2</span>
-                </div>
-              </div>
-            </GlassCard>
+            {(() => {
+              const qz = getQuizStats();
+              return (
+                <GlassCard className="space-y-4">
+                  <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider flex items-center justify-between">
+                    <span>Quiz & Online Test Averages</span>
+                    <span className="text-[10px] text-indigo-400 font-mono">
+                      {qz ? `Avg Score: ${qz.overallAvgScore.toFixed(1)}/${qz.overallTotalMarks.toFixed(0)}` : 'No Data'}
+                    </span>
+                  </h4>
+                  {!qz ? (
+                    <div className="h-40 flex items-center justify-center text-slate-500 text-xs italic">
+                      No Data Available
+                    </div>
+                  ) : (
+                    <div className="h-40 flex items-end justify-around gap-2 pt-4 pb-2 border-b border-slate-850 overflow-x-auto">
+                      {qz.stats.map((item, idx) => (
+                        <div key={item.id} className="w-12 flex flex-col items-center gap-1 animate-fade-in">
+                          <div className="w-full bg-slate-900 rounded-t h-28 relative overflow-hidden">
+                            <div 
+                              className="absolute bottom-0 left-0 right-0 bg-indigo-500/80 transition-all duration-300" 
+                              style={{ height: `${item.percentage}%` }} 
+                            />
+                          </div>
+                          <span className="text-[9px] font-mono text-slate-500 truncate w-12" title={item.title}>{item.title}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </GlassCard>
+              );
+            })()}
           </div>
 
           {/* Action exporters */}
@@ -4681,11 +4936,13 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
               </button>
 
               <button 
-                onClick={() => setShowReportCardPdf({ name: 'Leo da Vinci', roll: '10', class: 'Grade 10-A', term: 'Term 1 Exam', grades: [
-                  { subject: 'Mathematics', max: 100, score: 95, grade: 'A+', comment: 'Outstanding proof methodologies.' },
-                  { subject: 'Physics', max: 100, score: 88, grade: 'A', comment: 'Rigorous work in Mechanics.' },
-                  { subject: 'Computer Science', max: 100, score: 98, grade: 'A+', comment: 'Flawless Pointer reverse algorithms.' }
-                ]})}
+                onClick={() => {
+                  setShowReportCardPdf(true);
+                  setSelectedRcStudent('');
+                  setSelectedRcExam('');
+                  setRcData(null);
+                  setRcError('');
+                }}
                 className="p-3 bg-slate-900/40 hover:bg-slate-900/60 border border-slate-850 rounded-xl transition-all flex items-center gap-3 text-left active:scale-[0.98]"
               >
                 <div className="p-2 rounded-lg bg-brand-500/10 text-brand-400 border border-brand-500/20">
@@ -4704,93 +4961,269 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {/* Report card pdf layout modal */}
       {showReportCardPdf && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 animate-fade-in">
-          <GlassCard className="w-full max-w-2xl bg-white text-slate-900 p-8 space-y-6 relative max-h-[90vh] overflow-y-auto">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
+          <GlassCard className="w-full max-w-2xl bg-white text-slate-900 p-8 space-y-6 relative my-8">
             <button 
               onClick={() => setShowReportCardPdf(null)}
-              className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors border border-slate-250"
+              className="absolute top-4 right-4 p-1.5 rounded-full hover:bg-slate-100 text-slate-500 hover:text-slate-900 transition-colors border border-slate-200"
               title="Close Preview"
             >
               <Trash2 size={16} />
             </button>
 
-            <div className="flex justify-between items-start border-b-2 border-slate-150 pb-4">
-              <div>
-                <h2 className="text-xl font-black text-slate-800">AEGIS ACADEMY</h2>
-                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider font-mono">Academic Report Card</p>
-                <p className="text-xs text-slate-400 mt-0.5">Silicon Valley Way, Tech District, USA</p>
+            {/* Selection controls */}
+            <div className="flex flex-col sm:flex-row gap-4 p-4 bg-slate-50 rounded-xl border border-slate-200 text-xs mb-4">
+              <div className="flex-1 space-y-1">
+                <label className="font-bold text-slate-700">Select Student</label>
+                <select
+                  value={selectedRcStudent}
+                  onChange={(e) => setSelectedRcStudent(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-800 focus:outline-none"
+                >
+                  <option value="">-- Choose Student --</option>
+                  {(() => {
+                    const mapping = classMappings.find(m => m.id === selectedMapping);
+                    if (!mapping) return null;
+                    const classStudents = mockDb.students.filter(s => s.classId === mapping.classId);
+                    return classStudents.map(st => {
+                      const user = mockDb.users.find(u => u.id === st.userId);
+                      return (
+                        <option key={st.id} value={st.id}>
+                          {user ? `${user.firstName} ${user.lastName}` : 'Unknown'} (Roll: {st.rollNumber})
+                        </option>
+                      );
+                    });
+                  })()}
+                </select>
               </div>
-              <div className="text-right">
-                <span className="px-2.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-bold border border-brand-200 uppercase">OFFICIAL REPORT</span>
-                <p className="text-xs font-mono font-bold text-slate-600 mt-2">{showReportCardPdf.term}</p>
-                <p className="text-[9px] text-slate-450 mt-0.5">Date Issued: {new Date().toLocaleDateString()}</p>
+
+              <div className="flex-1 space-y-1">
+                <label className="font-bold text-slate-700">Select Exam / Term</label>
+                <select
+                  value={selectedRcExam}
+                  onChange={(e) => setSelectedRcExam(e.target.value)}
+                  className="w-full bg-white border border-slate-300 rounded-lg p-2 text-slate-800 focus:outline-none"
+                >
+                  <option value="">-- Choose Exam Term --</option>
+                  {(() => {
+                    const schoolId = session?.user.schoolId || '';
+                    const exams = mockDb.exams.filter(e => e.schoolId === schoolId);
+                    return exams.map(ex => (
+                      <option key={ex.id} value={ex.id}>
+                        {ex.name}
+                      </option>
+                    ));
+                  })()}
+                </select>
               </div>
             </div>
 
-            <div className="grid grid-cols-2 gap-4 text-xs">
-              <div>
-                <span className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">Student Identity</span>
-                <p className="font-bold text-slate-700 mt-0.5">{showReportCardPdf.name}</p>
-                <p className="text-slate-500 mt-0.5">Class: {showReportCardPdf.class} (Roll #{showReportCardPdf.roll})</p>
+            {/* Loading / Error States */}
+            {rcLoading && (
+              <div className="h-64 flex flex-col items-center justify-center gap-3 text-slate-500">
+                <div className="w-8 h-8 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
+                <span className="text-xs font-semibold">Generating Academic Report Card...</span>
               </div>
-              <div className="text-right">
-                <span className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">Homeroom Advisor</span>
-                <p className="font-bold text-slate-700 mt-0.5">Dr. Marcus Aurelius</p>
-                <p className="text-slate-500 mt-0.5">Faculty specialization: Theoretical Physics</p>
+            )}
+
+            {rcError && (
+              <div className="p-4 bg-red-50 border border-red-200 text-red-700 rounded-xl space-y-2 text-xs">
+                <h4 className="font-bold flex items-center gap-2">
+                  <span>Marksheet Generation Blocked</span>
+                </h4>
+                <p className="whitespace-pre-line leading-relaxed font-sans">{rcError}</p>
               </div>
-            </div>
+            )}
 
-            {/* Grades list table */}
-            <div className="border border-slate-200 rounded-xl overflow-hidden mt-4">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] tracking-wider">
-                    <th className="py-2.5 px-3">Subject</th>
-                    <th className="py-2.5 px-3 text-right">Max Marks</th>
-                    <th className="py-2.5 px-3 text-right">Marks Obtained</th>
-                    <th className="py-2.5 px-3 text-center">Grade</th>
-                    <th className="py-2.5 px-3">Remarks / comments</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-150">
-                  {showReportCardPdf.grades.map((g: any, i: number) => (
-                    <tr key={i}>
-                      <td className="py-3 px-3 font-semibold text-slate-700">{g.subject}</td>
-                      <td className="py-3 px-3 text-right font-mono text-slate-500">{g.max}</td>
-                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-700">{g.score}</td>
-                      <td className="py-3 px-3 text-center font-bold text-brand-600">{g.grade}</td>
-                      <td className="py-3 px-3 text-slate-500 italic text-[11px]">{g.comment}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Total summaries */}
-            <div className="flex justify-end pt-2">
-              <div className="w-64 text-xs space-y-1.5 text-right font-mono border-t border-slate-200 pt-3">
-                <div className="flex justify-between text-slate-500">
-                  <span>Aggregate Total:</span>
-                  <span>281 / 300</span>
+            {!selectedRcStudent || !selectedRcExam ? (
+              (!rcLoading && !rcError) && (
+                <div className="h-64 flex flex-col items-center justify-center gap-2 text-slate-400">
+                  <Layers size={32} />
+                  <span className="text-xs">Please select a student and exam term to generate the official report card.</span>
                 </div>
-                <div className="flex justify-between text-slate-800 font-bold text-sm">
-                  <span>Overall Percentage:</span>
-                  <span>93.6%</span>
+              )
+            ) : (
+              rcData && (
+                <div className="space-y-6">
+                  {/* Header */}
+                  <div className="flex justify-between items-start border-b-2 border-slate-150 pb-4">
+                    <div className="flex items-center gap-3">
+                      {rcData.school.logoUrl ? (
+                        <img src={rcData.school.logoUrl} alt="Logo" className="w-12 h-12 object-contain rounded" />
+                      ) : (
+                        <div className="w-12 h-12 bg-brand-500/10 text-brand-600 rounded flex items-center justify-center font-black text-lg">A</div>
+                      )}
+                      <div>
+                        <h2 className="text-lg font-black text-slate-800 uppercase leading-none">{rcData.school.name}</h2>
+                        <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider font-mono mt-1">Academic Report Card</p>
+                        <p className="text-[10px] text-slate-400">{rcData.school.address}</p>
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <span className="px-2.5 py-0.5 rounded bg-brand-100 text-brand-700 text-[10px] font-bold border border-brand-200 uppercase">OFFICIAL REPORT</span>
+                      <p className="text-xs font-mono font-bold text-slate-600 mt-2">{rcData.academic.term}</p>
+                      <p className="text-[9px] text-slate-450 mt-0.5 font-mono">Date Issued: {rcData.remarks.dateOfIssue}</p>
+                    </div>
+                  </div>
+
+                  {/* Student Info */}
+                  <div className="grid grid-cols-2 gap-4 text-xs bg-slate-50 p-4 rounded-xl border border-slate-200">
+                    <div className="space-y-1">
+                      <span className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">Student Identity</span>
+                      <p className="font-bold text-slate-700">{rcData.student.name}</p>
+                      <p className="text-slate-500">Class: {rcData.student.className} (Roll #{rcData.student.rollNumber})</p>
+                      <p className="text-slate-500">Adm No: {rcData.student.admissionNumber}</p>
+                      <p className="text-slate-500">DOB: {new Date(rcData.student.dateOfBirth).toLocaleDateString()}</p>
+                    </div>
+                    <div className="text-right space-y-1">
+                      <span className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">Guardian Details</span>
+                      <p className="font-bold text-slate-700">Father: {rcData.student.fatherName}</p>
+                      <p className="text-slate-500">Mother: {rcData.student.motherName}</p>
+                      <p className="text-slate-450">{rcData.student.address}</p>
+                    </div>
+                  </div>
+
+                  {/* Grades table */}
+                  <div className="border border-slate-200 rounded-xl overflow-hidden">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase text-[9px] tracking-wider">
+                          <th className="py-2.5 px-3">Subject</th>
+                          <th className="py-2.5 px-3 text-right">Pre-Mid (10)</th>
+                          <th className="py-2.5 px-3 text-right">Mid-Term (80)</th>
+                          <th className="py-2.5 px-3 text-right">Post-Mid (10)</th>
+                          <th className="py-2.5 px-3 text-right">Annual (80)</th>
+                          <th className="py-2.5 px-3 text-right">Practical (20)</th>
+                          <th className="py-2.5 px-3 text-right font-bold">Total (200)</th>
+                          <th className="py-2.5 px-3 text-center">Grade</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-150">
+                        {rcData.academic.subjects.map((sub: any, i: number) => (
+                          <tr key={i} className="hover:bg-slate-50/50">
+                            <td className="py-2.5 px-3 font-semibold text-slate-700">{sub.subjectName}</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-slate-500">{sub.preMid}</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-slate-500">{sub.midTerm}</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-slate-500">{sub.postMid}</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-slate-500">{sub.annual}</td>
+                            <td className="py-2.5 px-3 text-right font-mono text-slate-500">{sub.practical}</td>
+                            <td className="py-2.5 px-3 text-right font-mono font-bold text-slate-700">{sub.total}</td>
+                            <td className="py-2.5 px-3 text-center font-bold text-brand-600">{sub.grade}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Co-Scholastic & Attendance */}
+                  <div className="grid grid-cols-2 gap-6 text-xs">
+                    <div className="space-y-2">
+                      <h4 className="font-bold text-slate-700 uppercase tracking-wider text-[9px]">Co-Scholastic Assessments</h4>
+                      <div className="space-y-1 text-slate-600 border border-slate-100 rounded-lg p-2 bg-slate-50/50 font-sans">
+                        <div className="flex justify-between">
+                          <span>Art Education:</span>
+                          <span className="font-bold">{rcData.coScholastic.artEducation.term2}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Health & Fitness:</span>
+                          <span className="font-bold">{rcData.coScholastic.healthAndFitness.term2}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Discipline:</span>
+                          <span className="font-bold">{rcData.coScholastic.discipline.term2}</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2">
+                      <h4 className="font-bold text-slate-700 uppercase tracking-wider text-[9px]">Attendance & Results</h4>
+                      <div className="space-y-1 text-slate-600 border border-slate-100 rounded-lg p-2 bg-slate-50/50 font-mono">
+                        <div className="flex justify-between">
+                          <span>Working Days:</span>
+                          <span>{rcData.academic.attendance.workingDays}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Attended Days:</span>
+                          <span>{rcData.academic.attendance.presentDays}</span>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Attendance %:</span>
+                          <span className="font-bold text-slate-800">{rcData.academic.attendance.percentage}%</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Remarks and Status */}
+                  <div className="bg-slate-50 border border-slate-150 rounded-xl p-4 text-xs space-y-2">
+                    <div>
+                      <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Class Teacher Remarks</span>
+                      <p className="text-slate-700 italic mt-0.5">"{rcData.remarks.classTeacherRemarks}"</p>
+                    </div>
+                    <div className="grid grid-cols-3 gap-2 pt-2 border-t border-slate-200">
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Result status</span>
+                        <p className="font-bold text-brand-700">{rcData.remarks.resultStatus}</p>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Class Rank</span>
+                        <p className="font-bold text-slate-700">#{rcData.academic.classRank}</p>
+                      </div>
+                      <div>
+                        <span className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Promoted Class</span>
+                        <p className="font-bold text-slate-700">{rcData.remarks.promotedClass}</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Signatures and Seals */}
+                  <div className="grid grid-cols-3 gap-4 text-center text-xs pt-4 border-t border-slate-200">
+                    <div className="flex flex-col items-center justify-end h-20">
+                      {rcData.signatures.classTeacherSignatureUrl ? (
+                        <img src={rcData.signatures.classTeacherSignatureUrl} alt="Teacher Signature" className="h-10 object-contain" />
+                      ) : (
+                        <div className="h-10 w-24 border-b border-dashed border-slate-300" />
+                      )}
+                      <p className="font-bold text-slate-700 mt-2">{rcData.signatures.classTeacherName}</p>
+                      <p className="text-[9px] text-slate-400 uppercase tracking-wider">Class Teacher</p>
+                    </div>
+
+                    <div className="flex flex-col items-center justify-end h-20">
+                      {rcData.school.sealUrl ? (
+                        <img src={rcData.school.sealUrl} alt="School Seal" className="h-12 object-contain" />
+                      ) : (
+                        <div className="h-12 w-12 rounded-full border border-dashed border-slate-300 flex items-center justify-center text-[8px] text-slate-300">SEAL</div>
+                      )}
+                      <p className="text-[9px] text-slate-400 uppercase tracking-wider mt-2">School Seal</p>
+                    </div>
+
+                    <div className="flex flex-col items-center justify-end h-20">
+                      {rcData.signatures.principalSignatureUrl ? (
+                        <img src={rcData.signatures.principalSignatureUrl} alt="Principal Signature" className="h-10 object-contain" />
+                      ) : (
+                        <div className="h-10 w-24 border-b border-dashed border-slate-300" />
+                      )}
+                      <p className="font-bold text-slate-700 mt-2">{rcData.signatures.principalName}</p>
+                      <p className="text-[9px] text-slate-400 uppercase tracking-wider">Principal</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-            </div>
+              )
+            )}
 
             {/* Actions */}
             <div className="flex justify-end gap-3 pt-4 border-t border-slate-100">
-              <button 
-                onClick={() => window.print()}
-                className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors active:scale-[0.98]"
-              >
-                Print report Card
-              </button>
+              {rcData && (
+                <button 
+                  onClick={() => window.print()}
+                  className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold hover:bg-slate-800 transition-colors active:scale-[0.98]"
+                >
+                  Print report Card
+                </button>
+              )}
               <button 
                 onClick={() => setShowReportCardPdf(null)}
-                className="px-4 py-2 border border-slate-205 text-slate-550 rounded-xl text-xs font-bold hover:bg-slate-50 transition-colors"
+                className="px-4 py-2 border border-slate-205 text-slate-550 rounded-xl text-xs font-bold hover:bg-slate-555 transition-colors"
               >
                 Close Preview
               </button>

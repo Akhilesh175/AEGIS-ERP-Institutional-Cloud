@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
+import { mockDb } from '../services/mockDb';
 import { ChatMessage, User } from '../types';
 import { MessageSquare, Send, X, ArrowLeft } from 'lucide-react';
 import { GlassCard } from './GlassCard';
@@ -130,10 +131,50 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
 
   const filteredContacts = searchQuery.trim() === ''
     ? contacts
-    : allAllowedContacts.filter(c => 
-        `${c.firstName} ${c.lastName}`.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        c.role.toLowerCase().includes(searchQuery.toLowerCase())
-      ).map(c => {
+    : allAllowedContacts.filter(c => {
+        const query = searchQuery.toLowerCase();
+        const fullName = `${c.firstName} ${c.lastName}`.toLowerCase();
+        const email = c.email.toLowerCase();
+        
+        // Match name or email
+        if (fullName.includes(query) || email.includes(query) || c.role.toLowerCase().includes(query)) {
+          return true;
+        }
+
+        // Match student fields
+        if (c.role === 'STUDENT') {
+          const student = mockDb.students.find(s => s.userId === c.id);
+          if (student) {
+            const studentId = student.id.toLowerCase();
+            const admissionNumber = (student.admissionNumber || '').toLowerCase();
+            if (studentId.includes(query) || admissionNumber.includes(query)) {
+              return true;
+            }
+          }
+        }
+
+        // Match teacher / warden / staff fields
+        if (c.role === 'TEACHER') {
+          const teacher = mockDb.teachers.find(t => t.userId === c.id);
+          if (teacher && (teacher.employeeId || '').toLowerCase().includes(query)) {
+            return true;
+          }
+        }
+
+        if (c.role === 'WARDEN') {
+          const warden = mockDb.hostelWardens.find(w => w.userId === c.id);
+          if (warden && (warden.employeeId || '').toLowerCase().includes(query)) {
+            return true;
+          }
+        }
+
+        // Check if there is employeeId directly on user object
+        if (c.employeeId && c.employeeId.toLowerCase().includes(query)) {
+          return true;
+        }
+
+        return false;
+      }).map(c => {
         const existing = contacts.find(x => x.id === c.id);
         return {
           ...c,
