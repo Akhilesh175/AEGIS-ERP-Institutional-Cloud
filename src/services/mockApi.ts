@@ -2846,26 +2846,69 @@ export const mockApi = {
     const student = mockDb.students.find(s => s.userId === userId);
     const teacher = mockDb.teachers.find(t => t.userId === userId);
     const parent = mockDb.parents.find(p => p.userId === userId);
-    const resolvedSchoolId = schoolId || student?.schoolId || teacher?.schoolId || parent?.schoolId || null;
+    const resolvedSchoolId = schoolId || student?.schoolId || teacher?.schoolId || parent?.schoolId || 'school-1';
 
     let dbRow: any = null;
     try {
-      const { data, error } = await supabaseAdmin
-        .from('notifications')
-        .insert({
-          school_id: resolvedSchoolId,
-          user_id: userId,
-          title: title,
+      const res = await fetch('/api/send-notification', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          schoolId: resolvedSchoolId,
+          targetType: 'individual',
+          targetValue: userId,
+          title,
           content: message,
-          type: type,
-          is_read: false
+          type
         })
-        .select()
-        .single();
-      if (error) throw error;
-      dbRow = data;
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const { data: latestNotifs } = await supabaseAdmin
+          .from('notifications')
+          .select('*')
+          .eq('user_id', userId)
+          .order('created_at', { ascending: false })
+          .limit(1)
+          .maybeSingle();
+        if (latestNotifs) {
+          dbRow = latestNotifs;
+        }
+      } else {
+        const { data, error } = await supabaseAdmin
+          .from('notifications')
+          .insert({
+            school_id: resolvedSchoolId,
+            user_id: userId,
+            title: title,
+            content: message,
+            type: type,
+            is_read: false
+          })
+          .select()
+          .single();
+        if (data) dbRow = data;
+      }
     } catch (e) {
-      console.error('Failed to save notification in DB:', e);
+      console.error('Failed to dispatch notification via API, falling back to direct DB write:', e);
+      try {
+        const { data } = await supabaseAdmin
+          .from('notifications')
+          .insert({
+            school_id: resolvedSchoolId,
+            user_id: userId,
+            title: title,
+            content: message,
+            type: type,
+            is_read: false
+          })
+          .select()
+          .single();
+        if (data) dbRow = data;
+      } catch (dbErr) {
+        console.error('Direct DB write fallback failed:', dbErr);
+      }
     }
 
     const notify: Notification = {
