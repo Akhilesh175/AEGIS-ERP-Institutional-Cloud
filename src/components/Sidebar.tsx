@@ -105,6 +105,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
 
   // Define tab mappings per role
   const getTabs = (): Array<{ id: string; label: string; icon: any; locked?: boolean }> => {
+    if (planName === 'expired') {
+      if (role === 'ADMIN') {
+        return [
+          { id: 'dashboard', label: 'Subscription Renewal', icon: ShieldAlert },
+          { id: 'support', label: 'Help & Support', icon: HelpCircle }
+        ];
+      }
+      return [
+        { id: 'dashboard', label: 'Access Suspended', icon: ShieldAlert },
+        { id: 'support', label: 'Help & Support', icon: HelpCircle }
+      ];
+    }
+
     switch (role) {
       case 'STUDENT': {
         const lock = (tabId: string) => isTabLocked('STUDENT', tabId, planName);
@@ -177,6 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: lock('rbac') },
           { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database, locked: lock('backups') },
           { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
+          { id: 'subscriptions', label: 'Subscription Billing', icon: DollarSign },
           { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert },
           { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];

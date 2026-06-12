@@ -14,6 +14,13 @@ import { GlassCard } from './components/GlassCard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 
 const getTabsForRole = (role: string, planName: string): string[] => {
+  if (planName === 'expired') {
+    if (role === 'ADMIN') {
+      return ['dashboard', 'subscriptions', 'support'];
+    }
+    return ['dashboard', 'support'];
+  }
+
   switch (role) {
     case 'STUDENT':
       return ['dashboard', 'timetable', 'grades', 'materials', 'quizzes', 'library', 'transit', 'forums', 'fees', 'hostel', 'support'];
@@ -25,7 +32,7 @@ const getTabsForRole = (role: string, planName: string): string[] => {
       return ['dashboard', 'tenants', 'users', 'audits', 'backups', 'logging', 'support'];
     default: // ADMIN or any SUB_ADMIN role
       return [
-        'dashboard', 'impersonation', 'dangerzone',
+        'dashboard', 'impersonation', 'dangerzone', 'subscriptions',
         'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
         'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support'
@@ -35,6 +42,7 @@ const getTabsForRole = (role: string, planName: string): string[] => {
 
 import { MarksheetVerificationPage } from './components/MarksheetVerificationPage';
 import { HelpSupportPage } from './components/HelpSupportPage';
+import { SaaSAuthFlow } from './components/SaaSAuthFlow';
 
 export const App: React.FC = () => {
   const { session, theme, toggleTheme, setSession, initializeStore } = useStore();
@@ -361,6 +369,17 @@ export const App: React.FC = () => {
   }
 
   if (!session) {
+    const hash = currentHash.substring(1);
+    const isRegisterFlow = hash.startsWith('register') || hash.startsWith('verify-registration') || hash.startsWith('plans');
+    if (isRegisterFlow) {
+      return (
+        <SaaSAuthFlow 
+          onBackToLogin={() => { window.location.hash = ''; setCurrentHash(''); }} 
+          theme={theme} 
+          toggleTheme={toggleTheme} 
+        />
+      );
+    }
     return (
       <div className="min-h-screen bg-[#070a13] flex flex-col justify-between p-4 md:p-8 relative overflow-hidden font-sans text-slate-200 selection:bg-brand-500/30 selection:text-brand-200">
         {/* Cyber Security Tech Background Graphics */}
@@ -809,6 +828,17 @@ export const App: React.FC = () => {
                         )}
                       </button>
                     </form>
+                    <div className="text-center mt-4 pt-3 border-t border-slate-900">
+                      <p className="text-xs text-slate-400">
+                        Admin of a new school?{' '}
+                        <a 
+                          href="#register" 
+                          className="text-brand-400 hover:text-brand-350 font-bold hover:underline transition-colors"
+                        >
+                          Register Your School
+                        </a>
+                      </p>
+                    </div>
                   </div>
                 </GlassCard>
               );
@@ -978,13 +1008,73 @@ export const App: React.FC = () => {
           <ErrorBoundary>
             {/* Active Portal Mount */}
             {activeTab === 'support' && <HelpSupportPage />}
-            {activeTab !== 'support' && (
+            {activeTab === 'subscriptions' && session.user.role === 'ADMIN' && (
+              <div className="space-y-6 max-w-5xl mx-auto py-4">
+                <SaaSAuthFlow 
+                  onBackToLogin={() => {}} 
+                  theme={theme} 
+                  toggleTheme={toggleTheme} 
+                  initialStep="plans"
+                  initialSchoolId={session.user.schoolId || 'school-1'}
+                  adminEmail={session.user.email}
+                  adminPhone={session.user.phone || ''}
+                />
+              </div>
+            )}
+            {activeTab !== 'support' && activeTab !== 'subscriptions' && (
               <>
-                {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
-                {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
-                {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
-                {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
-                {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
+                {session.schoolSubscriptionPlan === 'expired' ? (
+                  session.user.role === 'ADMIN' ? (
+                    <div className="space-y-6 max-w-4xl mx-auto py-8">
+                      <div className="p-6 bg-red-500/10 border border-red-500/20 text-red-400 rounded-3xl flex items-start gap-4">
+                        <ShieldAlert className="shrink-0 mt-1" size={24} />
+                        <div>
+                          <h3 className="text-lg font-bold text-slate-100 font-sans">Institution Subscription Expired</h3>
+                          <p className="text-xs text-slate-400 mt-1">
+                            Your Aegis ERP subscription has expired. Please select a payment plan below and complete payment to restore access to all administrative modules instantly.
+                          </p>
+                        </div>
+                      </div>
+                      <SaaSAuthFlow 
+                        onBackToLogin={() => {}} 
+                        theme={theme} 
+                        toggleTheme={toggleTheme} 
+                        initialStep="plans"
+                        initialSchoolId={session.user.schoolId || 'school-1'}
+                        adminEmail={session.user.email}
+                        adminPhone={session.user.phone || ''}
+                      />
+                    </div>
+                  ) : (
+                    <GlassCard className="max-w-xl mx-auto p-12 text-center space-y-6 bg-[#0b101d]/80 border border-red-500/20 shadow-2xl mt-12">
+                      <div className="w-20 h-20 rounded-full bg-red-500/10 flex items-center justify-center mx-auto text-red-400 border border-red-500/20 shadow-lg shadow-red-500/5">
+                        <Lock size={36} className="animate-pulse-subtle" />
+                      </div>
+                      <div className="space-y-2">
+                        <h2 className="text-2xl font-extrabold text-white">Access Temporarily Suspended</h2>
+                        <p className="text-xs text-slate-400 leading-relaxed px-4">
+                          The Aegis ERP subscription for your school has expired. Administrative access, classroom rosters, student portals, and module tracking are currently gated.
+                        </p>
+                        <p className="text-xs text-brand-400 font-bold font-mono uppercase tracking-widest mt-4">
+                          Please contact your School Administrator to renew subscription.
+                        </p>
+                      </div>
+                      <div className="pt-6 border-t border-slate-900 flex justify-center gap-4 text-xs">
+                        <a href="#support" className="text-slate-400 hover:text-slate-200 font-semibold flex items-center gap-1.5 transition-colors">
+                          <HelpCircle size={15} /> Contact Technical Support
+                        </a>
+                      </div>
+                    </GlassCard>
+                  )
+                ) : (
+                  <>
+                    {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
+                    {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
+                    {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
+                    {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
+                    {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
+                  </>
+                )}
               </>
             )}
           </ErrorBoundary>

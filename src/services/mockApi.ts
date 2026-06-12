@@ -7523,14 +7523,35 @@ export const mockApi = {
 
     mockDb.saveAll();
 
+    let saasStats: any = {};
+    try {
+      const res = await fetch('/api/saas-stats');
+      if (res.ok) {
+        const payload = await res.json();
+        if (payload.success) {
+          saasStats = payload.stats;
+        }
+      }
+    } catch (e) {
+      console.error('Failed to fetch saas stats from api:', e);
+    }
+
     return {
       totalSchools: schoolCount || 0,
       totalUsers: userCount || 0,
-      totalSubscriptionsIncome: 0, 
+      totalSubscriptionsIncome: saasStats.totalRevenue || 0, 
       activeSessions: getSystemTelemetry().activeSessions,
       systemTelemetry: getSystemTelemetry(),
       schoolsList: mappedSchools,
-      adminsList: mappedAdmins
+      adminsList: mappedAdmins,
+      
+      activeSchools: saasStats.activeSchools || 0,
+      expiredSchools: saasStats.expiredSchools || 0,
+      monthlyRevenue: saasStats.monthlyRevenue || 0,
+      planDistribution: saasStats.planDistribution || [],
+      expiryAlerts: saasStats.expiryAlerts || [],
+      recentPayments: saasStats.recentPayments || [],
+      recentRegistrations: saasStats.recentRegistrations || []
     };
   },
 
@@ -9573,31 +9594,50 @@ export const mockApi = {
   async getLiveSchoolSubscriptionPlan(schoolId: string): Promise<string | null> {
     if (!schoolId) return null;
     try {
-      // 1. Query the school_subscriptions table for active plan
-      const todayStr = new Date().toISOString().split('T')[0];
-      const { data: activeSub, error: subError } = await supabaseAdmin
-        .from('school_subscriptions')
+      // 1. Query subscriptions table for the latest subscription (source of truth)
+      const { data: latestSub, error: subError } = await supabaseAdmin
+        .from('subscriptions')
         .select('*')
         .eq('school_id', schoolId)
-        .eq('status', 'ACTIVE')
-        .gte('expiry_date', todayStr)
+        .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
 
       let plan = 'freemium';
       
-      if (!subError && activeSub) {
-        plan = activeSub.plan.toLowerCase();
+      if (!subError && latestSub) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        const isExpired = latestSub.status === 'EXPIRED' || (latestSub.expiry_date && latestSub.expiry_date < todayStr);
+        if (isExpired) {
+          plan = 'expired';
+        } else {
+          plan = latestSub.plan_code.toLowerCase();
+        }
       } else {
-        // Fallback: Query schools table
-        const { data: dbSchool } = await supabaseAdmin
-          .from('schools')
+        // Fallback: Query the old school_subscriptions table for active plan
+        const todayStr = new Date().toISOString().split('T')[0];
+        const { data: activeSub, error: schoolSubError } = await supabaseAdmin
+          .from('school_subscriptions')
           .select('*')
-          .eq('id', schoolId)
+          .eq('school_id', schoolId)
+          .eq('status', 'ACTIVE')
+          .gte('expiry_date', todayStr)
+          .limit(1)
           .maybeSingle();
-          
-        if (dbSchool) {
-          plan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
+
+        if (!schoolSubError && activeSub) {
+          plan = activeSub.plan.toLowerCase();
+        } else {
+          // If no subscription record exists at all, fall back to schools table
+          const { data: dbSchool } = await supabaseAdmin
+            .from('schools')
+            .select('*')
+            .eq('id', schoolId)
+            .maybeSingle();
+            
+          if (dbSchool) {
+            plan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
+          }
         }
       }
       

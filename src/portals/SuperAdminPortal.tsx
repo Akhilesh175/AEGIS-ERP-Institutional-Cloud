@@ -460,6 +460,41 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
             </GlassCard>
           </div>
 
+          {/* SaaS Core Business Metrics */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-6 animate-fade-in">
+            <GlassCard className="space-y-2">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Monthly Recurring Revenue</span>
+              <h3 className="text-2xl font-extrabold text-green-400 font-mono">
+                ₹{(stats.monthlyRevenue || 0).toLocaleString()}
+              </h3>
+              <p className="text-[10px] text-slate-500">Estimated from active subscriptions</p>
+            </GlassCard>
+
+            <GlassCard className="space-y-2">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Total SaaS Revenue</span>
+              <h3 className="text-2xl font-extrabold text-emerald-400 font-mono">
+                ₹{(stats.totalSubscriptionsIncome || 0).toLocaleString()}
+              </h3>
+              <p className="text-[10px] text-slate-500">Cumulative verified payments</p>
+            </GlassCard>
+
+            <GlassCard className="space-y-2">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Active Schools</span>
+              <h3 className="text-2xl font-extrabold text-blue-400 font-mono">
+                {stats.activeSchools || 0}
+              </h3>
+              <p className="text-[10px] text-slate-500">Schools with active/trial plans</p>
+            </GlassCard>
+
+            <GlassCard className="space-y-2">
+              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">Expired Schools</span>
+              <h3 className="text-2xl font-extrabold text-red-400 font-mono">
+                {stats.expiredSchools || 0}
+              </h3>
+              <p className="text-[10px] text-slate-500">Require subscription renewal</p>
+            </GlassCard>
+          </div>
+
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             
             {/* SaaS Schools Directory */}
@@ -509,7 +544,148 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                 </div>
                 <div>
                   <span className="text-[9px] text-slate-500 font-bold uppercase block leading-none">SaaS Income</span>
-                  <p className="text-lg font-bold text-green-400 mt-1">${stats.totalSubscriptionsIncome.toFixed(2)}</p>
+                  <p className="text-lg font-bold text-green-400 mt-1">₹{stats.totalSubscriptionsIncome.toLocaleString()}</p>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* SaaS Business Insights */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 animate-fade-in">
+            
+            {/* Plan Distribution & Expiry Alerts */}
+            <GlassCard className="space-y-4 lg:col-span-1">
+              <div>
+                <h3 className="font-bold text-slate-200 text-sm pb-2 border-b border-slate-850 flex items-center gap-2">
+                  <Sliders className="text-brand-500" size={16} />
+                  Plan Distribution
+                </h3>
+                <div className="mt-3 space-y-2">
+                  {stats.planDistribution?.map((p: any) => (
+                    <div key={p.name} className="flex justify-between items-center text-xs">
+                      <span className="text-slate-400 font-semibold uppercase">{p.name}</span>
+                      <div className="flex items-center gap-3">
+                        <div className="w-24 bg-slate-900 h-2 rounded-full overflow-hidden">
+                          <div 
+                            className="bg-brand-500 h-full" 
+                            style={{ width: `${stats.totalSchools > 0 ? (p.count / stats.totalSchools) * 100 : 0}%` }}
+                          />
+                        </div>
+                        <span className="font-bold text-slate-200 font-mono w-4 text-right">{p.count}</span>
+                      </div>
+                    </div>
+                  ))}
+                  {(!stats.planDistribution || stats.planDistribution.length === 0) && (
+                    <p className="text-xs text-slate-500 italic py-2">No active subscriptions distribution.</p>
+                  )}
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-850">
+                <h3 className="font-bold text-slate-200 text-sm pb-2 flex items-center gap-2">
+                  <AlertTriangle className="text-amber-500" size={16} />
+                  Expiry Alerts
+                </h3>
+                <div className="mt-2 space-y-2 max-h-[160px] overflow-y-auto pr-1">
+                  {stats.expiryAlerts?.map((a: any) => (
+                    <div key={a.schoolId} className="p-2 bg-amber-500/5 border border-amber-500/10 rounded-xl flex justify-between items-center text-[11px]">
+                      <div>
+                        <p className="font-bold text-slate-200 truncate max-w-[120px]">{a.schoolName}</p>
+                        <p className="text-[9px] text-slate-500 uppercase">{a.planName} Plan</p>
+                      </div>
+                      <div className="text-right">
+                        <span className={`font-bold px-1.5 py-0.5 rounded text-[9px] ${a.daysLeft <= 3 ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'}`}>
+                          {a.daysLeft <= 0 ? 'Expired' : `${a.daysLeft}d left`}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                  {(!stats.expiryAlerts || stats.expiryAlerts.length === 0) && (
+                    <p className="text-xs text-slate-500 italic py-1 text-center">No schools nearing expiration.</p>
+                  )}
+                </div>
+              </div>
+            </GlassCard>
+
+            {/* Recent Payments & Registrations */}
+            <GlassCard className="space-y-4 lg:col-span-2">
+              <div>
+                <h3 className="font-bold text-slate-200 text-sm pb-2 border-b border-slate-850 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <CheckCircle className="text-emerald-500" size={16} />
+                    Recent Transactions & Invoices
+                  </span>
+                  <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">Last 5 Payments</span>
+                </h3>
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full text-left text-[11px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 text-slate-500 font-semibold">
+                        <th className="pb-2">Institution</th>
+                        <th className="pb-2">Plan</th>
+                        <th className="pb-2">Amount</th>
+                        <th className="pb-2">Timestamp</th>
+                        <th className="pb-2 text-right">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/50 text-slate-300">
+                      {stats.recentPayments?.map((pay: any) => (
+                        <tr key={pay.id} className="hover:bg-slate-900/10">
+                          <td className="py-2 font-bold max-w-[140px] truncate">{pay.schoolName}</td>
+                          <td className="py-2 uppercase font-mono text-[9px] text-brand-400">{pay.planName}</td>
+                          <td className="py-2 font-mono text-emerald-400">₹{pay.amount.toLocaleString()}</td>
+                          <td className="py-2 text-slate-500">{new Date(pay.createdAt).toLocaleDateString()}</td>
+                          <td className="py-2 text-right">
+                            <span className="bg-green-500/10 border border-green-500/20 text-green-400 font-bold px-1.5 py-0.5 rounded text-[9px] uppercase tracking-wider font-mono">
+                              {pay.status}
+                            </span>
+                          </td>
+                        </tr>
+                      ))}
+                      {(!stats.recentPayments || stats.recentPayments.length === 0) && (
+                        <tr>
+                          <td colSpan={5} className="py-4 text-center text-slate-500 italic">No recent payment transactions.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              <div className="pt-4 border-t border-slate-850">
+                <h3 className="font-bold text-slate-200 text-sm pb-2 flex items-center justify-between">
+                  <span className="flex items-center gap-2">
+                    <Building className="text-brand-500" size={16} />
+                    Recent Registrations
+                  </span>
+                  <span className="text-[10px] text-slate-500 uppercase tracking-widest font-mono">SaaS Signups</span>
+                </h3>
+                <div className="mt-2 overflow-x-auto">
+                  <table className="w-full text-left text-[11px] border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-850 text-slate-500 font-semibold">
+                        <th className="pb-2">School Name</th>
+                        <th className="pb-2">Registered Email</th>
+                        <th className="pb-2">Enrollment</th>
+                        <th className="pb-2 text-right">Created At</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850/50 text-slate-300">
+                      {stats.recentRegistrations?.map((reg: any) => (
+                        <tr key={reg.id} className="hover:bg-slate-900/10">
+                          <td className="py-2 font-bold max-w-[140px] truncate">{reg.name}</td>
+                          <td className="py-2 font-mono text-slate-400">{reg.email}</td>
+                          <td className="py-2 font-mono text-slate-400">{reg.studentStrength} students</td>
+                          <td className="py-2 text-right text-slate-500">{new Date(reg.createdAt).toLocaleDateString()}</td>
+                        </tr>
+                      ))}
+                      {(!stats.recentRegistrations || stats.recentRegistrations.length === 0) && (
+                        <tr>
+                          <td colSpan={4} className="py-4 text-center text-slate-500 italic">No recent registrations.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
                 </div>
               </div>
             </GlassCard>
