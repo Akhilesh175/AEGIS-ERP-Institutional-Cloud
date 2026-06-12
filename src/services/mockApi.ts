@@ -314,7 +314,7 @@ export const checkChatAllowed = (sender: any, receiver: any): boolean => {
 const SUPER_ADMIN_EMAIL = 'jy7018080@gmail.com';
 
 // Dynamic cache for student attendance analytics to prevent portal lag
-export const attendanceAnalyticsCache: Record<string, { timestamp: number; data: any[] }> = {};
+export const attendanceAnalyticsCache: Record<string, { timestamp: number; data: any }> = {};
 
 const PLAN_HIERARCHY: Record<string, number> = {
   freemium: 0,
@@ -3603,7 +3603,8 @@ export const mockApi = {
       throw new Error('Security Policy Violation: Access denied. You are not the assigned Class Teacher for this class.');
     }
 
-    return this.fetchStudentAttendanceAnalytics(teacher.schoolId, classId);
+    const res = await this.fetchStudentAttendanceAnalytics(teacher.schoolId, classId);
+    return res.students;
   },
 
   async fetchStudentAttendanceAnalytics(
@@ -3611,7 +3612,7 @@ export const mockApi = {
     classId?: string,
     sectionId?: string | null,
     academicSessionId?: string
-  ): Promise<any[]> {
+  ): Promise<any> {
     const cacheKey = `${schoolId}_${classId || ''}_${sectionId || ''}_${academicSessionId || ''}`;
     const cachedEntry = attendanceAnalyticsCache[cacheKey];
     const CACHE_TTL = 15000; // 15 seconds TTL for fast reload
@@ -3707,17 +3708,20 @@ export const mockApi = {
         missed_count: s.absentDays
       }));
 
-    (computed as any).overall_percentage = overallPercentage;
-    (computed as any).absences_count = absencesCount;
-    (computed as any).tardy_count = tardyCount;
-    (computed as any).chronic_absent = chronicAbsentList;
+    const result = {
+      students: computed,
+      overall_percentage: overallPercentage,
+      absences_count: absencesCount,
+      tardy_count: tardyCount,
+      chronic_absent: chronicAbsentList
+    };
 
     attendanceAnalyticsCache[cacheKey] = {
       timestamp: Date.now(),
-      data: computed
+      data: result
     };
 
-    return computed;
+    return result;
   },
 
   async teacherGetSubmissions(teacherId: string, classId: string): Promise<(AssignmentSubmission & { studentName: string; assignmentTitle: string; maxMarks: number })[]> {
@@ -8804,6 +8808,8 @@ export const mockApi = {
       }
     }
 
+    await this.syncChatMessagesData(userId);
+
     // Identify active contact IDs from synchronized messages
     const activeContactIds = new Set<string>();
     mockDb.chatMessages.forEach(m => {
@@ -8872,6 +8878,8 @@ export const mockApi = {
   async getChatHistory(senderId: string, receiverId: string): Promise<ChatMessage[]> {
     await delay();
     
+    await this.syncChatMessagesData(senderId);
+
     // Find DIRECT channel between senderId and receiverId
     const { data: senderChannels } = await supabaseAdmin
       .from('communication_participants')

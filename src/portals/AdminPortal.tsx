@@ -10269,7 +10269,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Overall Attendance Rate</span>
                 <div className="text-2xl font-bold text-slate-100 flex items-baseline gap-1.5 mt-1">
-                  {attendanceAnalytics.overall_percentage !== undefined ? `${attendanceAnalytics.overall_percentage.toFixed(1)}%` : '94.2%'}
+                  {attendanceAnalytics.overall_percentage !== undefined ? `${attendanceAnalytics.overall_percentage.toFixed(1)}%` : '—'}
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1">Aggregated school attendance records</p>
               </div>
@@ -10282,7 +10282,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Absentee Records</span>
                 <div className="text-2xl font-bold text-slate-100 flex items-baseline gap-1.5 mt-1">
-                  {attendanceAnalytics.absences_count ?? 4}
+                  {attendanceAnalytics.absences_count !== undefined ? attendanceAnalytics.absences_count : 0}
                   <span className="text-[10px] font-normal text-slate-400">students</span>
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1">Total unexcused / absent logs</p>
@@ -10296,7 +10296,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               <div className="space-y-1">
                 <span className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Chronically Tardy</span>
                 <div className="text-2xl font-bold text-slate-100 flex items-baseline gap-1.5 mt-1">
-                  {attendanceAnalytics.tardy_count ?? 2}
+                  {attendanceAnalytics.tardy_count !== undefined ? attendanceAnalytics.tardy_count : 0}
                   <span className="text-[10px] font-normal text-slate-400">students</span>
                 </div>
                 <p className="text-[10px] text-slate-500 mt-1">Repeated late arrivals logged</p>
