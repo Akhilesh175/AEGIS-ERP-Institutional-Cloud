@@ -45,6 +45,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [parents, setParents] = useState<(Parent & { userDetails: User; linkedStudentNames: string[] })[]>([]);
   const [classes, setClasses] = useState<Class[]>([]);
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [attendanceList, setAttendanceList] = useState<any[]>([]);
+  const [assignments, setAssignments] = useState<any[]>([]);
+  const [assignmentSubmissions, setAssignmentSubmissions] = useState<any[]>([]);
 
   // Documents Center States
   const [docSelectedStudentId, setDocSelectedStudentId] = useState<string>('');
@@ -1314,6 +1317,27 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           setExamSubjects(uniqueExamSubjects);
           setBooks(uniqueBooks);
 
+          // Sync student attendance, homeworks and homework submissions in background/parallel
+          await Promise.all([
+            mockApi.syncAttendanceData(session.user.schoolId),
+            mockApi.syncAssignmentsData(session.user.schoolId),
+            mockApi.syncAssignmentSubmissionsData(session.user.schoolId)
+          ]);
+
+          const schoolStudentIds = mockDb.students.filter(s => s.schoolId === session.user.schoolId).map(s => s.id);
+          const localAttendance = mockDb.attendance.filter(a => schoolStudentIds.includes(a.studentId));
+          const uniqueAttendance = Array.from(new Map(localAttendance.map((a: any) => [a.id, a])).values());
+          setAttendanceList(uniqueAttendance);
+
+          const localAssignments = mockDb.assignments.filter(a => a.schoolId === session.user.schoolId);
+          const uniqueAssignmentsList = Array.from(new Map(localAssignments.map((a: any) => [a.id, a])).values());
+          setAssignments(uniqueAssignmentsList);
+
+          const schoolAssignmentIds = uniqueAssignmentsList.map(a => a.id);
+          const localSubmissions = mockDb.assignmentSubmissions.filter(s => schoolAssignmentIds.includes(s.assignmentId));
+          const uniqueSubmissions = Array.from(new Map(localSubmissions.map((s: any) => [s.id, s])).values());
+          setAssignmentSubmissions(uniqueSubmissions);
+
           setHostels(hList || []);
           setHostelBlocks(hbList || []);
           setHostelRooms(hrList || []);
@@ -1470,6 +1494,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_payments' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'school_subscriptions' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'attendance' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'assignments' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'assignment_submissions' }, handleAdminSync)
       .subscribe();
 
     // Subscribe to manual broadcast channel for instant, guaranteed real-time updates!
@@ -2854,6 +2880,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleDisburseDriverSalary = async (driverId: string, amount: number, attendanceRecordId?: string | null) => {
+    if (session?.user.role !== 'SUPER_ADMIN' && session?.user.role !== 'FINANCE_ADMIN') {
+      alert('Unauthorized: Only Super Administrators and Finance Administrators can disburse salary.');
+      return;
+    }
     if (!adminId || !session?.user.schoolId) return;
     const curSym = overview?.currencySymbol || '$';
     if (!window.confirm(`Are you sure you want to disburse a daily salary payout of ${curSym}${amount.toFixed(2)} to this driver?`)) return;
@@ -4713,6 +4743,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         const pendingPayout = unpaidCount * dailyRate;
 
                         const isDisbursing = disbursingDriverId === driver.id;
+                        const canDisburse = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'FINANCE_ADMIN';
 
                         return (
                           <tr key={driver.id} className="hover:bg-slate-900/10 text-slate-200">
@@ -4738,17 +4769,21 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             <td className="py-3 px-4 text-slate-450 font-mono">{overview.currencySymbol || '$'}{dailyRate.toFixed(2)}/day</td>
                             <td className="py-3 px-4 font-mono font-bold text-slate-100">{overview.currencySymbol || '$'}{pendingPayout.toFixed(2)}</td>
                             <td className="py-3 px-4 text-right">
-                              <button
-                                onClick={() => handleDisburseDriverSalary(driver.id, pendingPayout, unpaidRecords[0]?.id || null)}
-                                disabled={pendingPayout === 0 || isDisbursing}
-                                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
-                                  pendingPayout === 0 || isDisbursing
-                                    ? 'bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed'
-                                    : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/10 active:scale-95'
-                                }`}
-                              >
-                                {isDisbursing ? 'Disbursing...' : 'Disburse Salary'}
-                              </button>
+                              {canDisburse ? (
+                                <button
+                                  onClick={() => handleDisburseDriverSalary(driver.id, pendingPayout, unpaidRecords[0]?.id || null)}
+                                  disabled={pendingPayout === 0 || isDisbursing}
+                                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all ${
+                                    pendingPayout === 0 || isDisbursing
+                                      ? 'bg-slate-900 border border-slate-800 text-slate-500 cursor-not-allowed'
+                                      : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-lg shadow-emerald-500/10 active:scale-95'
+                                  }`}
+                                >
+                                  {isDisbursing ? 'Disbursing...' : 'Disburse Salary'}
+                                </button>
+                              ) : (
+                                <span className="text-[10px] text-slate-500 italic">No Perms</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -7665,7 +7700,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           const dailyRate = 45.00;
                           const pendingPayout = unpaidCount * dailyRate;
                           const isDisbursing = disbursingDriverId === driver.id;
-                          const canDisburse = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN';
+                          const canDisburse = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'FINANCE_ADMIN';
 
                           return (
                             <tr key={driver.id} className="hover:bg-slate-900/10">

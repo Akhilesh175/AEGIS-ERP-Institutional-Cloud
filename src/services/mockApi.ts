@@ -308,6 +308,15 @@ export const checkChatAllowed = (sender: any, receiver: any): boolean => {
 };
 
 
+export function normalizeRole(role: string): string {
+  if (!role) return '';
+  return role
+    .toUpperCase()
+    .trim()
+    .replace(/[^A-Z0-9_\s-]/g, '')
+    .replace(/[\s-]+/g, '_');
+}
+
 // ── Super Admin Identity Lock ────────────────────────────────────────────────
 // ONLY this exact email address is permitted to log in as SUPER_ADMIN.
 // Any other email attempting to use a SUPER_ADMIN role will be rejected.
@@ -10656,8 +10665,26 @@ export const mockApi = {
     // RBAC Validation
     const operators = mockDb.users.filter(u => u.schoolId === schoolId);
     const operator = operators.find(o => o.id === adminId);
-    const allowedRoles: UserRole[] = ['ADMIN', 'FINANCE_ADMIN'];
-    if (!operator || !allowedRoles.includes(operator.role)) {
+
+    // Validate role against database user record dynamically rather than hardcoded UI values
+    const { data: dbUser, error: dbErr } = await supabaseAdmin
+      .from('users')
+      .select('role')
+      .eq('id', adminId)
+      .single();
+
+    const currentRole = dbErr || !dbUser ? operator?.role : dbUser.role;
+    const normalizedRole = normalizeRole(currentRole || '');
+    const allowedRoles = [
+      'SUPER_ADMIN',
+      'ADMIN',
+      'SCHOOL_ADMIN',
+      'FINANCE_ADMIN',
+      'FINANCE_ADMINISTRATION',
+      'FINANCE_ADMINISTRATION_BILLER'
+    ];
+
+    if (!allowedRoles.includes(normalizedRole)) {
       throw new Error('Security Policy Alert: Unauthorized salary disbursement attempt. Payouts require ADMIN or FINANCE_ADMIN privilege.');
     }
 

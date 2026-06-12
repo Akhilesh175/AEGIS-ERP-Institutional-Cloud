@@ -16,6 +16,7 @@ interface SchoolERPStore {
   setActiveAcademicSessionId: (sessionId: string | null) => void;
   initializeStore: () => void;
   syncSubscriptionPlan: () => Promise<void>;
+  syncUserSession: () => Promise<void>;
 }
 
 export const useStore = create<SchoolERPStore>((set, get) => ({
@@ -183,6 +184,42 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
       }
     } catch (e) {
       console.error('Failed to sync subscription plan in polling loop:', e);
+    }
+  },
+
+  syncUserSession: async () => {
+    const currentSession = get().session;
+    if (!currentSession) return;
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data: dbUser, error } = await supabase
+        .from('users')
+        .select('*')
+        .eq('id', currentSession.user.id)
+        .single();
+      
+      if (error || !dbUser) {
+        console.error('Failed to fetch user from DB:', error);
+        return;
+      }
+
+      // Check if user role has updated
+      if (currentSession.user.role !== dbUser.role) {
+        console.log(`Role updated in DB from ${currentSession.user.role} to ${dbUser.role}. Refreshing session...`);
+        const updatedUser = {
+          ...currentSession.user,
+          role: dbUser.role,
+          firstName: dbUser.first_name,
+          lastName: dbUser.last_name,
+          phone: dbUser.phone || '',
+          isActive: dbUser.is_active
+        };
+        const updatedSession = { ...currentSession, user: updatedUser };
+        set({ session: updatedSession });
+        localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+      }
+    } catch (e) {
+      console.error('Error in syncUserSession:', e);
     }
   }
 }));
