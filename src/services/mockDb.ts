@@ -8,7 +8,8 @@ import {
   Section, HomeworkAttachment, Book,
   Driver, Bus, Route, PickupPoint, TransportAssignment, TransportFeeRecord, VehicleLog,
   MaintenanceLog, DriverAttendance, BookCategory, BookIssue, BookReturn, LibraryFine,
-  LibraryInvoice, DigitalLibraryAsset, ExamSubject, StudentMark, ReportCard, ExamResult, QuizResult, DriverSalaryPayout
+  LibraryInvoice, DigitalLibraryAsset, ExamSubject, StudentMark, ReportCard, ExamResult, QuizResult, DriverSalaryPayout,
+  SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport
 } from '../types';
 
 // Storage keys
@@ -379,6 +380,64 @@ const SEED_QUIZ_RESULTS: QuizResult[] = [
   { id: 'qr-2', schoolId: 'school-1', studentId: 'st-2', quizId: 'q-1', score: 7, totalMarks: 10, createdAt: new Date().toISOString() }
 ];
 
+const SEED_SYSTEM_STATUSES: SystemStatus[] = [
+  { id: 'status-1', serviceName: 'Core ERP Console', status: 'OPERATIONAL', description: 'All core modules are performing normally.', updatedAt: new Date().toISOString() },
+  { id: 'status-2', serviceName: 'Database Engine', status: 'OPERATIONAL', description: 'Data operations and replication are fully functional.', updatedAt: new Date().toISOString() },
+  { id: 'status-3', serviceName: 'Aegis Communicator', status: 'OPERATIONAL', description: 'Realtime chat and messaging server online.', updatedAt: new Date().toISOString() },
+  { id: 'status-4', serviceName: 'Document Engine', status: 'OPERATIONAL', description: 'Report cards, receipts, and templates printing service operational.', updatedAt: new Date().toISOString() },
+  { id: 'status-5', serviceName: 'Payment Gateway Integration', status: 'OPERATIONAL', description: 'Stripe, card, and net banking systems operational.', updatedAt: new Date().toISOString() },
+  { id: 'status-6', serviceName: 'Transit & Fleet Telemetry', status: 'OPERATIONAL', description: 'Bus logs, driver registry, and routing functional.', updatedAt: new Date().toISOString() },
+  { id: 'status-7', serviceName: 'Hostel Hub Core', status: 'OPERATIONAL', description: 'Warden registers, bed vacancy, and check-in APIs operational.', updatedAt: new Date().toISOString() }
+];
+
+const SEED_KNOWLEDGE_BASE: KnowledgeBaseArticle[] = [
+  {
+    id: 'kb-1',
+    title: 'Aegis Communicator: Contact Discovery Help',
+    category: 'Communicator',
+    content: `### Aegis Communicator Guide\n\nThe Aegis Communicator allows direct messaging between permitted roles under strict administrative safety controls:\n\n* **School Admins** can discover and chat with all Super Admins, all Sub-Admins, and all Teachers.\n* **Super Admins** can discover and chat with School Admins from their respective registered institutions.\n* **Teachers, Parents, and Students** have role-specific discovery permissions synchronized in real-time.\n\n**Common Troubleshooting:**\n* If you see "0 contacts available", try logging out and logging back in to force a refresh of your cached credentials.`,
+    targetRoles: ['STUDENT', 'PARENT', 'TEACHER', 'ADMIN', 'SUPER_ADMIN'],
+    createdAt: new Date('2026-06-01').toISOString(),
+    updatedAt: new Date('2026-06-01').toISOString()
+  },
+  {
+    id: 'kb-2',
+    title: 'How to Download and Verify Student Report Cards',
+    category: 'Academics',
+    content: `### Student Report Cards & Grades\n\nReport cards are generated digitally by Homeroom teachers and can be verified by anyone globally via a unique secure QR link.\n\n* **Parents & Students:** Navigate to **Report Cards** or **Grades Progress** from your dashboard to view marks.\n* **Verification:** Every printed report card contains a verification URL at the bottom: \`#/verify/marksheet/[UUID]\`. Navigating to this URL allows anyone (e.g., colleges, boards) to instantly pull the original record directly from our secure disaster recovery ledger.`,
+    targetRoles: ['STUDENT', 'PARENT', 'TEACHER', 'ADMIN'],
+    createdAt: new Date('2026-06-02').toISOString(),
+    updatedAt: new Date('2026-06-02').toISOString()
+  },
+  {
+    id: 'kb-3',
+    title: 'Hostel Hub: Student Check-In and Leave Workflow',
+    category: 'Hostel Management',
+    content: `### Hostel Hub Guide\n\nHostel administration follows a strict 4-level validation flow:\n\n1. **Room Assignment:** Admin checks in a student into a vacant bed. The bed status automatically shifts from \`VACANT\` to \`OCCUPIED\`.\n2. **Leave Request:** Students or parents submit leave requests detailing travel plans.\n3. **Approval Sequence:** Leave requests must go through **Parent Approval** → **Warden Approval** → **Hostel Admin Approval** → **School Admin Approval**.\n4. **Status Updates:** The request status shifts to \`APPROVED\` only after all four checkpoints approve.`,
+    targetRoles: ['STUDENT', 'PARENT', 'TEACHER', 'ADMIN'],
+    createdAt: new Date('2026-06-03').toISOString(),
+    updatedAt: new Date('2026-06-03').toISOString()
+  },
+  {
+    id: 'kb-4',
+    title: 'Billing and Online Fee Invoicing',
+    category: 'Billing & Fees',
+    content: `### Fee Invoicing and Ledgers\n\n* **Tuition Fees:** Invoiced automatically per academic session based on the student's class registry.\n* **Hostel Fees:** Created by the Hostel Admin and invoiced directly to student portal ledgers.\n* **Payments:** Can be paid online via Stripe or logged manually as Cash/Bank Transfer in the Invoicing Office. Live receipts are automatically appended to the Documents Center.`,
+    targetRoles: ['STUDENT', 'PARENT', 'ADMIN'],
+    createdAt: new Date('2026-06-04').toISOString(),
+    updatedAt: new Date('2026-06-04').toISOString()
+  },
+  {
+    id: 'kb-5',
+    title: 'Transit Registry & Route Assignments',
+    category: 'Transport & Transit',
+    content: `### School Transit & Route Assignment\n\n* **Students:** Under the **School Transit** tab, students can view their assigned route, vehicle number plate, driver name, driver phone number, and pickup point details.\n* **Admins:** Manage drivers, vehicle logs (maintenance, fuel), routes, and assignments. All mutation actions are logged to the global transport audit stream for security compliance.`,
+    targetRoles: ['STUDENT', 'PARENT', 'ADMIN'],
+    createdAt: new Date('2026-06-05').toISOString(),
+    updatedAt: new Date('2026-06-05').toISOString()
+  }
+];
+
 // --- MOCK DATABASE CLASS ---
 
 class MockDatabase {
@@ -453,6 +512,10 @@ class MockDatabase {
   hostelVisitors: any[];
   hostelComplaints: any[];
   hostelMessMenu: any[];
+  supportTickets: SupportTicket[];
+  bugReports: BugReport[];
+  systemStatuses: SystemStatus[];
+  knowledgeBaseArticles: KnowledgeBaseArticle[];
 
   constructor() {
     this.users = getStorage<User[]>('users', SEED_USERS);
@@ -552,6 +615,10 @@ class MockDatabase {
     this.hostelVisitors = getStorage<any[]>('hostel_visitors', []);
     this.hostelComplaints = getStorage<any[]>('hostel_complaints', []);
     this.hostelMessMenu = getStorage<any[]>('hostel_mess_menu', []);
+    this.supportTickets = getStorage<SupportTicket[]>('support_tickets', []);
+    this.bugReports = getStorage<BugReport[]>('bug_reports', []);
+    this.systemStatuses = getStorage<SystemStatus[]>('system_statuses', SEED_SYSTEM_STATUSES);
+    this.knowledgeBaseArticles = getStorage<KnowledgeBaseArticle[]>('knowledge_base_articles', SEED_KNOWLEDGE_BASE);
   }
 
   saveAll() {
@@ -626,6 +693,10 @@ class MockDatabase {
     setStorage('hostel_visitors', this.hostelVisitors);
     setStorage('hostel_complaints', this.hostelComplaints);
     setStorage('hostel_mess_menu', this.hostelMessMenu);
+    setStorage('support_tickets', this.supportTickets);
+    setStorage('bug_reports', this.bugReports);
+    setStorage('system_statuses', this.systemStatuses);
+    setStorage('knowledge_base_articles', this.knowledgeBaseArticles);
   }
 
   // --- CRUD HELPERS ---

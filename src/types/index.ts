@@ -951,4 +951,60 @@ export interface HostelMessMenu {
   hostel?: Hostel;
 }
 
+export interface SystemStatus {
+  id: string;
+  serviceName: string;
+  status: 'OPERATIONAL' | 'DEGRADED_PERFORMANCE' | 'PARTIAL_OUTAGE' | 'MAJOR_OUTAGE';
+  description?: string;
+  updatedAt: string;
+}
+
+export interface KnowledgeBaseArticle {
+  id: string;
+  title: string;
+  category: string;
+  content: string;
+  targetRoles: UserRole[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SupportTicket {
+  id: string;
+  schoolId?: string;
+  userId: string;
+  userRole: string;
+  title: string;
+  description: string;
+  category: string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
+  status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+  attachmentUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+  userDetails?: {
+    id: string;
+    email: string;
+    firstName: string;
+    lastName: string;
+    avatarUrl?: string;
+  } | null;
+}
+
+export interface BugReport {
+  id: string;
+  schoolId?: string;
+  userId: string;
+  userRole: string;
+  title: string;
+  description: string;
+  stepsToReproduce?: string;
+  severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  status: 'NEW' | 'INVESTIGATING' | 'FIXED' | 'CLOSED';
+  attachmentUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+
 

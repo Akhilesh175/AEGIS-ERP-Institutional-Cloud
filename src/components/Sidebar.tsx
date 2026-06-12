@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare, 
   Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList, ShieldAlert, X,
-  Mail, Database, Key, Terminal, Home, FileText
+  Mail, Database, Key, Terminal, Home, FileText, HelpCircle
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -119,7 +119,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'transit', label: 'School Transit', icon: Layers, locked: lock('transit') },
           { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: lock('hostel') },
           { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: lock('forums') },
-          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: lock('fees') }
+          { id: 'fees', label: 'Billing Invoices', icon: DollarSign, locked: lock('fees') },
+          { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
       }
       case 'PARENT': {
@@ -136,7 +137,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'library', label: 'Library Books', icon: BookMarked, locked: lock('library') },
           { id: 'transit', label: 'School Transit', icon: Layers, locked: lock('transit') },
           { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: lock('hostel') },
-          { id: 'forums', label: 'Forums', icon: MessageSquare, locked: lock('forums') }
+          { id: 'forums', label: 'Forums', icon: MessageSquare, locked: lock('forums') },
+          { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
       }
       case 'TEACHER': {
@@ -152,7 +154,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'assignments', label: 'Assignment Creator', icon: PenTool, locked: lock('assignments') },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
           { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: lock('materials') },
-          { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: lock('forums') }
+          { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: lock('forums') },
+          { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
       }
       case 'ADMIN': {
@@ -174,7 +177,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: lock('rbac') },
           { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database, locked: lock('backups') },
           { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
-          { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert }
+          { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert },
+          { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
       }
       case 'FINANCE_ADMIN':
@@ -246,6 +250,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           subAdminTabs.push({ id: 'backups', label: 'Disaster Recovery', icon: Database, locked: !isEnterprise });
         }
         
+        subAdminTabs.push({ id: 'support', label: 'Help & Support', icon: HelpCircle });
         return subAdminTabs;
       }
       case 'SUPER_ADMIN':
@@ -255,7 +260,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'users', label: 'Global User Manager', icon: UsersRound },
           { id: 'audits', label: 'Global Audit Logs', icon: Settings, locked: !plan.features.auditLogs },
           { id: 'backups', label: 'Disaster Recovery Panel', icon: Database },
-          { id: 'logging', label: 'Centralized Logging Console', icon: Terminal }
+          { id: 'logging', label: 'Centralized Logging Console', icon: Terminal },
+          { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
       default:
         return [];

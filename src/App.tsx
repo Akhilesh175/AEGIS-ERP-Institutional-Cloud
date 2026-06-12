@@ -16,24 +16,25 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 const getTabsForRole = (role: string, planName: string): string[] => {
   switch (role) {
     case 'STUDENT':
-      return ['dashboard', 'timetable', 'grades', 'materials', 'quizzes', 'library', 'transit', 'forums', 'fees', 'hostel'];
+      return ['dashboard', 'timetable', 'grades', 'materials', 'quizzes', 'library', 'transit', 'forums', 'fees', 'hostel', 'support'];
     case 'PARENT':
-      return ['dashboard', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'transit', 'forums', 'hostel'];
+      return ['dashboard', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'transit', 'forums', 'hostel', 'support'];
     case 'TEACHER':
-      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics'];
+      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics', 'support'];
     case 'SUPER_ADMIN':
-      return ['dashboard', 'tenants', 'users', 'audits', 'backups', 'logging'];
+      return ['dashboard', 'tenants', 'users', 'audits', 'backups', 'logging', 'support'];
     default: // ADMIN or any SUB_ADMIN role
       return [
         'dashboard', 'impersonation', 'dangerzone',
         'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel'
+        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support'
       ];
   }
 };
 
 import { MarksheetVerificationPage } from './components/MarksheetVerificationPage';
+import { HelpSupportPage } from './components/HelpSupportPage';
 
 export const App: React.FC = () => {
   const { session, theme, toggleTheme, setSession, initializeStore } = useStore();
@@ -379,11 +380,16 @@ export const App: React.FC = () => {
           
           <ErrorBoundary>
             {/* Active Portal Mount */}
-            {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
-            {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
-            {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
-            {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
-            {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
+            {activeTab === 'support' && <HelpSupportPage />}
+            {activeTab !== 'support' && (
+              <>
+                {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
+                {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
+                {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
+                {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
+                {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
+              </>
+            )}
           </ErrorBoundary>
 
         </main>

@@ -8,7 +8,8 @@ import {
   Role, RolePermission, DriverSalaryPayout, UserRole,
   Hostel, HostelBlock, HostelRoom, HostelBed, HostelWarden, HostelAdmission,
   HostelAttendance, HostelLeaveRequest, HostelVisitor, HostelComplaint,
-  HostelFee, HostelPayment, HostelMessMenu
+  HostelFee, HostelPayment, HostelMessMenu,
+  SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
@@ -13768,6 +13769,334 @@ export const mockApi = {
       signatures: signatures,
       verificationCode: verificationCode
     };
+  },
+
+  async fetchSystemStatuses(): Promise<SystemStatus[]> {
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('system_status')
+        .select('*')
+        .order('service_name', { ascending: true });
+
+      if (error) throw error;
+      if (data && data.length > 0) {
+        const mapped = data.map((item: any) => ({
+          id: item.id,
+          serviceName: item.service_name,
+          status: item.status,
+          description: item.description,
+          updatedAt: item.updated_at
+        }));
+        mockDb.systemStatuses = mapped;
+        mockDb.saveAll();
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch system statuses from Supabase. Falling back to local cache:', err);
+    }
+    return mockDb.systemStatuses;
+  },
+
+  async fetchKnowledgeBaseArticles(): Promise<KnowledgeBaseArticle[]> {
+    const activeUser = getActiveUser();
+    const userRole = (activeUser?.role || 'STUDENT') as UserRole;
+
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('knowledge_base')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (error) throw error;
+      if (data) {
+        const mapped = data.map((item: any) => ({
+          id: item.id,
+          title: item.title,
+          category: item.category,
+          content: item.content,
+          targetRoles: item.target_roles as UserRole[],
+          createdAt: item.created_at,
+          updatedAt: item.updated_at
+        }));
+        
+        mockDb.knowledgeBaseArticles = mapped;
+        mockDb.saveAll();
+        return mapped.filter(article => article.targetRoles.includes(userRole));
+      }
+    } catch (err) {
+      console.warn('Failed to fetch knowledge base from Supabase. Falling back to local cache:', err);
+    }
+
+    return mockDb.knowledgeBaseArticles.filter(article => article.targetRoles.includes(userRole));
+  },
+
+  async fetchSupportTickets(schoolId: string): Promise<SupportTicket[]> {
+    const activeUser = getActiveUser();
+    if (!activeUser) return [];
+
+    try {
+      let query = supabaseAdmin
+        .from('support_tickets')
+        .select('*, userDetails:users(*)');
+
+      if (activeUser.role === 'SUPER_ADMIN') {
+        // Global tickets
+      } else if (activeUser.role === 'ADMIN') {
+        // School-specific tickets
+        query = query.eq('school_id', schoolId);
+      } else {
+        // Own tickets
+        query = query.eq('user_id', activeUser.id);
+      }
+
+      const { data, error } = await query.order('created_at', { ascending: false });
+      if (error) throw error;
+      if (data) {
+        const mapped = data.map((t: any) => ({
+          id: t.id,
+          schoolId: t.school_id,
+          userId: t.user_id,
+          userRole: t.user_role,
+          title: t.title,
+          description: t.description,
+          category: t.category,
+          priority: t.priority,
+          status: t.status,
+          attachmentUrl: t.attachment_url,
+          createdAt: t.created_at,
+          updatedAt: t.updated_at,
+          userDetails: t.userDetails ? {
+            id: t.userDetails.id,
+            email: t.userDetails.email,
+            firstName: t.userDetails.first_name,
+            lastName: t.userDetails.last_name,
+            avatarUrl: t.userDetails.avatar_url
+          } : null
+        }));
+
+        mockDb.supportTickets = mapped;
+        mockDb.saveAll();
+        return mapped;
+      }
+    } catch (err) {
+      console.warn('Failed to fetch support tickets from Supabase. Falling back to local cache:', err);
+    }
+
+    if (activeUser.role === 'SUPER_ADMIN') {
+      return mockDb.supportTickets;
+    } else if (activeUser.role === 'ADMIN') {
+      return mockDb.supportTickets.filter(t => t.schoolId === schoolId);
+    } else {
+      return mockDb.supportTickets.filter(t => t.userId === activeUser.id);
+    }
+  },
+
+  async createSupportTicket(
+    schoolId: string,
+    title: string,
+    description: string,
+    category: string,
+    priority: 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT',
+    attachmentUrl?: string
+  ): Promise<void> {
+    const activeUser = getActiveUser();
+    if (!activeUser) throw new Error('Unauthenticated');
+
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const validSchoolId = isUUID(schoolId) ? schoolId : null;
+
+    try {
+      const { error, data } = await supabaseAdmin
+        .from('support_tickets')
+        .insert({
+          school_id: validSchoolId,
+          user_id: activeUser.id,
+          user_role: activeUser.role,
+          title,
+          description,
+          category,
+          priority,
+          status: 'OPEN',
+          attachment_url: attachmentUrl || null
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (data) {
+        const userDetails = mockDb.users.find(u => u.id === activeUser.id);
+        mockDb.supportTickets.unshift({
+          id: data.id,
+          schoolId: data.school_id,
+          userId: data.user_id,
+          userRole: data.user_role,
+          title: data.title,
+          description: data.description,
+          category: data.category,
+          priority: data.priority,
+          status: data.status,
+          attachmentUrl: data.attachment_url,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at,
+          userDetails: userDetails ? {
+            id: userDetails.id,
+            email: userDetails.email,
+            firstName: userDetails.firstName,
+            lastName: userDetails.lastName,
+            avatarUrl: userDetails.avatarUrl
+          } : null
+        });
+        mockDb.saveAll();
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to create ticket on Supabase. Saving to local mockDb cache only:', err);
+    }
+
+    const mockId = 'stk-' + Math.random().toString(36).substring(2, 9);
+    const userDetails = mockDb.users.find(u => u.id === activeUser.id);
+    mockDb.supportTickets.unshift({
+      id: mockId,
+      schoolId: validSchoolId || undefined,
+      userId: activeUser.id,
+      userRole: activeUser.role,
+      title,
+      description,
+      category,
+      priority,
+      status: 'OPEN',
+      attachmentUrl,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      userDetails: userDetails ? {
+        id: userDetails.id,
+        email: userDetails.email,
+        firstName: userDetails.firstName,
+        lastName: userDetails.lastName,
+        avatarUrl: userDetails.avatarUrl
+      } : null
+    });
+    mockDb.saveAll();
+  },
+
+  async updateSupportTicketStatus(ticketId: string, status: 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED'): Promise<void> {
+    try {
+      const { error } = await supabaseAdmin
+        .from('support_tickets')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('id', ticketId);
+
+      if (error) throw error;
+    } catch (err) {
+      console.warn('Failed to update support ticket status on Supabase. Updating local mockDb cache:', err);
+    }
+
+    const t = mockDb.supportTickets.find(x => x.id === ticketId);
+    if (t) {
+      t.status = status;
+      t.updatedAt = new Date().toISOString();
+      mockDb.saveAll();
+    }
+  },
+
+  async createBugReport(
+    schoolId: string,
+    title: string,
+    description: string,
+    stepsToReproduce: string,
+    severity: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL',
+    attachmentUrl?: string
+  ): Promise<void> {
+    const activeUser = getActiveUser();
+    if (!activeUser) throw new Error('Unauthenticated');
+
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const validSchoolId = isUUID(schoolId) ? schoolId : null;
+
+    try {
+      const { error, data } = await supabaseAdmin
+        .from('bug_reports')
+        .insert({
+          school_id: validSchoolId,
+          user_id: activeUser.id,
+          user_role: activeUser.role,
+          title,
+          description,
+          steps_to_reproduce: stepsToReproduce,
+          severity,
+          status: 'NEW',
+          attachment_url: attachmentUrl || null
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+      if (data) {
+        mockDb.bugReports.unshift({
+          id: data.id,
+          schoolId: data.school_id,
+          userId: data.user_id,
+          userRole: data.user_role,
+          title: data.title,
+          description: data.description,
+          stepsToReproduce: data.steps_to_reproduce,
+          severity: data.severity,
+          status: data.status,
+          attachmentUrl: data.attachment_url,
+          createdAt: data.created_at,
+          updatedAt: data.updated_at
+        });
+        mockDb.saveAll();
+        return;
+      }
+    } catch (err) {
+      console.warn('Failed to create bug report on Supabase. Saving to local mockDb cache only:', err);
+    }
+
+    const mockId = 'bug-' + Math.random().toString(36).substring(2, 9);
+    mockDb.bugReports.unshift({
+      id: mockId,
+      schoolId: validSchoolId || undefined,
+      userId: activeUser.id,
+      userRole: activeUser.role,
+      title,
+      description,
+      stepsToReproduce,
+      severity,
+      status: 'NEW',
+      attachmentUrl,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+    mockDb.saveAll();
+  },
+
+  async uploadSupportAttachment(schoolId: string, file: File): Promise<string> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    const validSchoolId = isUUID(schoolId) ? schoolId : 'global';
+
+    await this.ensureBrandingBucketsExist();
+
+    const extension = file.name.split('.').pop() || 'png';
+    const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${extension}`;
+    const filePath = `support-attachments/${validSchoolId}/${uniqueName}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('school-assets')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true
+      });
+
+    if (uploadError) {
+      throw new Error('Failed to upload support attachment: ' + uploadError.message);
+    }
+
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('school-assets')
+      .getPublicUrl(filePath);
+
+    return publicUrl;
   }
 };
 
