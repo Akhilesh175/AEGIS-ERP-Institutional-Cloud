@@ -1,6 +1,7 @@
 import { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
-import admin from 'firebase-admin';
+import { getApps, initializeApp, cert, ServiceAccount } from 'firebase-admin/app';
+import { getMessaging } from 'firebase-admin/messaging';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || '';
@@ -16,9 +17,9 @@ function getPrivateKey(key: string) {
 }
 
 // Initialize Firebase Admin SDK
-if (!admin.apps.length) {
+if (!getApps().length) {
   try {
-    let credentialCert: admin.ServiceAccount | null = null;
+    let credentialCert: ServiceAccount | null = null;
     
     const serviceAccountStr = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
     if (serviceAccountStr) {
@@ -38,8 +39,8 @@ if (!admin.apps.length) {
     }
 
     if (credentialCert) {
-      admin.initializeApp({
-        credential: admin.credential.cert(credentialCert)
+      initializeApp({
+        credential: cert(credentialCert)
       });
       console.log('Firebase Admin SDK initialized successfully.');
     } else {
@@ -125,7 +126,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let pushResult = { sentCount: 0, failedCount: 0, success: false };
 
     if (tokensList.length > 0) {
-      if (admin.apps.length > 0) {
+      if (getApps().length > 0) {
         try {
           const messages = tokensList.map(token => ({
             token,
@@ -133,7 +134,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
             data: { schoolId, type, title, content }
           }));
 
-          const response = await admin.messaging().sendEach(messages);
+          const response = await getMessaging().sendEach(messages);
           pushResult = {
             sentCount: response.successCount,
             failedCount: response.failureCount,

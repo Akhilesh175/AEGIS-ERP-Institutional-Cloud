@@ -33,3 +33,12 @@ if (firebaseConfig.messagingSenderId) {
     self.registration.showNotification(title, options);
   });
 }
+
+// Immediately activate and claim clients to avoid race conditions
+self.addEventListener('install', (event) => {
+  self.skipWaiting();
+});
+
+self.addEventListener('activate', (event) => {
+  event.waitUntil(self.clients.claim());
+});

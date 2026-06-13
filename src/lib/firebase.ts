@@ -47,6 +47,29 @@ export const requestNotificationPermission = async (userId: string, role: string
         `/firebase-messaging-sw.js?${configParams}`
       );
 
+      // Wait for service worker to be active to avoid "Subscription failed - no active Service Worker"
+      await new Promise<void>((resolve) => {
+        if (registration.active && registration.active.state === 'activated') {
+          resolve();
+          return;
+        }
+
+        const activeWorker = registration.installing || registration.waiting || registration.active;
+        if (!activeWorker) {
+          resolve();
+          return;
+        }
+
+        const stateChangeHandler = () => {
+          if (activeWorker.state === 'activated') {
+            activeWorker.removeEventListener('statechange', stateChangeHandler);
+            resolve();
+          }
+        };
+        activeWorker.addEventListener('statechange', stateChangeHandler);
+        stateChangeHandler();
+      });
+
       const token = await getToken(messaging, {
         serviceWorkerRegistration: registration,
         vapidKey: import.meta.env.VITE_FIREBASE_VAPID_KEY || ''
