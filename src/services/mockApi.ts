@@ -2898,7 +2898,11 @@ export const mockApi = {
             title: r.title,
             message: r.content,
             isRead: r.is_read,
-            createdAt: r.created_at
+            createdAt: r.created_at,
+            senderId: r.sender_id,
+            recipientRole: r.recipient_role,
+            category: r.category || r.type,
+            priority: r.priority || 'MEDIUM'
           };
           mockDb.notifications.push(notify);
         });
@@ -2909,11 +2913,21 @@ export const mockApi = {
     }
   },
 
-  async sendNotification(userId: string, title: string, message: string, type = 'ANNOUNCEMENT', schoolId?: string): Promise<Notification> {
+  async sendNotification(
+    userId: string,
+    title: string,
+    message: string,
+    type = 'ANNOUNCEMENT',
+    schoolId?: string,
+    senderId?: string | null,
+    recipientRole?: string | null,
+    priority?: string
+  ): Promise<Notification> {
     const student = mockDb.students.find(s => s.userId === userId);
     const teacher = mockDb.teachers.find(t => t.userId === userId);
     const parent = mockDb.parents.find(p => p.userId === userId);
     const resolvedSchoolId = schoolId || student?.schoolId || teacher?.schoolId || parent?.schoolId || 'school-1';
+    const resolvedRole = recipientRole || (student ? 'STUDENT' : teacher ? 'TEACHER' : parent ? 'PARENT' : 'USER');
 
     let dbRow: any = null;
     try {
@@ -2926,7 +2940,10 @@ export const mockApi = {
           targetValue: userId,
           title,
           content: message,
-          type
+          type,
+          senderId: senderId || null,
+          recipientRole: resolvedRole,
+          priority: priority || 'MEDIUM'
         })
       });
 
@@ -2948,10 +2965,17 @@ export const mockApi = {
           .insert({
             school_id: resolvedSchoolId,
             user_id: userId,
+            recipient_id: userId,
+            sender_id: senderId || null,
+            recipient_role: resolvedRole,
             title: title,
             content: message,
+            message: message,
             type: type,
-            is_read: false
+            category: type,
+            priority: priority || 'MEDIUM',
+            is_read: false,
+            read_status: false
           })
           .select()
           .single();
@@ -2965,10 +2989,17 @@ export const mockApi = {
           .insert({
             school_id: resolvedSchoolId,
             user_id: userId,
+            recipient_id: userId,
+            sender_id: senderId || null,
+            recipient_role: resolvedRole,
             title: title,
             content: message,
+            message: message,
             type: type,
-            is_read: false
+            category: type,
+            priority: priority || 'MEDIUM',
+            is_read: false,
+            read_status: false
           })
           .select()
           .single();
@@ -3007,6 +3038,91 @@ export const mockApi = {
     if (idx !== -1) {
       mockDb.notifications[idx].isRead = true;
       mockDb.saveAll();
+    }
+  },
+
+  async sendNotificationToUserAndParents(
+    studentUserId: string,
+    title: string,
+    message: string,
+    category: string,
+    schoolId: string,
+    senderId: string | null = null,
+    priority: string = 'MEDIUM'
+  ): Promise<void> {
+    try {
+      await this.sendNotification(
+        studentUserId,
+        title,
+        message,
+        category,
+        schoolId,
+        senderId,
+        'STUDENT',
+        priority
+      );
+    } catch (e) {
+      console.error('Failed to notify student:', e);
+    }
+
+    try {
+      const student = mockDb.students.find(s => s.userId === studentUserId);
+      if (student) {
+        const mappings = mockDb.parentStudentMappings.filter(m => m.studentId === student.id);
+        for (const mapping of mappings) {
+          const parent = mockDb.parents.find(p => p.id === mapping.parentId);
+          if (parent) {
+            await this.sendNotification(
+              parent.userId,
+              title,
+              message,
+              category,
+              schoolId,
+              senderId,
+              'PARENT',
+              priority
+            );
+          }
+        }
+      }
+    } catch (e) {
+      console.error('Failed to notify parents:', e);
+    }
+  },
+
+  async sendUpcomingDeadlineReminders(schoolId: string): Promise<void> {
+    const activeSessionId = await this.resolveActiveSessionId(schoolId).catch(() => 'session-1');
+    const now = new Date();
+    const twoDaysFromNow = new Date(Date.now() + 48 * 60 * 60 * 1000);
+    const upcomingAssignments = mockDb.assignments.filter(a => {
+      if (a.schoolId !== schoolId) return false;
+      const due = new Date(a.dueDate);
+      return due > now && due <= twoDaysFromNow;
+    });
+
+    for (const a of upcomingAssignments) {
+      const submissions = mockDb.assignmentSubmissions.filter(sub => sub.assignmentId === a.id);
+      const submittedStudentIds = submissions.map(sub => sub.studentId);
+
+      const students = mockDb.students.filter(s => s.classId === a.classId);
+      for (const st of students) {
+        if (!submittedStudentIds.includes(st.id)) {
+          const alreadyReminded = mockDb.notifications.some(
+            n => n.userId === st.userId && n.title === 'Upcoming Assignment Reminder' && n.message.includes(a.title)
+          );
+          if (!alreadyReminded) {
+            await this.sendNotificationToUserAndParents(
+              st.userId,
+              'Upcoming Assignment Reminder',
+              `Reminder: "${a.title}" is due soon (by ${new Date(a.dueDate).toLocaleString()}).`,
+              'Assignment',
+              schoolId,
+              null,
+              'HIGH'
+            );
+          }
+        }
+      }
     }
   },
 
@@ -3745,6 +3861,42 @@ export const mockApi = {
     // Sync from database to keep local state exact and prevent duplicate cache mismatch
     await this.syncAttendanceData(teacher.schoolId);
 
+    // Dispatch notifications for absent students
+    for (const rec of records) {
+      if (rec.status === 'ABSENT') {
+        const student = mockDb.students.find(s => s.id === rec.studentId);
+        if (student) {
+          this.sendNotification(
+            student.userId,
+            "Attendance Alert: Absent",
+            "You were marked absent in today's class.",
+            'Attendance',
+            teacher.schoolId,
+            teacher.userId,
+            'STUDENT',
+            'HIGH'
+          ).catch(e => console.error('Failed to notify absent student:', e));
+
+          const mappings = mockDb.parentStudentMappings.filter(m => m.studentId === student.id);
+          for (const mapping of mappings) {
+            const parent = mockDb.parents.find(p => p.id === mapping.parentId);
+            if (parent) {
+              this.sendNotification(
+                parent.userId,
+                "Attendance Alert: Absent",
+                "Your child was marked absent in today's class.",
+                'Attendance',
+                teacher.schoolId,
+                teacher.userId,
+                'PARENT',
+                'HIGH'
+              ).catch(e => console.error('Failed to notify parent about absence:', e));
+            }
+          }
+        }
+      }
+    }
+
     mockDb.addLog(teacher.userId, 'MARK_ATTENDANCE', { classId, count: records.length, date });
     mockDb.saveAll();
   },
@@ -4124,14 +4276,18 @@ export const mockApi = {
 
     mockDb.assignments.unshift(assign);
 
-    // Notify all students in class (filtered by section if section boundary is active)
+    // Notify all students in class (filtered by section if section boundary is active) and their parents
     const studentsInClass = mockDb.students.filter(s => s.classId === classId && (!sectionId || s.sectionId === sectionId));
     studentsInClass.forEach(st => {
-      mockDb.addNotification(
+      this.sendNotificationToUserAndParents(
         st.userId,
         isHomework ? 'New Daily Homework Assigned' : 'New Major Assignment Released',
-        `"${title}" is due by ${new Date(dueDate).toLocaleDateString()}. Check details.`
-      );
+        `"${title}" is due by ${new Date(dueDate).toLocaleDateString()}. Check details.`,
+        isHomework ? 'Homework' : 'Assignment',
+        schoolId,
+        teacher.userId,
+        'MEDIUM'
+      ).catch(e => console.error(e));
     });
 
     mockDb.addLog(teacher.userId, 'CREATE_ASSIGNMENT', { classId, title });
@@ -4379,14 +4535,18 @@ export const mockApi = {
       mockDb.quizQuestions.push(qqq);
     });
 
-    // Notify class students
+    // Notify class students and their parents
     const studentsInClass = mockDb.students.filter(s => s.classId === classId);
     studentsInClass.forEach(st => {
-      mockDb.addNotification(
+      this.sendNotificationToUserAndParents(
         st.userId,
         'New Interactive Quiz Available',
-        `The online quiz "${title}" has been published. Take it before the deadline.`
-      );
+        `The online quiz "${title}" has been published. Take it before the deadline.`,
+        'Quiz',
+        schoolId,
+        teacher.userId,
+        'MEDIUM'
+      ).catch(e => console.error(e));
     });
 
     mockDb.addLog(teacher.userId, 'CREATE_QUIZ', { title, totalMarks });
@@ -12965,6 +13125,19 @@ export const mockApi = {
       else mockDb.hostelAttendance[idx] = mapped;
       mockDb.saveAll();
       this.clearHostelCache(schoolId);
+
+      // Notify student and parent of hostel attendance
+      if (student) {
+        this.sendNotificationToUserAndParents(
+          student.userId,
+          `Hostel Attendance Marked`,
+          `Hostel attendance for ${timeSlot.toLowerCase()} check-in on ${date} has been marked ${status.toUpperCase()}.`,
+          'Hostel',
+          schoolId,
+          recordedBy,
+          status === 'ABSENT' ? 'HIGH' : 'MEDIUM'
+        ).catch(e => console.error('Failed to notify hostel attendance:', e));
+      }
     }
   },
 
@@ -13051,6 +13224,24 @@ export const mockApi = {
     l.updatedBy = operatorId || undefined;
     mockDb.saveAll();
     this.clearHostelCache(l.schoolId);
+
+    // Notify student and parent if state changes to APPROVED or REJECTED
+    if (l.status === 'APPROVED' || l.status === 'REJECTED') {
+      const student = mockDb.students.find(s => s.id === l.studentId);
+      if (student) {
+        const title = `Hostel Leave Request ${l.status}`;
+        const message = `Your hostel leave request from ${new Date(l.fromDate).toLocaleDateString()} to ${new Date(l.toDate).toLocaleDateString()} has been ${l.status.toLowerCase()}.`;
+        this.sendNotificationToUserAndParents(
+          student.userId,
+          title,
+          message,
+          'Hostel',
+          l.schoolId,
+          approverUserId,
+          'HIGH'
+        ).catch(e => console.error('Failed to notify hostel leave update:', e));
+      }
+    }
   },
 
   async deleteHostelLeaveRequest(id: string): Promise<void> {
@@ -13207,6 +13398,33 @@ export const mockApi = {
       });
       mockDb.saveAll();
       this.clearHostelCache(schoolId);
+
+      // Notify all active hostel students and their parents about the fee due
+      try {
+        const admissions = mockDb.hostelAdmissions.filter(a => a.schoolId === schoolId && a.status === 'ACTIVE');
+        for (const ad of admissions) {
+          const student = mockDb.students.find(s => s.id === ad.studentId);
+          if (student) {
+            const isMess = feeType === 'MESS';
+            const title = isMess ? 'Mess Fee Due' : 'Hostel Fee Due';
+            const message = isMess
+              ? `Mess fee payment of $${amount.toFixed(2)} for "${name}" is due.`
+              : `Hostel fee payment of $${amount.toFixed(2)} for "${name}" is due.`;
+
+            this.sendNotificationToUserAndParents(
+              student.userId,
+              title,
+              message,
+              isMess ? 'Fee' : 'Hostel',
+              schoolId,
+              operatorId,
+              'MEDIUM'
+            ).catch(e => console.error('Failed to notify fee due:', e));
+          }
+        }
+      } catch (err) {
+        console.error('Failed to resolve hostel admissions for notifications:', err);
+      }
     }
   },
 

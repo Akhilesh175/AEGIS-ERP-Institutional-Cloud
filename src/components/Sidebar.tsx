@@ -6,7 +6,7 @@ import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare, 
   Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList, ShieldAlert, X,
-  Mail, Database, Key, Terminal, Home, FileText, HelpCircle
+  Mail, Database, Key, Terminal, Home, FileText, HelpCircle, Bell
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -140,6 +140,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         const lock = (tabId: string) => isTabLocked('PARENT', tabId, planName);
         return [
           { id: 'dashboard', label: 'Child Tracker', icon: Eye },
+          { id: 'notifications', label: 'Notifications Center', icon: Bell },
           { id: 'homework', label: 'Homework', icon: BookMarked, locked: lock('homework') },
           { id: 'timetable', label: 'Class Schedule', icon: Calendar },
           { id: 'grades', label: 'Grades Progress', icon: Award },
@@ -272,6 +273,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'dashboard', label: 'SaaS Telemetry', icon: Activity, locked: !plan.features.advancedAnalytics },
           { id: 'tenants', label: 'School Registry', icon: Layers },
           { id: 'users', label: 'Global User Manager', icon: UsersRound },
+          { id: 'communications', label: 'Platform Broadcasts', icon: Mail },
           { id: 'audits', label: 'Global Audit Logs', icon: Settings, locked: !plan.features.auditLogs },
           { id: 'backups', label: 'Disaster Recovery Panel', icon: Database },
           { id: 'logging', label: 'Centralized Logging Console', icon: Terminal },

@@ -455,6 +455,10 @@ export interface Notification {
   message: string;
   isRead: boolean;
   createdAt: string;
+  senderId?: string | null;
+  recipientRole?: string | null;
+  category?: string;
+  priority?: string;
 }
 
 // --- LIBRARY ---

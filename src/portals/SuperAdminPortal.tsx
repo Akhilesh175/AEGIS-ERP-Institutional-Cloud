@@ -9,7 +9,7 @@ import { OfflineSyncManager } from '../components/OfflineSyncManager';
 import { 
   Activity, Building, Settings, ShieldAlert, Cpu, 
   Layers, Key, PlusCircle, Search, RefreshCw, Eye, EyeOff,
-  Database, Terminal, HardDrive, Play, CheckCircle2, Clock, Sliders, Shield, AlertTriangle, CheckCircle, XCircle, Trash2, CheckSquare, Mail, Send
+  Database, Terminal, HardDrive, Play, CheckCircle2, Clock, Sliders, Shield, AlertTriangle, CheckCircle, XCircle, Trash2, CheckSquare, Mail, Send, Megaphone
 } from 'lucide-react';
 
 export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
@@ -21,6 +21,14 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
   const [auditLogs, setAuditLogs] = useState<(AuditLog & { userName: string; userEmail: string })[]>([]);
   const [searchAuditQuery, setSearchAuditQuery] = useState('');
   const [loading, setLoading] = useState(false);
+
+  // ── Super Admin platform broadcasts states ──
+  const [broadcastTargetType, setBroadcastTargetType] = useState<'school' | 'all_admins' | 'all_users' | 'sub_expiry_admins'>('all_admins');
+  const [broadcastSelectedSchoolId, setBroadcastSelectedSchoolId] = useState('');
+  const [broadcastCategory, setBroadcastCategory] = useState('Announcement');
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastContent, setBroadcastContent] = useState('');
+  const [broadcastSending, setBroadcastSending] = useState(false);
 
   // ── SaaS backups states ──
   const [backupPolicy, setBackupPolicy] = useState<'hourly' | 'daily' | 'weekly'>('daily');
@@ -155,6 +163,117 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
       console.error(err);
       alert("Error loading stats: " + (err.message || String(err)));
       setLoading(false);
+    }
+  };
+
+  const handleSuperAdminBroadcast = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!broadcastTitle.trim() || !broadcastContent.trim() || broadcastSending) return;
+
+    setBroadcastSending(true);
+    try {
+      const targetSchoolId = broadcastSelectedSchoolId || 'school-1';
+
+      if (broadcastTargetType === 'school') {
+        const res = await fetch('/api/send-notification', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            schoolId: targetSchoolId,
+            targetType: 'school',
+            targetValue: '',
+            title: broadcastTitle,
+            content: broadcastContent,
+            type: broadcastCategory
+          })
+        });
+        if (!res.ok) {
+          const errData = await res.json();
+          throw new Error(errData.error || 'Failed to send school broadcast');
+        }
+        alert('School broadcast sent successfully!');
+      } else if (broadcastTargetType === 'all_admins') {
+        const adminUsers = mockDb.users.filter(u => u.role === 'ADMIN');
+        if (adminUsers.length === 0) {
+          alert('No admin accounts found on the platform.');
+          setBroadcastSending(false);
+          return;
+        }
+        let successCount = 0;
+        for (const admin of adminUsers) {
+          try {
+            await mockApi.sendNotification(
+              admin.id,
+              broadcastTitle,
+              broadcastContent,
+              broadcastCategory,
+              admin.schoolId || 'school-1',
+              superAdminId,
+              'ADMIN',
+              'HIGH'
+            );
+            successCount++;
+          } catch (err) {
+            console.error('Failed to notify admin:', admin.id, err);
+          }
+        }
+        alert(`Broadcast dispatched to ${successCount} school admins successfully!`);
+      } else if (broadcastTargetType === 'all_users') {
+        const allUsers = mockDb.users.filter(u => u.isActive !== false);
+        let successCount = 0;
+        for (const usr of allUsers) {
+          try {
+            let userSchool = usr.schoolId;
+            if (!userSchool) {
+              if (usr.role === 'STUDENT') userSchool = mockDb.students.find(s => s.userId === usr.id)?.schoolId;
+              else if (usr.role === 'TEACHER') userSchool = mockDb.teachers.find(t => t.userId === usr.id)?.schoolId;
+              else if (usr.role === 'PARENT') userSchool = mockDb.parents.find(p => p.userId === usr.id)?.schoolId;
+            }
+            await mockApi.sendNotification(
+              usr.id,
+              broadcastTitle,
+              broadcastContent,
+              broadcastCategory,
+              userSchool || 'school-1',
+              superAdminId,
+              usr.role,
+              'HIGH'
+            );
+            successCount++;
+          } catch (err) {
+            console.error('Failed to notify user:', usr.id, err);
+          }
+        }
+        alert(`SaaS Maintenance alert dispatched to ${successCount} active users successfully!`);
+      } else if (broadcastTargetType === 'sub_expiry_admins') {
+        const adminUsers = mockDb.users.filter(u => u.role === 'ADMIN');
+        let successCount = 0;
+        for (const admin of adminUsers) {
+          try {
+            await mockApi.sendNotification(
+              admin.id,
+              broadcastTitle,
+              broadcastContent,
+              'Fee',
+              admin.schoolId || 'school-1',
+              superAdminId,
+              'ADMIN',
+              'HIGH'
+            );
+            successCount++;
+          } catch (err) {
+            console.error('Failed to notify admin of subscription expiry:', admin.id, err);
+          }
+        }
+        alert(`Subscription Expiry Reminders dispatched to ${successCount} school admins!`);
+      }
+
+      setBroadcastTitle('');
+      setBroadcastContent('');
+    } catch (err: any) {
+      alert(err.message || 'Error executing platform broadcast.');
+    } finally {
+      setBroadcastSending(false);
     }
   };
 
@@ -1540,6 +1659,217 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                   </div>
                 </div>
               ))}
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {activeTab === 'communications' && (
+        <div className="space-y-6 animate-fade-in text-slate-200">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <Megaphone className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">SaaS Global Broadcast Engine</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">Dispatch push notifications, maintenance alerts, and system-wide messaging across institutional boundaries.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Broadcast Form */}
+            <GlassCard className="lg:col-span-2 space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Megaphone className="text-brand-400" size={15} />
+                SaaS Broadcast Dispatcher
+              </h4>
+
+              <form onSubmit={handleSuperAdminBroadcast} className="space-y-4">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Broadcast Target Type</label>
+                    <select
+                      value={broadcastTargetType}
+                      onChange={(e) => {
+                        const val = e.target.value as any;
+                        setBroadcastTargetType(val);
+                        if (val === 'sub_expiry_admins') {
+                          setBroadcastCategory('Fee');
+                          setBroadcastTitle('Subscription Expiry Notice');
+                          setBroadcastContent('Dear Administrator, your institutional Aegis ERP subscription is expiring soon. Please renew it to prevent access suspension.');
+                        } else if (val === 'all_users') {
+                          setBroadcastCategory('Emergency');
+                          setBroadcastTitle('SaaS Scheduled Maintenance Alert');
+                          setBroadcastContent('Platform notification: Aegis ERP will undergo scheduled cloud maintenance tonight from 02:00 to 03:00 UTC. Temporary downtime may occur.');
+                        } else {
+                          setBroadcastCategory('Announcement');
+                          setBroadcastTitle('');
+                          setBroadcastContent('');
+                        }
+                      }}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                    >
+                      <option value="all_admins">All School Administrators</option>
+                      <option value="school">Specific School Context</option>
+                      <option value="all_users">All Active Platform Users (SaaS-Wide)</option>
+                      <option value="sub_expiry_admins">Subscription Expiry Warning (Admins Only)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Notification Category</label>
+                    <select
+                      value={broadcastCategory}
+                      onChange={(e) => setBroadcastCategory(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                    >
+                      <option value="Announcement">Announcement</option>
+                      <option value="Emergency">Emergency / Maintenance</option>
+                      <option value="Fee">Fee / Subscription</option>
+                      <option value="Hostel">Hostel</option>
+                    </select>
+                  </div>
+                </div>
+
+                {broadcastTargetType === 'school' && (
+                  <div className="space-y-1 animate-fade-in">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Target Institution</label>
+                    <select
+                      value={broadcastSelectedSchoolId}
+                      onChange={(e) => setBroadcastSelectedSchoolId(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                      required
+                    >
+                      <option value="">-- Select Target School --</option>
+                      {(stats?.schoolsList || mockDb.schools).map((sch: any) => (
+                        <option key={sch.id} value={sch.id}>{sch.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Alert Title</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Schedule Maintenance Warning"
+                    value={broadcastTitle}
+                    onChange={(e) => setBroadcastTitle(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                    required
+                  />
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Message Body</label>
+                  <textarea
+                    placeholder="Provide details about the platform notice..."
+                    value={broadcastContent}
+                    onChange={(e) => setBroadcastContent(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500 min-h-[120px]"
+                    required
+                  />
+                </div>
+
+                <button
+                  type="submit"
+                  disabled={broadcastSending}
+                  className="w-full bg-gradient-to-r from-brand-600 to-indigo-600 hover:from-brand-500 hover:to-indigo-500 text-white font-bold text-xs py-2.5 rounded-xl transition-all shadow-lg shadow-brand-500/10 hover:shadow-brand-500/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] border border-brand-400/20 flex items-center justify-center gap-2"
+                >
+                  {broadcastSending ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                      <span>Dispatching Platform Alerts...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Megaphone size={14} />
+                      <span>Dispatch System-Wide Broadcast</span>
+                    </>
+                  )}
+                </button>
+              </form>
+            </GlassCard>
+
+            {/* Quick Presets & Rules */}
+            <GlassCard className="space-y-4">
+              <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Shield className="text-brand-400" size={15} />
+                SaaS Dispatch Safety Policies
+              </h4>
+
+              <div className="space-y-3.5 text-xs text-slate-400 leading-relaxed font-sans">
+                <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
+                  <h5 className="font-bold text-slate-350">Rate Limiting</h5>
+                  <p className="text-[11px]">SaaS wide messages trigger concurrent Firebase push payloads. Maintain low dispatch frequency to prevent browser-client blocklists.</p>
+                </div>
+                <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
+                  <h5 className="font-bold text-slate-350">Isolation Safeguards</h5>
+                  <p className="text-[11px]">Selecting a specific school isolates the notification context entirely, preventing cross-tenant visibility violations.</p>
+                </div>
+                <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl space-y-1">
+                  <h5 className="font-bold text-slate-350">Recipient Roles</h5>
+                  <p className="text-[11px]">Role target mappings execute queries directly on active user rows, matching target registration tokens dynamically.</p>
+                </div>
+              </div>
+            </GlassCard>
+          </div>
+
+          {/* Broadcast logs table */}
+          <GlassCard className="space-y-3">
+            <h4 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+              <Megaphone className="text-brand-400" size={15} />
+              Recent Platform Broadcast Logs
+            </h4>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="border-b border-slate-850 text-slate-450 font-bold uppercase tracking-wider text-[10px] bg-slate-900/20">
+                    <th className="py-2.5 px-3">Recipient Role</th>
+                    <th className="py-2.5 px-3">Title</th>
+                    <th className="py-2.5 px-3">Message</th>
+                    <th className="py-2.5 px-3">Category</th>
+                    <th className="py-2.5 px-3 text-right">Timestamp</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-850/50">
+                  {mockDb.notifications
+                    .filter(n => n.senderId === superAdminId)
+                    .slice(0, 10)
+                    .map((n) => (
+                      <tr key={n.id} className="hover:bg-slate-900/10 text-slate-300">
+                        <td className="py-2.5 px-3">
+                          <span className="px-2 py-0.5 rounded bg-brand-500/10 border border-brand-500/20 text-brand-400 font-mono text-[9px] font-bold uppercase tracking-wider">
+                            {n.recipientRole || 'SaaS Targeted'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 font-semibold text-slate-200">{n.title}</td>
+                        <td className="py-2.5 px-3 max-w-xs truncate text-slate-400">{n.message}</td>
+                        <td className="py-2.5 px-3">
+                          <span className={`px-2 py-0.5 rounded text-[9px] font-bold border ${
+                            n.category === 'Emergency' ? 'bg-red-500/10 border-red-500/15 text-red-400' :
+                            n.category === 'Fee' ? 'bg-amber-500/10 border-amber-500/15 text-amber-400' :
+                            'bg-blue-500/10 border-blue-500/15 text-blue-400'
+                          }`}>
+                            {n.category || 'Announcement'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-right font-mono text-[10px] text-slate-500">
+                          {new Date(n.createdAt).toLocaleString()}
+                        </td>
+                      </tr>
+                    ))}
+                  {mockDb.notifications.filter(n => n.senderId === superAdminId).length === 0 && (
+                    <tr>
+                      <td colSpan={5} className="text-center py-6 text-slate-500 italic">No SaaS broadcasts dispatched in this session logs.</td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
             </div>
           </GlassCard>
         </div>

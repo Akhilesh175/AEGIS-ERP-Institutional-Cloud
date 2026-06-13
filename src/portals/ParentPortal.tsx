@@ -14,7 +14,7 @@ import {
   User as UserIcon, ShieldAlert, CheckCircle, AlertCircle, UsersRound, Clock,
   BookOpen, Play, Download, MessageCircle, Paperclip,
   Filter, Search, ChevronDown, ChevronRight, ExternalLink,
-  BookMarked, Layers, Home, Coffee, Utensils, ClipboardList, Check, X
+  BookMarked, Layers, Home, Coffee, Utensils, ClipboardList, Check, X, Bell, Mail
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -132,6 +132,11 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   const [hwSearchQuery, setHwSearchQuery] = useState('');
   const [hwStatusFilter, setHwStatusFilter] = useState<string>('all');
   const [expandedHomeworkId, setExpandedHomeworkId] = useState<string | null>(null);
+
+  // Notifications state
+  const [notifications, setNotifications] = useState<any[]>([]);
+  const [notifCategoryFilter, setNotifCategoryFilter] = useState<string>('all');
+  const [notifSearchQuery, setNotifSearchQuery] = useState('');
 
   // Load parent's students
   const loadAssignedStudents = async () => {
@@ -351,6 +356,18 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
         }
       }
 
+      // Fetch notifications for parent and trigger reminders check
+      if (session?.user?.id) {
+        const notifs = await mockApi.getNotifications(session.user.id).catch(() => []);
+        setNotifications(notifs);
+        
+        if (studentObj) {
+          await mockApi.sendUpcomingDeadlineReminders(studentObj.schoolId).catch(() => {});
+          const freshNotifs = await mockApi.getNotifications(session.user.id).catch(() => []);
+          setNotifications(freshNotifs);
+        }
+      }
+
       setLoading(false);
     } catch (err: any) {
       setError(err.message || 'Access Denied: Isolation boundary violation');
@@ -467,6 +484,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_mess_menu' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_fees' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_payments' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${session?.user?.id}` }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'school_subscriptions' }, () => {
         console.log('Realtime school_subscriptions change detected in parent portal, refreshing plan...');
         syncSubscriptionPlan();
@@ -2435,6 +2453,199 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                   )}
                 </div>
               </PremiumLock>
+            )}
+
+            {activeTab === 'notifications' && (
+              <div className="space-y-6 animate-fade-in text-slate-200">
+                {/* 1. Header with Stats & Actions */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {/* Unread count stats card */}
+                  <GlassCard className="flex items-center gap-4">
+                    <div className="w-11 h-11 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center">
+                      <Bell className="text-brand-400 animate-pulse-subtle" size={20} />
+                    </div>
+                    <div>
+                      <span className="block text-[10px] text-slate-500 uppercase font-bold font-mono tracking-widest leading-none">Unread Alerts</span>
+                      <h4 className="text-lg font-bold text-slate-200 mt-1">
+                        {notifications.filter(n => !n.isRead).length} <span className="text-xs font-normal text-slate-400">pending notices</span>
+                      </h4>
+                    </div>
+                  </GlassCard>
+
+                  {/* Search box card */}
+                  <GlassCard className="flex items-center gap-3">
+                    <div className="relative w-full">
+                      <Search className="absolute left-3 top-2.5 text-slate-500" size={14} />
+                      <input
+                        type="text"
+                        placeholder="Search alerts by title or content..."
+                        value={notifSearchQuery}
+                        onChange={(e) => setNotifSearchQuery(e.target.value)}
+                        className="bg-slate-950 border border-slate-800 text-slate-200 text-xs rounded-xl pl-9 pr-3 py-2 w-full focus:outline-none focus:border-brand-500 font-sans"
+                      />
+                    </div>
+                  </GlassCard>
+
+                  {/* Mark all read button card */}
+                  <GlassCard className="flex items-center justify-center">
+                    <button
+                      onClick={async () => {
+                        const unread = notifications.filter(n => !n.isRead);
+                        if (unread.length === 0) return;
+                        setLoading(true);
+                        for (const n of unread) {
+                          await mockApi.markNotificationAsRead(n.id).catch(() => {});
+                        }
+                        await loadAcademicRecord();
+                        setLoading(false);
+                        alert('All notifications marked as read!');
+                      }}
+                      disabled={notifications.filter(n => !n.isRead).length === 0}
+                      className="px-4 py-2 bg-brand-500/15 hover:bg-brand-500/25 border border-brand-500/30 rounded-xl text-xs font-bold text-brand-400 cursor-pointer active:scale-95 disabled:opacity-40 disabled:pointer-events-none transition-all flex items-center gap-1.5 font-sans"
+                    >
+                      <Check size={14} />
+                      <span>Mark All as Read</span>
+                    </button>
+                  </GlassCard>
+                </div>
+
+                {/* 2. Category Filters & Notifications Timeline */}
+                <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+                  {/* Category tabs */}
+                  <GlassCard className="space-y-3 lg:col-span-1">
+                    <span className="block text-[10px] font-bold uppercase tracking-wider text-slate-500">Filter By Category</span>
+                    <nav className="space-y-1">
+                      {[
+                        { id: 'all', label: 'All Categories' },
+                        { id: 'Attendance', label: 'Attendance' },
+                        { id: 'Homework', label: 'Homework' },
+                        { id: 'Assignment', label: 'Assignment' },
+                        { id: 'Quiz', label: 'Quiz' },
+                        { id: 'Exam', label: 'Exam' },
+                        { id: 'Hostel', label: 'Hostel' },
+                        { id: 'Fee', label: 'Fee' },
+                        { id: 'Announcement', label: 'Announcement' },
+                        { id: 'Emergency', label: 'Emergency Alert' }
+                      ].map(cat => {
+                        const count = notifications.filter(n => {
+                          const matchesCat = cat.id === 'all' || (n.category || '').toLowerCase() === cat.id.toLowerCase();
+                          return matchesCat && !n.isRead;
+                        }).length;
+
+                        return (
+                          <button
+                            key={cat.id}
+                            onClick={() => setNotifCategoryFilter(cat.id)}
+                            className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs font-medium transition-all ${
+                              notifCategoryFilter === cat.id
+                                ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold'
+                                : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+                            }`}
+                          >
+                            <span>{cat.label}</span>
+                            {count > 0 && (
+                              <span className="bg-brand-500/20 text-brand-400 text-[10px] font-bold px-1.5 py-0.5 rounded-full border border-brand-500/30">
+                                {count}
+                              </span>
+                            )}
+                          </button>
+                        );
+                      })}
+                    </nav>
+                  </GlassCard>
+
+                  {/* List of notifications */}
+                  <GlassCard className="lg:col-span-3 space-y-4">
+                    <h3 className="font-bold text-slate-200 text-sm pb-2 border-b border-slate-850">Alerts History Log</h3>
+
+                    <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                      {(() => {
+                        const filtered = notifications.filter(n => {
+                          const matchesCat = notifCategoryFilter === 'all' || (n.category || '').toLowerCase() === notifCategoryFilter.toLowerCase();
+                          const matchesQuery = !notifSearchQuery ||
+                            n.title.toLowerCase().includes(notifSearchQuery.toLowerCase()) ||
+                            n.message.toLowerCase().includes(notifSearchQuery.toLowerCase());
+                          return matchesCat && matchesQuery;
+                        });
+
+                        if (filtered.length === 0) {
+                          return (
+                            <div className="text-center py-12 text-slate-500 text-xs italic">
+                              No notifications match your current filter selections.
+                            </div>
+                          );
+                        }
+
+                        return filtered.map((n) => {
+                          const senderObj = mockDb.users.find(u => u.id === n.senderId);
+                          const senderName = senderObj ? `${senderObj.firstName} ${senderObj.lastName}` : 'Aegis Core Gateway';
+                          
+                          return (
+                            <div
+                              key={n.id}
+                              onClick={async () => {
+                                if (!n.isRead) {
+                                  await mockApi.markNotificationAsRead(n.id);
+                                  await loadAcademicRecord();
+                                }
+                              }}
+                              className={`p-4 border rounded-2xl flex flex-col gap-3 transition-all duration-200 ${
+                                n.isRead
+                                  ? 'bg-slate-900/10 border-slate-850/50 hover:border-slate-800 cursor-default'
+                                  : 'bg-brand-500/5 border-brand-500/20 hover:border-brand-500/40 cursor-pointer shadow-md'
+                              }`}
+                            >
+                              <div className="flex justify-between items-start gap-4">
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <h4 className={`font-bold text-xs ${n.isRead ? 'text-slate-300' : 'text-slate-100 font-semibold'}`}>
+                                      {n.title}
+                                    </h4>
+                                    {!n.isRead && (
+                                      <span className="w-1.5 h-1.5 rounded-full bg-brand-500 shrink-0" title="Unread Notice" />
+                                    )}
+                                  </div>
+                                  <p className="text-[10px] text-slate-550">
+                                    Sent by: <span className="font-semibold text-slate-400">{senderName}</span>
+                                  </p>
+                                </div>
+
+                                <div className="flex items-center gap-2">
+                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase border ${
+                                    n.priority === 'HIGH'
+                                      ? 'bg-red-500/10 border-red-500/15 text-red-400'
+                                      : 'bg-slate-900 border-slate-800 text-slate-400'
+                                  }`}>
+                                    {n.priority || 'MEDIUM'}
+                                  </span>
+
+                                  <span className={`text-[9px] font-bold px-2 py-0.5 rounded-full uppercase border ${
+                                    n.category === 'Emergency' ? 'bg-red-500/10 border-red-500/15 text-red-400' :
+                                    n.category === 'Fee' ? 'bg-amber-500/10 border-amber-500/15 text-amber-400' :
+                                    n.category === 'Attendance' ? 'bg-teal-500/10 border-teal-500/15 text-teal-400' :
+                                    'bg-blue-500/10 border-blue-500/15 text-blue-400'
+                                  }`}>
+                                    {n.category || 'Announcement'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              <p className="text-xs text-slate-400 leading-relaxed font-sans">
+                                {n.message}
+                              </p>
+
+                              <div className="flex justify-between items-center text-[9.5px] text-slate-505 border-t border-slate-850/30 pt-2 font-mono">
+                                <span>Ref: #{n.id.substring(0, 8)}</span>
+                                <span>{new Date(n.createdAt).toLocaleString()}</span>
+                              </div>
+                            </div>
+                          );
+                        });
+                      })()}
+                    </div>
+                  </GlassCard>
+                </div>
+              </div>
             )}
 
           </div>

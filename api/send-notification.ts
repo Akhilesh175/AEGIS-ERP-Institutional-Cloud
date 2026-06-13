@@ -56,7 +56,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const { schoolId, targetType, targetValue, title, content, type } = req.body;
+  const { schoolId, targetType, targetValue, title, content, type, senderId, recipientRole, priority } = req.body;
 
   if (!schoolId || !targetType || !title || !content || !type) {
     return res.status(400).json({ error: 'Missing required parameters' });
@@ -100,10 +100,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const rowsToInsert = targetUserIds.map(uid => ({
       school_id: schoolId,
       user_id: uid,
+      recipient_id: uid,
+      sender_id: senderId || null,
+      recipient_role: recipientRole || null,
       title,
       content,
+      message: content,
       type,
-      is_read: false
+      category: type,
+      priority: priority || 'MEDIUM',
+      is_read: false,
+      read_status: false
     }));
 
     const { error: insertErr } = await supabaseAdmin

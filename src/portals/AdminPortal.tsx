@@ -235,6 +235,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   ]);
 
   const [broadcastRole, setBroadcastRole] = useState('STUDENT');
+  const [broadcastCategory, setBroadcastCategory] = useState('Announcement');
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastContent, setBroadcastContent] = useState('');
   const [broadcastSending, setBroadcastSending] = useState(false);
@@ -257,7 +258,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           targetValue,
           title: broadcastTitle,
           content: broadcastContent,
-          type: 'ANNOUNCEMENT'
+          type: broadcastCategory
         })
       });
 
@@ -6090,6 +6091,20 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                       <option value="TEACHER">All Teachers</option>
                       <option value="PARENT">All Parents</option>
                       <option value="all">Entire Institution (All Active Users)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Notification Category</label>
+                    <select
+                      value={broadcastCategory}
+                      onChange={(e) => setBroadcastCategory(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-brand-500"
+                    >
+                      <option value="Announcement">Announcement</option>
+                      <option value="Emergency">Emergency Alert</option>
+                      <option value="Fee">Fee Reminder</option>
+                      <option value="Exam">Exam Notification</option>
                     </select>
                   </div>
 

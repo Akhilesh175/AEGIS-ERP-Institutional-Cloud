@@ -727,14 +727,26 @@ class MockDatabase {
     this.saveAll();
   }
 
-  addNotification(userId: string, title: string, message: string) {
+  addNotification(
+    userId: string, 
+    title: string, 
+    message: string, 
+    category = 'Announcement', 
+    senderId: string | null = null, 
+    recipientRole?: string | null, 
+    priority = 'MEDIUM'
+  ) {
     const notify: Notification = {
       id: 'n-' + Math.random().toString(36).substr(2, 9),
       userId,
       title,
       message,
       isRead: false,
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      senderId,
+      recipientRole: recipientRole || null,
+      category,
+      priority
     };
     this.notifications.unshift(notify);
     this.saveAll();
