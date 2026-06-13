@@ -110,20 +110,87 @@ export interface AuthSession {
   schoolSubscriptionPlan?: string;
 }
 
-export const getAdminSchoolId = (): string => {
+export const isUUID = (str: string): boolean => 
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+
+export const validateSchoolId = (schoolId: any, queryContext: string): void => {
+  if (!schoolId || typeof schoolId !== 'string' || !isUUID(schoolId)) {
+    const errMsg = `[DATABASE QUERY SECURITY SHIELD] Blocked execution of query context "${queryContext}" due to missing or invalid schoolId UUID: "${schoolId}"`;
+    console.error(errMsg);
+    throw new Error(errMsg);
+  }
+};
+
+export const getAdminSchoolId = async (): Promise<string> => {
   try {
     const sessionRaw = localStorage.getItem(SESSION_KEY);
     if (sessionRaw) {
       const session = JSON.parse(sessionRaw) as AuthSession;
-      if (session.user.schoolId) {
+      if (session.user?.schoolId && isUUID(session.user.schoolId)) {
         return session.user.schoolId;
       }
     }
   } catch (e) {
-    console.error(e);
+    console.error('Error parsing session in getAdminSchoolId:', e);
   }
-  return 'school-1'; // default fallback
+
+  // Fallback 1: Query currently logged-in user profile from Supabase Auth & select school_id from public.users table
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (user) {
+      const { data: profile } = await supabaseAdmin
+        .from('users')
+        .select('school_id')
+        .eq('id', user.id)
+        .maybeSingle();
+      if (profile?.school_id && isUUID(profile.school_id)) {
+        return profile.school_id;
+      }
+    }
+  } catch (e) {
+    console.error('Error fetching user profile school_id in getAdminSchoolId:', e);
+  }
+
+  // Fallback 2: Read from db schools in localStorage
+  try {
+    const dbSchoolsRaw = localStorage.getItem('aegis_erp_db_schools');
+    if (dbSchoolsRaw) {
+      const dbSchools = JSON.parse(dbSchoolsRaw);
+      if (dbSchools && dbSchools.length > 0 && dbSchools[0].id && isUUID(dbSchools[0].id)) {
+        return dbSchools[0].id;
+      }
+    }
+  } catch (e) {
+    console.error('Error reading cached schools in getAdminSchoolId:', e);
+  }
+
+  // Fallback 3: Select first available school from public.schools
+  try {
+    const { data: schoolList } = await supabaseAdmin
+      .from('schools')
+      .select('id')
+      .limit(1);
+    if (schoolList && schoolList.length > 0 && schoolList[0].id && isUUID(schoolList[0].id)) {
+      return schoolList[0].id;
+    }
+  } catch (e) {
+    console.error('Error fetching fallback schools from DB in getAdminSchoolId:', e);
+  }
+
+  // Fallback 4: Read from in-memory mockDb
+  try {
+    if (mockDb.schools && mockDb.schools.length > 0) {
+      const firstSchoolId = mockDb.schools[0].id;
+      if (isUUID(firstSchoolId)) {
+        return firstSchoolId;
+      }
+    }
+  } catch {}
+
+  return '';
 };
+
+
 
 export const getActiveUser = (): { id: string; role: string; schoolId: string } | null => {
   try {
@@ -4542,7 +4609,7 @@ export const mockApi = {
 
   async adminGetInstitutionOverview() {
     await delay();
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
 
     // Fetch counts directly from Supabase for accuracy after DB deletions
     const [studentsRes, teachersRes, parentsRes] = await Promise.all([
@@ -4641,7 +4708,7 @@ export const mockApi = {
 
   async adminGetStudents(): Promise<(Student & { userDetails: User; className: string })[]> {
     await delay();
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
 
     // Fetch live student profiles from Supabase (source of truth)
     const { data: studentRows, error } = await supabase
@@ -4900,7 +4967,7 @@ export const mockApi = {
 
   async adminGetTeachers(): Promise<(Teacher & { userDetails: User })[]> {
     await delay();
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
 
     // Fetch live teacher profiles from Supabase (source of truth)
     const { data: teacherRows, error } = await supabase
@@ -4961,7 +5028,7 @@ export const mockApi = {
 
   async adminGetParents(): Promise<(Parent & { userDetails: User; linkedStudentNames: string[] })[]> {
     await delay();
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
 
     // Fetch live parent profiles from Supabase (source of truth)
     const { data: parentRows, error } = await supabase
@@ -5052,7 +5119,7 @@ export const mockApi = {
 
   async adminGetClasses(): Promise<Class[]> {
     await delay();
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
 
     // Fetch from Supabase as source of truth using standard authenticated client
     const { data: classRows, error } = await supabase
@@ -5163,7 +5230,7 @@ export const mockApi = {
   async adminCreateClass(adminId: string, className: string): Promise<Class> {
     await delay(500);
     checkCoreAdminOrAcademicAdmin();
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
     const activeSessionId = await this.resolveActiveSessionId(schoolId);
 
     // Insert into Supabase classes table
@@ -5235,7 +5302,7 @@ export const mockApi = {
   },
   async adminGetSubjects(): Promise<Subject[]> {
     await delay();
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
 
     // Fetch from Supabase as source of truth using standard authenticated client
     const { data: subjectRows, error } = await supabase
@@ -5338,7 +5405,7 @@ export const mockApi = {
     if (!activeUser || !['ADMIN', 'ACADEMIC_ADMIN'].includes(activeUser.role)) {
       throw new Error('Access Denied: Only School Admin (ADMIN) and Academic Admin (ACADEMIC_ADMIN) are authorized to register subjects in the Subject Catalog.');
     }
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
 
     // Insert into Supabase subjects table
     const { data: subRow, error } = await supabaseAdmin.from('subjects').insert({
@@ -5405,7 +5472,7 @@ export const mockApi = {
     checkCoreAdminOrAcademicAdmin();
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
-    const schoolId = teacher ? teacher.schoolId : getAdminSchoolId();
+    const schoolId = teacher ? teacher.schoolId : await getAdminSchoolId();
     await validateTeacherForTimetable(teacherId, schoolId);
 
     // Try to resolve existing mapping from cache or database
@@ -7201,7 +7268,7 @@ export const mockApi = {
 
   async adminGetFeeStructures(): Promise<FeeStructure[]> {
     await delay();
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
     await this.syncFeeStructuresData(schoolId);
     return mockDb.feeStructures.filter(fs => fs.schoolId === schoolId);
   },
@@ -7214,7 +7281,7 @@ export const mockApi = {
     description: string
   ): Promise<FeeStructure> {
     await delay(600);
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
     await this.verifySchoolFeature(schoolId, 'billing');
     const activeSessionId = await this.resolveActiveSessionId(schoolId);
 
@@ -7287,7 +7354,7 @@ export const mockApi = {
     description: string
   ): Promise<FeeStructure> {
     await delay(500);
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
     await this.verifySchoolFeature(schoolId, 'billing');
 
     const { data: dbStructure, error } = await supabaseAdmin
@@ -7327,7 +7394,7 @@ export const mockApi = {
 
   async adminDeleteFeeStructure(adminId: string, id: string): Promise<void> {
     await delay(400);
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
     await this.verifySchoolFeature(schoolId, 'billing');
 
     const { error } = await supabaseAdmin
@@ -7348,7 +7415,7 @@ export const mockApi = {
 
   async adminGetFeePayments(): Promise<FeePayment[]> {
     await delay();
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
     await this.syncFeePaymentsData(schoolId);
     
     const schoolClassIds = mockDb.classes.filter(c => c.schoolId === schoolId).map(c => c.id);
@@ -11030,7 +11097,7 @@ export const mockApi = {
 
   // --- Admin Book CRUD ---
   async adminCreateBook(title: string, author: string, isbn: string, subject: string, totalCopies: number): Promise<void> {
-    const schoolId = getAdminSchoolId();
+    const schoolId = await getAdminSchoolId();
     await this.validateSubscriptionFeature(schoolId, 'Library Books', ['basic', 'pro', 'enterprise']);
     
     const { data, error } = await supabaseAdmin.from('book_inventory').insert({
