@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
@@ -9,7 +9,7 @@ import { OfflineSyncManager } from '../components/OfflineSyncManager';
 import { 
   Activity, Building, Settings, ShieldAlert, Cpu, 
   Layers, Key, PlusCircle, Search, RefreshCw, Eye, EyeOff,
-  Database, Terminal, HardDrive, Play, CheckCircle2, Clock, Sliders, Shield, AlertTriangle, CheckCircle, XCircle, Trash2, CheckSquare, Mail, Send, Megaphone
+  Database, Terminal, HardDrive, Play, CheckCircle2, Clock, Sliders, Shield, AlertTriangle, CheckCircle, XCircle, Trash2, CheckSquare, Mail, Send, Megaphone, X
 } from 'lucide-react';
 
 export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
@@ -29,6 +29,22 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
   const [broadcastTitle, setBroadcastTitle] = useState('');
   const [broadcastContent, setBroadcastContent] = useState('');
   const [broadcastSending, setBroadcastSending] = useState(false);
+
+  // Toast notifications state
+  const [saToast, setSaToast] = useState<{
+    show: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({ show: false, message: '', type: 'success' });
+  const saToastTimeoutRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (saToastTimeoutRef.current) {
+        clearTimeout(saToastTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // ── SaaS backups states ──
   const [backupPolicy, setBackupPolicy] = useState<'hourly' | 'daily' | 'weekly'>('daily');
@@ -191,11 +207,21 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
           const errData = await res.json();
           throw new Error(errData.error || 'Failed to send school broadcast');
         }
-        alert('School broadcast sent successfully!');
+        if (saToastTimeoutRef.current) clearTimeout(saToastTimeoutRef.current);
+        setSaToast({ show: true, message: 'School broadcast sent successfully!', type: 'success' });
+        saToastTimeoutRef.current = setTimeout(() => {
+          setSaToast(prev => ({ ...prev, show: false }));
+          saToastTimeoutRef.current = null;
+        }, 5000);
       } else if (broadcastTargetType === 'all_admins') {
         const adminUsers = mockDb.users.filter(u => u.role === 'ADMIN');
         if (adminUsers.length === 0) {
-          alert('No admin accounts found on the platform.');
+          if (saToastTimeoutRef.current) clearTimeout(saToastTimeoutRef.current);
+          setSaToast({ show: true, message: 'No admin accounts found on the platform.', type: 'error' });
+          saToastTimeoutRef.current = setTimeout(() => {
+            setSaToast(prev => ({ ...prev, show: false }));
+            saToastTimeoutRef.current = null;
+          }, 5000);
           setBroadcastSending(false);
           return;
         }
@@ -217,7 +243,12 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
             console.error('Failed to notify admin:', admin.id, err);
           }
         }
-        alert(`Broadcast dispatched to ${successCount} school admins successfully!`);
+        if (saToastTimeoutRef.current) clearTimeout(saToastTimeoutRef.current);
+        setSaToast({ show: true, message: `Broadcast dispatched to ${successCount} school admins successfully!`, type: 'success' });
+        saToastTimeoutRef.current = setTimeout(() => {
+          setSaToast(prev => ({ ...prev, show: false }));
+          saToastTimeoutRef.current = null;
+        }, 5000);
       } else if (broadcastTargetType === 'all_users') {
         const allUsers = mockDb.users.filter(u => u.isActive !== false);
         let successCount = 0;
@@ -244,7 +275,12 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
             console.error('Failed to notify user:', usr.id, err);
           }
         }
-        alert(`SaaS Maintenance alert dispatched to ${successCount} active users successfully!`);
+        if (saToastTimeoutRef.current) clearTimeout(saToastTimeoutRef.current);
+        setSaToast({ show: true, message: `SaaS Maintenance alert dispatched to ${successCount} active users successfully!`, type: 'success' });
+        saToastTimeoutRef.current = setTimeout(() => {
+          setSaToast(prev => ({ ...prev, show: false }));
+          saToastTimeoutRef.current = null;
+        }, 5000);
       } else if (broadcastTargetType === 'sub_expiry_admins') {
         const adminUsers = mockDb.users.filter(u => u.role === 'ADMIN');
         let successCount = 0;
@@ -265,13 +301,23 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
             console.error('Failed to notify admin of subscription expiry:', admin.id, err);
           }
         }
-        alert(`Subscription Expiry Reminders dispatched to ${successCount} school admins!`);
+        if (saToastTimeoutRef.current) clearTimeout(saToastTimeoutRef.current);
+        setSaToast({ show: true, message: `Subscription Expiry Reminders dispatched to ${successCount} school admins!`, type: 'success' });
+        saToastTimeoutRef.current = setTimeout(() => {
+          setSaToast(prev => ({ ...prev, show: false }));
+          saToastTimeoutRef.current = null;
+        }, 5000);
       }
 
       setBroadcastTitle('');
       setBroadcastContent('');
     } catch (err: any) {
-      alert(err.message || 'Error executing platform broadcast.');
+      if (saToastTimeoutRef.current) clearTimeout(saToastTimeoutRef.current);
+      setSaToast({ show: true, message: err.message || 'Error executing platform broadcast.', type: 'error' });
+      saToastTimeoutRef.current = setTimeout(() => {
+        setSaToast(prev => ({ ...prev, show: false }));
+        saToastTimeoutRef.current = null;
+      }, 5000);
     } finally {
       setBroadcastSending(false);
     }
@@ -1913,6 +1959,34 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
               </div>
             </form>
           </GlassCard>
+        </div>
+      )}
+
+      {/* ── Super Admin Toast Notification ── */}
+      {saToast.show && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-sm w-full bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl p-4 backdrop-blur-md animate-fade-in flex items-start gap-3 border-l-4 border-l-brand-500">
+          <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400">
+            {saToast.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h5 className="font-bold text-xs text-slate-100">
+              {saToast.type === 'success' ? 'Broadcast Success' : 'Broadcast Failure'}
+            </h5>
+            <p className="text-[10px] text-slate-400 mt-1 leading-normal break-words">{saToast.message}</p>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => {
+              if (saToastTimeoutRef.current) {
+                clearTimeout(saToastTimeoutRef.current);
+                saToastTimeoutRef.current = null;
+              }
+              setSaToast(prev => ({ ...prev, show: false }));
+            }} 
+            className="text-slate-500 hover:text-slate-300 p-0.5 rounded transition-colors"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
     </div>

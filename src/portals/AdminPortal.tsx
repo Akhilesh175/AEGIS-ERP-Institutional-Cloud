@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
@@ -9,7 +9,7 @@ import {
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
   Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Lock, Trash2, AlertTriangle, CheckCircle, AlertCircle, XCircle, Edit, CreditCard,
   Mail, Send, RefreshCw, Play, FileSpreadsheet, FileText, CheckSquare, Sliders, HardDrive, Download, ChevronRight, BarChart2, Clock, Settings, Shield, Search, Activity,
-  Award, BookOpen, Home, UserCheck, UserX, Image, PlusCircle, Megaphone
+  Award, BookOpen, Home, UserCheck, UserX, Image, PlusCircle, Megaphone, X
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -234,6 +234,21 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     { id: '3', type: 'SMS', recipient: '+1 (555) 444-2222', template: 'Homework Assigned', status: 'DELIVERED', timestamp: new Date(Date.now() - 12000000).toISOString(), rate: '100%' }
   ]);
 
+  const [commToast, setCommToast] = useState<{
+    show: boolean;
+    message: string;
+    type: 'success' | 'error' | 'info';
+  }>({ show: false, message: '', type: 'success' });
+  const commToastTimeoutRef = useRef<any>(null);
+
+  useEffect(() => {
+    return () => {
+      if (commToastTimeoutRef.current) {
+        clearTimeout(commToastTimeoutRef.current);
+      }
+    };
+  }, []);
+
   const [broadcastRole, setBroadcastRole] = useState('STUDENT');
   const [broadcastCategory, setBroadcastCategory] = useState('Announcement');
   const [broadcastTitle, setBroadcastTitle] = useState('');
@@ -267,7 +282,19 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
         throw new Error(data.error || 'Failed to dispatch broadcast');
       }
 
-      alert(`Broadcast successfully sent to ${data.insertedCount || 0} active users!`);
+      if (commToastTimeoutRef.current) {
+        clearTimeout(commToastTimeoutRef.current);
+      }
+      setCommToast({
+        show: true,
+        message: `Broadcast successfully sent to ${data.insertedCount || 0} active users!`,
+        type: 'success'
+      });
+      commToastTimeoutRef.current = setTimeout(() => {
+        setCommToast(prev => ({ ...prev, show: false }));
+        commToastTimeoutRef.current = null;
+      }, 5000);
+
       setBroadcastTitle('');
       setBroadcastContent('');
 
@@ -283,7 +310,18 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       setCommLogs(prev => [newLog, ...prev]);
 
     } catch (err: any) {
-      alert(err.message || 'Error sending broadcast.');
+      if (commToastTimeoutRef.current) {
+        clearTimeout(commToastTimeoutRef.current);
+      }
+      setCommToast({
+        show: true,
+        message: err.message || 'Error sending broadcast.',
+        type: 'error'
+      });
+      commToastTimeoutRef.current = setTimeout(() => {
+        setCommToast(prev => ({ ...prev, show: false }));
+        commToastTimeoutRef.current = null;
+      }, 5000);
     } finally {
       setBroadcastSending(false);
     }
@@ -650,7 +688,18 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
     setCommLogs(prev => [newLog, ...prev]);
     setCommSending(false);
-    alert(`Test ${newLog.type} Alert dispatched successfully via ${newLog.type === 'SMS' ? 'Twilio Gateway' : 'Resend SMTP Gateway'}!`);
+    if (commToastTimeoutRef.current) {
+      clearTimeout(commToastTimeoutRef.current);
+    }
+    setCommToast({
+      show: true,
+      message: `Test ${newLog.type} Alert dispatched successfully via ${newLog.type === 'SMS' ? 'Twilio Gateway' : 'Resend SMTP Gateway'}!`,
+      type: 'success'
+    });
+    commToastTimeoutRef.current = setTimeout(() => {
+      setCommToast(prev => ({ ...prev, show: false }));
+      commToastTimeoutRef.current = null;
+    }, 5000);
   };
 
   const handleBackupTrigger = async () => {
@@ -11563,6 +11612,34 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               <button type="submit" className="w-full py-2 bg-brand-600 hover:bg-brand-500 rounded-lg font-bold text-slate-100 transition-colors mt-2">Save Report Card Changes</button>
             </form>
           </GlassCard>
+        </div>
+      )}
+
+      {/* ── Communication Center Toast Notification ── */}
+      {commToast.show && (
+        <div className="fixed bottom-5 right-5 z-50 max-w-sm w-full bg-slate-900/90 border border-slate-800 rounded-2xl shadow-2xl p-4 backdrop-blur-md animate-fade-in flex items-start gap-3 border-l-4 border-l-brand-500">
+          <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20 text-brand-400">
+            {commToast.type === 'success' ? <CheckCircle size={18} /> : <AlertTriangle size={18} />}
+          </div>
+          <div className="flex-1 min-w-0">
+            <h5 className="font-bold text-xs text-slate-150">
+              {commToast.type === 'success' ? 'Gateway Dispatch Success' : 'Gateway Dispatch Failure'}
+            </h5>
+            <p className="text-[10px] text-slate-400 mt-1 leading-normal break-words">{commToast.message}</p>
+          </div>
+          <button 
+            type="button" 
+            onClick={() => {
+              if (commToastTimeoutRef.current) {
+                clearTimeout(commToastTimeoutRef.current);
+                commToastTimeoutRef.current = null;
+              }
+              setCommToast(prev => ({ ...prev, show: false }));
+            }} 
+            className="text-slate-500 hover:text-slate-300 p-0.5 rounded transition-colors"
+          >
+            <X size={14} />
+          </button>
         </div>
       )}
 
