@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
 import type { Notification } from '../types';
-import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, User as UserIcon, Shield, Camera, Upload, Trash2, X, Check, Menu, Settings } from 'lucide-react';
+import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, User as UserIcon, Shield, Camera, Upload, Trash2, X, Check, Menu, Settings, Key, Lock, Eye, EyeOff } from 'lucide-react';
 import { ChatDrawer } from './ChatDrawer';
 
 export const Navbar: React.FC = () => {
@@ -23,6 +23,19 @@ export const Navbar: React.FC = () => {
   const [isChatOpen, setIsChatOpen] = useState(false);
 
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
+  const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  
+  const [showCurrentPass, setShowCurrentPass] = useState(false);
+  const [showNewPass, setShowNewPass] = useState(false);
+  const [showConfirmPass, setShowConfirmPass] = useState(false);
+  
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
+
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -177,6 +190,52 @@ export const Navbar: React.FC = () => {
       window.location.reload();
     } catch (err) {
       console.error(err);
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setErrorMessage(null);
+    setSuccessMessage(null);
+
+    if (!currentPassword) {
+      setErrorMessage('Current password is required.');
+      return;
+    }
+    if (!newPassword) {
+      setErrorMessage('New password is required.');
+      return;
+    }
+    if (newPassword.length < 8) {
+      setErrorMessage('New password must be at least 8 characters long.');
+      return;
+    }
+    if (newPassword === currentPassword) {
+      setErrorMessage('New password cannot be the same as your current password.');
+      return;
+    }
+    if (newPassword !== confirmPassword) {
+      setErrorMessage('New password confirmation does not match.');
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const response = await mockApi.changePassword(currentPassword, newPassword);
+      setSuccessMessage(response.message || 'Password changed successfully!');
+      
+      setCurrentPassword('');
+      setNewPassword('');
+      setConfirmPassword('');
+      
+      setTimeout(() => {
+        setIsChangePasswordOpen(false);
+        setSuccessMessage(null);
+      }, 2000);
+    } catch (err: any) {
+      setErrorMessage(err.message || 'Failed to change password. Please try again.');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -391,6 +450,18 @@ export const Navbar: React.FC = () => {
                     <span>Update Profile Photo</span>
                   </button>
                   <button 
+                    onClick={() => {
+                      setShowProfileDrop(false);
+                      setIsChangePasswordOpen(true);
+                      setErrorMessage(null);
+                      setSuccessMessage(null);
+                    }}
+                    className="w-full flex items-center gap-2 text-left text-xs text-slate-300 hover:text-slate-100 hover:bg-slate-800/40 p-2 rounded-xl transition-all duration-200"
+                  >
+                    <Key size={14} className="text-brand-400" />
+                    <span>Change Password</span>
+                  </button>
+                  <button 
                     onClick={handleLogout}
                     className="w-full flex items-center gap-2 text-left text-xs text-red-400 hover:text-red-300 hover:bg-red-500/5 p-2 rounded-xl transition-all duration-200"
                   >
@@ -406,6 +477,162 @@ export const Navbar: React.FC = () => {
 
       {/* Slideout communicator drawer */}
       <ChatDrawer isOpen={isChatOpen} onClose={() => setIsChatOpen(false)} />
+
+      {/* Change Password Modal */}
+      {isChangePasswordOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md rounded-3xl bg-gradient-to-b from-slate-900 to-[#070a13] border border-slate-800 shadow-2xl p-6 md:p-8 animate-fade-in relative">
+            {/* Close Button */}
+            <button 
+              onClick={() => {
+                setIsChangePasswordOpen(false);
+                setCurrentPassword('');
+                setNewPassword('');
+                setConfirmPassword('');
+                setErrorMessage(null);
+                setSuccessMessage(null);
+              }}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 rounded-full transition-all"
+            >
+              <X size={18} />
+            </button>
+
+            {/* Header */}
+            <div className="text-center mb-6">
+              <h3 className="text-lg font-bold text-slate-100 flex items-center justify-center gap-2">
+                <Lock className="text-brand-400" size={20} />
+                Change Password
+              </h3>
+              <p className="text-xs text-slate-400 mt-1">Update your security credentials for Aegis ERP</p>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              
+              {errorMessage && (
+                <div className="p-3 bg-red-500/10 border border-red-500/20 text-red-400 rounded-xl text-xs font-medium text-center">
+                  {errorMessage}
+                </div>
+              )}
+
+              {successMessage && (
+                <div className="p-3 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 rounded-xl text-xs font-medium text-center">
+                  {successMessage}
+                </div>
+              )}
+
+              {/* Current Password */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                  Current Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showCurrentPass ? 'text' : 'password'}
+                    value={currentPassword}
+                    onChange={(e) => setCurrentPassword(e.target.value)}
+                    placeholder="Enter your current password"
+                    className="w-full bg-[#0c101f] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 placeholder-slate-650 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all outline-none"
+                    disabled={isSubmitting}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowCurrentPass(!showCurrentPass)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-350 transition-colors"
+                  >
+                    {showCurrentPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* New Password */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                  New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showNewPass ? 'text' : 'password'}
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                    placeholder="Enter new password (min. 8 chars)"
+                    className="w-full bg-[#0c101f] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 placeholder-slate-650 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all outline-none"
+                    disabled={isSubmitting}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowNewPass(!showNewPass)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-350 transition-colors"
+                  >
+                    {showNewPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Confirm New Password */}
+              <div className="space-y-1.5">
+                <label className="text-[11px] font-bold text-slate-300 uppercase tracking-wider block">
+                  Confirm New Password
+                </label>
+                <div className="relative">
+                  <input
+                    type={showConfirmPass ? 'text' : 'password'}
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                    placeholder="Confirm your new password"
+                    className="w-full bg-[#0c101f] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-200 placeholder-slate-650 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 transition-all outline-none"
+                    disabled={isSubmitting}
+                  />
+                  <button
+                    type="button"
+                    onClick={() => setShowConfirmPass(!showConfirmPass)}
+                    className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-350 transition-colors"
+                  >
+                    {showConfirmPass ? <EyeOff size={15} /> : <Eye size={15} />}
+                  </button>
+                </div>
+              </div>
+
+              {/* Actions */}
+              <div className="pt-4 border-t border-slate-850 flex gap-3">
+                <button
+                  type="submit"
+                  disabled={isSubmitting}
+                  className="flex-1 glass-btn-primary text-xs flex items-center justify-center gap-2 font-bold py-2.5 rounded-xl disabled:opacity-50"
+                >
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-slate-350 border-t-brand-500 rounded-full animate-spin" />
+                      <span>Updating...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={14} />
+                      <span>Update Password</span>
+                    </>
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsChangePasswordOpen(false);
+                    setCurrentPassword('');
+                    setNewPassword('');
+                    setConfirmPassword('');
+                    setErrorMessage(null);
+                    setSuccessMessage(null);
+                  }}
+                  disabled={isSubmitting}
+                  className="px-4 py-2 bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-350 hover:text-slate-100 font-semibold rounded-xl text-xs transition-all disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+              </div>
+
+            </form>
+          </div>
+        </div>
+      )}
 
       {/* Profile Photo Modal */}
       {isPhotoModalOpen && (

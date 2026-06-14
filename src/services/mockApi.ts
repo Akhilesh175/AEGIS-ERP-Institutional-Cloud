@@ -1589,6 +1589,29 @@ export const mockApi = {
     }
   },
 
+  async changePassword(currentPassword: string, newPassword: string): Promise<{ success: boolean; message: string }> {
+    const session = await this.getSession();
+    if (!session || !session.token) {
+      throw new Error('Unauthorized session. Please sign in again.');
+    }
+
+    const res = await fetch('/api/change-password', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${session.token}`
+      },
+      body: JSON.stringify({ currentPassword, newPassword })
+    });
+
+    const body = await res.json();
+    if (!res.ok) {
+      throw new Error(body.error || 'Failed to change password');
+    }
+
+    return body;
+  },
+
   // ==========================================
   // 2. STUDENT PORTAL ENDPOINTS
   // ==========================================
