@@ -68,7 +68,6 @@ export default async function handler(req: any, res: any) {
         name: schoolName,
         address: address || '',
         phone: phone || '',
-        email: normalizedEmail,
         subscription_plan: 'TRIAL',
         country: country || 'India',
         currency_code: 'INR',

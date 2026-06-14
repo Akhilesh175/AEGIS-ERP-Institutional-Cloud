@@ -169,7 +169,7 @@ export default async function handler(req: any, res: any) {
       // Lookup school details for email personalization
       const { data: school } = await supabaseAdmin
         .from('schools')
-        .select('name, email')
+        .select('name')
         .eq('id', payment.school_id)
         .maybeSingle();
 
