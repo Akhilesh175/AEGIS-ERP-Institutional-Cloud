@@ -173,7 +173,7 @@ export default async function handler(req: any, res: any) {
         .eq('id', payment.school_id)
         .maybeSingle();
 
-      const recipientEmail = school?.email || payment.subscriptions?.email || '';
+      const recipientEmail = payment.subscriptions?.email || '';
       
       const emailHtml = `
         <!DOCTYPE html>
