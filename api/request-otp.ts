@@ -43,16 +43,75 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'No account found with this email address.' });
     }
 
-    // 2. Rate Limiting: Check if an OTP was requested for this email in the last 60 seconds
-    const oneMinuteAgo = new Date(Date.now() - 60000).toISOString();
-    const { data: recentOtps } = await supabaseAdmin
+    // 2. Rate Limiting Logic:
+    const nowMs = Date.now();
+    const oneMinAgo = new Date(nowMs - 60000).toISOString();
+    const oneHourAgo = new Date(nowMs - 3600000).toISOString();
+    const twentyFourHoursAgo = new Date(nowMs - 86400000).toISOString();
+
+    // 1) 60-second limit check
+    const { data: lastMinOtps, error: minErr } = await supabaseAdmin
       .from('password_reset_otps')
       .select('created_at')
       .eq('email', normalizedEmail)
-      .gt('created_at', oneMinuteAgo);
+      .gt('created_at', oneMinAgo)
+      .order('created_at', { ascending: false });
 
-    if (recentOtps && recentOtps.length > 0) {
-      return res.status(429).json({ error: 'Rate limit exceeded. Please wait 60 seconds between OTP requests.' });
+    if (minErr) {
+      console.error('Database query error:', minErr.message);
+      return res.status(500).json({ error: 'Database error occurred' });
+    }
+
+    if (lastMinOtps && lastMinOtps.length > 0) {
+      const elapsed = nowMs - Date.parse(lastMinOtps[0].created_at);
+      const remaining = Math.max(1, Math.ceil((60000 - elapsed) / 1000));
+      return res.status(429).json({
+        error: `Rate limit exceeded. Please wait ${remaining} seconds before requesting a new code.`
+      });
+    }
+
+    // 2) Hourly limit check (max 5)
+    const { data: lastHourOtps, error: hourErr } = await supabaseAdmin
+      .from('password_reset_otps')
+      .select('created_at')
+      .eq('email', normalizedEmail)
+      .gt('created_at', oneHourAgo)
+      .order('created_at', { ascending: true });
+
+    if (hourErr) {
+      console.error('Database query error:', hourErr.message);
+      return res.status(500).json({ error: 'Database error occurred' });
+    }
+
+    if (lastHourOtps && lastHourOtps.length >= 5) {
+      const earliest = lastHourOtps[0].created_at;
+      const elapsed = nowMs - Date.parse(earliest);
+      const remaining = Math.max(1, Math.ceil((3600000 - elapsed) / 60000));
+      return res.status(429).json({
+        error: `Hourly limit exceeded. Please wait ${remaining} minutes before requesting a new code.`
+      });
+    }
+
+    // 3) Daily limit check (max 10)
+    const { data: lastDayOtps, error: dayErr } = await supabaseAdmin
+      .from('password_reset_otps')
+      .select('created_at')
+      .eq('email', normalizedEmail)
+      .gt('created_at', twentyFourHoursAgo)
+      .order('created_at', { ascending: true });
+
+    if (dayErr) {
+      console.error('Database query error:', dayErr.message);
+      return res.status(500).json({ error: 'Database error occurred' });
+    }
+
+    if (lastDayOtps && lastDayOtps.length >= 10) {
+      const earliest = lastDayOtps[0].created_at;
+      const elapsed = nowMs - Date.parse(earliest);
+      const remaining = Math.max(1, Math.ceil((86400000 - elapsed) / 3600000));
+      return res.status(429).json({
+        error: `Daily limit exceeded. Please try again in ${remaining} hours.`
+      });
     }
 
     // 3. Generate a secure random 6-digit OTP code
