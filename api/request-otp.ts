@@ -40,8 +40,7 @@ export default async function handler(req: any, res: any) {
     };
 
     if (!user) {
-      // Return success but do nothing else (obfuscated response)
-      return res.status(200).json(obfuscatedResponse);
+      return res.status(400).json({ error: 'No account found with this email address.' });
     }
 
     // 2. Rate Limiting: Check if an OTP was requested for this email in the last 60 seconds

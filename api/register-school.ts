@@ -29,7 +29,7 @@ export default async function handler(req: any, res: any) {
       .maybeSingle();
 
     if (existingUser) {
-      return res.status(400).json({ error: 'Email address is already registered in the ERP platform' });
+      return res.status(400).json({ error: 'This email is already registered. Please login or use another email.' });
     }
 
     // 2. Generate secure 6-digit OTP code
