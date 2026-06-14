@@ -163,7 +163,7 @@ export default async function handler(req: any, res: any) {
 
     // 9. Dispatch Invoice Success Email
     const resendApiKey = process.env.RESEND_API_KEY;
-    const supportEmail = process.env.SUPPORT_EMAIL || 'onboarding@resend.dev';
+    const supportEmail = process.env.SUPPORT_EMAIL || 'noreply@aegiserp.xyz';
 
     if (resendApiKey) {
       // Lookup school details for email personalization

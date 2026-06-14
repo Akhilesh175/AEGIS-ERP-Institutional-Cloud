@@ -79,7 +79,7 @@ export default async function handler(req: any, res: any) {
 
     // 5. Send OTP using Resend API
     const resendApiKey = process.env.RESEND_API_KEY;
-    const supportEmail = process.env.SUPPORT_EMAIL || 'onboarding@resend.dev';
+    const supportEmail = process.env.SUPPORT_EMAIL || 'noreply@aegiserp.xyz';
 
     if (!resendApiKey) {
       console.error('RESEND_API_KEY environment variable is not configured');

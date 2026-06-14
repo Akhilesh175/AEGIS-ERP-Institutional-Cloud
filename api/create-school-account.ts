@@ -177,7 +177,7 @@ export default async function handler(req: any, res: any) {
 
     // 9. Send welcome success email using Resend
     const resendApiKey = process.env.RESEND_API_KEY;
-    const supportEmail = process.env.SUPPORT_EMAIL || 'onboarding@resend.dev';
+    const supportEmail = process.env.SUPPORT_EMAIL || 'noreply@aegiserp.xyz';
 
     if (resendApiKey) {
       const emailHtml = `
