@@ -121,6 +121,75 @@ export const validateSchoolId = (schoolId: any, queryContext: string): void => {
   }
 };
 
+export function parseTimeToMinutes(timeStr: string): number {
+  if (!timeStr) return 0;
+  const clean = timeStr.trim().toUpperCase();
+  const ampmMatch = clean.match(/^(\d{1,2}):(\d{2})\s*(AM|PM)$/);
+  if (ampmMatch) {
+    let hours = parseInt(ampmMatch[1], 10);
+    const minutes = parseInt(ampmMatch[2], 10);
+    const ampm = ampmMatch[3];
+    if (ampm === 'PM' && hours < 12) hours += 12;
+    if (ampm === 'AM' && hours === 12) hours = 0;
+    return hours * 60 + minutes;
+  }
+  const parts = clean.split(':');
+  if (parts.length >= 2) {
+    const hours = parseInt(parts[0], 10) || 0;
+    const minutes = parseInt(parts[1], 10) || 0;
+    return hours * 60 + minutes;
+  }
+  return 0;
+}
+
+export function validateTimetableConflicts(
+  schoolId: string,
+  excludeId: string | undefined,
+  classId: string,
+  teacherId: string,
+  dayOfWeek: number,
+  startTime: string,
+  endTime: string,
+  classroomNumber?: string
+): void {
+  const startMin = parseTimeToMinutes(startTime);
+  const endMin = parseTimeToMinutes(endTime);
+  if (startMin >= endMin) {
+    throw new Error('Start time must be earlier than end time.');
+  }
+
+  const targetClass = mockDb.classes.find(c => c.id === classId);
+  if (!targetClass) return;
+
+  for (const entry of mockDb.timetables) {
+    if (excludeId && entry.id === excludeId) continue;
+
+    const entryClass = mockDb.classes.find(c => c.id === entry.classId);
+    if (!entryClass || entryClass.schoolId !== schoolId) continue;
+
+    if (entry.dayOfWeek !== dayOfWeek) continue;
+
+    const entryStartMin = parseTimeToMinutes(entry.startTime);
+    const entryEndMin = parseTimeToMinutes(entry.endTime);
+
+    // Overlap condition: startA < endB && startB < endA
+    if (startMin < entryEndMin && entryStartMin < endMin) {
+      if (entry.teacherId === teacherId) {
+        throw new Error('Teacher is already assigned during the selected time period.');
+      }
+
+      if (classroomNumber && entry.classroomNumber && entry.classroomNumber.trim().toLowerCase() === classroomNumber.trim().toLowerCase()) {
+        throw new Error('Selected room is already occupied during this time period.');
+      }
+
+      if (entry.classId === classId) {
+        throw new Error('This class already has a scheduled lecture during the selected time period.');
+      }
+    }
+  }
+}
+
+
 export const getAdminSchoolId = async (): Promise<string> => {
   try {
     const sessionRaw = localStorage.getItem(SESSION_KEY);
@@ -5463,6 +5532,16 @@ export const mockApi = {
     checkCoreAdminOrAcademicAdmin();
     const cls = mockDb.classes.find(c => c.id === classId);
     if (!cls) throw new Error('Class not found');
+
+    if (cls.classTeacherId) {
+      const activeTeacher = mockDb.teachers.find(t => t.id === cls.classTeacherId);
+      const activeUser = activeTeacher ? mockDb.users.find(u => u.id === activeTeacher.userId) : null;
+      const isActive = activeTeacher && activeTeacher.status !== 'INACTIVE' && !activeTeacher.deletedAt && (!activeUser || activeUser.isActive);
+      if (isActive) {
+        throw new Error('This class already has an assigned Class Teacher.');
+      }
+    }
+
     await validateTeacherForTimetable(teacherId, cls.schoolId);
     
     try {
@@ -5478,9 +5557,104 @@ export const mockApi = {
       cls.classTeacherId = teacherId;
       mockDb.addLog(adminId, 'ASSIGN_CLASS_TEACHER', { classId, teacherId });
       mockDb.saveAll();
+
+      const activeUser = getActiveUser();
+      if (activeUser) {
+        await this.writeAuditLog(
+          activeUser.id,
+          null,
+          cls.schoolId,
+          'academics',
+          'CLASS_TEACHER_ASSIGNED',
+          classId,
+          null,
+          { classId, teacherId }
+        );
+      }
     } catch (err: any) {
       console.error('Failed to assign class teacher:', err);
       throw new Error(err.message || 'Failed to assign class teacher in database.');
+    }
+  },
+
+  async adminChangeClassTeacher(adminId: string, classId: string, teacherId: string): Promise<void> {
+    await delay(300);
+    checkCoreAdminOrAcademicAdmin();
+    const cls = mockDb.classes.find(c => c.id === classId);
+    if (!cls) throw new Error('Class not found');
+    const oldTeacherId = cls.classTeacherId;
+    await validateTeacherForTimetable(teacherId, cls.schoolId);
+
+    try {
+      const { error } = await supabaseAdmin
+        .from('classes')
+        .update({ class_teacher_id: teacherId })
+        .eq('id', classId);
+
+      if (error) {
+        throw new Error(error.message || 'Failed to change class teacher in database.');
+      }
+      
+      cls.classTeacherId = teacherId;
+      mockDb.addLog(adminId, 'CHANGE_CLASS_TEACHER', { classId, oldTeacherId, newTeacherId: teacherId });
+      mockDb.saveAll();
+
+      const activeUser = getActiveUser();
+      if (activeUser) {
+        await this.writeAuditLog(
+          activeUser.id,
+          null,
+          cls.schoolId,
+          'academics',
+          'CLASS_TEACHER_CHANGED',
+          classId,
+          oldTeacherId ? { teacherId: oldTeacherId } : null,
+          { classId, teacherId }
+        );
+      }
+    } catch (err: any) {
+      console.error('Failed to change class teacher:', err);
+      throw new Error(err.message || 'Failed to change class teacher in database.');
+    }
+  },
+
+  async adminRemoveClassTeacher(adminId: string, classId: string): Promise<void> {
+    await delay(300);
+    checkCoreAdminOrAcademicAdmin();
+    const cls = mockDb.classes.find(c => c.id === classId);
+    if (!cls) throw new Error('Class not found');
+    const oldTeacherId = cls.classTeacherId;
+
+    try {
+      const { error } = await supabaseAdmin
+        .from('classes')
+        .update({ class_teacher_id: null })
+        .eq('id', classId);
+
+      if (error) {
+        throw new Error(error.message || 'Failed to remove class teacher in database.');
+      }
+      
+      cls.classTeacherId = undefined;
+      mockDb.addLog(adminId, 'REMOVE_CLASS_TEACHER', { classId, oldTeacherId });
+      mockDb.saveAll();
+
+      const activeUser = getActiveUser();
+      if (activeUser) {
+        await this.writeAuditLog(
+          activeUser.id,
+          null,
+          cls.schoolId,
+          'academics',
+          'CLASS_TEACHER_REMOVED',
+          classId,
+          oldTeacherId ? { teacherId: oldTeacherId } : null,
+          null
+        );
+      }
+    } catch (err: any) {
+      console.error('Failed to remove class teacher:', err);
+      throw new Error(err.message || 'Failed to remove class teacher in database.');
     }
   },
   async adminGetSubjects(): Promise<Subject[]> {
@@ -5718,6 +5892,9 @@ export const mockApi = {
     }
 
     if (dayOfWeek !== undefined && startTime && endTime) {
+      await this.syncTimetablesData(schoolId);
+      validateTimetableConflicts(schoolId, undefined, classId, teacherId, dayOfWeek, startTime, endTime, classroomNumber);
+
       try {
         const academicSessionId = await this.resolveActiveSessionId(schoolId);
 
@@ -5739,7 +5916,7 @@ export const mockApi = {
         if (ttError) {
           throw new Error(ttError.message || 'Failed to save timetable in database.');
         } else if (dbTt) {
-          mockDb.timetables.push({
+          const newTt = {
             id: dbTt.id,
             classId: dbTt.class_id,
             subjectId: dbTt.subject_id,
@@ -5749,7 +5926,22 @@ export const mockApi = {
             endTime: dbTt.end_time,
             classroomNumber: dbTt.classroom_number || undefined,
             academicSessionId: dbTt.academic_session_id || academicSessionId
-          });
+          };
+          mockDb.timetables.push(newTt);
+
+          const activeUser = getActiveUser();
+          if (activeUser) {
+            await this.writeAuditLog(
+              activeUser.id,
+              null,
+              schoolId,
+              'academics',
+              'TIMETABLE_CREATED',
+              dbTt.id,
+              null,
+              newTt
+            );
+          }
         }
       } catch (err: any) {
         console.error(err);
@@ -8629,7 +8821,9 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
 
+    await this.syncTimetablesData(teacher.schoolId);
     await validateTeacherForTimetable(teacherId, teacher.schoolId);
+    validateTimetableConflicts(teacher.schoolId, undefined, classId, teacherId, dayOfWeek, startTime, endTime, classroomNumber);
 
     const mappingExists = mockDb.teacherClassSubjectMappings.some(
       m => m.teacherId === teacherId && m.classId === classId && m.subjectId === subjectId
@@ -8673,6 +8867,20 @@ export const mockApi = {
         mockDb.timetables.push(newEntry);
         mockDb.addLog(teacher.userId, 'TEACHER_CREATE_TIMETABLE', { classId, timetableId: newEntry.id });
         mockDb.saveAll();
+
+        const activeUser = getActiveUser();
+        if (activeUser) {
+          await this.writeAuditLog(
+            activeUser.id,
+            null,
+            teacher.schoolId,
+            'academics',
+            'TIMETABLE_CREATED',
+            newEntry.id,
+            null,
+            newEntry
+          );
+        }
       }
     } catch (err: any) {
       console.error(err);
@@ -8685,6 +8893,9 @@ export const mockApi = {
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
+
+    const ttIdx = mockDb.timetables.findIndex(t => t.id === timetableId);
+    const oldEntry = ttIdx !== -1 ? mockDb.timetables[ttIdx] : null;
 
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
@@ -8704,12 +8915,25 @@ export const mockApi = {
       }
     }
 
-    const ttIdx = mockDb.timetables.findIndex(t => t.id === timetableId);
-    if (ttIdx !== -1) {
+    if (ttIdx !== -1 && oldEntry) {
       const tt = mockDb.timetables[ttIdx];
       mockDb.timetables.splice(ttIdx, 1);
       mockDb.addLog(teacher.userId, 'TEACHER_DELETE_TIMETABLE', { classId: tt.classId, timetableId });
       mockDb.saveAll();
+
+      const activeUser = getActiveUser();
+      if (activeUser) {
+        await this.writeAuditLog(
+          activeUser.id,
+          null,
+          teacher.schoolId,
+          'academics',
+          'TIMETABLE_DELETED',
+          timetableId,
+          oldEntry,
+          null
+        );
+      }
     }
   },
 
@@ -8734,8 +8958,11 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
 
+    await this.syncTimetablesData(teacher.schoolId);
     await validateTeacherForTimetable(assignedTeacherId, teacher.schoolId);
     const validTeacherId = assignedTeacherId;
+
+    validateTimetableConflicts(teacher.schoolId, undefined, classId, validTeacherId, dayOfWeek, startTime, endTime, classroomNumber);
 
     try {
       const academicSessionId = await this.resolveActiveSessionId(teacher.schoolId);
@@ -8772,6 +8999,20 @@ export const mockApi = {
         mockDb.timetables.push(newEntry);
         mockDb.addLog(teacher.userId, 'CLASS_TEACHER_CREATE_TIMETABLE', { classId, timetableId: newEntry.id });
         mockDb.saveAll();
+
+        const activeUser = getActiveUser();
+        if (activeUser) {
+          await this.writeAuditLog(
+            activeUser.id,
+            null,
+            teacher.schoolId,
+            'academics',
+            'TIMETABLE_CREATED',
+            newEntry.id,
+            null,
+            newEntry
+          );
+        }
       }
     } catch (err: any) {
       console.error(err);
@@ -8785,6 +9026,9 @@ export const mockApi = {
 
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
+
+    const ttIdx = mockDb.timetables.findIndex(t => t.id === timetableId);
+    const oldEntry = ttIdx !== -1 ? mockDb.timetables[ttIdx] : null;
 
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
 
@@ -8804,12 +9048,25 @@ export const mockApi = {
       }
     }
 
-    const ttIdx = mockDb.timetables.findIndex(t => t.id === timetableId);
-    if (ttIdx !== -1) {
+    if (ttIdx !== -1 && oldEntry) {
       const tt = mockDb.timetables[ttIdx];
       mockDb.timetables.splice(ttIdx, 1);
       mockDb.addLog(teacher.userId, 'CLASS_TEACHER_DELETE_TIMETABLE', { classId: tt.classId, timetableId });
       mockDb.saveAll();
+
+      const activeUser = getActiveUser();
+      if (activeUser) {
+        await this.writeAuditLog(
+          activeUser.id,
+          null,
+          teacher.schoolId,
+          'academics',
+          'TIMETABLE_DELETED',
+          timetableId,
+          oldEntry,
+          null
+        );
+      }
     }
   },
   
@@ -8835,8 +9092,14 @@ export const mockApi = {
     const teacher = mockDb.teachers.find(t => t.id === teacherId);
     if (!teacher) throw new Error('Teacher profile not found.');
 
+    await this.syncTimetablesData(teacher.schoolId);
     await validateTeacherForTimetable(assignedTeacherId, teacher.schoolId);
     const validTeacherId = assignedTeacherId;
+
+    validateTimetableConflicts(teacher.schoolId, timetableId, classId, validTeacherId, dayOfWeek, startTime, endTime, classroomNumber);
+
+    const oldEntry = mockDb.timetables.find(t => t.id === timetableId);
+    const oldData = oldEntry ? { ...oldEntry } : null;
 
     const checkIsUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     if (checkIsUUID(timetableId)) {
@@ -8875,6 +9138,20 @@ export const mockApi = {
       };
       mockDb.addLog(teacher.userId, 'CLASS_TEACHER_UPDATE_TIMETABLE', { classId, timetableId });
       mockDb.saveAll();
+
+      const activeUser = getActiveUser();
+      if (activeUser) {
+        await this.writeAuditLog(
+          activeUser.id,
+          null,
+          teacher.schoolId,
+          'academics',
+          'TIMETABLE_UPDATED',
+          timetableId,
+          oldData,
+          mockDb.timetables[ttIdx]
+        );
+      }
     }
 
     await this.syncTimetablesData(teacher.schoolId);

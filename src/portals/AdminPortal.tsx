@@ -448,6 +448,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [editSubCode, setEditSubCode] = useState('');
   const [editSubDesc, setEditSubDesc] = useState('');
 
+  // Class Settings States
+  const [selectedSettingsClassId, setSelectedSettingsClassId] = useState<string>('');
+  const [showChangeCtModal, setShowChangeCtModal] = useState<boolean>(false);
+  const [changeCtClassId, setChangeCtClassId] = useState<string>('');
+  const [changeCtTeacherId, setChangeCtTeacherId] = useState<string>('');
+
   // Books Edit State
   const [editingBook, setEditingBook] = useState<any | null>(null);
   const [editBkTitle, setEditBkTitle] = useState('');
@@ -3369,6 +3375,83 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       </div>
     );
   }
+  const getLogDescription = (log: any) => {
+    const action = log.actionType;
+    
+    const parseIfString = (val: any) => {
+      if (typeof val === 'string') {
+        try { return JSON.parse(val); } catch { return val; }
+      }
+      return val;
+    };
+    
+    const old = parseIfString(log.oldData);
+    const newD = parseIfString(log.newData);
+    const target = log.targetId;
+
+    const getTeacherName = (tId: string) => {
+      if (!tId) return 'None';
+      const found = teachers.find(t => t.id === tId);
+      if (!found) return `Teacher (${tId.substring(0, 8)})`;
+      return `${found.userDetails?.firstName || ''} ${found.userDetails?.lastName || ''}`.trim() || `Teacher (${tId.substring(0, 8)})`;
+    };
+
+    const getClassName = (cId: string) => {
+      if (!cId) return 'None';
+      const found = classes.find(c => c.id === cId);
+      return found?.name || `Class (${cId.substring(0, 8)})`;
+    };
+
+    const getSubjectName = (sId: string) => {
+      if (!sId) return 'None';
+      const found = subjects.find(s => s.id === sId);
+      return found?.name || `Subject (${sId.substring(0, 8)})`;
+    };
+
+    switch (action) {
+      case 'CLASS_TEACHER_ASSIGNED': {
+        const clsName = getClassName(target);
+        const tName = getTeacherName(newD?.teacherId);
+        return `${clsName} assigned to ${tName}`;
+      }
+      case 'CLASS_TEACHER_CHANGED': {
+        const clsName = getClassName(target);
+        const prevTName = getTeacherName(old?.teacherId);
+        const newTName = getTeacherName(newD?.teacherId);
+        return `${clsName} changed from ${prevTName} to ${newTName}`;
+      }
+      case 'CLASS_TEACHER_REMOVED': {
+        const clsName = getClassName(target);
+        const prevTName = getTeacherName(old?.teacherId);
+        return `${clsName} removed class teacher (previously ${prevTName})`;
+      }
+      case 'TIMETABLE_CREATED': {
+        const entry = newD;
+        const clsName = getClassName(entry?.classId);
+        const subName = getSubjectName(entry?.subjectId);
+        const tName = getTeacherName(entry?.teacherId);
+        const day = entry?.dayOfWeek !== undefined ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][entry.dayOfWeek - 1] || `Day ${entry.dayOfWeek}` : '';
+        return `Period created for ${clsName} (${subName} by ${tName}) on ${day} at ${entry?.startTime || ''} - ${entry?.endTime || ''}`;
+      }
+      case 'TIMETABLE_UPDATED': {
+        const entry = newD;
+        const clsName = getClassName(entry?.classId);
+        const subName = getSubjectName(entry?.subjectId);
+        const tName = getTeacherName(entry?.teacherId);
+        const day = entry?.dayOfWeek !== undefined ? ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'][entry.dayOfWeek - 1] || `Day ${entry.dayOfWeek}` : '';
+        return `Period updated for ${clsName} (${subName} by ${tName}) on ${day} at ${entry?.startTime || ''} - ${entry?.endTime || ''}`;
+      }
+      case 'TIMETABLE_DELETED': {
+        const entry = old;
+        const clsName = getClassName(entry?.classId);
+        const subName = getSubjectName(entry?.subjectId);
+        return `Period deleted for ${clsName} (${subName})`;
+      }
+      default: {
+        return log.actionType.replace(/_/g, ' ') + (log.targetId ? ` on ${log.targetId.substring(0, 8)}` : '');
+      }
+    }
+  };
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
@@ -4340,7 +4423,258 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 </div>
               )}
             </GlassCard>
+
+            <GlassCard className="space-y-4 mt-6">
+              <h3 className="font-bold text-slate-200 text-sm flex items-center gap-2">
+                <Settings className="text-brand-500" size={16} />
+                Class Settings
+              </h3>
+              {isAcademicOrSchoolAdmin ? (
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Select Class</label>
+                    <select
+                      value={selectedSettingsClassId}
+                      onChange={(e) => setSelectedSettingsClassId(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
+                    >
+                      <option value="">-- Choose Class --</option>
+                      {classes.map(c => (
+                        <option key={c.id} value={c.id}>{c.name}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {selectedSettingsClassId && (() => {
+                    const cls = classes.find(c => c.id === selectedSettingsClassId);
+                    if (!cls) return null;
+                    const ctTeacher = cls.classTeacherId ? teachers.find(t => t.id === cls.classTeacherId) : null;
+                    
+                    const classLogs = auditLogs.filter(log => 
+                      log.targetId === selectedSettingsClassId && 
+                      ['CLASS_TEACHER_ASSIGNED', 'CLASS_TEACHER_CHANGED', 'CLASS_TEACHER_REMOVED'].includes(log.actionType)
+                    );
+
+                    return (
+                      <div className="space-y-4 pt-2 border-t border-slate-850/50">
+                        <div className="space-y-2">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Current Class Teacher</label>
+                          {ctTeacher ? (
+                            <div className="p-3 bg-slate-900/40 border border-slate-800 rounded-xl space-y-2">
+                              <div className="flex items-center gap-3">
+                                {ctTeacher.userDetails?.avatarUrl ? (
+                                  <img src={ctTeacher.userDetails.avatarUrl} alt="" className="w-8 h-8 rounded-full object-cover" />
+                                ) : (
+                                  <div className="w-8 h-8 rounded-full bg-brand-500/10 flex items-center justify-center text-xs font-bold text-brand-400">
+                                    {ctTeacher.userDetails?.firstName?.[0] || 'T'}
+                                  </div>
+                                )}
+                                <div>
+                                  <div className="font-bold text-slate-200 text-xs">
+                                    {ctTeacher.userDetails?.firstName} {ctTeacher.userDetails?.lastName}
+                                  </div>
+                                  <div className="text-[10px] text-slate-400 font-mono">ID: {ctTeacher.employeeId}</div>
+                                </div>
+                                <span className="ml-auto text-[9px] font-bold text-green-400 bg-green-500/10 px-2 py-0.5 rounded-full uppercase tracking-wider">
+                                  Active
+                                </span>
+                              </div>
+
+                              <div className="flex gap-2 pt-1">
+                                <button
+                                  onClick={() => {
+                                    setChangeCtClassId(selectedSettingsClassId);
+                                    setChangeCtTeacherId('');
+                                    setShowChangeCtModal(true);
+                                  }}
+                                  className="flex-1 glass-btn text-[10px] py-1.5 font-bold uppercase animate-pulse"
+                                >
+                                  Change Class Teacher
+                                </button>
+                                <button
+                                  onClick={async () => {
+                                    if (!window.confirm('Are you sure you want to remove the class teacher from this class?')) return;
+                                    try {
+                                      await mockApi.adminRemoveClassTeacher(adminId!, selectedSettingsClassId);
+                                      setClasses(prev => prev.map(c => c.id === selectedSettingsClassId ? { ...c, classTeacherId: undefined } : c));
+                                      const logs = await mockApi.fetchAuditLogs(session?.user.schoolId || '');
+                                      setAuditLogs(logs);
+                                      alert('Class teacher removed successfully.');
+                                    } catch (err: any) {
+                                      alert(err.message || 'Error removing class teacher.');
+                                    }
+                                  }}
+                                  className="glass-btn text-[10px] py-1.5 px-2.5 font-bold uppercase border-rose-500/20 text-rose-400 hover:bg-rose-500/10 hover:border-rose-500/30"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+
+                              <div className="p-2.5 bg-yellow-500/5 border border-yellow-500/20 rounded-lg flex gap-2">
+                                <AlertTriangle className="text-yellow-400 shrink-0 mt-0.5" size={14} />
+                                <div className="text-[10px] text-slate-350 leading-relaxed">
+                                  <strong>Validation:</strong> This class already has an assigned Class Teacher. Please remove or change the existing Class Teacher first.
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-3">
+                              <div className="p-3 bg-slate-900/20 border border-slate-850/50 border-dashed rounded-xl text-center text-[10px] text-slate-400 py-4">
+                                No Class Teacher Assigned
+                              </div>
+                              <button
+                                onClick={() => {
+                                  setChangeCtClassId(selectedSettingsClassId);
+                                  setChangeCtTeacherId('');
+                                  setShowChangeCtModal(true);
+                                }}
+                                className="w-full glass-btn-primary text-[10px] py-1.5 font-bold uppercase"
+                              >
+                                Assign Class Teacher
+                              </button>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="space-y-2 pt-2 border-t border-slate-850/50">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">History</label>
+                          {classLogs.length > 0 ? (
+                            <div className="space-y-3 pl-1.5 border-l border-slate-800">
+                              {classLogs.map(log => {
+                                const operatorName = log.userId ? (operators.find(o => o.id === log.userId)?.firstName || 'Admin') : 'System';
+                                return (
+                                  <div key={log.id} className="relative pl-3 space-y-0.5">
+                                    <div className="absolute left-[-9.5px] top-1.5 w-1.5 h-1.5 rounded-full bg-brand-500"></div>
+                                    <div className="text-[9px] font-bold text-slate-450">
+                                      {new Date(log.createdAt).toLocaleDateString()} {new Date(log.createdAt).toLocaleTimeString()}
+                                    </div>
+                                    <div className="text-[10px] text-slate-350 font-semibold leading-relaxed">
+                                      {getLogDescription(log)}
+                                    </div>
+                                    <div className="text-[9px] text-slate-500 uppercase tracking-wider font-mono">
+                                      By: {operatorName}
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          ) : (
+                            <p className="text-[9px] text-slate-500 italic">No teacher assignment history recorded.</p>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                <div className="p-4 bg-slate-950/40 border border-slate-850 rounded-xl text-center text-slate-400">
+                  <Lock className="mx-auto mb-2 text-slate-500" size={20} />
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-red-400">RESTRICTED SECTION</p>
+                  <p className="text-[10px] mt-1">Class teacher settings are restricted to School & Academic Admins.</p>
+                </div>
+              )}
+            </GlassCard>
           </div>
+        </div>
+      )}
+
+      {showChangeCtModal && changeCtClassId && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in">
+          <GlassCard className="w-full max-w-sm bg-slate-950 border border-slate-850 p-6 space-y-5 relative">
+            <button
+              onClick={() => setShowChangeCtModal(false)}
+              className="absolute top-4 right-4 text-slate-400 hover:text-slate-200 text-sm"
+            >
+              ✕
+            </button>
+            <div className="space-y-1.5">
+              <h3 className="font-bold text-slate-200 text-sm">
+                Change Class Teacher — {classes.find(c => c.id === changeCtClassId)?.name}
+              </h3>
+              <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider">
+                Select replacement teacher
+              </p>
+            </div>
+
+            {(() => {
+              const currentClass = classes.find(c => c.id === changeCtClassId);
+              const currentCtId = currentClass?.classTeacherId;
+              const currentCt = currentCtId ? teachers.find(t => t.id === currentCtId) : null;
+
+              return (
+                <div className="space-y-4">
+                  {currentCt && (
+                    <div className="p-3 bg-slate-900/40 border border-slate-800 rounded-xl space-y-1">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Current Class Teacher</span>
+                      <div className="font-bold text-slate-300 text-xs">
+                        {currentCt.userDetails?.firstName} {currentCt.userDetails?.lastName}
+                      </div>
+                      <div className="text-[9px] text-slate-500 font-mono">ID: {currentCt.employeeId}</div>
+                    </div>
+                  )}
+
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Select New Class Teacher</label>
+                    <select
+                      value={changeCtTeacherId}
+                      onChange={(e) => setChangeCtTeacherId(e.target.value)}
+                      className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none"
+                    >
+                      <option value="">Select Teacher</option>
+                      {teachers
+                        .filter(t => t.id !== currentCtId && t.status !== 'INACTIVE' && !t.deletedAt)
+                        .map(t => (
+                          <option key={t.id} value={t.id}>
+                            {t.userDetails?.firstName} {t.userDetails?.lastName} ({t.employeeId})
+                          </option>
+                        ))}
+                    </select>
+                  </div>
+
+                  <div className="p-2.5 bg-blue-500/5 border border-blue-500/20 rounded-lg flex gap-2">
+                    <AlertCircle className="text-blue-400 shrink-0 mt-0.5" size={14} />
+                    <div className="text-[10px] text-slate-350 leading-relaxed">
+                      This action will replace the current Class Teacher for this class.
+                    </div>
+                  </div>
+
+                  <div className="flex gap-3 pt-2">
+                    <button
+                      onClick={() => setShowChangeCtModal(false)}
+                      className="flex-1 glass-btn text-xs py-2 font-bold uppercase"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      onClick={async () => {
+                        if (!changeCtTeacherId) {
+                          alert('Please select a teacher.');
+                          return;
+                        }
+                        try {
+                          if (currentCtId) {
+                            await mockApi.adminChangeClassTeacher(adminId!, changeCtClassId, changeCtTeacherId);
+                          } else {
+                            await mockApi.adminAssignClassTeacher(adminId!, changeCtClassId, changeCtTeacherId);
+                          }
+                          setClasses(prev => prev.map(c => c.id === changeCtClassId ? { ...c, classTeacherId: changeCtTeacherId } : c));
+                          const logs = await mockApi.fetchAuditLogs(session?.user.schoolId || '');
+                          setAuditLogs(logs);
+                          setShowChangeCtModal(false);
+                          alert('Class teacher updated successfully.');
+                        } catch (err: any) {
+                          alert(err.message || 'Error updating class teacher.');
+                        }
+                      }}
+                      className="flex-1 glass-btn-primary text-xs py-2 font-bold uppercase"
+                    >
+                      Confirm Change
+                    </button>
+                  </div>
+                </div>
+              );
+            })()}
+          </GlassCard>
         </div>
       )}
 
@@ -7054,7 +7388,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                       <th className="py-3 px-4">Operator Info</th>
                       <th className="py-3 px-4">Module</th>
                       <th className="py-3 px-4">Action</th>
-                      <th className="py-3 px-4">Network & Client Telemetry</th>
+                      <th className="py-3 px-4">Description</th>
                       <th className="py-3 px-4 text-right">Timestamp</th>
                     </tr>
                   </thead>
@@ -7097,9 +7431,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                 </span>
                               </td>
                               <td className="py-3 px-4">
-                                <div className="font-mono text-slate-300 text-[10px]">{log.ipAddress || '127.0.0.1'}</div>
-                                <div className="text-[9px] text-slate-500 max-w-xs truncate" title={log.userAgent}>
-                                  {log.userAgent || 'Telemetry unavailable'}
+                                <div className="text-slate-250 text-xs font-semibold leading-relaxed">{getLogDescription(log)}</div>
+                                <div className="text-[9px] text-slate-500 font-mono mt-0.5" title={log.userAgent}>
+                                  {log.ipAddress || '127.0.0.1'} | {log.userAgent || 'Telemetry unavailable'}
                                 </div>
                               </td>
                               <td className="py-3 px-4 text-right font-mono text-[9px] text-slate-500">
