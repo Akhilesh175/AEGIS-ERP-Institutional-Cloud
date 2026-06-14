@@ -129,8 +129,7 @@ export default async function handler(req: any, res: any) {
         last_name: 'Administrator',
         phone: phone || '',
         is_active: true,
-        school_id: school.id,
-        academic_session_id: sessionData?.id || null
+        school_id: school.id
       });
 
     if (userError) {
