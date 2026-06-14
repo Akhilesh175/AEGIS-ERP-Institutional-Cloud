@@ -1865,10 +1865,10 @@ export const HelpSupportPage: React.FC = () => {
                 <div className="space-y-0.5 min-w-0">
                   <h4 className="text-xs font-bold text-slate-200">Email Support</h4>
                   <a 
-                    href="mailto:support@aegiserp.xyz" 
+                    href="mailto:aegis.erp.institutional.cloud@gmail.com" 
                     className="text-[10px] text-slate-400 hover:text-brand-400 transition-colors font-mono block truncate"
                   >
-                    support@aegiserp.xyz
+                    aegis.erp.institutional.cloud@gmail.com
                   </a>
                   <p className="text-[9px] text-slate-500 font-semibold uppercase">Response within 24 hours</p>
                 </div>

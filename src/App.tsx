@@ -904,11 +904,11 @@ export const App: React.FC = () => {
               
               <div className="grid grid-cols-1 gap-2.5 text-xs">
                 {/* Email Support */}
-                <a href="mailto:support@aegiserp.xyz" className="p-3 bg-slate-900/40 border border-slate-805 hover:border-brand-500/20 hover:bg-[#0a0e1a] rounded-xl transition-all flex items-start gap-3 group">
+                <a href="mailto:aegis.erp.institutional.cloud@gmail.com" className="p-3 bg-slate-900/40 border border-slate-805 hover:border-brand-500/20 hover:bg-[#0a0e1a] rounded-xl transition-all flex items-start gap-3 group">
                   <Mail size={15} className="text-brand-400 shrink-0 mt-0.5" />
                   <div className="min-w-0">
                     <p className="font-bold text-[9px] uppercase text-slate-500 font-mono leading-none">Email Support</p>
-                    <p className="text-[11px] text-slate-300 mt-1 truncate group-hover:text-brand-300 transition-colors">support@aegiserp.xyz</p>
+                    <p className="text-[11px] text-slate-300 mt-1 truncate group-hover:text-brand-300 transition-colors">aegis.erp.institutional.cloud@gmail.com</p>
                   </div>
                 </a>
 
