@@ -6,7 +6,7 @@ export type GenderType = 'MALE' | 'FEMALE' | 'OTHER';
 
 export type AttendanceStatus = 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED';
 
-export type PaymentStatus = 'PENDING' | 'PAID' | 'PARTIAL' | 'OVERDUE';
+export type PaymentStatus = 'PENDING' | 'PAID' | 'PARTIAL' | 'OVERDUE' | 'REJECTED';
 
 // --- ENTITIES ---
 
@@ -359,6 +359,9 @@ export interface FeePayment {
   transactionId?: string;
   status: PaymentStatus;
   createdAt: string;
+  paymentScreenshotUrl?: string;
+  utrNumber?: string;
+  rejectionReason?: string;
 }
 
 export interface ForumCategory {
@@ -501,6 +504,7 @@ export interface Driver {
   phone: string;
   status: 'ACTIVE' | 'INACTIVE';
   createdAt: string;
+  employeeId?: string | null;
 }
 
 export interface Bus {
@@ -726,6 +730,36 @@ export interface DriverSalaryPayout {
   notes?: string | null;
   createdAt: string;
   updatedAt: string;
+  currencyCode?: string;
+  currencySymbol?: string;
+  driverName?: string | null;
+  driverEmployeeId?: string | null;
+  driverLicenseNumber?: string | null;
+  driverPhone?: string | null;
+}
+
+export interface PayrollRecord {
+  id: string;
+  schoolId: string;
+  employeeType: 'TEACHER' | 'STAFF';
+  employeeRole: string;
+  employeeName: string;
+  employeeIdNumber?: string | null;
+  employeePhone?: string | null;
+  userId?: string | null;
+  payoutMonth: string;
+  baseSalary: number;
+  allowances: number;
+  deductions: number;
+  netSalary: number;
+  payoutStatus: 'PENDING' | 'APPROVED' | 'PAID' | 'CANCELLED' | 'REVERSED';
+  payoutDate?: string | null;
+  paidByUserId?: string | null;
+  transactionReference?: string | null;
+  notes?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  deletedAt?: string | null;
   currencyCode?: string;
   currencySymbol?: string;
 }
@@ -1067,6 +1101,41 @@ export interface BugReport {
     email: string;
   } | null;
   schoolName?: string;
+}
+
+export interface SchoolPaymentSettings {
+  id: string;
+  schoolId: string;
+  qrCodeUrl?: string | null;
+  upiId?: string | null;
+  accountHolderName?: string | null;
+  bankName?: string | null;
+  accountNumber?: string | null;
+  ifscCode?: string | null;
+  branchName?: string | null;
+  swiftCode?: string | null;
+  qrPaymentEnabled: boolean;
+  bankTransferEnabled: boolean;
+  showQrToParents: boolean;
+  showBankToParents: boolean;
+  enableUtrUpload: boolean;
+  autoRemindUnpaid: boolean;
+  paymentInstructions?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface FacultyPaymentSettings {
+  id: string;
+  userId: string;
+  qrCodeUrl?: string | null;
+  upiId?: string | null;
+  bankName?: string | null;
+  accountNumber?: string | null;
+  ifscCode?: string | null;
+  branchName?: string | null;
+  createdAt?: string;
+  updatedAt?: string;
 }
 
 

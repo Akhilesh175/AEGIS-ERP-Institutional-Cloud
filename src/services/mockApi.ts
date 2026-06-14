@@ -1,22 +1,49 @@
-import { mockDb, getSystemTelemetry, SEED_EXAMS, SEED_EXAM_SCHEDULES, SEED_EXAM_MARKS } from './mockDb';
+import { mockDb, getSystemTelemetry, SEED_EXAMS, SEED_EXAM_SCHEDULES, SEED_EXAM_MARKS, encryptAccountNumberSync, decryptAccountNumberSync } from './mockDb';
 import { 
   User, Student, Parent, Teacher, Class, Subject, Timetable, 
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizAttempt, 
   Exam, ExamMark, FeeStructure, FeePayment, PaymentStatus, ChatMessage, Announcement, 
   Notification, AuditLog, StudyMaterial, ExamSchedule, 
   TeacherClassSubjectMapping, QuizQuestion, School, ForumPost, ForumReply, ParentStudentMapping, ForumCategory, PhoneNumber, EmailAddress, Section, HomeworkAttachment,
-  Role, RolePermission, DriverSalaryPayout, UserRole,
+  Role, RolePermission, DriverSalaryPayout, UserRole, PayrollRecord,
   Hostel, HostelBlock, HostelRoom, HostelBed, HostelWarden, HostelAdmission,
   HostelAttendance, HostelLeaveRequest, HostelVisitor, HostelComplaint,
   HostelFee, HostelPayment, HostelMessMenu,
   SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport,
-  SupportTicketMessage, SupportTicketStatusLog, SupportNotification, SupportInternalNote
+  SupportTicketMessage, SupportTicketStatusLog, SupportNotification, SupportInternalNote,
+  SchoolPaymentSettings, FacultyPaymentSettings
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
 
 // Helper to simulate network latency
 const delay = (ms = 400) => new Promise(resolve => setTimeout(resolve, ms));
+
+// ── Payment Detail Validations ──────────────────────────────────────────
+export function validateIFSCCode(ifsc: string): boolean {
+  if (!ifsc) return false;
+  return /^[A-Z]{4}0[A-Z0-9]{6}$/.test(ifsc.trim().toUpperCase());
+}
+
+export function validateUPIID(upi: string): boolean {
+  if (!upi) return false;
+  return /^[\w.\-_]+@[\w.\-_]+$/.test(upi.trim().toLowerCase());
+}
+
+export function validateAccountNumber(acc: string): boolean {
+  if (!acc) return false;
+  return /^\d{9,18}$/.test(acc.trim());
+}
+
+// Convert file to base64 helper
+export function readFileAsBase64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
 
 // ── Phone Number Validation (ITU-T E.164) ──────────────────────────────────
 function parseAndValidatePhone(phoneStr: string): { countryCode: string; nationalNumber: string; fullNumber: string } {
@@ -3649,11 +3676,16 @@ export const mockApi = {
     const feeSummaries = structures.map(fs => {
       const payment = mockDb.feePayments.find(p => p.feeStructureId === fs.id && p.studentId === studentId);
       return {
+        id: fs.id,
         description: fs.description,
         amount: fs.amount,
         dueDate: fs.dueDate,
         status: payment ? payment.status : 'PENDING',
-        paymentDate: payment ? payment.paymentDate : ''
+        paymentDate: payment ? payment.paymentDate : '',
+        paymentId: payment?.id || '',
+        paymentScreenshotUrl: payment?.paymentScreenshotUrl || '',
+        utrNumber: payment?.utrNumber || '',
+        rejectionReason: payment?.rejectionReason || ''
       };
     });
 
@@ -10778,7 +10810,8 @@ export const mockApi = {
         licenseNumber: d.license_number || d.licenseNumber,
         phone: d.phone,
         status: d.status || 'ACTIVE',
-        createdAt: d.created_at
+        createdAt: d.created_at,
+        employeeId: d.employee_id || d.employeeId || null
       }));
 
       mapped.forEach(d => {
@@ -10794,11 +10827,13 @@ export const mockApi = {
     return mockDb.drivers.filter(d => d.schoolId === schoolId);
   },
 
-  async createDriver(schoolId: string, sessionId: string, name: string, licenseNumber: string, phone: string): Promise<void> {
+  async createDriver(schoolId: string, sessionId: string, name: string, licenseNumber: string, phone: string, employeeId?: string | null): Promise<void> {
     await this.validateTransportAction(schoolId, 'create', undefined, undefined, { name, licenseNumber, phone });
     await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     const resolvedSessionId = (sessionId && isUUID(sessionId)) ? sessionId : null;
+
+    const resolvedEmployeeId = employeeId?.trim() || ('DRV-' + Math.floor(100000 + Math.random() * 900000).toString());
 
     const { error } = await supabaseAdmin.from('drivers').insert({
       school_id: schoolId,
@@ -10806,7 +10841,8 @@ export const mockApi = {
       name: name,
       license_number: licenseNumber,
       phone: phone,
-      status: 'ACTIVE'
+      status: 'ACTIVE',
+      employee_id: resolvedEmployeeId
     });
     if (error) {
       mockDb.drivers.push({
@@ -10816,11 +10852,12 @@ export const mockApi = {
         licenseNumber,
         phone,
         status: 'ACTIVE',
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        employeeId: resolvedEmployeeId
       });
       mockDb.saveAll();
     }
-    await this.logTransportAuditAction(schoolId, 'CREATE_DRIVER', undefined, undefined, { name, licenseNumber, phone });
+    await this.logTransportAuditAction(schoolId, 'CREATE_DRIVER', undefined, undefined, { name, licenseNumber, phone, employeeId: resolvedEmployeeId });
   },
 
   async fetchPickupPoints(schoolId: string): Promise<any[]> {
@@ -11357,9 +11394,23 @@ export const mockApi = {
       .select('*')
       .eq('school_id', schoolId);
     if (error || !data) {
-      return mockDb.driverSalaryPayouts.filter(p => p.schoolId === schoolId);
+      // Offline fallback: backfill missing snapshots from in-memory driver registry
+      const localPayouts = mockDb.driverSalaryPayouts.filter(p => p.schoolId === schoolId);
+      localPayouts.forEach(p => {
+        if (!p.driverName) {
+          const driver = mockDb.drivers.find(d => d.id === p.driverId);
+          if (driver) {
+            p.driverName = driver.name || null;
+            p.driverEmployeeId = driver.employeeId || null;
+            p.driverLicenseNumber = driver.licenseNumber || null;
+            p.driverPhone = driver.phone || null;
+          }
+        }
+      });
+      mockDb.saveAll();
+      return localPayouts;
     }
-    
+
     const mapped = data.map((r: any) => ({
       id: r.id,
       schoolId: r.school_id,
@@ -11374,8 +11425,42 @@ export const mockApi = {
       createdAt: r.created_at,
       updatedAt: r.updated_at,
       currencyCode: r.currency_code || 'USD',
-      currencySymbol: r.currency_symbol || '$'
+      currencySymbol: r.currency_symbol || '$',
+      driverName: r.driver_name,
+      driverEmployeeId: r.driver_employee_id,
+      driverLicenseNumber: r.driver_license_number,
+      driverPhone: r.driver_phone
     }));
+
+    // --- DRIVER IDENTITY BACKFILL ---
+    // For any payout that has no driverName snapshot (legacy records before snapshotting was added),
+    // resolve from local driver registry and push the snapshot back to Supabase so the identity
+    // is permanently preserved and will never display as "Unknown Driver" again.
+    const backfillPromises: Promise<any>[] = [];
+    mapped.forEach(dp => {
+      if (!dp.driverName) {
+        const driver = mockDb.drivers.find(d => d.id === dp.driverId);
+        if (driver) {
+          dp.driverName = driver.name || null;
+          dp.driverEmployeeId = driver.employeeId || null;
+          dp.driverLicenseNumber = driver.licenseNumber || null;
+          dp.driverPhone = driver.phone || null;
+          // Push backfill to Supabase asynchronously (fire-and-forget, non-blocking)
+          const updateQuery = supabaseAdmin.from('driver_salary_payouts').update({
+            driver_name: dp.driverName,
+            driver_employee_id: dp.driverEmployeeId,
+            driver_license_number: dp.driverLicenseNumber,
+            driver_phone: dp.driverPhone,
+            updated_at: new Date().toISOString()
+          }).eq('id', dp.id);
+          backfillPromises.push(Promise.resolve(updateQuery).then(() => {}).catch(() => {}));
+        }
+      }
+    });
+    // Fire all backfill updates in parallel (non-blocking — don't await to avoid slowing load)
+    if (backfillPromises.length > 0) {
+      Promise.all(backfillPromises).catch(() => {});
+    }
 
     // Cache locally
     mapped.forEach(dp => {
@@ -11400,8 +11485,7 @@ export const mockApi = {
     await this.validateSubscriptionFeature(schoolId, 'School Transit', ['enterprise']);
     await delay(600);
     // RBAC Validation
-    const operators = mockDb.users.filter(u => u.schoolId === schoolId);
-    const operator = operators.find(o => o.id === adminId);
+    const operator = mockDb.users.find(o => o.id === adminId);
 
     // Validate role against database user record dynamically rather than hardcoded UI values
     const { data: dbUser, error: dbErr } = await supabaseAdmin
@@ -11412,17 +11496,8 @@ export const mockApi = {
 
     const currentRole = dbErr || !dbUser ? operator?.role : dbUser.role;
     const normalizedRole = normalizeRole(currentRole || '');
-    const allowedRoles = [
-      'SUPER_ADMIN',
-      'ADMIN',
-      'SCHOOL_ADMIN',
-      'FINANCE_ADMIN',
-      'FINANCE_ADMINISTRATION',
-      'FINANCE_ADMINISTRATION_BILLER'
-    ];
-
-    if (!allowedRoles.includes(normalizedRole)) {
-      throw new Error('Security Policy Alert: Unauthorized salary disbursement attempt. Payouts require ADMIN or FINANCE_ADMIN privilege.');
+    if (normalizedRole !== 'FINANCE_ADMIN' && normalizedRole !== 'SUPER_ADMIN') {
+      throw new Error('Only Finance Admin is authorized to perform salary disbursement.');
     }
 
     // Duplicate Prevention Check
@@ -11439,6 +11514,19 @@ export const mockApi = {
     const currencyCode = school?.currencyCode || 'USD';
     const currencySymbol = school?.currencySymbol || '$';
 
+    // Fetch driver info for snapshotting
+    const driver = mockDb.drivers.find(d => d.id === driverId);
+    const { data: dbDriver } = await supabaseAdmin
+      .from('drivers')
+      .select('*')
+      .eq('id', driverId)
+      .maybeSingle();
+
+    const resolvedName = dbDriver?.name || driver?.name || '';
+    const resolvedEmpId = dbDriver?.employee_id || driver?.employeeId || '';
+    const resolvedLicense = dbDriver?.license_number || driver?.licenseNumber || '';
+    const resolvedPhone = dbDriver?.phone || driver?.phone || '';
+
     // 1. Insert in Supabase
     const { data: dbPayout, error } = await supabaseAdmin.from('driver_salary_payouts').insert({
       school_id: schoolId,
@@ -11449,9 +11537,13 @@ export const mockApi = {
       payout_date: new Date().toISOString(),
       paid_by_user_id: paidByUserId || adminId,
       transaction_reference: txRef,
-      notes: notes || 'Daily attendance disburse',
+      notes: notes || 'Daily salary disburse',
       currency_code: currencyCode,
-      currency_symbol: currencySymbol
+      currency_symbol: currencySymbol,
+      driver_name: resolvedName,
+      driver_employee_id: resolvedEmpId,
+      driver_license_number: resolvedLicense,
+      driver_phone: resolvedPhone
     }).select('*').single();
 
     if (error || !dbPayout) {
@@ -11466,11 +11558,15 @@ export const mockApi = {
         payoutDate: new Date().toISOString(),
         paidByUserId: paidByUserId || adminId,
         transactionReference: txRef,
-        notes: notes || 'Daily attendance disburse',
+        notes: notes || 'Daily salary disburse',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
         currencyCode,
-        currencySymbol
+        currencySymbol,
+        driverName: resolvedName,
+        driverEmployeeId: resolvedEmpId,
+        driverLicenseNumber: resolvedLicense,
+        driverPhone: resolvedPhone
       };
       mockDb.driverSalaryPayouts.push(localPayout);
       mockDb.saveAll();
@@ -11491,7 +11587,11 @@ export const mockApi = {
       createdAt: dbPayout.created_at,
       updatedAt: dbPayout.updated_at,
       currencyCode: dbPayout.currency_code || currencyCode,
-      currencySymbol: dbPayout.currency_symbol || currencySymbol
+      currencySymbol: dbPayout.currency_symbol || currencySymbol,
+      driverName: dbPayout.driver_name,
+      driverEmployeeId: dbPayout.driver_employee_id,
+      driverLicenseNumber: dbPayout.driver_license_number,
+      driverPhone: dbPayout.driver_phone
     };
 
     mockDb.driverSalaryPayouts.push(newPayout);
@@ -15372,6 +15472,795 @@ export const mockApi = {
         };
       })
       .sort((a, b) => new Date(a.changedAt).getTime() - new Date(b.changedAt).getTime());
+  },
+
+  async fetchPayrollRecords(schoolId: string): Promise<PayrollRecord[]> {
+    const { data, error } = await supabaseAdmin
+      .from('payroll_records')
+      .select('*')
+      .eq('school_id', schoolId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false });
+
+    if (error || !data) {
+      return mockDb.payrollRecords.filter(r => r.schoolId === schoolId && !r.deletedAt);
+    }
+
+    const mapped: PayrollRecord[] = data.map((r: any) => ({
+      id: r.id,
+      schoolId: r.school_id,
+      employeeType: r.employee_type as any,
+      employeeRole: r.employee_role,
+      employeeName: r.employee_name,
+      employeeIdNumber: r.employee_id_number,
+      employeePhone: r.employee_phone,
+      userId: r.user_id,
+      payoutMonth: r.payout_month,
+      baseSalary: Number(r.base_salary) || 0,
+      allowances: Number(r.allowances) || 0,
+      deductions: Number(r.deductions) || 0,
+      netSalary: Number(r.net_salary) || 0,
+      payoutStatus: r.payout_status as any,
+      payoutDate: r.payout_date,
+      paidByUserId: r.paid_by_user_id,
+      transactionReference: r.transaction_reference,
+      notes: r.notes,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      deletedAt: r.deleted_at,
+      currencyCode: r.currency_code || 'USD',
+      currencySymbol: r.currency_symbol || '$'
+    }));
+
+    // cache locally
+    mapped.forEach(pr => {
+      const idx = mockDb.payrollRecords.findIndex(p => p.id === pr.id);
+      if (idx === -1) mockDb.payrollRecords.push(pr);
+      else mockDb.payrollRecords[idx] = pr;
+    });
+    mockDb.payrollRecords = mockDb.payrollRecords.filter(pr => pr.schoolId !== schoolId || !pr.deletedAt || mapped.some(m => m.id === pr.id));
+    mockDb.saveAll();
+
+    return mapped;
+  },
+
+  async createPayrollRecord(
+    adminId: string,
+    schoolId: string,
+    record: {
+      employeeType: 'TEACHER' | 'STAFF';
+      employeeRole: string;
+      employeeName: string;
+      employeeIdNumber?: string | null;
+      employeePhone?: string | null;
+      userId?: string | null;
+      payoutMonth: string;
+      baseSalary: number;
+      allowances: number;
+      deductions: number;
+      notes?: string | null;
+    }
+  ): Promise<PayrollRecord> {
+    // Role check
+    const operator = mockDb.users.find(u => u.id === adminId);
+    const { data: dbUser } = await supabaseAdmin.from('users').select('role').eq('id', adminId).maybeSingle();
+    const currentRole = dbUser?.role || operator?.role;
+    const normalizedRole = normalizeRole(currentRole || '');
+    if (normalizedRole !== 'FINANCE_ADMIN' && normalizedRole !== 'SUPER_ADMIN') {
+      throw new Error('Only Finance Admin is authorized to perform salary disbursement.');
+    }
+
+    const netSalary = Number(record.baseSalary || 0) + Number(record.allowances || 0) - Number(record.deductions || 0);
+    const school = mockDb.schools.find(s => s.id === schoolId);
+    const currencyCode = school?.currencyCode || 'USD';
+    const currencySymbol = school?.currencySymbol || '$';
+
+    const { data: dbRecord, error } = await supabaseAdmin.from('payroll_records').insert({
+      school_id: schoolId,
+      employee_type: record.employeeType,
+      employee_role: record.employeeRole,
+      employee_name: record.employeeName,
+      employee_id_number: record.employeeIdNumber || null,
+      employee_phone: record.employeePhone || null,
+      user_id: record.userId || null,
+      payout_month: record.payoutMonth,
+      base_salary: record.baseSalary,
+      allowances: record.allowances,
+      deductions: record.deductions,
+      net_salary: netSalary,
+      payout_status: 'PENDING',
+      notes: record.notes || null,
+      currency_code: currencyCode,
+      currency_symbol: currencySymbol
+    }).select('*').single();
+
+    if (error || !dbRecord) {
+      const localRecord: PayrollRecord = {
+        id: 'pr-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        employeeType: record.employeeType,
+        employeeRole: record.employeeRole,
+        employeeName: record.employeeName,
+        employeeIdNumber: record.employeeIdNumber || null,
+        employeePhone: record.employeePhone || null,
+        userId: record.userId || null,
+        payoutMonth: record.payoutMonth,
+        baseSalary: record.baseSalary,
+        allowances: record.allowances,
+        deductions: record.deductions,
+        netSalary: netSalary,
+        payoutStatus: 'PENDING',
+        notes: record.notes || null,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+        currencyCode,
+        currencySymbol
+      };
+      mockDb.payrollRecords.push(localRecord);
+      mockDb.saveAll();
+      mockDb.addLog(adminId, 'SALARY_CREATED', { employeeName: record.employeeName, payoutMonth: record.payoutMonth, netSalary });
+      await this.writeAuditLog(adminId, null, schoolId, 'finance', 'SALARY_CREATED', localRecord.id, null, localRecord);
+      return localRecord;
+    }
+
+    const newRecord: PayrollRecord = {
+      id: dbRecord.id,
+      schoolId: dbRecord.school_id,
+      employeeType: dbRecord.employee_type as any,
+      employeeRole: dbRecord.employee_role,
+      employeeName: dbRecord.employee_name,
+      employeeIdNumber: dbRecord.employee_id_number,
+      employeePhone: dbRecord.employee_phone,
+      userId: dbRecord.user_id,
+      payoutMonth: dbRecord.payout_month,
+      baseSalary: Number(dbRecord.base_salary) || 0,
+      allowances: Number(dbRecord.allowances) || 0,
+      deductions: Number(dbRecord.deductions) || 0,
+      netSalary: Number(dbRecord.net_salary) || 0,
+      payoutStatus: dbRecord.payout_status as any,
+      notes: dbRecord.notes,
+      createdAt: dbRecord.created_at,
+      updatedAt: dbRecord.updated_at,
+      currencyCode: dbRecord.currency_code || currencyCode,
+      currencySymbol: dbRecord.currency_symbol || currencySymbol
+    };
+
+    mockDb.payrollRecords.push(newRecord);
+    mockDb.saveAll();
+    mockDb.addLog(adminId, 'SALARY_CREATED', { employeeName: record.employeeName, payoutMonth: record.payoutMonth, netSalary });
+    await this.writeAuditLog(adminId, null, schoolId, 'finance', 'SALARY_CREATED', newRecord.id, null, newRecord);
+    return newRecord;
+  },
+
+  async updatePayrollStatus(
+    adminId: string,
+    schoolId: string,
+    recordId: string,
+    status: 'PENDING' | 'APPROVED' | 'PAID' | 'CANCELLED' | 'REVERSED',
+    notes?: string | null,
+    transactionReference?: string | null
+  ): Promise<PayrollRecord> {
+    // Role check
+    const operator = mockDb.users.find(u => u.id === adminId);
+    const { data: dbUser } = await supabaseAdmin.from('users').select('role').eq('id', adminId).maybeSingle();
+    const currentRole = dbUser?.role || operator?.role;
+    const normalizedRole = normalizeRole(currentRole || '');
+    if (normalizedRole !== 'FINANCE_ADMIN' && normalizedRole !== 'SUPER_ADMIN') {
+      throw new Error('Only Finance Admin is authorized to perform salary disbursement.');
+    }
+
+    const localRecord = mockDb.payrollRecords.find(r => r.id === recordId);
+    const oldRecordCopy = localRecord ? { ...localRecord } : null;
+
+    let txRef = transactionReference;
+    if (status === 'PAID' && !txRef) {
+      txRef = 'TXS' + Math.random().toString(36).substr(2, 8).toUpperCase();
+    }
+
+    const { data: dbRecord, error } = await supabaseAdmin
+      .from('payroll_records')
+      .update({
+        payout_status: status,
+        notes: notes || undefined,
+        transaction_reference: txRef || undefined,
+        payout_date: status === 'PAID' ? new Date().toISOString() : undefined,
+        paid_by_user_id: status === 'PAID' ? adminId : undefined,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', recordId)
+      .select('*')
+      .maybeSingle();
+
+    let actionType = 'SALARY_UPDATED';
+    if (status === 'APPROVED') actionType = 'SALARY_APPROVED';
+    else if (status === 'PAID') actionType = 'SALARY_DISBURSED';
+    else if (status === 'CANCELLED') actionType = 'SALARY_CANCELLED';
+    else if (status === 'REVERSED') actionType = 'SALARY_REVERSED';
+
+    if (error || !dbRecord) {
+      if (!localRecord) throw new Error('Payroll record not found.');
+      localRecord.payoutStatus = status;
+      if (notes !== undefined) localRecord.notes = notes;
+      if (txRef !== undefined) localRecord.transactionReference = txRef;
+      if (status === 'PAID') {
+        localRecord.payoutDate = new Date().toISOString();
+        localRecord.paidByUserId = adminId;
+      }
+      localRecord.updatedAt = new Date().toISOString();
+      mockDb.saveAll();
+      mockDb.addLog(adminId, actionType, { recordId, status });
+      await this.writeAuditLog(adminId, null, schoolId, 'finance', actionType, recordId, oldRecordCopy, localRecord);
+      return localRecord;
+    }
+
+    const updatedRecord: PayrollRecord = {
+      id: dbRecord.id,
+      schoolId: dbRecord.school_id,
+      employeeType: dbRecord.employee_type as any,
+      employeeRole: dbRecord.employee_role,
+      employeeName: dbRecord.employee_name,
+      employeeIdNumber: dbRecord.employee_id_number,
+      employeePhone: dbRecord.employee_phone,
+      userId: dbRecord.user_id,
+      payoutMonth: dbRecord.payout_month,
+      baseSalary: Number(dbRecord.base_salary) || 0,
+      allowances: Number(dbRecord.allowances) || 0,
+      deductions: Number(dbRecord.deductions) || 0,
+      netSalary: Number(dbRecord.net_salary) || 0,
+      payoutStatus: dbRecord.payout_status as any,
+      payoutDate: dbRecord.payout_date,
+      paidByUserId: dbRecord.paid_by_user_id,
+      transactionReference: dbRecord.transaction_reference,
+      notes: dbRecord.notes,
+      createdAt: dbRecord.created_at,
+      updatedAt: dbRecord.updated_at,
+      currencyCode: dbRecord.currency_code,
+      currencySymbol: dbRecord.currency_symbol
+    };
+
+    const idx = mockDb.payrollRecords.findIndex(r => r.id === recordId);
+    if (idx !== -1) mockDb.payrollRecords[idx] = updatedRecord;
+    mockDb.saveAll();
+
+    mockDb.addLog(adminId, actionType, { recordId, status });
+    await this.writeAuditLog(adminId, null, schoolId, 'finance', actionType, recordId, oldRecordCopy, updatedRecord);
+    return updatedRecord;
+  },
+
+  async deletePayrollRecord(adminId: string, schoolId: string, recordId: string): Promise<void> {
+    // Role check
+    const operator = mockDb.users.find(u => u.id === adminId);
+    const { data: dbUser } = await supabaseAdmin.from('users').select('role').eq('id', adminId).maybeSingle();
+    const currentRole = dbUser?.role || operator?.role;
+    const normalizedRole = normalizeRole(currentRole || '');
+    if (normalizedRole !== 'FINANCE_ADMIN' && normalizedRole !== 'SUPER_ADMIN') {
+      throw new Error('Only Finance Admin is authorized to perform salary disbursement.');
+    }
+
+    const localRecord = mockDb.payrollRecords.find(r => r.id === recordId);
+    const oldRecordCopy = localRecord ? { ...localRecord } : null;
+
+    const { error } = await supabaseAdmin
+      .from('payroll_records')
+      .update({
+        deleted_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', recordId);
+
+    if (error) {
+      console.warn('Failed to soft delete in Supabase, performing locally:', error.message);
+    }
+
+    if (localRecord) {
+      localRecord.deletedAt = new Date().toISOString();
+      localRecord.updatedAt = new Date().toISOString();
+      mockDb.payrollRecords = mockDb.payrollRecords.filter(r => r.id !== recordId);
+      mockDb.saveAll();
+    }
+
+    mockDb.addLog(adminId, 'SALARY_DELETED', { recordId });
+    await this.writeAuditLog(adminId, null, schoolId, 'finance', 'SALARY_DELETED', recordId, oldRecordCopy, null);
+  },
+
+  async uploadPaymentAsset(bucket: string, folder: string, filename: string, file: File): Promise<string> {
+    try {
+      const extension = file.name.split('.').pop() || 'png';
+      const filePath = `${folder}/${Math.random().toString(36).substring(2, 9)}_${filename}.${extension}`;
+      
+      await supabaseAdmin.storage.createBucket(bucket, { public: true }).catch(() => {});
+      
+      const { error: uploadError } = await supabaseAdmin.storage
+        .from(bucket)
+        .upload(filePath, file, { cacheControl: '0', upsert: true });
+        
+      if (!uploadError) {
+        const { data: { publicUrl } } = supabaseAdmin.storage
+          .from(bucket)
+          .getPublicUrl(filePath);
+        return publicUrl;
+      }
+    } catch (e) {
+      console.warn('Supabase storage upload failed, falling back to local base64:', e);
+    }
+    return readFileAsBase64(file);
+  },
+
+  async fetchSchoolPaymentSettings(schoolId: string, requesterRole: string): Promise<SchoolPaymentSettings | null> {
+    let settings: SchoolPaymentSettings | null = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('school_payment_settings')
+        .select('*')
+        .eq('school_id', schoolId)
+        .maybeSingle();
+      if (data && !error) {
+        settings = {
+          id: data.id,
+          schoolId: data.school_id,
+          qrCodeUrl: data.qr_code_url,
+          upiId: data.upi_id,
+          accountHolderName: data.account_holder_name,
+          bankName: data.bank_name,
+          accountNumber: data.account_number,
+          ifscCode: data.ifsc_code,
+          branchName: data.branch_name,
+          swiftCode: data.swift_code,
+          qrPaymentEnabled: data.qr_payment_enabled,
+          bankTransferEnabled: data.bank_transfer_enabled,
+          showQrToParents: data.show_qr_to_parents,
+          showBankToParents: data.show_bank_to_parents,
+          enableUtrUpload: data.enable_utr_upload,
+          autoRemindUnpaid: data.auto_remind_unpaid,
+          paymentInstructions: data.payment_instructions
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to query school_payment_settings from Supabase:', e);
+    }
+
+    if (!settings) {
+      const mockSettings = mockDb.schoolPaymentSettings.find(s => s.schoolId === schoolId);
+      if (mockSettings) {
+        settings = { ...mockSettings };
+      }
+    }
+
+    if (!settings) return null;
+
+    let decryptedAcc = '';
+    if (settings.accountNumber) {
+      decryptedAcc = decryptAccountNumberSync(settings.accountNumber);
+    }
+
+    if (requesterRole === 'SUPER_ADMIN') {
+      settings.accountNumber = decryptedAcc ? '••••••••' + decryptedAcc.slice(-4) : '';
+      settings.ifscCode = '••••••••';
+      settings.upiId = '••••••••';
+    } else {
+      settings.accountNumber = decryptedAcc;
+    }
+
+    return settings;
+  },
+
+  async saveSchoolPaymentSettings(
+    adminId: string, 
+    schoolId: string, 
+    settings: Partial<SchoolPaymentSettings>,
+    qrFile?: File | null
+  ): Promise<SchoolPaymentSettings> {
+    const operator = mockDb.users.find(u => u.id === adminId);
+    const { data: dbUser } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).maybeSingle();
+    const role = dbUser?.role || operator?.role || '';
+    const userSchoolId = dbUser?.school_id || operator?.schoolId || '';
+
+    if (role !== 'ADMIN' && role !== 'FINANCE_ADMIN') {
+      throw new Error('Unauthorized: Only School Admin and Finance Admin can edit school payment settings.');
+    }
+    if (userSchoolId !== schoolId) {
+      throw new Error('Unauthorized: You can only edit payment settings for your own school.');
+    }
+
+    let qrUrl = settings.qrCodeUrl;
+    if (qrFile) {
+      qrUrl = await this.uploadPaymentAsset('school-assets', `school-${schoolId}/payments`, 'qr_code', qrFile);
+    }
+
+    const encryptedAccountNumber = settings.accountNumber ? encryptAccountNumberSync(settings.accountNumber) : undefined;
+
+    const payload = {
+      school_id: schoolId,
+      qr_code_url: qrUrl,
+      upi_id: settings.upiId,
+      account_holder_name: settings.accountHolderName,
+      bank_name: settings.bankName,
+      account_number: encryptedAccountNumber,
+      ifsc_code: settings.ifscCode,
+      branch_name: settings.branchName,
+      swift_code: settings.swiftCode,
+      qr_payment_enabled: settings.qrPaymentEnabled,
+      bank_transfer_enabled: settings.bankTransferEnabled,
+      show_qr_to_parents: settings.showQrToParents,
+      show_bank_to_parents: settings.showBankToParents,
+      enable_utr_upload: settings.enableUtrUpload,
+      auto_remind_unpaid: settings.autoRemindUnpaid,
+      payment_instructions: settings.paymentInstructions,
+      updated_at: new Date().toISOString()
+    };
+
+    Object.keys(payload).forEach(key => (payload as any)[key] === undefined && delete (payload as any)[key]);
+
+    let savedRecord: SchoolPaymentSettings | null = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('school_payment_settings')
+        .upsert(payload, { onConflict: 'school_id' })
+        .select('*')
+        .single();
+      if (data && !error) {
+        savedRecord = {
+          id: data.id,
+          schoolId: data.school_id,
+          qrCodeUrl: data.qr_code_url,
+          upiId: data.upi_id,
+          accountHolderName: data.account_holder_name,
+          bankName: data.bank_name,
+          accountNumber: data.account_number,
+          ifscCode: data.ifsc_code,
+          branchName: data.branch_name,
+          swiftCode: data.swift_code,
+          qrPaymentEnabled: data.qr_payment_enabled,
+          bankTransferEnabled: data.bank_transfer_enabled,
+          showQrToParents: data.show_qr_to_parents,
+          showBankToParents: data.show_bank_to_parents,
+          enableUtrUpload: data.enable_utr_upload,
+          autoRemindUnpaid: data.auto_remind_unpaid,
+          paymentInstructions: data.payment_instructions
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to save settings in Supabase:', e);
+    }
+
+    if (!savedRecord) {
+      const idx = mockDb.schoolPaymentSettings.findIndex(s => s.schoolId === schoolId);
+      const localRecord: SchoolPaymentSettings = {
+        id: idx !== -1 ? mockDb.schoolPaymentSettings[idx].id : 'sps-' + Math.random().toString(36).substr(2, 9),
+        schoolId,
+        qrCodeUrl: qrUrl || null,
+        upiId: settings.upiId || null,
+        accountHolderName: settings.accountHolderName || null,
+        bankName: settings.bankName || null,
+        accountNumber: encryptedAccountNumber || null,
+        ifscCode: settings.ifscCode || null,
+        branchName: settings.branchName || null,
+        swiftCode: settings.swiftCode || null,
+        qrPaymentEnabled: settings.qrPaymentEnabled ?? true,
+        bankTransferEnabled: settings.bankTransferEnabled ?? true,
+        showQrToParents: settings.showQrToParents ?? true,
+        showBankToParents: settings.showBankToParents ?? true,
+        enableUtrUpload: settings.enableUtrUpload ?? true,
+        autoRemindUnpaid: settings.autoRemindUnpaid ?? false,
+        paymentInstructions: settings.paymentInstructions || null
+      };
+
+      if (idx !== -1) {
+        mockDb.schoolPaymentSettings[idx] = localRecord;
+      } else {
+        mockDb.schoolPaymentSettings.push(localRecord);
+      }
+      mockDb.saveAll();
+      savedRecord = localRecord;
+    }
+
+    mockDb.addLog(adminId, 'SCHOOL_PAYMENT_SETTINGS_UPDATED', { schoolId });
+    return savedRecord;
+  },
+
+  async fetchFacultyPaymentSettings(userId: string, requesterId: string, requesterRole: string, isDisbursement = false): Promise<FacultyPaymentSettings | null> {
+    if (requesterRole === 'SUPER_ADMIN') {
+      throw new Error('Access Denied: Super Admin cannot access faculty banking details.');
+    }
+    if (requesterRole === 'TEACHER' && requesterId !== userId) {
+      throw new Error('Access Denied: You can only access your own banking details.');
+    }
+    if (requesterRole === 'PARENT' || requesterRole === 'STUDENT') {
+      throw new Error('Access Denied: Parents and students cannot view faculty banking details.');
+    }
+
+    let settings: FacultyPaymentSettings | null = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('faculty_payment_settings')
+        .select('*')
+        .eq('user_id', userId)
+        .maybeSingle();
+      if (data && !error) {
+        settings = {
+          id: data.id,
+          userId: data.user_id,
+          qrCodeUrl: data.qr_code_url,
+          upiId: data.upi_id,
+          bankName: data.bank_name,
+          accountNumber: data.account_number,
+          ifscCode: data.ifsc_code,
+          branchName: data.branch_name
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to fetch faculty settings from Supabase:', e);
+    }
+
+    if (!settings) {
+      const mockSettings = mockDb.facultyPaymentSettings.find(f => f.userId === userId);
+      if (mockSettings) {
+        settings = { ...mockSettings };
+      }
+    }
+
+    if (!settings) return null;
+
+    let decrypted = '';
+    if (settings.accountNumber) {
+      decrypted = decryptAccountNumberSync(settings.accountNumber);
+    }
+
+    if (requesterRole === 'FINANCE_ADMIN' && !isDisbursement) {
+      settings.accountNumber = decrypted ? '••••••••' + decrypted.slice(-4) : '';
+      settings.ifscCode = '••••••••';
+      settings.upiId = '••••••••';
+    } else {
+      settings.accountNumber = decrypted;
+    }
+
+    return settings;
+  },
+
+  async saveFacultyPaymentSettings(
+    userId: string,
+    settings: Partial<FacultyPaymentSettings>,
+    qrFile?: File | null
+  ): Promise<FacultyPaymentSettings> {
+    let qrUrl = settings.qrCodeUrl;
+    if (qrFile) {
+      qrUrl = await this.uploadPaymentAsset('faculty-assets', `user-${userId}/payments`, 'qr_code', qrFile);
+    }
+
+    const encrypted = settings.accountNumber ? encryptAccountNumberSync(settings.accountNumber) : undefined;
+
+    const payload = {
+      user_id: userId,
+      qr_code_url: qrUrl,
+      upi_id: settings.upiId,
+      bank_name: settings.bankName,
+      account_number: encrypted,
+      ifsc_code: settings.ifscCode,
+      branch_name: settings.branchName,
+      updated_at: new Date().toISOString()
+    };
+
+    Object.keys(payload).forEach(key => (payload as any)[key] === undefined && delete (payload as any)[key]);
+
+    let savedRecord: FacultyPaymentSettings | null = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('faculty_payment_settings')
+        .upsert(payload, { onConflict: 'user_id' })
+        .select('*')
+        .single();
+      if (data && !error) {
+        savedRecord = {
+          id: data.id,
+          userId: data.user_id,
+          qrCodeUrl: data.qr_code_url,
+          upiId: data.upi_id,
+          bankName: data.bank_name,
+          accountNumber: data.account_number,
+          ifscCode: data.ifsc_code,
+          branchName: data.branch_name
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to save faculty settings in Supabase:', e);
+    }
+
+    if (!savedRecord) {
+      const idx = mockDb.facultyPaymentSettings.findIndex(f => f.userId === userId);
+      const localRecord: FacultyPaymentSettings = {
+        id: idx !== -1 ? mockDb.facultyPaymentSettings[idx].id : 'fps-' + Math.random().toString(36).substr(2, 9),
+        userId,
+        qrCodeUrl: qrUrl || null,
+        upiId: settings.upiId || null,
+        bankName: settings.bankName || null,
+        accountNumber: encrypted || null,
+        ifscCode: settings.ifscCode || null,
+        branchName: settings.branchName || null
+      };
+
+      if (idx !== -1) {
+        mockDb.facultyPaymentSettings[idx] = localRecord;
+      } else {
+        mockDb.facultyPaymentSettings.push(localRecord);
+      }
+      mockDb.saveAll();
+      savedRecord = localRecord;
+    }
+
+    mockDb.addLog(userId, 'FACULTY_PAYMENT_SETTINGS_UPDATED', { userId });
+    return savedRecord;
+  },
+
+  async submitFeePaymentProof(
+    parentId: string,
+    studentId: string,
+    feeStructureId: string,
+    method: string,
+    utr: string,
+    screenshotFile: File
+  ): Promise<FeePayment> {
+    const screenshotUrl = await this.uploadPaymentAsset(
+      'payment-proofs', 
+      `student-${studentId}/fees`, 
+      `proof_${feeStructureId}`, 
+      screenshotFile
+    );
+
+    let existingPayment = mockDb.feePayments.find(p => p.feeStructureId === feeStructureId && p.studentId === studentId);
+    const paymentId = existingPayment?.id || 'fp-' + Math.random().toString(36).substr(2, 9);
+    
+    const structure = mockDb.feeStructures.find(s => s.id === feeStructureId);
+    const amount = structure?.amount || 0;
+
+    const payload = {
+      id: paymentId,
+      fee_structure_id: feeStructureId,
+      student_id: studentId,
+      amount_paid: amount,
+      payment_date: new Date().toISOString(),
+      payment_method: method,
+      transaction_id: utr,
+      status: 'PENDING' as PaymentStatus,
+      payment_screenshot_url: screenshotUrl,
+      utr_number: utr,
+      rejection_reason: null
+    };
+
+    let savedPayment: FeePayment | null = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('fee_payments')
+        .upsert({
+          id: payload.id,
+          fee_structure_id: payload.fee_structure_id,
+          student_id: payload.student_id,
+          amount_paid: payload.amount_paid,
+          payment_date: payload.payment_date,
+          payment_method: payload.payment_method,
+          transaction_id: payload.transaction_id,
+          status: payload.status,
+          payment_screenshot_url: payload.payment_screenshot_url,
+          utr_number: payload.utr_number,
+          rejection_reason: payload.rejection_reason
+        })
+        .select('*')
+        .single();
+      if (data && !error) {
+        savedPayment = {
+          id: data.id,
+          feeStructureId: data.fee_structure_id,
+          studentId: data.student_id,
+          amountPaid: Number(data.amount_paid) || 0,
+          paymentDate: data.payment_date,
+          paymentMethod: data.payment_method,
+          transactionId: data.transaction_id,
+          status: data.status as any,
+          createdAt: data.created_at || new Date().toISOString(),
+          paymentScreenshotUrl: data.payment_screenshot_url,
+          utrNumber: data.utr_number,
+          rejectionReason: data.rejection_reason
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to upsert fee payment in Supabase:', e);
+    }
+
+    if (!savedPayment) {
+      const localPayment: FeePayment = {
+        id: paymentId,
+        feeStructureId,
+        studentId,
+        amountPaid: amount,
+        paymentDate: new Date().toISOString(),
+        paymentMethod: method,
+        transactionId: utr,
+        status: 'PENDING',
+        createdAt: existingPayment?.createdAt || new Date().toISOString(),
+        paymentScreenshotUrl: screenshotUrl,
+        utrNumber: utr,
+        rejectionReason: undefined
+      };
+
+      const idx = mockDb.feePayments.findIndex(p => p.id === paymentId);
+      if (idx !== -1) {
+        mockDb.feePayments[idx] = localPayment;
+      } else {
+        mockDb.feePayments.push(localPayment);
+      }
+      mockDb.saveAll();
+      savedPayment = localPayment;
+    }
+
+    mockDb.addLog(parentId, 'FEE_PAYMENT_PROOF_SUBMITTED', { studentId, feeStructureId, utr });
+    return savedPayment;
+  },
+
+  async verifyFeePayment(
+    adminId: string,
+    paymentId: string,
+    status: 'PAID' | 'REJECTED',
+    rejectionReason?: string
+  ): Promise<FeePayment> {
+    const operator = mockDb.users.find(u => u.id === adminId);
+    const { data: dbUser } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).maybeSingle();
+    const role = dbUser?.role || operator?.role || '';
+
+    if (role !== 'FINANCE_ADMIN' && role !== 'SUPER_ADMIN') {
+      throw new Error('Unauthorized: Only Finance Admin is authorized to verify/approve payments.');
+    }
+
+    let savedPayment: FeePayment | null = null;
+    try {
+      const { data, error } = await supabaseAdmin
+        .from('fee_payments')
+        .update({
+          status: status,
+          rejection_reason: status === 'REJECTED' ? (rejectionReason || 'Details mismatch') : null,
+          payment_date: status === 'PAID' ? new Date().toISOString() : undefined
+        })
+        .eq('id', paymentId)
+        .select('*')
+        .single();
+      if (data && !error) {
+        savedPayment = {
+          id: data.id,
+          feeStructureId: data.fee_structure_id,
+          studentId: data.student_id,
+          amountPaid: Number(data.amount_paid) || 0,
+          paymentDate: data.payment_date,
+          paymentMethod: data.payment_method,
+          transactionId: data.transaction_id,
+          status: data.status as any,
+          createdAt: data.created_at || new Date().toISOString(),
+          paymentScreenshotUrl: data.payment_screenshot_url,
+          utrNumber: data.utr_number,
+          rejectionReason: data.rejection_reason
+        };
+      }
+    } catch (e) {
+      console.warn('Failed to update payment status in Supabase:', e);
+    }
+
+    if (!savedPayment) {
+      const idx = mockDb.feePayments.findIndex(p => p.id === paymentId);
+      if (idx === -1) {
+        throw new Error('Fee payment record not found.');
+      }
+      const local = mockDb.feePayments[idx];
+      local.status = status;
+      if (status === 'REJECTED') {
+        local.rejectionReason = rejectionReason || 'Details mismatch';
+      } else {
+        local.rejectionReason = undefined;
+        local.paymentDate = new Date().toISOString();
+      }
+      mockDb.saveAll();
+      savedPayment = local;
+    }
+
+    const auditAction = status === 'PAID' ? 'FEE_PAYMENT_APPROVED' : 'FEE_PAYMENT_REJECTED';
+    mockDb.addLog(adminId, auditAction, { paymentId, rejectionReason });
+    return savedPayment;
   }
 };
 

@@ -5,13 +5,14 @@ import { mockDb } from '../services/mockDb';
 import { supabase } from '../lib/supabase';
 import { 
   TeacherClassSubjectMapping, Student, AssignmentSubmission, 
-  Class, Subject, Assignment, User, Timetable, Exam, StudyMaterial, Quiz, Section, HomeworkAttachment
+  Class, Subject, Assignment, User, Timetable, Exam, StudyMaterial, Quiz, Section, HomeworkAttachment, FacultyPaymentSettings, PayrollRecord
 } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Clipboard, UserCheck, Edit3, Award, PlusCircle, PenTool,
   UploadCloud, FileText, CheckCircle, AlertCircle, Save, Calendar, Clock, MapPin, Layers, Users,
-  Trash2, Eye, X, Video, File, MessageSquare, MessageCircle, BookOpen, Paperclip, Loader2, AlertTriangle, TrendingUp
+  Trash2, Eye, X, Video, File, MessageSquare, MessageCircle, BookOpen, Paperclip, Loader2, AlertTriangle, TrendingUp,
+  QrCode, Banknote, ScanLine, ShieldCheck, ToggleLeft, ToggleRight, Download, Edit, Shield, Info, EyeOff
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -206,6 +207,23 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [analyticsDateRange, setAnalyticsDateRange] = useState(() => localStorage.getItem('aegis_teacher_analytics_range') || '30d');
   const [analyticsClass, setAnalyticsClass] = useState(() => localStorage.getItem('aegis_teacher_analytics_class') || 'all');
   const [showReportCardPdf, setShowReportCardPdf] = useState<any | null>(null);
+
+  // ── Payment Settings tab state ──
+  const [fpSettings, setFpSettings] = useState<FacultyPaymentSettings | null>(null);
+  const [fpLoading, setFpLoading] = useState(false);
+  const [fpSaving, setFpSaving] = useState(false);
+  const [fpMsg, setFpMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [fpShowEdit, setFpShowEdit] = useState(false);
+  const [fpQrFile, setFpQrFile] = useState<File | null>(null);
+  const [fpQrPreview, setFpQrPreview] = useState<string | null>(null);
+  const [fpUpiId, setFpUpiId] = useState('');
+  const [fpBankName, setFpBankName] = useState('');
+  const [fpAccNumber, setFpAccNumber] = useState('');
+  const [fpIfsc, setFpIfsc] = useState('');
+  const [fpBranch, setFpBranch] = useState('');
+  const [fpShowAccNumber, setFpShowAccNumber] = useState(false);
+  // Salary history
+  const [myPayrollRecords, setMyPayrollRecords] = useState<PayrollRecord[]>([]);
 
   // Helper to filter items by selected analyticsDateRange
   const filterByDateRange = (dateStr: string) => {
@@ -4957,6 +4975,344 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
           </GlassCard>
         </div>
         </PremiumLock>
+      )}
+
+      {/* ── PAYMENT SETTINGS TAB ── */}
+      {activeTab === 'paymentsettings' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <GlassCard className="border border-violet-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-violet-500/10 border border-violet-500/20">
+                <Banknote className="text-violet-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">My Banking & Payment Details</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5 font-sans">Manage your bank account details for salary disbursement. Data is encrypted and only visible to Finance Admin during payroll.</p>
+              </div>
+            </div>
+            {fpMsg && (
+              <div className={`text-xs font-semibold px-3 py-1.5 rounded-lg ${
+                fpMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+              }`}>
+                {fpMsg.text}
+              </div>
+            )}
+          </GlassCard>
+
+          {/* Load details on mount */}
+          {!fpSettings && !fpLoading && (() => {
+            setFpLoading(true);
+            const userId = session?.user.id || '';
+            mockApi.fetchFacultyPaymentSettings(userId, userId, session?.user.role || 'TEACHER')
+              .then(s => {
+                setFpSettings(s);
+                if (s) {
+                  setFpUpiId(s.upiId || '');
+                  setFpBankName(s.bankName || '');
+                  setFpAccNumber(s.accountNumber || '');
+                  setFpIfsc(s.ifscCode || '');
+                  setFpBranch(s.branchName || '');
+                  if (s.qrCodeUrl) setFpQrPreview(s.qrCodeUrl);
+                }
+              })
+              .catch(() => {})
+              .finally(() => setFpLoading(false));
+            return null;
+          })()}
+
+          {fpLoading ? (
+            <div className="flex items-center justify-center py-16">
+              <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+              {/* Bank Details Card */}
+              <GlassCard className="p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                    <Banknote className="text-sky-400" size={15} />
+                    Bank Account Details
+                  </h4>
+                  <button
+                    onClick={() => {
+                      setFpShowEdit(true);
+                      setFpUpiId(fpSettings?.upiId || '');
+                      setFpBankName(fpSettings?.bankName || '');
+                      setFpAccNumber(fpSettings?.accountNumber || '');
+                      setFpIfsc(fpSettings?.ifscCode || '');
+                      setFpBranch(fpSettings?.branchName || '');
+                    }}
+                    className="text-xs font-bold text-violet-400 hover:text-violet-300 flex items-center gap-1 transition-colors"
+                  >
+                    <Edit size={12} /> Edit
+                  </button>
+                </div>
+
+                {fpSettings ? (
+                  <div className="space-y-3">
+                    {[
+                      { label: 'Account Holder', value: `${session?.user.firstName || ''} ${session?.user.lastName || ''}`.trim() || '—' },
+                      { label: 'Bank Name', value: fpSettings.bankName || '—' },
+                      { label: 'Account Number', value: fpShowAccNumber ? (fpSettings.accountNumber || '—') : (fpSettings.accountNumber ? '•••• •••• ' + fpSettings.accountNumber.slice(-4) : '—') },
+                      { label: 'IFSC Code', value: fpSettings.ifscCode || '—' },
+                      { label: 'Branch', value: fpSettings.branchName || '—' },
+                      { label: 'UPI ID', value: fpSettings.upiId || '—' },
+                    ].map(item => (
+                      <div key={item.label} className="flex items-center justify-between py-2 border-b border-slate-850 last:border-0">
+                        <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{item.label}</span>
+                        <span className="text-xs font-semibold text-slate-200 font-mono">{item.value}</span>
+                      </div>
+                    ))}
+                    <button
+                      onClick={() => setFpShowAccNumber(!fpShowAccNumber)}
+                      className="flex items-center gap-1.5 text-[10px] font-bold text-slate-500 hover:text-slate-300 transition-colors"
+                    >
+                      {fpShowAccNumber ? <EyeOff size={11} /> : <Eye size={11} />}
+                      {fpShowAccNumber ? 'Hide' : 'Show'} account number
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-center py-8 space-y-2">
+                    <Banknote className="mx-auto text-slate-700" size={32} />
+                    <p className="text-slate-500 text-xs">No banking details added yet.</p>
+                    <button
+                      onClick={() => setFpShowEdit(true)}
+                      className="glass-btn-primary text-xs mx-auto"
+                    >
+                      + Add Bank Details
+                    </button>
+                  </div>
+                )}
+              </GlassCard>
+
+              {/* QR Code Card */}
+              <GlassCard className="p-5 space-y-4">
+                <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                  <QrCode className="text-violet-400" size={15} />
+                  UPI QR Code
+                </h4>
+                <div
+                  className="w-full h-48 rounded-xl border-2 border-dashed border-slate-700 hover:border-violet-500/50 transition-colors flex flex-col items-center justify-center cursor-pointer bg-slate-900/50 overflow-hidden"
+                  onClick={() => document.getElementById('fp-qr-upload')?.click()}
+                >
+                  {fpQrPreview ? (
+                    <img src={fpQrPreview} alt="My QR Code" className="h-44 w-44 object-contain rounded-lg" />
+                  ) : (
+                    <div className="text-center space-y-1">
+                      <ScanLine className="mx-auto text-slate-600" size={28} />
+                      <p className="text-[11px] text-slate-500">Upload your UPI QR code</p>
+                      <p className="text-[10px] text-slate-600">PNG, JPG up to 2MB</p>
+                    </div>
+                  )}
+                </div>
+                <input
+                  id="fp-qr-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={(e) => {
+                    const file = e.target.files?.[0];
+                    if (file) {
+                      setFpQrFile(file);
+                      const reader = new FileReader();
+                      reader.onload = (ev) => setFpQrPreview(ev.target?.result as string);
+                      reader.readAsDataURL(file);
+                      // Auto-save QR on upload
+                      const userId = session?.user.id || '';
+                      setFpSaving(true);
+                      mockApi.saveFacultyPaymentSettings(userId, {
+                        upiId: fpUpiId, bankName: fpBankName, accountNumber: fpAccNumber,
+                        ifscCode: fpIfsc, branchName: fpBranch
+                      }, file)
+                        .then(s => { setFpSettings(s); setFpMsg({ type: 'success', text: '✓ QR code saved' }); setTimeout(() => setFpMsg(null), 3000); })
+                        .catch(err => setFpMsg({ type: 'error', text: err?.message || 'Upload failed' }))
+                        .finally(() => setFpSaving(false));
+                    }
+                  }}
+                />
+                <p className="text-[10px] text-slate-600 flex items-center gap-1">
+                  <Shield size={10} className="text-slate-600" />
+                  Your QR code is stored securely and only shared with Finance Admin during disbursement.
+                </p>
+              </GlassCard>
+            </div>
+          )}
+
+          {/* Salary History */}
+          <GlassCard className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                <Banknote className="text-emerald-400" size={15} /> Salary History
+              </h4>
+              <button
+                onClick={async () => {
+                  const schoolId = mockDb.teachers.find(t => t.id === teacherId)?.schoolId || '';
+                  if (schoolId) {
+                    try {
+                      const records = await mockApi.fetchPayrollRecords(schoolId);
+                      setMyPayrollRecords(records.filter(r => r.userId === teacherId || r.employeeName === `${session?.user.firstName || ''} ${session?.user.lastName || ''}`.trim()));
+                    } catch (e) { console.warn(e); }
+                  }
+                }}
+                className="text-xs font-bold text-slate-400 hover:text-slate-200 flex items-center gap-1 transition-colors"
+              >
+                <CheckCircle size={11} /> Refresh
+              </button>
+            </div>
+
+            {myPayrollRecords.length === 0 ? (
+              <div className="text-center py-8">
+                <Banknote className="mx-auto text-slate-700 mb-2" size={28} />
+                <p className="text-slate-500 text-xs">No salary records found.</p>
+                <p className="text-slate-600 text-[10px] mt-0.5">Contact Finance Admin if your records are missing.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-xs">
+                  <thead>
+                    <tr className="border-b border-slate-850">
+                      {['Month', 'Gross', 'Deductions', 'Net Salary', 'Status', 'Action'].map(h => (
+                        <th key={h} className="text-left py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-900">
+                    {myPayrollRecords.map(rec => (
+                      <tr key={rec.id} className="hover:bg-slate-900/30 transition-colors">
+                        <td className="py-2.5 px-2 font-semibold text-slate-200">{rec.payoutMonth || '—'}</td>
+                        <td className="py-2.5 px-2 text-slate-300">₹{((rec.baseSalary || 0) + (rec.allowances || 0)).toLocaleString()}</td>
+                        <td className="py-2.5 px-2 text-rose-400">-₹{(rec.deductions || 0).toLocaleString()}</td>
+                        <td className="py-2.5 px-2 text-emerald-400 font-bold">₹{(rec.netSalary || 0).toLocaleString()}</td>
+                        <td className="py-2.5 px-2">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            rec.payoutStatus === 'PAID'
+                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                              : rec.payoutStatus === 'PENDING'
+                              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                              : 'bg-slate-800 text-slate-500'
+                          }`}>{rec.payoutStatus}</span>
+                        </td>
+                        <td className="py-2.5 px-2">
+                          <button
+                            onClick={() => {
+                              // Generate a simple text-based payslip download
+                              const content = [
+                                'SALARY SLIP',
+                                '============',
+                                `Employee: ${rec.employeeName || `${session?.user.firstName || ''} ${session?.user.lastName || ''}`.trim() || 'N/A'}`,
+                                `Month: ${rec.payoutMonth || 'N/A'}`,
+                                `Employee Type: ${rec.employeeType || 'N/A'}`,
+                                '',
+                                `Base Salary:   ₹${(rec.baseSalary || 0).toLocaleString()}`,
+                                `Allowances:    ₹${(rec.allowances || 0).toLocaleString()}`,
+                                `Deductions:    -₹${(rec.deductions || 0).toLocaleString()}`,
+                                `──────────────────`,
+                                `Net Salary:    ₹${(rec.netSalary || 0).toLocaleString()}`,
+                                '',
+                                `Status: ${rec.payoutStatus || 'N/A'}`,
+                                `Notes: ${rec.notes || 'N/A'}`,
+                                '',
+                                'Generated by AEGIS ERP'
+                              ].join('\n');
+                              const blob = new Blob([content], { type: 'text/plain' });
+                              const url = URL.createObjectURL(blob);
+                              const a = document.createElement('a');
+                              a.href = url;
+                              a.download = `payslip_${rec.payoutMonth || rec.id}.txt`;
+                              a.click();
+                              URL.revokeObjectURL(url);
+                            }}
+                            className="flex items-center gap-1 text-[10px] font-bold text-slate-400 hover:text-slate-200 transition-colors"
+                          >
+                            <Download size={11} /> Payslip
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </GlassCard>
+
+          {/* Security Notice */}
+          <GlassCard className="p-4 border border-violet-500/10 bg-violet-500/5">
+            <div className="flex items-start gap-3">
+              <ShieldCheck className="text-violet-400 flex-shrink-0 mt-0.5" size={16} />
+              <div>
+                <p className="text-xs font-bold text-violet-300">End-to-End Encrypted Banking Data</p>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  Your bank account number is AES-256 encrypted at rest. Only Finance Admin can access the full details during salary disbursement.
+                  Your UPI ID and IFSC are masked in all other views.
+                </p>
+              </div>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Edit Banking Details Modal */}
+      {fpShowEdit && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-md space-y-4">
+            <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+              <h4 className="font-bold text-slate-100 text-sm flex items-center gap-1.5">
+                <Banknote className="text-violet-400" size={15} />
+                Update Banking Details
+              </h4>
+              <button onClick={() => setFpShowEdit(false)} className="text-xs text-slate-400 hover:text-slate-200">Close</button>
+            </div>
+            <div className="space-y-3">
+              {[
+                { label: 'Bank Name', val: fpBankName, set: setFpBankName, placeholder: 'e.g. State Bank of India' },
+                { label: 'Account Number', val: fpAccNumber, set: setFpAccNumber, placeholder: 'Your account number' },
+                { label: 'IFSC Code', val: fpIfsc, set: setFpIfsc, placeholder: 'e.g. SBIN0001234' },
+                { label: 'Branch', val: fpBranch, set: setFpBranch, placeholder: 'e.g. Main Branch' },
+                { label: 'UPI ID', val: fpUpiId, set: setFpUpiId, placeholder: 'e.g. name@oksbi' },
+              ].map(f => (
+                <div key={f.label}>
+                  <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">{f.label}</label>
+                  <input
+                    type="text"
+                    value={f.val}
+                    onChange={e => f.set(e.target.value)}
+                    placeholder={f.placeholder}
+                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-violet-500 transition-colors"
+                  />
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 pt-1 border-t border-slate-850">
+              <button onClick={() => setFpShowEdit(false)} className="glass-btn-secondary text-xs">Cancel</button>
+              <button
+                disabled={fpSaving}
+                onClick={async () => {
+                  setFpSaving(true);
+                  setFpMsg(null);
+                  try {
+                    const userId = session?.user.id || '';
+                    const saved = await mockApi.saveFacultyPaymentSettings(
+                      userId,
+                      { upiId: fpUpiId, bankName: fpBankName, accountNumber: fpAccNumber, ifscCode: fpIfsc, branchName: fpBranch },
+                      fpQrFile
+                    );
+                    setFpSettings(saved);
+                    setFpShowEdit(false);
+                    setFpMsg({ type: 'success', text: '✓ Banking details updated' });
+                    setTimeout(() => setFpMsg(null), 4000);
+                  } catch (err: any) {
+                    setFpMsg({ type: 'error', text: err?.message || 'Failed to save' });
+                  }
+                  setFpSaving(false);
+                }}
+                className="glass-btn-primary text-xs flex items-center gap-1.5"
+              >
+                {fpSaving ? <><div className="w-3 h-3 border border-white/60 border-t-transparent rounded-full animate-spin" /> Saving...</> : <><ShieldCheck size={13} /> Save Details</>}
+              </button>
+            </div>
+          </GlassCard>
+        </div>
       )}
 
       {/* Report card pdf layout modal */}

@@ -8,9 +8,10 @@ import {
   Section, HomeworkAttachment, Book,
   Driver, Bus, Route, PickupPoint, TransportAssignment, TransportFeeRecord, VehicleLog,
   MaintenanceLog, DriverAttendance, BookCategory, BookIssue, BookReturn, LibraryFine,
-  LibraryInvoice, DigitalLibraryAsset, ExamSubject, StudentMark, ReportCard, ExamResult, QuizResult, DriverSalaryPayout,
+  LibraryInvoice, DigitalLibraryAsset, ExamSubject, StudentMark, ReportCard, ExamResult, QuizResult, DriverSalaryPayout, PayrollRecord,
   SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport,
-  SupportTicketMessage, SupportTicketStatusLog, SupportNotification, SupportInternalNote
+  SupportTicketMessage, SupportTicketStatusLog, SupportNotification, SupportInternalNote,
+  SchoolPaymentSettings, FacultyPaymentSettings
 } from '../types';
 
 // Storage keys
@@ -31,6 +32,39 @@ function getStorage<T>(key: string, defaultValue: T): T {
 
 function setStorage<T>(key: string, data: T): void {
   localStorage.setItem(DB_PREFIX + key, JSON.stringify(data));
+}
+
+// --- SYNCHRONOUS BANK ACCOUNT ENCRYPTION ---
+const CIPHER_KEY = 'aegis-erp-secure-bank-key-2026';
+
+export function encryptAccountNumberSync(plainText: string): string {
+  if (!plainText) return '';
+  let result = '';
+  for (let i = 0; i < plainText.length; i++) {
+    const charCode = plainText.charCodeAt(i);
+    const keyChar = CIPHER_KEY.charCodeAt(i % CIPHER_KEY.length);
+    const encrypted = charCode ^ keyChar;
+    result += String.fromCharCode(encrypted);
+  }
+  return btoa(unescape(encodeURIComponent(result)));
+}
+
+export function decryptAccountNumberSync(cipherText: string): string {
+  if (!cipherText) return '';
+  try {
+    const raw = decodeURIComponent(escape(atob(cipherText)));
+    let result = '';
+    for (let i = 0; i < raw.length; i++) {
+      const charCode = raw.charCodeAt(i);
+      const keyChar = CIPHER_KEY.charCodeAt(i % CIPHER_KEY.length);
+      const decrypted = charCode ^ keyChar;
+      result += String.fromCharCode(decrypted);
+    }
+    return result;
+  } catch (e) {
+    console.error('Failed to decrypt account number:', e);
+    return '••••••••';
+  }
 }
 
 // --- SEED SEED SEED DATA ---
@@ -69,7 +103,9 @@ const SEED_USERS: User[] = [
   { id: 'u-parent2', email: 'parent2@aegis.com', role: 'PARENT', firstName: 'Pierre', lastName: 'Curie', phone: '+1 (555) 555-8888', avatarUrl: 'https://images.unsplash.com/photo-1489980508314-941910ded1f4?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   // Hostel Sub-admins
   { id: 'u-hosteladmin', email: 'hosteladmin@aegis.com', role: 'HOSTEL_ADMIN', firstName: 'Jack', lastName: 'Harper', phone: '+1 (555) 333-8888', avatarUrl: 'https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150', isActive: true, schoolId: 'school-1', password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
-  { id: 'u-warden1', email: 'warden@aegis.com', role: 'WARDEN', firstName: 'Clara', lastName: 'Oswald', phone: '+1 (555) 333-9999', avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150', isActive: true, schoolId: 'school-1', password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
+  { id: 'u-warden1', email: 'warden@aegis.com', role: 'WARDEN', firstName: 'Clara', lastName: 'Oswald', phone: '+1 (555) 333-9999', avatarUrl: 'https://images.unsplash.com/photo-1438761681033-6461ffad8d80?w=150', isActive: true, schoolId: 'school-1', password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
+  // Finance Admin
+  { id: 'u-finance', email: 'finance@aegis.com', role: 'FINANCE_ADMIN', firstName: 'Frank', lastName: 'Abagnale', phone: '+1 (555) 777-4444', avatarUrl: 'https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150', isActive: true, schoolId: 'school-1', password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() }
 ];
 
 const SEED_CLASSES: Class[] = [
@@ -439,6 +475,51 @@ const SEED_KNOWLEDGE_BASE: KnowledgeBaseArticle[] = [
   }
 ];
 
+const SEED_SCHOOL_PAYMENT_SETTINGS: SchoolPaymentSettings[] = [
+  {
+    id: 'sps-1',
+    schoolId: 'school-1',
+    qrCodeUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg',
+    upiId: 'greenvalley@okhdfcbank',
+    accountHolderName: 'Green Valley Public School',
+    bankName: 'HDFC Bank',
+    accountNumber: encryptAccountNumberSync('1234567890127890'),
+    ifscCode: 'HDFC0001234',
+    branchName: 'Sector 15, Noida',
+    swiftCode: 'HDFCINBB',
+    qrPaymentEnabled: true,
+    bankTransferEnabled: true,
+    showQrToParents: true,
+    showBankToParents: true,
+    enableUtrUpload: true,
+    autoRemindUnpaid: false,
+    paymentInstructions: 'Please scan the QR code or use the bank details to make the payment. After payment, upload the payment proof with UTR number.'
+  }
+];
+
+const SEED_FACULTY_PAYMENT_SETTINGS: FacultyPaymentSettings[] = [
+  {
+    id: 'fps-teacher1',
+    userId: 'u-teacher1',
+    qrCodeUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg',
+    upiId: 'marcus@okaxis',
+    bankName: 'Axis Bank',
+    accountNumber: encryptAccountNumberSync('9876543210987654'),
+    ifscCode: 'UTIB0001234',
+    branchName: 'Rome Central'
+  },
+  {
+    id: 'fps-teacher2',
+    userId: 'u-teacher2',
+    qrCodeUrl: 'https://upload.wikimedia.org/wikipedia/commons/d/d0/QR_code_for_mobile_English_Wikipedia.svg',
+    upiId: 'hypatia@okicici',
+    bankName: 'ICICI Bank',
+    accountNumber: encryptAccountNumberSync('1122334455667788'),
+    ifscCode: 'ICIC0001234',
+    branchName: 'Alexandria Port'
+  }
+];
+
 // --- MOCK DATABASE CLASS ---
 
 class MockDatabase {
@@ -498,6 +579,9 @@ class MockDatabase {
   reportCards: ReportCard[];
   quizResults: QuizResult[];
   driverSalaryPayouts: DriverSalaryPayout[];
+  payrollRecords: PayrollRecord[];
+  schoolPaymentSettings: SchoolPaymentSettings[];
+  facultyPaymentSettings: FacultyPaymentSettings[];
   hostels: any[];
   hostelBlocks: any[];
   hostelRooms: any[];
@@ -605,6 +689,7 @@ class MockDatabase {
     this.reportCards = getStorage<ReportCard[]>('report_cards', SEED_REPORT_CARDS);
     this.quizResults = getStorage<QuizResult[]>('quiz_results', SEED_QUIZ_RESULTS);
     this.driverSalaryPayouts = getStorage<DriverSalaryPayout[]>('driver_salary_payouts', []);
+    this.payrollRecords = getStorage<PayrollRecord[]>('payroll_records', []);
     this.hostels = getStorage<any[]>('hostels', []);
     this.hostelBlocks = getStorage<any[]>('hostel_blocks', []);
     this.hostelRooms = getStorage<any[]>('hostel_rooms', []);
@@ -628,6 +713,8 @@ class MockDatabase {
     this.bugReports = getStorage<BugReport[]>('bug_reports', []);
     this.systemStatuses = getStorage<SystemStatus[]>('system_statuses', SEED_SYSTEM_STATUSES);
     this.knowledgeBaseArticles = getStorage<KnowledgeBaseArticle[]>('knowledge_base_articles', SEED_KNOWLEDGE_BASE);
+    this.schoolPaymentSettings = getStorage<SchoolPaymentSettings[]>('school_payment_settings', SEED_SCHOOL_PAYMENT_SETTINGS);
+    this.facultyPaymentSettings = getStorage<FacultyPaymentSettings[]>('faculty_payment_settings', SEED_FACULTY_PAYMENT_SETTINGS);
   }
 
   saveAll() {
@@ -687,6 +774,7 @@ class MockDatabase {
     setStorage('report_cards', this.reportCards);
     setStorage('quiz_results', this.quizResults);
     setStorage('driver_salary_payouts', this.driverSalaryPayouts);
+    setStorage('payroll_records', this.payrollRecords);
     setStorage('hostels', this.hostels);
     setStorage('hostel_blocks', this.hostelBlocks);
     setStorage('hostel_rooms', this.hostelRooms);
@@ -710,6 +798,8 @@ class MockDatabase {
     setStorage('bug_reports', this.bugReports);
     setStorage('system_statuses', this.systemStatuses);
     setStorage('knowledge_base_articles', this.knowledgeBaseArticles);
+    setStorage('school_payment_settings', this.schoolPaymentSettings);
+    setStorage('faculty_payment_settings', this.facultyPaymentSettings);
   }
 
   // --- CRUD HELPERS ---

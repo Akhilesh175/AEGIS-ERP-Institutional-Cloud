@@ -3,13 +3,13 @@ import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
 import { mockDb } from '../services/mockDb';
-import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePayment, DriverSalaryPayout } from '../types';
+import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePayment, DriverSalaryPayout, PayrollRecord, SchoolPaymentSettings } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
   Eye, EyeOff, Plus, Link, Calendar, CheckCircle2, ShieldAlert, ArrowRight, Key, Crown, Lock, Trash2, AlertTriangle, CheckCircle, AlertCircle, XCircle, Edit, CreditCard,
   Mail, Send, RefreshCw, Play, FileSpreadsheet, FileText, CheckSquare, Sliders, HardDrive, Download, ChevronRight, BarChart2, Clock, Settings, Shield, Search, Activity,
-  Award, BookOpen, Home, UserCheck, UserX, Image, PlusCircle, Megaphone, X
+  Award, BookOpen, Home, UserCheck, UserX, Image, PlusCircle, Megaphone, X, Printer, QrCode, Wifi, WifiOff, Upload, ToggleLeft, ToggleRight, Info, ExternalLink, Banknote, ScanLine, ShieldCheck, Ban
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
@@ -73,6 +73,56 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [examSubjects, setExamSubjects] = useState<any[]>([]);
   const [driverSalaryPayouts, setDriverSalaryPayouts] = useState<DriverSalaryPayout[]>([]);
   const [transportFeeRecords, setTransportFeeRecords] = useState<any[]>([]);
+  const [feesSubTab, setFeesSubTab] = useState<'billing' | 'drivers' | 'payroll' | 'payment-settings' | 'verify-payments'>('billing');
+  // Payment Settings sub-tab state
+  const [schoolPaySettings, setSchoolPaySettings] = useState<SchoolPaymentSettings | null>(null);
+  const [paySettingsLoading, setPaySettingsLoading] = useState(false);
+  const [paySettingsSaving, setPaySettingsSaving] = useState(false);
+  const [paySettingsMsg, setPaySettingsMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [psQrFile, setPsQrFile] = useState<File | null>(null);
+  const [psQrPreview, setPsQrPreview] = useState<string | null>(null);
+  const [psAccHolder, setPsAccHolder] = useState('');
+  const [psBankName, setPsBankName] = useState('');
+  const [psAccNumber, setPsAccNumber] = useState('');
+  const [psIfsc, setPsIfsc] = useState('');
+  const [psBranch, setPsBranch] = useState('');
+  const [psSwift, setPsSwift] = useState('');
+  const [psUpiId, setPsUpiId] = useState('');
+  const [psInstructions, setPsInstructions] = useState('');
+  const [psQrEnabled, setPsQrEnabled] = useState(true);
+  const [psBankEnabled, setPsBankEnabled] = useState(true);
+  const [psShowQrToParents, setPsShowQrToParents] = useState(true);
+  const [psShowBankToParents, setPsShowBankToParents] = useState(true);
+  const [psUtrUpload, setPsUtrUpload] = useState(true);
+  const [psAutoRemind, setPsAutoRemind] = useState(false);
+  // Verify Payments sub-tab state
+  const [verifySearch, setVerifySearch] = useState('');
+  const [verifyLoading, setVerifyLoading] = useState(false);
+  const [verifyActionId, setVerifyActionId] = useState<string | null>(null);
+  const [showRejectModal, setShowRejectModal] = useState(false);
+  const [rejectTargetId, setRejectTargetId] = useState('');
+  const [rejectReason, setRejectReason] = useState('');
+  const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
+  const [payrollSearch, setPayrollSearch] = useState('');
+  const [payrollMonthFilter, setPayrollMonthFilter] = useState('');
+  const [payrollTypeFilter, setPayrollTypeFilter] = useState<'ALL' | 'TEACHER' | 'STAFF'>('ALL');
+  const [payrollStatusFilter, setPayrollStatusFilter] = useState<string>('ALL');
+  const [showCreatePayrollModal, setShowCreatePayrollModal] = useState(false);
+  const [payrollEmpType, setPayrollEmpType] = useState<'TEACHER' | 'STAFF'>('TEACHER');
+  const [payrollSelectedEmpId, setPayrollSelectedEmpId] = useState('');
+  const [payrollCustomName, setPayrollCustomName] = useState('');
+  const [payrollCustomRole, setPayrollCustomRole] = useState('');
+  const [payrollCustomPhone, setPayrollCustomPhone] = useState('');
+  const [payrollCustomEmpId, setPayrollCustomEmpId] = useState('');
+  const [payrollBaseSalary, setPayrollBaseSalary] = useState('');
+  const [payrollAllowances, setPayrollAllowances] = useState('0');
+  const [payrollDeductions, setPayrollDeductions] = useState('0');
+  const [payrollNotes, setPayrollNotes] = useState('');
+  const [payrollPayoutMonth, setPayrollPayoutMonth] = useState(new Date().toISOString().substring(0, 7)); // e.g. '2026-06'
+  const [isSubmittingPayroll, setIsSubmittingPayroll] = useState(false);
+  const [showPayrollDisburseModal, setShowPayrollDisburseModal] = useState(false);
+  const [selectedPayrollRecord, setSelectedPayrollRecord] = useState<PayrollRecord | null>(null);
+  const [payrollDisburseNotes, setPayrollDisburseNotes] = useState('');
   const [transportSubTab, setTransportSubTab] = useState<'fleet' | 'staff' | 'financials'>(
     session?.user.role === 'FINANCE_ADMIN' ? 'financials' : 'fleet'
   );
@@ -1530,7 +1580,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
             perms, ops, logs, inv, rc, dr, pk, da,
             busList, routeList, assignmentList, maintList, drAttList, tfrList,
             categoryList, issueList, fineList, exList, exResList, qResList,
-            marksList, examSubList, payoutList, booksList,
+            marksList, examSubList, payoutList, booksList, payrollList,
             hList, hbList, hrList, hbedList, hwList, hadmList, hattList, hfeeList, hpayList, hleaveList, hvisList, hcompList, hmenuList
           ] = await Promise.all([
             mockApi.fetchSchoolRolePermissions(session.user.schoolId),
@@ -1557,6 +1607,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
             mockApi.fetchAllExamSubjects(session.user.schoolId),
             mockApi.fetchDriverSalaryPayouts(session.user.schoolId),
             mockApi.fetchBookInventory(session.user.schoolId),
+            mockApi.fetchPayrollRecords(session.user.schoolId),
             mockApi.fetchHostels(session.user.schoolId),
             mockApi.fetchHostelBlocks(session.user.schoolId),
             mockApi.fetchHostelRooms(session.user.schoolId),
@@ -1586,6 +1637,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           const uniqueMaint = Array.from(new Map((maintList || []).map((m: any) => [m.id, m])).values());
           const uniqueDrAtt = Array.from(new Map((drAttList || []).map((da: any) => [da.id, da])).values());
           const uniquePayouts = Array.from(new Map((payoutList || []).map((p: any) => [p.id, p])).values());
+          const uniquePayroll = Array.from(new Map((payrollList || []).map((p: any) => [p.id, p])).values());
           const uniqueTfr = Array.from(new Map((tfrList || []).map((t: any) => [t.id, t])).values());
           
           const uniqueCategories = Array.from(new Map((categoryList || []).map((c: any) => [c.id, c])).values());
@@ -1618,6 +1670,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           setMaintenanceLogs(uniqueMaint);
           setDriverAttendanceList(uniqueDrAtt);
           setDriverSalaryPayouts(uniquePayouts);
+          setPayrollRecords(uniquePayroll);
           setTransportFeeRecords(uniqueTfr);
           setBookCategories(uniqueCategories);
           setBookIssues(uniqueIssues);
@@ -1789,6 +1842,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_attendance' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_salary_payouts' }, handleAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'payroll_records' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exams' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'exam_results' }, handleAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'report_cards' }, handleAdminSync)
@@ -2339,6 +2393,309 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     } catch (err: any) {
       alert(err.message || 'Failed to register driver');
     }
+  };
+
+  const handleCreatePayroll = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!session?.user.schoolId) return;
+
+    const currentRole = session.user.role;
+    if (currentRole !== 'FINANCE_ADMIN' && currentRole !== 'SUPER_ADMIN') {
+      alert('Only Finance Admin is authorized to perform salary disbursement.');
+      return;
+    }
+
+    setIsSubmittingPayroll(true);
+    try {
+      let employeeName = '';
+      let employeeIdNumber = '';
+      let employeePhone = '';
+      let userId: string | null = null;
+      let employeeRole = '';
+
+      if (payrollSelectedEmpId === 'custom') {
+        employeeName = payrollCustomName.trim();
+        employeeRole = payrollCustomRole.trim();
+        employeePhone = payrollCustomPhone.trim();
+        employeeIdNumber = payrollCustomEmpId.trim();
+      } else {
+        if (payrollEmpType === 'TEACHER') {
+          const t = teachers.find(x => x.id === payrollSelectedEmpId);
+          employeeName = t ? `${t.userDetails?.firstName} ${t.userDetails?.lastName}` : '';
+          employeeIdNumber = t?.employeeId || '';
+          employeePhone = t?.userDetails?.phone || '';
+          userId = t?.userId || null;
+          employeeRole = 'TEACHER';
+        } else {
+          const o = operators.find(x => x.id === payrollSelectedEmpId);
+          employeeName = o ? `${o.firstName} ${o.lastName}` : '';
+          employeeIdNumber = o?.employeeId || '';
+          employeePhone = o?.phone || '';
+          userId = o?.id || null;
+          employeeRole = o?.role || 'STAFF';
+        }
+      }
+
+      if (!employeeName) {
+        alert('Please select or specify a valid employee.');
+        setIsSubmittingPayroll(false);
+        return;
+      }
+
+      const base = Number(payrollBaseSalary) || 0;
+      const allowances = Number(payrollAllowances) || 0;
+      const deductions = Number(payrollDeductions) || 0;
+
+      await mockApi.createPayrollRecord(session.user.id, session.user.schoolId, {
+        employeeType: payrollEmpType,
+        employeeRole,
+        employeeName,
+        employeeIdNumber,
+        employeePhone,
+        userId,
+        payoutMonth: payrollPayoutMonth,
+        baseSalary: base,
+        allowances,
+        deductions,
+        notes: payrollNotes || null
+      });
+
+      setPayrollSelectedEmpId('');
+      setPayrollCustomName('');
+      setPayrollCustomRole('');
+      setPayrollCustomPhone('');
+      setPayrollCustomEmpId('');
+      setPayrollBaseSalary('');
+      setPayrollAllowances('0');
+      setPayrollDeductions('0');
+      setPayrollNotes('');
+      setShowCreatePayrollModal(false);
+
+      loadData();
+      alert('Payroll record created successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to create payroll record');
+    } finally {
+      setIsSubmittingPayroll(false);
+    }
+  };
+
+  const handleUpdatePayrollStatus = async (
+    recordId: string,
+    status: 'PENDING' | 'APPROVED' | 'PAID' | 'CANCELLED' | 'REVERSED',
+    notes?: string | null,
+    txRef?: string | null
+  ) => {
+    if (!session?.user.schoolId) return;
+
+    const currentRole = session.user.role;
+    if (currentRole !== 'FINANCE_ADMIN' && currentRole !== 'SUPER_ADMIN') {
+      alert('Only Finance Admin is authorized to perform salary disbursement.');
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to change status to ${status}?`)) return;
+
+    try {
+      await mockApi.updatePayrollStatus(session.user.id, session.user.schoolId, recordId, status, notes, txRef);
+      loadData();
+      alert(`Payroll record status updated to ${status}!`);
+    } catch (err: any) {
+      alert(err.message || 'Failed to update payroll status');
+    }
+  };
+
+  const handleDeletePayroll = async (recordId: string) => {
+    if (!session?.user.schoolId) return;
+
+    const currentRole = session.user.role;
+    if (currentRole !== 'FINANCE_ADMIN' && currentRole !== 'SUPER_ADMIN') {
+      alert('Only Finance Admin is authorized to perform salary disbursement.');
+      return;
+    }
+
+    if (!window.confirm('Are you sure you want to delete this payroll record?')) return;
+
+    try {
+      await mockApi.deletePayrollRecord(session.user.id, session.user.schoolId, recordId);
+      loadData();
+      alert('Payroll record deleted successfully!');
+    } catch (err: any) {
+      alert(err.message || 'Failed to delete payroll record');
+    }
+  };
+
+  const exportPayrollToCSV = () => {
+    let csvContent = "data:text/csv;charset=utf-8,";
+    csvContent += "Month,Employee Name,Role,Type,Base Salary,Allowances,Deductions,Net Salary,Status,Payment Date,Transaction Ref,Notes\n";
+
+    const filtered = payrollRecords.filter(r => {
+      const matchesSearch = r.employeeName.toLowerCase().includes(payrollSearch.toLowerCase()) ||
+        (r.employeeIdNumber && r.employeeIdNumber.toLowerCase().includes(payrollSearch.toLowerCase())) ||
+        r.employeeRole.toLowerCase().includes(payrollSearch.toLowerCase());
+      const matchesType = payrollTypeFilter === 'ALL' || r.employeeType === payrollTypeFilter;
+      const matchesStatus = payrollStatusFilter === 'ALL' || r.payoutStatus === payrollStatusFilter;
+      const matchesMonth = !payrollMonthFilter || r.payoutMonth === payrollMonthFilter;
+      return matchesSearch && matchesType && matchesStatus && matchesMonth;
+    });
+
+    filtered.forEach(p => {
+      const row = [
+        p.payoutMonth,
+        p.employeeName,
+        p.employeeRole,
+        p.employeeType,
+        p.baseSalary,
+        p.allowances,
+        p.deductions,
+        p.netSalary,
+        p.payoutStatus,
+        p.payoutDate || 'N/A',
+        p.transactionReference || 'N/A',
+        p.notes || ''
+      ].map(field => `"${String(field).replace(/"/g, '""')}"`).join(",");
+      csvContent += row + "\n";
+    });
+
+    const encodedUri = encodeURI(csvContent);
+    const link = document.createElement("a");
+    link.setAttribute("href", encodedUri);
+    link.setAttribute("download", `aegis_payroll_report_${payrollMonthFilter || 'all'}_${new Date().toISOString().split('T')[0]}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
+  const printPayrollPDF = () => {
+    if (!session?.user) return;
+    const filtered = payrollRecords.filter(r => {
+      const matchesSearch = r.employeeName.toLowerCase().includes(payrollSearch.toLowerCase()) ||
+        (r.employeeIdNumber && r.employeeIdNumber.toLowerCase().includes(payrollSearch.toLowerCase())) ||
+        r.employeeRole.toLowerCase().includes(payrollSearch.toLowerCase());
+      const matchesType = payrollTypeFilter === 'ALL' || r.employeeType === payrollTypeFilter;
+      const matchesStatus = payrollStatusFilter === 'ALL' || r.payoutStatus === payrollStatusFilter;
+      const matchesMonth = !payrollMonthFilter || r.payoutMonth === payrollMonthFilter;
+      return matchesSearch && matchesType && matchesStatus && matchesMonth;
+    });
+
+    const totalNet = filtered.reduce((acc, r) => acc + r.netSalary, 0);
+    const totalBase = filtered.reduce((acc, r) => acc + r.baseSalary, 0);
+    const totalAllowances = filtered.reduce((acc, r) => acc + r.allowances, 0);
+    const totalDeductions = filtered.reduce((acc, r) => acc + r.deductions, 0);
+
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert('Pop-up blocker prevented opening report window. Please allow popups.');
+      return;
+    }
+
+    const html = `
+      <html>
+        <head>
+          <title>Institutional Payroll Report - Aegis ERP</title>
+          <style>
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #1e293b; margin: 40px; }
+            .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #e2e8f0; padding-bottom: 20px; margin-bottom: 30px; }
+            .title { font-size: 24px; font-weight: 800; color: #0f172a; }
+            .meta { font-size: 11px; color: #64748b; text-align: right; }
+            .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-bottom: 30px; }
+            .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 12px; }
+            .card p { margin: 0; font-size: 9px; text-transform: uppercase; font-weight: 700; color: #64748b; }
+            .card h3 { margin: 5px 0 0 0; font-size: 16px; font-weight: 800; color: #0f172a; }
+            table { width: 100%; border-collapse: collapse; margin-bottom: 30px; }
+            th { background: #f1f5f9; font-size: 10px; text-transform: uppercase; font-weight: 700; color: #475569; padding: 10px; border-bottom: 2px solid #cbd5e1; text-align: left; }
+            td { padding: 10px; border-bottom: 1px solid #e2e8f0; font-size: 11px; }
+            .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 9px; font-weight: 700; text-transform: uppercase; }
+            .badge-paid { background: #dcfce7; color: #15803d; }
+            .badge-pending { background: #fef9c3; color: #854d0e; }
+            .badge-approved { background: #dbeafe; color: #1d4ed8; }
+            .badge-cancelled { background: #fee2e2; color: #b91c1c; }
+            .badge-reversed { background: #f3e8ff; color: #6b21a8; }
+            .footer { border-top: 1px solid #e2e8f0; pt-20px; font-size: 10px; color: #94a3b8; display: flex; justify-content: space-between; margin-top: 50px; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <div>
+              <div class="title">Aegis ERP Institutional Payroll</div>
+              <div style="font-size: 12px; color: #475569; mt-5px;">School-wide Payroll Ledger & Disbursement Summary</div>
+            </div>
+            <div class="meta">
+              <div>Generated On: ${new Date().toLocaleString()}</div>
+              <div>Report Period: ${payrollMonthFilter || 'All Months'}</div>
+              <div>School Tenant ID: ${session.user.schoolId}</div>
+            </div>
+          </div>
+
+          <div class="stats">
+            <div class="card">
+              <p>Total Base Salary</p>
+              <h3>$${totalBase.toFixed(2)}</h3>
+            </div>
+            <div class="card">
+              <p>Total Allowances</p>
+              <h3>$${totalAllowances.toFixed(2)}</h3>
+            </div>
+            <div class="card">
+              <p>Total Deductions</p>
+              <h3>$${totalDeductions.toFixed(2)}</h3>
+            </div>
+            <div class="card">
+              <p>Total Net Disbursed</p>
+              <h3 style="color: #16a34a;">$${totalNet.toFixed(2)}</h3>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Month</th>
+                <th>Employee Name</th>
+                <th>Role</th>
+                <th>Type</th>
+                <th>Base</th>
+                <th>Allowances</th>
+                <th>Deductions</th>
+                <th>Net</th>
+                <th>Status</th>
+                <th>Ref</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${filtered.map(r => `
+                <tr>
+                  <td>${r.payoutMonth}</td>
+                  <td style="font-weight: 600;">${r.employeeName}</td>
+                  <td>${r.employeeRole}</td>
+                  <td>${r.employeeType}</td>
+                  <td>$${r.baseSalary.toFixed(2)}</td>
+                  <td>$${r.allowances.toFixed(2)}</td>
+                  <td>$${r.deductions.toFixed(2)}</td>
+                  <td style="font-weight: 700;">$${r.netSalary.toFixed(2)}</td>
+                  <td><span class="badge badge-${r.payoutStatus.toLowerCase()}">${r.payoutStatus}</span></td>
+                  <td style="font-family: monospace; font-size: 9px;">${r.transactionReference || '-'}</td>
+                </tr>
+              `).join('')}
+              ${filtered.length === 0 ? `<tr><td colspan="10" style="text-align: center; color: #64748b; padding: 20px;">No payroll records matched the criteria.</td></tr>` : ''}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <div>Aegis ERP Institutional Management Cloud System &copy; 2026</div>
+            <div>Authorized Finance signature: ___________________________</div>
+          </div>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(html);
+    printWindow.document.close();
   };
 
   const handleCreateTransportAssignment = async (e: React.FormEvent) => {
@@ -5056,73 +5413,304 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
           featureName="Billing & Invoicing"
         >
           <div className="space-y-6">
-            {/* Financial Overview Metrics Cards */}
-            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-              <GlassCard className="p-4 flex items-center justify-between border-emerald-500/10 shadow-emerald-500/5">
-                <div className="space-y-1">
-                  <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Collected Income</p>
-                  <h3 className="text-xl font-extrabold text-emerald-400">
-                    {overview?.currencySymbol || '$'}{(feePayments || [])
-                      .filter(p => p && p.status === 'PAID')
-                      .reduce((acc, p) => acc + (Number(p.amountPaid) || 0), 0)
-                      .toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </h3>
-                  <span className="text-[9px] text-slate-500">Total cleared student payments</span>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
-                  <CheckCircle size={20} />
-                </div>
-              </GlassCard>
-
-              <GlassCard className="p-4 flex items-center justify-between border-amber-500/10 shadow-amber-500/5">
-                <div className="space-y-1">
-                  <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Outstanding Invoices</p>
-                  <h3 className="text-xl font-extrabold text-amber-400">
-                    {overview?.currencySymbol || '$'}{(
-                      (feeStructures || []).reduce((acc, fs) => acc + ((Number(fs?.amount) || 0) * (students || []).filter(s => s && s.classId === fs?.classId).length), 0) -
-                      (feePayments || []).filter(p => p && p.status === 'PAID').reduce((acc, p) => acc + (Number(p.amountPaid) || 0), 0)
-                    ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </h3>
-                  <span className="text-[9px] text-slate-500">Total pending collectable fees</span>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-amber-400">
-                  <AlertTriangle size={20} />
-                </div>
-              </GlassCard>
-
-              <GlassCard className="p-4 flex items-center justify-between border-brand-500/10 shadow-brand-500/5">
-                <div className="space-y-1">
-                  <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Institutional Ledger</p>
-                  <h3 className="text-xl font-extrabold text-brand-400">
-                    {overview?.currencySymbol || '$'}{(feeStructures || [])
-                      .reduce((acc, fs) => acc + ((Number(fs?.amount) || 0) * (students || []).filter(s => s && s.classId === fs?.classId).length), 0)
-                      .toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </h3>
-                  <span className="text-[9px] text-slate-500">Total institutional billing mapped</span>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center border border-brand-500/20 text-brand-400">
-                  <DollarSign size={20} />
-                </div>
-              </GlassCard>
-
-              <GlassCard className="p-4 flex items-center justify-between border-rose-500/10 shadow-rose-500/5">
-                <div className="space-y-1">
-                  <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Disbursed Driver Salaries</p>
-                  <h3 className="text-xl font-extrabold text-rose-455">
-                    {overview?.currencySymbol || '$'}{driverSalaryPayouts
-                      .reduce((acc, p) => acc + (Number(p.payoutAmount) || 0), 0)
-                      .toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                  </h3>
-                  <span className="text-[9px] text-slate-500">Total salary expenses cleared</span>
-                </div>
-                <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-450">
-                  <Clock size={20} />
-                </div>
-              </GlassCard>
+            {/* Sub-tab Navigation */}
+            <div className="flex flex-wrap gap-2 p-1 bg-slate-900/60 border border-slate-850 rounded-2xl w-fit">
+              <button
+                onClick={() => setFeesSubTab('billing')}
+                className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  feesSubTab === 'billing'
+                    ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/10'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Student Billing & Invoices
+              </button>
+              <button
+                onClick={() => setFeesSubTab('drivers')}
+                className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  feesSubTab === 'drivers'
+                    ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/10'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Driver Payout Ledger
+              </button>
+              <button
+                onClick={() => setFeesSubTab('payroll')}
+                className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                  feesSubTab === 'payroll'
+                    ? 'bg-brand-600 text-white shadow-lg shadow-brand-500/10'
+                    : 'text-slate-400 hover:text-slate-200'
+                }`}
+              >
+                Teacher & Staff Payroll
+              </button>
+              {(session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN') && (
+                <button
+                  onClick={async () => {
+                    setFeesSubTab('payment-settings');
+                    if (!schoolPaySettings) {
+                      setPaySettingsLoading(true);
+                      try {
+                        const s = await mockApi.fetchSchoolPaymentSettings(adminId || '', session?.user.role || '');
+                        if (s) {
+                          setSchoolPaySettings(s);
+                          setPsAccHolder(s.accountHolderName || '');
+                          setPsBankName(s.bankName || '');
+                          setPsAccNumber(s.accountNumber || '');
+                          setPsIfsc(s.ifscCode || '');
+                          setPsBranch(s.branchName || '');
+                          setPsSwift(s.swiftCode || '');
+                          setPsUpiId(s.upiId || '');
+                          setPsInstructions(s.paymentInstructions || '');
+                          setPsQrEnabled(s.qrPaymentEnabled);
+                          setPsBankEnabled(s.bankTransferEnabled);
+                          setPsShowQrToParents(s.showQrToParents);
+                          setPsShowBankToParents(s.showBankToParents);
+                          setPsUtrUpload(s.enableUtrUpload);
+                          setPsAutoRemind(s.autoRemindUnpaid);
+                          if (s.qrCodeUrl) setPsQrPreview(s.qrCodeUrl);
+                        }
+                      } catch (e) { console.warn(e); }
+                      setPaySettingsLoading(false);
+                    }
+                  }}
+                  className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    feesSubTab === 'payment-settings'
+                      ? 'bg-violet-600 text-white shadow-lg shadow-violet-500/10'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Payment Settings
+                </button>
+              )}
+              {(session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN') && (
+                <button
+                  onClick={() => setFeesSubTab('verify-payments')}
+                  className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all relative ${
+                    feesSubTab === 'verify-payments'
+                      ? 'bg-amber-600 text-white shadow-lg shadow-amber-500/10'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Verify Payments
+                  {(feePayments || []).filter(p => p.status === 'PENDING' && p.paymentScreenshotUrl).length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-amber-500 rounded-full text-[9px] font-black text-white flex items-center justify-center">
+                      {(feePayments || []).filter(p => p.status === 'PENDING' && p.paymentScreenshotUrl).length}
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
 
+            {/* Financial Overview Metrics Cards */}
+            {feesSubTab === 'billing' && (
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <GlassCard className="p-4 flex items-center justify-between border-emerald-500/10 shadow-emerald-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Collected Income</p>
+                    <h3 className="text-xl font-extrabold text-emerald-400">
+                      {overview?.currencySymbol || '$'}{(feePayments || [])
+                        .filter(p => p && p.status === 'PAID')
+                        .reduce((acc, p) => acc + (Number(p.amountPaid) || 0), 0)
+                        .toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Total cleared student payments</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
+                    <CheckCircle size={20} />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between border-amber-500/10 shadow-amber-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Outstanding Invoices</p>
+                    <h3 className="text-xl font-extrabold text-amber-400">
+                      {overview?.currencySymbol || '$'}{(
+                        (feeStructures || []).reduce((acc, fs) => acc + ((Number(fs?.amount) || 0) * (students || []).filter(s => s && s.classId === fs?.classId).length), 0) -
+                        (feePayments || []).filter(p => p && p.status === 'PAID').reduce((acc, p) => acc + (Number(p.amountPaid) || 0), 0)
+                      ).toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Total pending collectable fees</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-amber-400">
+                    <AlertTriangle size={20} />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between border-brand-500/10 shadow-brand-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Institutional Ledger</p>
+                    <h3 className="text-xl font-extrabold text-brand-400">
+                      {overview?.currencySymbol || '$'}{(feeStructures || [])
+                        .reduce((acc, fs) => acc + ((Number(fs?.amount) || 0) * (students || []).filter(s => s && s.classId === fs?.classId).length), 0)
+                        .toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Total institutional billing mapped</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center border border-brand-500/20 text-brand-400">
+                    <DollarSign size={20} />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between border-rose-500/10 shadow-rose-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Disbursed Driver Salaries</p>
+                    <h3 className="text-xl font-extrabold text-rose-455">
+                      {overview?.currencySymbol || '$'}{driverSalaryPayouts
+                        .reduce((acc, p) => acc + (Number(p.payoutAmount) || 0), 0)
+                        .toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Total salary expenses cleared</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-450">
+                    <Clock size={20} />
+                  </div>
+                </GlassCard>
+              </div>
+            )}
+
+            {feesSubTab === 'drivers' && (
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <GlassCard className="p-4 flex items-center justify-between border-emerald-500/10 shadow-emerald-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Disbursed Driver Salaries</p>
+                    <h3 className="text-xl font-extrabold text-emerald-400">
+                      {overview?.currencySymbol || '$'}{driverSalaryPayouts
+                        .reduce((acc, p) => acc + (Number(p.payoutAmount) || 0), 0)
+                        .toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Total salary expenses cleared</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
+                    <CheckCircle size={20} />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between border-amber-500/10 shadow-amber-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Pending Driver Payouts</p>
+                    <h3 className="text-xl font-extrabold text-amber-400">
+                      {overview?.currencySymbol || '$'}{(() => {
+                        let totalPending = 0;
+                        driversList.forEach(driver => {
+                          const driverPresentRecords = driverAttendanceList.filter(
+                            a => a.driverId === driver.id && a.status === 'PRESENT'
+                          );
+                          const unpaidRecords = driverPresentRecords.filter(
+                            rec => !driverSalaryPayouts.some(
+                              p => p.attendanceRecordId === rec.id || 
+                              (p.driverId === driver.id && rec.date <= p.payoutDate.split('T')[0])
+                            )
+                          );
+                          totalPending += unpaidRecords.length * 45.00;
+                        });
+                        return totalPending.toLocaleString(undefined, { minimumFractionDigits: 2 });
+                      })()}
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Estimated outstanding daily pay</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-amber-400">
+                    <AlertTriangle size={20} />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between border-brand-500/10 shadow-brand-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Driver Registry</p>
+                    <h3 className="text-xl font-extrabold text-brand-400">
+                      {driversList.length} Active
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Total transport operators</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center border border-brand-500/20 text-brand-400">
+                    <Users size={20} />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between border-rose-500/10 shadow-rose-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Total Attendance Logs</p>
+                    <h3 className="text-xl font-extrabold text-rose-455">
+                      {driverAttendanceList.length}
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Attendance records logged</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-450">
+                    <Clock size={20} />
+                  </div>
+                </GlassCard>
+              </div>
+            )}
+
+            {feesSubTab === 'payroll' && (
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                <GlassCard className="p-4 flex items-center justify-between border-emerald-500/10 shadow-emerald-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Disbursed Payroll</p>
+                    <h3 className="text-xl font-extrabold text-emerald-400">
+                      {overview?.currencySymbol || '$'}{payrollRecords
+                        .filter(p => p.payoutStatus === 'PAID')
+                        .reduce((acc, p) => acc + (Number(p.netSalary) || 0), 0)
+                        .toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Total paid salaries</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-emerald-500/10 flex items-center justify-center border border-emerald-500/20 text-emerald-400">
+                    <CheckCircle size={20} />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between border-amber-500/10 shadow-amber-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Outstanding Approvals</p>
+                    <h3 className="text-xl font-extrabold text-amber-400">
+                      {overview?.currencySymbol || '$'}{payrollRecords
+                        .filter(p => p.payoutStatus === 'APPROVED' || p.payoutStatus === 'PENDING')
+                        .reduce((acc, p) => acc + (Number(p.netSalary) || 0), 0)
+                        .toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Salaries awaiting disburse</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-amber-500/10 flex items-center justify-center border border-amber-500/20 text-amber-400">
+                    <AlertTriangle size={20} />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between border-brand-500/10 shadow-brand-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Active Payrolls</p>
+                    <h3 className="text-xl font-extrabold text-brand-400">
+                      {payrollRecords.length} Entries
+                    </h3>
+                    <span className="text-[9px] text-slate-500">All ledger records this session</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-brand-500/10 flex items-center justify-center border border-brand-500/20 text-brand-400">
+                    <CreditCard size={20} />
+                  </div>
+                </GlassCard>
+
+                <GlassCard className="p-4 flex items-center justify-between border-rose-500/10 shadow-rose-500/5">
+                  <div className="space-y-1">
+                    <p className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Total Payroll Budget</p>
+                    <h3 className="text-xl font-extrabold text-rose-455">
+                      {overview?.currencySymbol || '$'}{payrollRecords
+                        .filter(p => p.payoutStatus !== 'CANCELLED')
+                        .reduce((acc, p) => acc + (Number(p.netSalary) || 0), 0)
+                        .toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                    <span className="text-[9px] text-slate-500">Net active salary commitments</span>
+                  </div>
+                  <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 text-rose-450">
+                    <Clock size={20} />
+                  </div>
+                </GlassCard>
+              </div>
+            )}
+
             {/* Invoices List and Student payments ledger view split */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+            {feesSubTab === 'billing' && (
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
               {/* Left Column: List of class-wide Invoices */}
               <div className="lg:col-span-1 space-y-4">
                 <GlassCard className="p-5 space-y-4">
@@ -5346,9 +5934,11 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 </GlassCard>
               </div>
             </div>
+          )}
 
             {/* Driver Attendance & Salary Payout Ledger */}
-            <div className="mt-6">
+            {feesSubTab === 'drivers' && (
+              <div className="mt-6">
               <GlassCard className="p-5 space-y-4">
                 <div className="border-b border-slate-850 pb-3 flex justify-between items-center">
                   <div>
@@ -5395,8 +5985,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         return (
                           <tr key={driver.id} className="hover:bg-slate-900/10 text-slate-200">
                             <td className="py-3 px-4">
-                              <div className="font-semibold text-slate-200">{driver.userDetails?.firstName || 'Unknown'} {driver.userDetails?.lastName || 'Driver'}</div>
-                              <div className="text-[9px] text-slate-500 font-mono">{driver.userDetails?.email || 'No email registered'}</div>
+                              <div className="font-semibold text-slate-200">{driver.status === 'INACTIVE' ? `Former Driver - ${driver.name}` : driver.name}</div>
+                              <div className="text-[9px] text-slate-500 font-mono">
+                                {driver.employeeId ? `Emp ID: ${driver.employeeId} | ` : ''}Phone: {driver.phone || 'N/A'}
+                              </div>
                             </td>
                             <td className="py-3 px-4 text-slate-400 font-mono">{driver.licenseNumber}</td>
                             <td className="py-3 px-4">
@@ -5477,11 +6069,26 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     <tbody className="divide-y divide-slate-850/60">
                       {driverSalaryPayouts.map(payout => {
                         const driver = driversList.find(d => d.id === payout.driverId);
+                        const displayName = driver
+                          ? (driver.status === 'INACTIVE' ? `Former Driver - ${driver.name}` : driver.name)
+                          : (payout.driverName ? `Former Driver - ${payout.driverName}` : 'Unknown Driver');
+
+                        const empId = driver ? (driver.employeeId) : payout.driverEmployeeId;
+                        const license = driver ? (driver.licenseNumber) : payout.driverLicenseNumber;
+                        const phone = driver ? (driver.phone) : payout.driverPhone;
+
                         return (
                           <tr key={payout.id} className="hover:bg-slate-900/10 text-slate-200">
                             <td className="py-3 px-4 font-mono font-semibold text-brand-400">{payout.transactionReference || 'TXP-PENDING'}</td>
                             <td className="py-3 px-4">
-                              <div className="font-semibold text-slate-200">{driver?.userDetails?.firstName || 'Unknown'} {driver?.userDetails?.lastName || 'Driver'}</div>
+                              <div className="font-semibold text-slate-200">{displayName}</div>
+                              {(empId || license || phone) && (
+                                <div className="text-[10px] text-slate-500 mt-0.5">
+                                  {empId && <span>Emp ID: {empId} </span>}
+                                  {license && <span>| Lic: {license} </span>}
+                                  {phone && <span>| Phone: {phone}</span>}
+                                </div>
+                              )}
                             </td>
                             <td className="py-3 px-4 font-mono font-bold text-emerald-400">${(Number(payout.payoutAmount) || 0).toFixed(2)}</td>
                             <td className="py-3 px-4 text-slate-400 font-mono">{new Date(payout.payoutDate).toLocaleString()}</td>
@@ -5506,8 +6113,730 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 </div>
               </GlassCard>
             </div>
+          )}
+
+            {/* Teacher & Staff Payroll Dashboard */}
+            {feesSubTab === 'payroll' && (
+              <div className="space-y-6">
+                <GlassCard className="p-5 space-y-4">
+                  {/* Title and control headers */}
+                  <div className="border-b border-slate-850 pb-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                    <div>
+                      <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                        <UsersRound className="text-brand-500" size={16} />
+                        Employee Salary & Payroll Ledger
+                      </h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Manage institutional salaries, structure allowances/deductions, and process disbursements for Teachers and Staff.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <button
+                        onClick={printPayrollPDF}
+                        className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-xs font-bold text-slate-300 hover:border-slate-650 hover:text-slate-200 transition-colors flex items-center gap-1.5"
+                      >
+                        <Printer size={13} />
+                        Print/PDF Report
+                      </button>
+                      <button
+                        onClick={exportPayrollToCSV}
+                        className="px-3 py-1.5 rounded-lg border border-slate-700 bg-slate-800/50 text-xs font-bold text-slate-300 hover:border-slate-650 hover:text-slate-200 transition-colors flex items-center gap-1.5"
+                      >
+                        <Download size={13} />
+                        Export CSV
+                      </button>
+                      <button
+                        onClick={() => setShowCreatePayrollModal(true)}
+                        className="px-3 py-1.5 rounded-lg text-xs font-bold bg-brand-600 hover:bg-brand-500 text-white transition-colors flex items-center gap-1 active:scale-95 shadow-lg shadow-brand-500/10"
+                      >
+                        <Plus size={13} />
+                        Create Payroll Entry
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Filter panel */}
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 p-3 bg-slate-950/20 border border-slate-850 rounded-xl">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase">Search Employee</label>
+                      <input
+                        type="text"
+                        placeholder="Search by name, ID, role..."
+                        value={payrollSearch}
+                        onChange={(e) => setPayrollSearch(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none focus:border-brand-500 text-slate-200"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase">Employee Type</label>
+                      <select
+                        value={payrollTypeFilter}
+                        onChange={(e) => setPayrollTypeFilter(e.target.value as any)}
+                        className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none focus:border-brand-500 text-slate-200"
+                      >
+                        <option value="ALL">All Types</option>
+                        <option value="TEACHER">Teachers</option>
+                        <option value="STAFF">Administrative Staff</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase">Status</label>
+                      <select
+                        value={payrollStatusFilter}
+                        onChange={(e) => setPayrollStatusFilter(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none focus:border-brand-500 text-slate-200"
+                      >
+                        <option value="ALL">All Statuses</option>
+                        <option value="PENDING">Pending</option>
+                        <option value="APPROVED">Approved</option>
+                        <option value="PAID">Paid</option>
+                        <option value="CANCELLED">Cancelled</option>
+                        <option value="REVERSED">Reversed</option>
+                      </select>
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold text-slate-500 uppercase">Month Filter</label>
+                      <input
+                        type="month"
+                        value={payrollMonthFilter}
+                        onChange={(e) => setPayrollMonthFilter(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none focus:border-brand-500 text-slate-200"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Payroll Table */}
+                  <div className="overflow-x-auto rounded-xl border border-slate-850">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider bg-slate-900/40">
+                          <th className="py-3 px-4">Employee Details</th>
+                          <th className="py-3 px-4">Month</th>
+                          <th className="py-3 px-4">Base Salary</th>
+                          <th className="py-3 px-4">Allowances</th>
+                          <th className="py-3 px-4">Deductions</th>
+                          <th className="py-3 px-4">Net Salary</th>
+                          <th className="py-3 px-4">Ref / Details</th>
+                          <th className="py-3 px-4">Status</th>
+                          <th className="py-3 px-4 text-right">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850/60 text-slate-200">
+                        {payrollRecords
+                          .filter(r => {
+                            const matchesSearch = r.employeeName.toLowerCase().includes(payrollSearch.toLowerCase()) ||
+                              (r.employeeIdNumber && r.employeeIdNumber.toLowerCase().includes(payrollSearch.toLowerCase())) ||
+                              r.employeeRole.toLowerCase().includes(payrollSearch.toLowerCase());
+                            const matchesType = payrollTypeFilter === 'ALL' || r.employeeType === payrollTypeFilter;
+                            const matchesStatus = payrollStatusFilter === 'ALL' || r.payoutStatus === payrollStatusFilter;
+                            const matchesMonth = !payrollMonthFilter || r.payoutMonth === payrollMonthFilter;
+                            return matchesSearch && matchesType && matchesStatus && matchesMonth;
+                          })
+                          .map(p => {
+                            const isAuthorized = session?.user.role === 'FINANCE_ADMIN' || session?.user.role === 'SUPER_ADMIN';
+                            return (
+                              <tr key={p.id} className="hover:bg-slate-900/10">
+                                <td className="py-3 px-4">
+                                  <div className="font-semibold text-slate-100">{p.employeeName}</div>
+                                  <div className="text-[10px] text-slate-500 mt-0.5">
+                                    <span className="font-bold text-slate-400">{p.employeeRole}</span>
+                                    {p.employeeIdNumber && ` | ID: ${p.employeeIdNumber}`}
+                                    {p.employeePhone && ` | Phone: ${p.employeePhone}`}
+                                  </div>
+                                </td>
+                                <td className="py-3 px-4 font-mono text-slate-350">{p.payoutMonth}</td>
+                                <td className="py-3 px-4 font-mono">${(Number(p.baseSalary) || 0).toFixed(2)}</td>
+                                <td className="py-3 px-4 font-mono text-emerald-450">+${(Number(p.allowances) || 0).toFixed(2)}</td>
+                                <td className="py-3 px-4 font-mono text-rose-455">-${(Number(p.deductions) || 0).toFixed(2)}</td>
+                                <td className="py-3 px-4 font-mono font-bold text-brand-400">${(Number(p.netSalary) || 0).toFixed(2)}</td>
+                                <td className="py-3 px-4 text-slate-400 font-mono text-[10px] max-w-xs truncate">
+                                  {p.transactionReference ? (
+                                    <div>
+                                      <span className="font-bold text-emerald-400">{p.transactionReference}</span>
+                                      {p.payoutDate && <div className="text-[8px] text-slate-500">{new Date(p.payoutDate).toLocaleDateString()}</div>}
+                                    </div>
+                                  ) : (
+                                    p.notes || '-'
+                                  )}
+                                </td>
+                                <td className="py-3 px-4">
+                                  <span className={`px-2 py-0.5 rounded text-[9px] font-bold border font-mono ${
+                                    p.payoutStatus === 'PAID'
+                                      ? 'bg-emerald-500/5 text-emerald-400 border-emerald-500/10'
+                                      : p.payoutStatus === 'APPROVED'
+                                      ? 'bg-blue-500/5 text-blue-400 border-blue-500/10'
+                                      : p.payoutStatus === 'PENDING'
+                                      ? 'bg-amber-500/5 text-amber-400 border-amber-500/10'
+                                      : p.payoutStatus === 'REVERSED'
+                                      ? 'bg-purple-500/5 text-purple-400 border-purple-500/10'
+                                      : 'bg-rose-500/5 text-rose-450 border-rose-500/10'
+                                  }`}>
+                                    {p.payoutStatus}
+                                  </span>
+                                </td>
+                                <td className="py-3 px-4 text-right">
+                                  <div className="flex items-center justify-end gap-1.5">
+                                    {isAuthorized ? (
+                                      <>
+                                        {p.payoutStatus === 'PENDING' && (
+                                          <>
+                                            <button
+                                              onClick={() => handleUpdatePayrollStatus(p.id, 'APPROVED')}
+                                              className="px-2 py-0.5 rounded bg-blue-650 hover:bg-blue-550 text-white text-[10px] font-bold transition-all"
+                                            >
+                                              Approve
+                                            </button>
+                                            <button
+                                              onClick={() => handleUpdatePayrollStatus(p.id, 'CANCELLED')}
+                                              className="px-2 py-0.5 rounded border border-rose-500/20 hover:bg-rose-500/10 text-rose-455 text-[10px] font-bold transition-all"
+                                            >
+                                              Cancel
+                                            </button>
+                                          </>
+                                        )}
+                                        {p.payoutStatus === 'APPROVED' && (
+                                          <button
+                                            onClick={() => {
+                                              setSelectedPayrollRecord(p);
+                                              setPayrollDisburseNotes('Monthly salary disburse');
+                                              setShowPayrollDisburseModal(true);
+                                            }}
+                                            className="px-2 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold transition-all"
+                                          >
+                                            Disburse
+                                          </button>
+                                        )}
+                                        {p.payoutStatus === 'PAID' && (
+                                          <button
+                                            onClick={() => handleUpdatePayrollStatus(p.id, 'REVERSED')}
+                                            className="px-2 py-0.5 rounded border border-purple-500/20 hover:bg-purple-500/10 text-purple-450 text-[10px] font-bold transition-all"
+                                          >
+                                            Reverse
+                                          </button>
+                                        )}
+                                        {p.payoutStatus === 'CANCELLED' && (
+                                          <span className="text-[10px] text-slate-500 italic">No actions</span>
+                                        )}
+                                        {p.payoutStatus === 'REVERSED' && (
+                                          <button
+                                            onClick={() => handleUpdatePayrollStatus(p.id, 'PENDING')}
+                                            className="px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-[10px] font-bold transition-all"
+                                          >
+                                            Reset
+                                          </button>
+                                        )}
+                                        <button
+                                          onClick={() => handleDeletePayroll(p.id)}
+                                          className="p-1 text-slate-500 hover:text-rose-400 transition-colors rounded hover:bg-slate-900/40"
+                                          title="Delete Payroll Record"
+                                        >
+                                          <Trash2 size={12} />
+                                        </button>
+                                      </>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-500 italic flex items-center gap-1">
+                                        <Lock size={10} /> View Only
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        {payrollRecords.length === 0 && (
+                          <tr>
+                            <td colSpan={9} className="py-8 text-center text-slate-500 font-mono text-xs">
+                              No payroll records found. Click "Create Payroll Entry" to disburse salary.
+                            </td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </GlassCard>
+              </div>
+            )}
+
+            {/* ── PAYMENT SETTINGS SUB-TAB ── */}
+            {feesSubTab === 'payment-settings' && (
+              <div className="space-y-5 animate-fade-in">
+                {paySettingsLoading ? (
+                  <div className="flex items-center justify-center py-16">
+                    <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                ) : (
+                  <>
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                      <div>
+                        <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                          <Banknote className="text-violet-400" size={18} />
+                          School Payment Gateway Settings
+                        </h3>
+                        <p className="text-[11px] text-slate-500 mt-0.5">Configure how parents can pay fees — QR code, bank transfer, and visibility controls.</p>
+                      </div>
+                      {paySettingsMsg && (
+                        <div className={`text-xs font-semibold px-3 py-1.5 rounded-lg ${
+                          paySettingsMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                        }`}>
+                          {paySettingsMsg.text}
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                      {/* Left: QR Code Panel */}
+                      <GlassCard className="p-5 space-y-4">
+                        <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                          <QrCode className="text-violet-400" size={15} />
+                          QR Code Payment
+                          <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            psQrEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-500'
+                          }`}>{psQrEnabled ? 'Enabled' : 'Disabled'}</span>
+                        </h4>
+
+                        {/* QR Upload Area */}
+                        <div className="relative">
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">QR Code Image</label>
+                          <div
+                            className="w-full h-40 rounded-xl border-2 border-dashed border-slate-700 hover:border-violet-500/50 transition-colors flex flex-col items-center justify-center cursor-pointer bg-slate-900/50 overflow-hidden"
+                            onClick={() => document.getElementById('ps-qr-upload')?.click()}
+                          >
+                            {psQrPreview ? (
+                              <img src={psQrPreview} alt="QR Code" className="h-36 w-36 object-contain rounded-lg" />
+                            ) : (
+                              <div className="text-center space-y-1">
+                                <ScanLine className="mx-auto text-slate-600" size={28} />
+                                <p className="text-[11px] text-slate-500">Click to upload QR image</p>
+                                <p className="text-[10px] text-slate-600">PNG, JPG up to 2MB</p>
+                              </div>
+                            )}
+                          </div>
+                          <input
+                            id="ps-qr-upload"
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            onChange={(e) => {
+                              const file = e.target.files?.[0];
+                              if (file) {
+                                setPsQrFile(file);
+                                const reader = new FileReader();
+                                reader.onload = (ev) => setPsQrPreview(ev.target?.result as string);
+                                reader.readAsDataURL(file);
+                              }
+                            }}
+                          />
+                        </div>
+
+                        {/* UPI ID */}
+                        <div>
+                          <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">UPI ID</label>
+                          <input
+                            type="text"
+                            value={psUpiId}
+                            onChange={(e) => setPsUpiId(e.target.value)}
+                            placeholder="e.g. schoolname@oksbi"
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-violet-500 transition-colors"
+                          />
+                        </div>
+
+                        {/* Toggle Controls */}
+                        <div className="space-y-2 pt-1">
+                          {([
+                            { label: 'Enable QR Payments', state: psQrEnabled, set: setPsQrEnabled },
+                            { label: 'Show QR Code to Parents', state: psShowQrToParents, set: setPsShowQrToParents },
+                          ] as { label: string; state: boolean; set: (v: boolean) => void }[]).map(item => (
+                            <div key={item.label} className="flex items-center justify-between">
+                              <span className="text-xs text-slate-300">{item.label}</span>
+                              <button
+                                onClick={() => item.set(!item.state)}
+                                className={`flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg transition-all ${
+                                  item.state ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-500 bg-slate-800'
+                                }`}
+                              >
+                                {item.state ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
+                                {item.state ? 'ON' : 'OFF'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </GlassCard>
+
+                      {/* Right: Bank Transfer Panel */}
+                      <GlassCard className="p-5 space-y-4">
+                        <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                          <Banknote className="text-sky-400" size={15} />
+                          Bank Transfer Details
+                          <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                            psBankEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-500'
+                          }`}>{psBankEnabled ? 'Enabled' : 'Disabled'}</span>
+                        </h4>
+
+                        <div className="grid grid-cols-1 gap-3">
+                          {([
+                            { label: 'Account Holder Name', val: psAccHolder, set: setPsAccHolder, placeholder: 'School Trust Name' },
+                            { label: 'Bank Name', val: psBankName, set: setPsBankName, placeholder: 'e.g. State Bank of India' },
+                            { label: 'Account Number', val: psAccNumber, set: setPsAccNumber, placeholder: '•••• •••• ••••' },
+                            { label: 'IFSC Code', val: psIfsc, set: setPsIfsc, placeholder: 'e.g. SBIN0001234' },
+                            { label: 'Branch Name', val: psBranch, set: setPsBranch, placeholder: 'e.g. Main Branch' },
+                            { label: 'SWIFT Code (optional)', val: psSwift, set: setPsSwift, placeholder: 'For international transfers' },
+                          ] as { label: string; val: string; set: (v: string) => void; placeholder: string }[]).map(f => (
+                            <div key={f.label}>
+                              <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">{f.label}</label>
+                              <input
+                                type="text"
+                                value={f.val}
+                                onChange={(e) => f.set(e.target.value)}
+                                placeholder={f.placeholder}
+                                className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-sky-500 transition-colors"
+                              />
+                            </div>
+                          ))}
+                        </div>
+
+                        {/* Toggle Controls */}
+                        <div className="space-y-2 pt-1">
+                          {([
+                            { label: 'Enable Bank Transfers', state: psBankEnabled, set: setPsBankEnabled },
+                            { label: 'Show Bank Details to Parents', state: psShowBankToParents, set: setPsShowBankToParents },
+                            { label: 'Require UTR/Screenshot Upload', state: psUtrUpload, set: setPsUtrUpload },
+                            { label: 'Auto-Remind Unpaid Students', state: psAutoRemind, set: setPsAutoRemind },
+                          ] as { label: string; state: boolean; set: (v: boolean) => void }[]).map(item => (
+                            <div key={item.label} className="flex items-center justify-between">
+                              <span className="text-xs text-slate-300">{item.label}</span>
+                              <button
+                                onClick={() => item.set(!item.state)}
+                                className={`flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg transition-all ${
+                                  item.state ? 'text-emerald-400 bg-emerald-500/10' : 'text-slate-500 bg-slate-800'
+                                }`}
+                              >
+                                {item.state ? <ToggleRight size={15} /> : <ToggleLeft size={15} />}
+                                {item.state ? 'ON' : 'OFF'}
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </GlassCard>
+                    </div>
+
+                    {/* Payment Instructions */}
+                    <GlassCard className="p-5 space-y-2">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                        <Info size={12} className="text-slate-500" /> Payment Instructions for Parents
+                      </label>
+                      <textarea
+                        rows={3}
+                        value={psInstructions}
+                        onChange={(e) => setPsInstructions(e.target.value)}
+                        placeholder="e.g. Please make payment to the account above and upload your payment receipt. Include your ward's roll number in the description."
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-violet-500 resize-none transition-colors"
+                      />
+                    </GlassCard>
+
+                    {/* Save Button */}
+                    <div className="flex justify-end">
+                      <button
+                        disabled={paySettingsSaving}
+                        onClick={async () => {
+                          setPaySettingsSaving(true);
+                          setPaySettingsMsg(null);
+                          try {
+                            const saved = await mockApi.saveSchoolPaymentSettings(
+                              adminId || '',
+                              session?.user.schoolId || '',
+                              {
+                                accountHolderName: psAccHolder,
+                                bankName: psBankName,
+                                accountNumber: psAccNumber,
+                                ifscCode: psIfsc,
+                                branchName: psBranch,
+                                swiftCode: psSwift,
+                                upiId: psUpiId,
+                                paymentInstructions: psInstructions,
+                                qrPaymentEnabled: psQrEnabled,
+                                bankTransferEnabled: psBankEnabled,
+                                showQrToParents: psShowQrToParents,
+                                showBankToParents: psShowBankToParents,
+                                enableUtrUpload: psUtrUpload,
+                                autoRemindUnpaid: psAutoRemind,
+                              },
+                              psQrFile
+                            );
+                            setSchoolPaySettings(saved);
+                            setPsQrFile(null);
+                            setPaySettingsMsg({ type: 'success', text: '✓ Payment settings saved successfully' });
+                            setTimeout(() => setPaySettingsMsg(null), 4000);
+                          } catch (err: any) {
+                            setPaySettingsMsg({ type: 'error', text: err?.message || 'Failed to save settings' });
+                          }
+                          setPaySettingsSaving(false);
+                        }}
+                        className="glass-btn-primary flex items-center gap-2 text-xs"
+                      >
+                        {paySettingsSaving ? (
+                          <><div className="w-3.5 h-3.5 border border-white/60 border-t-transparent rounded-full animate-spin" /> Saving...</>
+                        ) : (
+                          <><ShieldCheck size={14} /> Save Payment Settings</>
+                        )}
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            )}
+
+            {/* ── VERIFY PAYMENTS SUB-TAB ── */}
+            {feesSubTab === 'verify-payments' && (
+              <div className="space-y-4 animate-fade-in">
+                {/* Header */}
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                      <ShieldCheck className="text-amber-400" size={18} />
+                      Fee Payment Verification Queue
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Review parent-submitted payment proofs. Approve or reject with a reason.</p>
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" size={13} />
+                    <input
+                      type="text"
+                      placeholder="Search by student / UTR..."
+                      value={verifySearch}
+                      onChange={e => setVerifySearch(e.target.value)}
+                      className="pl-8 pr-3 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-amber-500 w-52 transition-colors"
+                    />
+                  </div>
+                </div>
+
+                {/* Stats row */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Pending Review', count: (feePayments || []).filter(p => p.status === 'PENDING' && p.paymentScreenshotUrl).length, color: 'amber' },
+                    { label: 'Approved', count: (feePayments || []).filter(p => p.status === 'PAID').length, color: 'emerald' },
+                    { label: 'Rejected', count: (feePayments || []).filter(p => p.status === 'REJECTED').length, color: 'rose' },
+                  ].map(stat => (
+                    <GlassCard key={stat.label} className={`p-3 text-center border-${stat.color}-500/10`}>
+                      <p className={`text-xl font-extrabold text-${stat.color}-400`}>{stat.count}</p>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{stat.label}</p>
+                    </GlassCard>
+                  ))}
+                </div>
+
+                {/* Payment proof cards */}
+                {(() => {
+                  const pendingProofs = (feePayments || [])
+                    .filter(p => p.status === 'PENDING' && p.paymentScreenshotUrl)
+                    .filter(p => {
+                      if (!verifySearch) return true;
+                      const student = students.find(s => s.id === p.studentId);
+                      const name = (student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() : '').toLowerCase();
+                      const utr = (p.utrNumber || p.transactionId || '').toLowerCase();
+                      return name.includes(verifySearch.toLowerCase()) || utr.includes(verifySearch.toLowerCase());
+                    });
+
+                  if (pendingProofs.length === 0) {
+                    return (
+                      <GlassCard className="p-12 text-center">
+                        <ShieldCheck className="mx-auto text-emerald-400/40 mb-3" size={40} />
+                        <p className="text-slate-400 font-semibold text-sm">No pending payment proofs</p>
+                        <p className="text-slate-600 text-xs mt-1">All submitted payments have been reviewed</p>
+                      </GlassCard>
+                    );
+                  }
+
+                  return (
+                    <div className="space-y-3">
+                      {pendingProofs.map(payment => {
+                        const student = students.find(s => s.id === payment.studentId);
+                        const structure = feeStructures.find(fs => fs.id === payment.feeStructureId);
+                        const studentClass = classes.find(c => c.id === student?.classId);
+                        const isActing = verifyActionId === payment.id;
+                        return (
+                          <GlassCard key={payment.id} className="p-4 border-amber-500/10">
+                            <div className="flex flex-col sm:flex-row gap-4">
+                              {/* Screenshot Thumbnail */}
+                              <div className="flex-shrink-0">
+                                <a href={payment.paymentScreenshotUrl} target="_blank" rel="noopener noreferrer">
+                                  <div className="w-24 h-24 rounded-xl overflow-hidden border border-slate-700 bg-slate-900 flex items-center justify-center hover:border-amber-500/50 transition-colors">
+                                    <img
+                                      src={payment.paymentScreenshotUrl}
+                                      alt="Payment Proof"
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                    />
+                                    <ExternalLink className="text-slate-600" size={18} />
+                                  </div>
+                                </a>
+                                <p className="text-[9px] text-slate-600 text-center mt-1">View proof</p>
+                              </div>
+
+                              {/* Details */}
+                              <div className="flex-1 space-y-2 min-w-0">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <p className="text-sm font-bold text-slate-100">{student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() || 'Unknown Student' : 'Unknown Student'}</p>
+                                    <p className="text-[11px] text-slate-500">{studentClass?.name || 'No class'} · {student?.rollNumber || '—'}</p>
+                                  </div>
+                                  <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">
+                                    PENDING REVIEW
+                                  </span>
+                                </div>
+
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                                  <div>
+                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Fee Type</p>
+                                    <p className="text-slate-200">{structure?.description || '—'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Amount</p>
+                                    <p className="text-emerald-400 font-bold">{overview?.currencySymbol || '₹'}{payment.amountPaid.toLocaleString()}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Method</p>
+                                    <p className="text-slate-200">{payment.paymentMethod || '—'}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">UTR / Ref</p>
+                                    <p className="text-slate-200 font-mono text-[10px]">{payment.utrNumber || payment.transactionId || '—'}</p>
+                                  </div>
+                                </div>
+
+                                <p className="text-[10px] text-slate-600">
+                                  Submitted: {payment.createdAt ? new Date(payment.createdAt).toLocaleString() : '—'}
+                                </p>
+
+                                {/* Action Buttons */}
+                                <div className="flex gap-2 pt-1">
+                                  <button
+                                    disabled={isActing}
+                                    onClick={async () => {
+                                      setVerifyActionId(payment.id);
+                                      try {
+                                        await mockApi.verifyFeePayment(adminId || '', payment.id, 'PAID');
+                                        // Refresh payments list
+                                        const updated = await mockApi.adminGetFeePayments();
+                                        setFeePayments(updated);
+                                      } catch (e: any) {
+                                        alert(e?.message || 'Failed to approve payment');
+                                      }
+                                      setVerifyActionId(null);
+                                    }}
+                                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                                  >
+                                    {isActing ? <div className="w-3 h-3 border border-emerald-400/60 border-t-transparent rounded-full animate-spin" /> : <CheckCircle size={13} />}
+                                    Approve
+                                  </button>
+                                  <button
+                                    disabled={isActing}
+                                    onClick={() => {
+                                      setRejectTargetId(payment.id);
+                                      setRejectReason('');
+                                      setShowRejectModal(true);
+                                    }}
+                                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-all disabled:opacity-50"
+                                  >
+                                    <Ban size={13} /> Reject
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </GlassCard>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {/* Recently processed (last 5 PAID/REJECTED with screenshot) */}
+                {(feePayments || []).filter(p => (p.status === 'PAID' || p.status === 'REJECTED') && p.paymentScreenshotUrl).length > 0 && (
+                  <GlassCard className="p-4 space-y-3">
+                    <h4 className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+                      <Clock size={12} /> Recently Processed
+                    </h4>
+                    <div className="space-y-2">
+                      {(feePayments || [])
+                        .filter(p => (p.status === 'PAID' || p.status === 'REJECTED') && p.paymentScreenshotUrl)
+                        .slice(-5).reverse()
+                        .map(p => {
+                          const student = students.find(s => s.id === p.studentId);
+                          return (
+                            <div key={p.id} className="flex items-center gap-3 text-xs">
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                                p.status === 'PAID' ? 'bg-emerald-400' : 'bg-rose-400'
+                              }`} />
+                              <span className="text-slate-300 font-semibold">{student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() || '—' : '—'}</span>
+                              <span className="text-slate-500">{overview?.currencySymbol || '₹'}{p.amountPaid.toLocaleString()}</span>
+                              <span className={`ml-auto font-bold text-[10px] ${
+                                p.status === 'PAID' ? 'text-emerald-400' : 'text-rose-400'
+                              }`}>{p.status}</span>
+                              {p.rejectionReason && (
+                                <span className="text-rose-400/70 text-[10px] italic truncate max-w-32">{p.rejectionReason}</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </GlassCard>
+                )}
+              </div>
+            )}
           </div>
         </PremiumLock>
+      )}
+
+      {/* ── REJECT PAYMENT MODAL ── */}
+      {showRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-sm space-y-4">
+            <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+              <h4 className="font-bold text-slate-100 text-sm flex items-center gap-1.5">
+                <Ban className="text-rose-400" size={15} />
+                Reject Payment Proof
+              </h4>
+              <button onClick={() => setShowRejectModal(false)} className="text-xs text-slate-400 hover:text-slate-200">Close</button>
+            </div>
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">Please provide a reason for rejecting this payment. The parent will be notified.</p>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Rejection Reason</label>
+                <textarea
+                  rows={3}
+                  value={rejectReason}
+                  onChange={(e) => setRejectReason(e.target.value)}
+                  placeholder="e.g. UTR number does not match, amount mismatch, blurry screenshot..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-rose-500 resize-none"
+                />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1 border-t border-slate-850">
+              <button onClick={() => setShowRejectModal(false)} className="glass-btn-secondary text-xs">Cancel</button>
+              <button
+                disabled={!rejectReason.trim() || verifyActionId !== null}
+                onClick={async () => {
+                  setVerifyActionId(rejectTargetId);
+                  try {
+                    await mockApi.verifyFeePayment(adminId || '', rejectTargetId, 'REJECTED', rejectReason.trim());
+                    const updated = await mockApi.adminGetFeePayments();
+                    setFeePayments(updated);
+                    setShowRejectModal(false);
+                    setRejectTargetId('');
+                    setRejectReason('');
+                  } catch (e: any) {
+                    alert(e?.message || 'Failed to reject payment');
+                  }
+                  setVerifyActionId(null);
+                }}
+                className="glass-btn-danger text-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {verifyActionId ? <div className="w-3 h-3 border border-white/60 border-t-transparent rounded-full animate-spin" /> : <Ban size={13} />}
+                Confirm Rejection
+              </button>
+            </div>
+          </GlassCard>
+        </div>
       )}
 
       {/* Create Invoicing Billing Structure Modal */}
@@ -6153,6 +7482,246 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 <button type="submit" className="glass-btn-primary text-xs">Register Faculty</button>
               </div>
             </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Create Payroll Entry Modal */}
+      {showCreatePayrollModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-lg space-y-4 max-h-[90vh] overflow-y-auto p-5">
+            <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+              <h4 className="font-bold text-slate-100 text-sm">Create Payroll Record</h4>
+              <button onClick={() => setShowCreatePayrollModal(false)} className="text-xs text-slate-400 hover:text-slate-200">Close</button>
+            </div>
+
+            <form onSubmit={handleCreatePayroll} className="space-y-4">
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Employee Type</label>
+                  <select
+                    value={payrollEmpType}
+                    onChange={(e) => {
+                      setPayrollEmpType(e.target.value as any);
+                      setPayrollSelectedEmpId('');
+                    }}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+                    required
+                  >
+                    <option value="TEACHER">Teacher</option>
+                    <option value="STAFF">Administrative Staff</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Payout Month</label>
+                  <input
+                    type="month"
+                    value={payrollPayoutMonth}
+                    onChange={(e) => setPayrollPayoutMonth(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Select Employee</label>
+                <select
+                  value={payrollSelectedEmpId}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setPayrollSelectedEmpId(val);
+                    if (val !== 'custom') {
+                      if (payrollEmpType === 'TEACHER') {
+                        const t = teachers.find(x => x.id === val);
+                        setPayrollBaseSalary('3000');
+                        setPayrollCustomName('');
+                      } else {
+                        const o = operators.find(x => x.id === val);
+                        setPayrollBaseSalary('2500');
+                        setPayrollCustomName('');
+                      }
+                    }
+                  }}
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+                  required
+                >
+                  <option value="" disabled>-- Choose Employee --</option>
+                  {payrollEmpType === 'TEACHER' ? (
+                    teachers.map(t => (
+                      <option key={t.id} value={t.id}>
+                        {t.userDetails?.firstName} {t.userDetails?.lastName} (ID: {t.employeeId || 'N/A'})
+                      </option>
+                    ))
+                  ) : (
+                    operators.map(o => (
+                      <option key={o.id} value={o.id}>
+                        {o.firstName} {o.lastName} ({o.role} | ID: {o.employeeId || 'N/A'})
+                      </option>
+                    ))
+                  )}
+                  <option value="custom">-- Custom Staff (Not in registry) --</option>
+                </select>
+              </div>
+
+              {payrollSelectedEmpId === 'custom' && (
+                <div className="p-3 bg-slate-950/20 border border-slate-850 rounded-xl space-y-3">
+                  <p className="text-[9px] font-bold uppercase tracking-wider text-brand-400">Custom Staff Details</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase text-slate-500">Full Name</label>
+                      <input
+                        type="text"
+                        placeholder="John Doe"
+                        value={payrollCustomName}
+                        onChange={(e) => setPayrollCustomName(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+                        required
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase text-slate-500">Role / Title</label>
+                      <input
+                        type="text"
+                        placeholder="Accountant, Security, Peon, etc."
+                        value={payrollCustomRole}
+                        onChange={(e) => setPayrollCustomRole(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+                        required
+                      />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase text-slate-500">Employee ID</label>
+                      <input
+                        type="text"
+                        placeholder="EMPXXXX"
+                        value={payrollCustomEmpId}
+                        onChange={(e) => setPayrollCustomEmpId(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+                      />
+                    </div>
+                    <div className="space-y-1">
+                      <label className="text-[9px] font-bold uppercase text-slate-500">Phone</label>
+                      <input
+                        type="text"
+                        placeholder="+1 555-..."
+                        value={payrollCustomPhone}
+                        onChange={(e) => setPayrollCustomPhone(e.target.value)}
+                        className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+                      />
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              <div className="grid grid-cols-3 gap-3">
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Base Salary ($)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={payrollBaseSalary}
+                    onChange={(e) => setPayrollBaseSalary(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Allowances ($)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={payrollAllowances}
+                    onChange={(e) => setPayrollAllowances(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+                    required
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Deductions ($)</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={payrollDeductions}
+                    onChange={(e) => setPayrollDeductions(e.target.value)}
+                    className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="p-3 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between text-xs">
+                <span className="font-semibold text-slate-300">Net Calculated Salary:</span>
+                <span className="font-bold font-mono text-brand-400 text-sm">
+                  ${( (Number(payrollBaseSalary) || 0) + (Number(payrollAllowances) || 0) - (Number(payrollDeductions) || 0) ).toFixed(2)}
+                </span>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Notes / Remarks</label>
+                <textarea
+                  placeholder="Monthly basic pay with performance adjustments..."
+                  value={payrollNotes}
+                  onChange={(e) => setPayrollNotes(e.target.value)}
+                  className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200 h-16 resize-none"
+                />
+              </div>
+
+              <button
+                type="submit"
+                disabled={isSubmittingPayroll}
+                className="w-full py-2 bg-brand-600 hover:bg-brand-500 disabled:bg-brand-600/50 text-white rounded-lg text-xs font-bold transition-all"
+              >
+                {isSubmittingPayroll ? 'Creating entry...' : 'Create Payroll Record'}
+              </button>
+            </form>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Disburse Notes Modal */}
+      {showPayrollDisburseModal && selectedPayrollRecord && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-md space-y-4 p-5">
+            <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+              <h4 className="font-bold text-slate-100 text-sm">Confirm Disbursement</h4>
+              <button onClick={() => setShowPayrollDisburseModal(false)} className="text-xs text-slate-400 hover:text-slate-200">Close</button>
+            </div>
+
+            <div className="space-y-2 text-xs">
+              <p className="text-slate-300">
+                You are about to disburse salary to <span className="font-bold text-slate-100">{selectedPayrollRecord.employeeName}</span> for month <span className="font-bold text-slate-100">{selectedPayrollRecord.payoutMonth}</span>.
+              </p>
+              <div className="p-3 bg-slate-900/60 border border-slate-850 rounded-xl flex justify-between font-mono">
+                <span className="text-slate-400">Net Amount Paid:</span>
+                <span className="font-bold text-emerald-400">${selectedPayrollRecord.netSalary.toFixed(2)}</span>
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500 font-mono">Disbursement Notes</label>
+              <input
+                type="text"
+                value={payrollDisburseNotes}
+                onChange={(e) => setPayrollDisburseNotes(e.target.value)}
+                className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none text-slate-200"
+              />
+            </div>
+
+            <button
+              onClick={() => {
+                handleUpdatePayrollStatus(selectedPayrollRecord.id, 'PAID', payrollDisburseNotes);
+                setShowPayrollDisburseModal(false);
+              }}
+              className="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-bold transition-all"
+            >
+              Disburse Salary
+            </button>
           </GlassCard>
         </div>
       )}
@@ -8520,9 +10089,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                       <tbody className="divide-y divide-slate-850/40 text-slate-350">
                         {driverSalaryPayouts.map((dp: any) => {
                           const driver = driversList.find((d: any) => d.id === dp.driverId);
+                          const displayName = driver
+                            ? (driver.status === 'INACTIVE' ? `Former Driver - ${driver.name}` : driver.name)
+                            : (dp.driverName ? `Former Driver - ${dp.driverName}` : 'Unknown Driver');
                           return (
                             <tr key={dp.id} className="hover:bg-slate-900/10">
-                              <td className="py-2 px-3 font-semibold text-slate-200">{driver ? driver.name : dp.driverId?.slice(0, 8) + '…'}</td>
+                              <td className="py-2 px-3 font-semibold text-slate-200">{displayName}</td>
                               <td className="py-2 px-3 text-slate-400">{dp.month || dp.payoutMonth || '-'}</td>
                               <td className="py-2 px-3 font-mono text-brand-400 font-bold">${Number(dp.amount || 0).toFixed(2)}</td>
                               <td className="py-2 px-3">

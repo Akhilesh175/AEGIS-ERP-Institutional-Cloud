@@ -9,7 +9,7 @@ import { OfflineSyncManager } from '../components/OfflineSyncManager';
 import { 
   Activity, Building, Settings, ShieldAlert, Cpu, 
   Layers, Key, PlusCircle, Search, RefreshCw, Eye, EyeOff,
-  Database, Terminal, HardDrive, Play, CheckCircle2, Clock, Sliders, Shield, AlertTriangle, CheckCircle, XCircle, Trash2, CheckSquare, Mail, Send, Megaphone, X
+  Database, Terminal, HardDrive, Play, CheckCircle2, Clock, Sliders, Shield, AlertTriangle, CheckCircle, XCircle, Trash2, CheckSquare, Mail, Send, Megaphone, X, CreditCard, Lock
 } from 'lucide-react';
 
 export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
@@ -1989,6 +1989,134 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
           </button>
         </div>
       )}
+      {/* ── SaaS BILLING GATEWAY TAB ── */}
+      {activeTab === 'saas-billing' && (
+        <div className="space-y-6 animate-fade-in">
+          {/* Header */}
+          <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+            <div className="flex items-center gap-3">
+              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
+                <CreditCard className="text-brand-400" size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-slate-100 text-sm">SaaS Billing & Payment Gateway</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5 font-sans">Platform-level billing oversight. School payment configurations are masked. Sensitive bank details are AES-256 encrypted and role-restricted.</p>
+              </div>
+            </div>
+          </GlassCard>
+
+          {/* School Payment Settings Overview (read-only, masked) */}
+          <GlassCard className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                <Shield className="text-violet-400" size={15} />
+                Tenant Payment Configurations (Masked View)
+              </h4>
+              <span className="text-[10px] font-bold text-slate-500 bg-slate-900 border border-slate-800 px-2 py-0.5 rounded-full flex items-center gap-1">
+                <Lock size={9} /> Read-Only
+              </span>
+            </div>
+            <p className="text-[11px] text-slate-500">
+              Bank account numbers and UPI IDs are masked below for security. Only a school's Finance Admin can view or modify their institution's payment settings.
+            </p>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-850">
+                    {['Institution', 'UPI ID', 'Bank Name', 'Account Number', 'IFSC', 'QR Enabled', 'Bank Transfer'].map(h => (
+                      <th key={h} className="text-left py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-900">
+                  {(stats?.schoolsList || mockDb.schools).map((sch: any) => {
+                    const paySettings = mockDb.schoolPaymentSettings?.find((s: any) => s.schoolId === sch.id);
+                    return (
+                      <tr key={sch.id} className="hover:bg-slate-900/20 transition-colors">
+                        <td className="py-2.5 px-2 font-semibold text-slate-200">{sch.name}</td>
+                        <td className="py-2.5 px-2 font-mono text-slate-400 text-[10px]">
+                          {paySettings?.upiId ? paySettings.upiId.slice(0, 3) + '••••••' + paySettings.upiId.slice(-3) : <span className="text-slate-600 italic">Not set</span>}
+                        </td>
+                        <td className="py-2.5 px-2 text-slate-300">{paySettings?.bankName || <span className="text-slate-600 italic">Not set</span>}</td>
+                        <td className="py-2.5 px-2 font-mono text-[10px] text-slate-400">
+                          {paySettings?.accountNumber ? '•••• •••• ' + String(paySettings.accountNumber).slice(-4) : <span className="text-slate-600 italic">Not set</span>}
+                        </td>
+                        <td className="py-2.5 px-2 font-mono text-[10px] text-slate-400">{paySettings?.ifscCode || <span className="text-slate-600 italic">—</span>}</td>
+                        <td className="py-2.5 px-2">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${paySettings?.qrPaymentEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-500'}`}>
+                            {paySettings?.qrPaymentEnabled ? 'ON' : 'OFF'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-2">
+                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${paySettings?.bankTransferEnabled ? 'bg-sky-500/10 text-sky-400 border border-sky-500/20' : 'bg-slate-800 text-slate-500'}`}>
+                            {paySettings?.bankTransferEnabled ? 'ON' : 'OFF'}
+                          </span>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </GlassCard>
+
+          {/* SaaS Subscription Gateway Placeholder */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+            <GlassCard className="p-5 space-y-4 border border-amber-500/10">
+              <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                <CreditCard className="text-amber-400" size={15} />
+                SaaS Subscription Gateway
+              </h4>
+              <div className="p-4 rounded-xl bg-amber-500/5 border border-amber-500/15 space-y-2">
+                <p className="text-xs font-bold text-amber-300">🚧 Integration Pending</p>
+                <p className="text-[11px] text-slate-500 leading-relaxed">
+                  Stripe / Razorpay SaaS billing integration is planned for the next major release.
+                  Subscription management will be automated via webhook-driven plan lifecycle events,
+                  including dunning, invoice generation, and auto-renewal handling.
+                </p>
+                <div className="grid grid-cols-2 gap-2 pt-1">
+                  {['Stripe Billing API', 'Razorpay Subscriptions', 'Invoice PDF Generator', 'Auto Dunning Engine'].map(item => (
+                    <div key={item} className="flex items-center gap-1.5 text-[10px] font-semibold text-slate-500">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-500/40 flex-shrink-0" />
+                      {item}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <button disabled className="w-full glass-btn-secondary text-xs opacity-40 cursor-not-allowed flex items-center justify-center gap-1.5">
+                <CreditCard size={12} /> Configure Payment Gateway (Coming Soon)
+              </button>
+            </GlassCard>
+
+            <GlassCard className="p-5 space-y-4 border border-violet-500/10">
+              <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                <Shield className="text-violet-400" size={15} />
+                Faculty Banking Data Governance
+              </h4>
+              <div className="space-y-3">
+                {[
+                  { label: 'Encryption Standard', value: 'AES-256-CBC at rest', color: 'emerald' },
+                  { label: 'Visible to Super Admin', value: 'Never — zero-knowledge', color: 'rose' },
+                  { label: 'Accessible to Finance Admin', value: 'Decrypted on disbursement only', color: 'amber' },
+                  { label: 'Audit Trail', value: 'All access logged in audit_logs', color: 'sky' },
+                ].map(item => (
+                  <div key={item.label} className="flex items-center justify-between py-1.5 border-b border-slate-900 last:border-0">
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">{item.label}</span>
+                    <span className={`text-[11px] font-semibold text-${item.color}-400`}>{item.value}</span>
+                  </div>
+                ))}
+              </div>
+              <div className="p-3 rounded-xl bg-violet-500/5 border border-violet-500/15">
+                <p className="text-[10px] text-slate-500 leading-relaxed">
+                  Faculty bank account numbers are encrypted before persistence. Super Admin has no mechanism to decrypt them — decryption is gated behind <strong className="text-violet-400">FINANCE_ADMIN</strong> role during payroll disbursement only.
+                </p>
+              </div>
+            </GlassCard>
+          </div>
+        </div>
+      )}
+
     </div>
 
   );

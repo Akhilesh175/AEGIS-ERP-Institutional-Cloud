@@ -27,7 +27,7 @@ const getTabsForRole = (role: string, planName: string): string[] => {
     case 'PARENT':
       return ['dashboard', 'notifications', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'transit', 'forums', 'hostel', 'support'];
     case 'TEACHER':
-      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics', 'support'];
+      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics', 'paymentsettings', 'support'];
     case 'SUPER_ADMIN':
       return ['dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'support'];
     default: // ADMIN or any SUB_ADMIN role

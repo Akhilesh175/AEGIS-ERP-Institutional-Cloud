@@ -4,9 +4,10 @@ import { mockDb } from '../services/mockDb';
 import { subscriptionPlans, isTabLocked } from '../services/subscriptionConfig';
 import { supabase } from '../lib/supabase';
 import { 
-  LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare, 
-  Users, Layers, BookMarked, DollarSign, Activity, Settings, Eye, UsersRound, ClipboardList, ShieldAlert, X,
-  Mail, Database, Key, Terminal, Home, FileText, HelpCircle, Bell
+  LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare,
+  Users, UsersRound, Layers, BookMarked, DollarSign, Activity, Settings, ShieldAlert,
+  Key, Eye, EyeOff, Database, Terminal, HardDrive, CheckCircle2, Clock, Shield, AlertTriangle,
+  Mail, X, CreditCard, HelpCircle, Bell, ClipboardList, FileText, Home
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -169,6 +170,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
           { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: lock('materials') },
           { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: lock('forums') },
+          { id: 'paymentsettings', label: 'Payment Settings', icon: DollarSign },
           { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
       }
@@ -273,6 +275,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'dashboard', label: 'SaaS Telemetry', icon: Activity, locked: !plan.features.advancedAnalytics },
           { id: 'tenants', label: 'School Registry', icon: Layers },
           { id: 'users', label: 'Global User Manager', icon: UsersRound },
+          { id: 'saas-billing', label: 'SaaS Billing Gateway', icon: CreditCard },
           { id: 'communications', label: 'Platform Broadcasts', icon: Mail },
           { id: 'audits', label: 'Global Audit Logs', icon: Settings, locked: !plan.features.auditLogs },
           { id: 'backups', label: 'Disaster Recovery Panel', icon: Database },

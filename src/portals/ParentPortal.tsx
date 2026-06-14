@@ -5,7 +5,7 @@ import { mockDb } from '../services/mockDb';
 import { Student, User, Quiz, QuizAttempt,
   Hostel, HostelBlock, HostelRoom, HostelBed, HostelWarden, HostelAdmission,
   HostelAttendance, HostelFee, HostelPayment, HostelLeaveRequest, HostelVisitor,
-  HostelComplaint, HostelMessMenu
+  HostelComplaint, HostelMessMenu, SchoolPaymentSettings
 } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { supabase } from '../lib/supabase';
@@ -76,6 +76,13 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   // States
   const [assignedStudents, setAssignedStudents] = useState<(Student & { userDetails: User; className: string })[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
+  const [schoolPaymentSettings, setSchoolPaymentSettings] = useState<SchoolPaymentSettings | null>(null);
+  const [selectedFee, setSelectedFee] = useState<any | null>(null);
+  const [showProofModal, setShowProofModal] = useState(false);
+  const [paymentMethod, setPaymentMethod] = useState('UPI');
+  const [utrNumber, setUtrNumber] = useState('');
+  const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
+  const [submittingProof, setSubmittingProof] = useState(false);
   
   // Compute plan directly from Zustand session (single source of truth), with mockDb fallback
   const studentObj = mockDb.students.find(s => s.id === selectedStudent);
@@ -205,8 +212,12 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
         const mat = await mockApi.getStudyMaterials(studentObj.schoolId, studentObj.classId).catch(() => []);
         // Deduplicate study materials by id
         setMaterials(Array.from(new Map(mat.map(m => [m.id, m])).values()));
+        
+        const sps = await mockApi.fetchSchoolPaymentSettings(studentObj.schoolId, session?.user?.role || 'PARENT').catch(() => null);
+        setSchoolPaymentSettings(sps);
       } else {
         setMaterials([]);
+        setSchoolPaymentSettings(null);
       }
       setMaterialsLoading(false);
 
@@ -1324,71 +1335,343 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                 requiredTier="Basic" 
                 featureName="Fee Management"
               >
-                <GlassCard className="space-y-6">
-                  <div className="border-b border-slate-850 pb-3">
-                    <h3 className="font-bold text-slate-100 flex items-center gap-2">
-                      <DollarSign className="text-brand-500" size={18} />
-                      Outstanding Fee Structure & Invoices
-                    </h3>
-                  </div>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {academicRecord.fees.map((f: any, idx: number) => (
-                      <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
-                        <div className="space-y-1">
-                          <span className={`text-[9.5px] font-bold tracking-wider px-2.5 py-0.5 rounded-full uppercase border ${
-                            f.status === 'PAID' 
-                              ? 'bg-green-500/10 border-green-500/15 text-green-400' 
-                              : f.status === 'PENDING' 
-                                ? 'bg-amber-500/10 border-amber-500/15 text-amber-400' 
-                                : 'bg-red-500/10 border-red-500/15 text-red-400'
-                          }`}>
-                            {f.status}
-                          </span>
-                          <h4 className="font-bold text-slate-200 text-sm mt-2">{f.description}</h4>
-                          <p className="text-xs text-slate-400">Total Bill Amount: {studentSchool?.currencySymbol || '$'}{f.amount.toFixed(2)}</p>
-                          <p className="text-[10px] text-slate-500">Bill Due: {new Date(f.dueDate).toLocaleDateString()}</p>
-                        </div>
-
-                        {f.status === 'PAID' && (
-                          <div className="text-[10px] text-slate-500 border-t border-slate-850 pt-2 flex justify-between items-center">
-                            <span>Receipt Download Ready</span>
-                            <button
-                              onClick={async () => {
-                                if (!studentSchool) return;
-                                const studentProfile = academicRecord?.studentProfile || {};
-                                await downloadReceiptPdf({
-                                  schoolId: studentSchool.id,
-                                  schoolName: studentSchool.name,
-                                  schoolAddress: studentSchool.address || '',
-                                  schoolPhone: studentSchool.phone || '',
-                                  schoolEmail: studentSchool.email || '',
-                                  logoUrl: studentSchool.logoUrl || '',
-                                  sealUrl: studentSchool.sealUrl || '',
-                                  currencySymbol: studentSchool.currencySymbol || '$',
-                                  studentName: studentProfile.fullName || 'Student',
-                                  studentId: selectedStudent,
-                                  admissionNumber: studentProfile.admissionNumber || '',
-                                  className: studentProfile.className || '',
-                                  sectionName: studentProfile.sectionName || '',
-                                  feeDescription: f.description,
-                                  amount: Number(f.amount),
-                                  paymentDate: f.paymentDate || new Date().toISOString(),
-                                  paymentMethod: f.paymentMethod || 'ONLINE',
-                                  transactionId: f.transactionId
-                                });
-                              }}
-                              className="px-2 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded flex items-center gap-1 font-semibold cursor-pointer active:scale-95 transition-all text-[9px]"
-                            >
-                              <Download size={10} />
-                              Download
-                            </button>
+                <div className="space-y-6">
+                  {/* School Payment Information */}
+                  {schoolPaymentSettings && (schoolPaymentSettings.showQrToParents || schoolPaymentSettings.showBankToParents) && (
+                    <GlassCard className="border border-brand-500/10">
+                      <div className="border-b border-slate-850 pb-3 mb-4">
+                        <h3 className="font-bold text-slate-100 flex items-center gap-2 text-sm">
+                          <Layers className="text-brand-500" size={16} />
+                          School Payment Information
+                        </h3>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Use the credentials below to transfer the fee amount, then submit proof of payment.</p>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
+                        {schoolPaymentSettings.showQrToParents && schoolPaymentSettings.qrCodeUrl && (
+                          <div className="flex flex-col items-center justify-center p-4 bg-slate-950/40 rounded-2xl border border-slate-850 text-center">
+                            <div className="w-32 h-32 bg-white p-2 rounded-xl flex items-center justify-center border border-slate-800">
+                              <img src={schoolPaymentSettings.qrCodeUrl} alt="UPI Payment QR" className="max-w-full max-h-full object-contain" />
+                            </div>
+                            <span className="text-[11px] font-bold text-slate-200 mt-3">Scan to Pay via UPI</span>
+                            {schoolPaymentSettings.upiId && (
+                              <div className="mt-1 flex items-center gap-1.5 bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-800">
+                                <span className="text-[10px] font-mono text-slate-300">{schoolPaymentSettings.upiId}</span>
+                                <button 
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(schoolPaymentSettings.upiId || '');
+                                    alert('UPI ID copied to clipboard!');
+                                  }}
+                                  className="text-brand-400 hover:text-brand-300 text-[9px] font-semibold cursor-pointer"
+                                >
+                                  Copy
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        )}
+                        
+                        {schoolPaymentSettings.showBankToParents && (
+                          <div className="md:col-span-2 space-y-3 p-4 bg-slate-950/20 rounded-2xl border border-slate-850/80">
+                            <h4 className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Direct Bank Transfer Details</h4>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
+                              <div>
+                                <span className="text-slate-500 text-[10px] block">Account Holder Name</span>
+                                <span className="text-slate-200 font-semibold">{schoolPaymentSettings.accountHolderName || 'N/A'}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-500 text-[10px] block">Bank Name</span>
+                                <span className="text-slate-200 font-semibold">{schoolPaymentSettings.bankName || 'N/A'}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-500 text-[10px] block">Account Number</span>
+                                <span className="text-slate-200 font-mono font-semibold">{schoolPaymentSettings.accountNumber || 'N/A'}</span>
+                              </div>
+                              <div>
+                                <span className="text-slate-500 text-[10px] block">IFSC Code</span>
+                                <span className="text-slate-200 font-mono font-semibold">{schoolPaymentSettings.ifscCode || 'N/A'}</span>
+                              </div>
+                              {schoolPaymentSettings.branchName && (
+                                <div>
+                                  <span className="text-slate-500 text-[10px] block">Branch Name</span>
+                                  <span className="text-slate-200">{schoolPaymentSettings.branchName}</span>
+                                </div>
+                              )}
+                              {schoolPaymentSettings.swiftCode && (
+                                <div>
+                                  <span className="text-slate-500 text-[10px] block">SWIFT Code</span>
+                                  <span className="text-slate-200 font-mono">{schoolPaymentSettings.swiftCode}</span>
+                                </div>
+                              )}
+                            </div>
                           </div>
                         )}
                       </div>
-                    ))}
-                  </div>
-                </GlassCard>
+
+                      {schoolPaymentSettings.paymentInstructions && (
+                        <div className="mt-4 p-3 bg-brand-500/5 border border-brand-500/10 rounded-xl text-[11px] text-slate-300 flex items-start gap-2">
+                          <AlertCircle size={14} className="text-brand-400 shrink-0 mt-0.5" />
+                          <div>
+                            <span className="font-bold text-brand-400">Payment Instructions: </span>
+                            {schoolPaymentSettings.paymentInstructions}
+                          </div>
+                        </div>
+                      )}
+                    </GlassCard>
+                  )}
+
+                  <GlassCard className="space-y-6">
+                    <div className="border-b border-slate-850 pb-3">
+                      <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                        <DollarSign className="text-brand-500" size={18} />
+                        Outstanding Fee Structure & Invoices
+                      </h3>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {academicRecord?.fees?.map((f: any, idx: number) => (
+                        <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                          <div className="space-y-1">
+                            <div className="flex justify-between items-start">
+                              <span className={`text-[9.5px] font-bold tracking-wider px-2.5 py-0.5 rounded-full uppercase border ${
+                                f.status === 'PAID' 
+                                  ? 'bg-green-500/10 border-green-500/15 text-green-400' 
+                                  : f.status === 'PENDING' 
+                                    ? 'bg-amber-500/10 border-amber-500/15 text-amber-400' 
+                                    : 'bg-red-500/10 border-red-500/15 text-red-400'
+                              }`}>
+                                {f.status}
+                              </span>
+                              {f.status === 'REJECTED' && (
+                                <span className="text-[9.5px] font-semibold text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10">
+                                  Verification Failed
+                                </span>
+                              )}
+                            </div>
+                            <h4 className="font-bold text-slate-200 text-sm mt-2">{f.description}</h4>
+                            <p className="text-xs text-slate-400">Total Bill Amount: {studentSchool?.currencySymbol || '$'}{f.amount.toFixed(2)}</p>
+                            <p className="text-[10px] text-slate-500">Bill Due: {new Date(f.dueDate).toLocaleDateString()}</p>
+                          </div>
+
+                          {f.status === 'PAID' ? (
+                            <div className="text-[10px] text-slate-500 border-t border-slate-850 pt-2 flex justify-between items-center">
+                              <span>Receipt Download Ready</span>
+                              <button
+                                onClick={async () => {
+                                  if (!studentSchool) return;
+                                  const studentProfile = academicRecord?.studentProfile || {};
+                                  await downloadReceiptPdf({
+                                    schoolId: studentSchool.id,
+                                    schoolName: studentSchool.name,
+                                    schoolAddress: studentSchool.address || '',
+                                    schoolPhone: studentSchool.phone || '',
+                                    schoolEmail: (studentSchool as any).email || '',
+                                    logoUrl: studentSchool.logoUrl || '',
+                                    sealUrl: studentSchool.sealUrl || '',
+                                    currencySymbol: studentSchool.currencySymbol || '$',
+                                    studentName: studentProfile.fullName || 'Student',
+                                    studentId: selectedStudent,
+                                    admissionNumber: studentProfile.admissionNumber || '',
+                                    className: studentProfile.className || '',
+                                    sectionName: studentProfile.sectionName || '',
+                                    feeDescription: f.description,
+                                    amount: Number(f.amount),
+                                    paymentDate: f.paymentDate || new Date().toISOString(),
+                                    paymentMethod: f.paymentMethod || 'ONLINE',
+                                    transactionId: f.transactionId || f.utrNumber
+                                  });
+                                }}
+                                className="px-2 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded flex items-center gap-1 font-semibold cursor-pointer active:scale-95 transition-all text-[9px]"
+                              >
+                                <Download size={10} />
+                                Download
+                              </button>
+                            </div>
+                          ) : (
+                            <div className="border-t border-slate-850 pt-3 flex flex-col gap-2">
+                              {f.status === 'REJECTED' && f.rejectionReason && (
+                                <div className="p-2 bg-red-500/5 border border-red-500/10 rounded-xl text-[10px] text-red-400 flex items-start gap-1">
+                                  <AlertCircle size={12} className="shrink-0 mt-0.5" />
+                                  <div>
+                                    <span className="font-bold">Reason: </span>
+                                    {f.rejectionReason}
+                                  </div>
+                                </div>
+                              )}
+                              
+                              <div className="flex justify-between items-center">
+                                <span className="text-[10px] text-slate-450 italic">
+                                  {f.status === 'PENDING' ? 'Awaiting verification' : 'Payment required'}
+                                </span>
+                                {f.status === 'PENDING' ? (
+                                  <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase">
+                                    Submitted
+                                  </span>
+                                ) : (
+                                  <button
+                                    onClick={() => {
+                                      setSelectedFee(f);
+                                      setShowProofModal(true);
+                                      setUtrNumber('');
+                                      setScreenshotFile(null);
+                                    }}
+                                    className="px-3 py-1 bg-brand-500 hover:bg-brand-600 text-white rounded-lg flex items-center gap-1 font-semibold cursor-pointer active:scale-95 transition-all text-xs"
+                                  >
+                                    <Paperclip size={12} />
+                                    {f.status === 'REJECTED' ? 'Resubmit Proof' : 'Submit Proof'}
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </GlassCard>
+                  
+                  {/* Submit Proof Modal */}
+                  {showProofModal && selectedFee && (
+                    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl animate-fade-in text-xs text-slate-300">
+                        <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                          <div>
+                            <h3 className="font-bold text-slate-100 text-base">Submit Payment Proof</h3>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{selectedFee.description}</p>
+                          </div>
+                          <button 
+                            onClick={() => {
+                              setShowProofModal(false);
+                              setSelectedFee(null);
+                            }}
+                            className="p-1 rounded-lg bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+
+                        <div className="space-y-4">
+                          <div className="p-3 bg-brand-500/5 border border-brand-500/10 rounded-xl flex justify-between items-center">
+                            <span className="text-xs text-slate-400">Total Payable:</span>
+                            <span className="text-sm font-bold text-brand-400">{studentSchool?.currencySymbol || '$'}{selectedFee.amount.toFixed(2)}</span>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Payment Method</label>
+                            <div className="grid grid-cols-2 gap-3">
+                              <button
+                                type="button"
+                                onClick={() => setPaymentMethod('UPI')}
+                                className={`py-2 px-3 rounded-xl border text-xs font-semibold text-center transition-all ${
+                                  paymentMethod === 'UPI'
+                                    ? 'bg-brand-500/10 border-brand-500 text-brand-400 font-bold'
+                                    : 'bg-slate-950/20 border-slate-800 text-slate-400 hover:border-slate-750'
+                                }`}
+                              >
+                                UPI / QR Code
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPaymentMethod('BANK_TRANSFER')}
+                                className={`py-2 px-3 rounded-xl border text-xs font-semibold text-center transition-all ${
+                                  paymentMethod === 'BANK_TRANSFER'
+                                    ? 'bg-brand-500/10 border-brand-500 text-brand-400 font-bold'
+                                    : 'bg-slate-950/20 border-slate-800 text-slate-400 hover:border-slate-750'
+                                }`}
+                              >
+                                Bank Transfer
+                              </button>
+                            </div>
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">
+                              UTR / Transaction Reference Number
+                            </label>
+                            <input
+                              type="text"
+                              placeholder={paymentMethod === 'UPI' ? 'Enter 12-digit UPI Ref No' : 'Enter Bank Transaction UTR'}
+                              value={utrNumber}
+                              onChange={(e) => setUtrNumber(e.target.value)}
+                              className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2 text-slate-200 text-xs focus:outline-none focus:border-brand-500 transition-colors"
+                            />
+                          </div>
+
+                          <div className="space-y-1">
+                            <label className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">
+                              Upload Payment Screenshot / Receipt
+                            </label>
+                            <div className="relative border border-dashed border-slate-800 hover:border-slate-700 bg-slate-950/20 rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 transition-colors cursor-pointer">
+                              <input
+                                type="file"
+                                accept="image/*,application/pdf"
+                                onChange={(e) => {
+                                  if (e.target.files && e.target.files[0]) {
+                                    setScreenshotFile(e.target.files[0]);
+                                  }
+                                }}
+                                className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                              />
+                              <Download size={20} className="text-slate-500" />
+                              <span className="text-xs text-slate-300 font-semibold text-center truncate max-w-full px-2">
+                                {screenshotFile ? screenshotFile.name : 'Choose file or drag here'}
+                              </span>
+                              <span className="text-[9px] text-slate-500">Max size 5MB (PNG, JPG, PDF)</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowProofModal(false);
+                              setSelectedFee(null);
+                            }}
+                            className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
+                          >
+                            Cancel
+                          </button>
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              if (!utrNumber.trim()) {
+                                alert('Please enter your transaction UTR/Reference number.');
+                                return;
+                              }
+                              if (!screenshotFile) {
+                                alert('Please upload a payment screenshot/receipt file.');
+                                return;
+                              }
+                              try {
+                                setSubmittingProof(true);
+                                await mockApi.submitFeePaymentProof(
+                                  parentId || '',
+                                  selectedStudent,
+                                  selectedFee.id,
+                                  paymentMethod,
+                                  utrNumber.trim(),
+                                  screenshotFile
+                                );
+                                alert('Payment proof submitted successfully! Sub-admin / Finance Admin will verify your proof shortly.');
+                                setShowProofModal(false);
+                                setSelectedFee(null);
+                                await loadAcademicRecord();
+                              } catch (err: any) {
+                                alert(err.message || 'Failed to submit payment proof.');
+                              } finally {
+                                setSubmittingProof(false);
+                              }
+                            }}
+                            disabled={submittingProof}
+                            className="px-4 py-2 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-800 text-white rounded-xl text-xs font-semibold cursor-pointer flex items-center gap-1.5"
+                          >
+                            {submittingProof ? 'Submitting...' : 'Submit Proof'}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </div>
               </PremiumLock>
             )}
 
