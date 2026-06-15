@@ -83,6 +83,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   const [utrNumber, setUtrNumber] = useState('');
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [submittingProof, setSubmittingProof] = useState(false);
+  const [payInstructTab, setPayInstructTab] = useState<'qr' | 'upi' | 'bank'>('qr');
   
   // Compute plan directly from Zustand session (single source of truth), with mockDb fallback
   const studentObj = mockDb.students.find(s => s.id === selectedStudent);
@@ -1336,203 +1337,508 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                 featureName="Fee Management"
               >
                 <div className="space-y-6">
-                  {/* School Payment Information */}
-                  {schoolPaymentSettings && (schoolPaymentSettings.showQrToParents || schoolPaymentSettings.showBankToParents) && (
-                    <GlassCard className="border border-brand-500/10">
-                      <div className="border-b border-slate-850 pb-3 mb-4">
-                        <h3 className="font-bold text-slate-100 flex items-center gap-2 text-sm">
-                          <Layers className="text-brand-500" size={16} />
-                          School Payment Information
-                        </h3>
-                        <p className="text-[10px] text-slate-400 mt-0.5">Use the credentials below to transfer the fee amount, then submit proof of payment.</p>
-                      </div>
-                      
-                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 items-start">
-                        {schoolPaymentSettings.showQrToParents && schoolPaymentSettings.qrCodeUrl && (
-                          <div className="flex flex-col items-center justify-center p-4 bg-slate-950/40 rounded-2xl border border-slate-850 text-center">
-                            <div className="w-32 h-32 bg-white p-2 rounded-xl flex items-center justify-center border border-slate-800">
-                              <img src={schoolPaymentSettings.qrCodeUrl} alt="UPI Payment QR" className="max-w-full max-h-full object-contain" />
-                            </div>
-                            <span className="text-[11px] font-bold text-slate-200 mt-3">Scan to Pay via UPI</span>
-                            {schoolPaymentSettings.upiId && (
-                              <div className="mt-1 flex items-center gap-1.5 bg-slate-900/60 px-2.5 py-1 rounded-lg border border-slate-800">
-                                <span className="text-[10px] font-mono text-slate-300">{schoolPaymentSettings.upiId}</span>
-                                <button 
-                                  onClick={() => {
-                                    navigator.clipboard.writeText(schoolPaymentSettings.upiId || '');
-                                    alert('UPI ID copied to clipboard!');
-                                  }}
-                                  className="text-brand-400 hover:text-brand-300 text-[9px] font-semibold cursor-pointer"
-                                >
-                                  Copy
-                                </button>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                        
-                        {schoolPaymentSettings.showBankToParents && (
-                          <div className="md:col-span-2 space-y-3 p-4 bg-slate-950/20 rounded-2xl border border-slate-850/80">
-                            <h4 className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">Direct Bank Transfer Details</h4>
-                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-xs">
-                              <div>
-                                <span className="text-slate-500 text-[10px] block">Account Holder Name</span>
-                                <span className="text-slate-200 font-semibold">{schoolPaymentSettings.accountHolderName || 'N/A'}</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-500 text-[10px] block">Bank Name</span>
-                                <span className="text-slate-200 font-semibold">{schoolPaymentSettings.bankName || 'N/A'}</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-500 text-[10px] block">Account Number</span>
-                                <span className="text-slate-200 font-mono font-semibold">{schoolPaymentSettings.accountNumber || 'N/A'}</span>
-                              </div>
-                              <div>
-                                <span className="text-slate-500 text-[10px] block">IFSC Code</span>
-                                <span className="text-slate-200 font-mono font-semibold">{schoolPaymentSettings.ifscCode || 'N/A'}</span>
-                              </div>
-                              {schoolPaymentSettings.branchName && (
-                                <div>
-                                  <span className="text-slate-500 text-[10px] block">Branch Name</span>
-                                  <span className="text-slate-200">{schoolPaymentSettings.branchName}</span>
-                                </div>
-                              )}
-                              {schoolPaymentSettings.swiftCode && (
-                                <div>
-                                  <span className="text-slate-500 text-[10px] block">SWIFT Code</span>
-                                  <span className="text-slate-200 font-mono">{schoolPaymentSettings.swiftCode}</span>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-                      </div>
-
-                      {schoolPaymentSettings.paymentInstructions && (
-                        <div className="mt-4 p-3 bg-brand-500/5 border border-brand-500/10 rounded-xl text-[11px] text-slate-300 flex items-start gap-2">
-                          <AlertCircle size={14} className="text-brand-400 shrink-0 mt-0.5" />
-                          <div>
-                            <span className="font-bold text-brand-400">Payment Instructions: </span>
-                            {schoolPaymentSettings.paymentInstructions}
-                          </div>
-                        </div>
-                      )}
-                    </GlassCard>
-                  )}
-
-                  <GlassCard className="space-y-6">
-                    <div className="border-b border-slate-850 pb-3">
-                      <h3 className="font-bold text-slate-100 flex items-center gap-2">
-                        <DollarSign className="text-brand-500" size={18} />
-                        Outstanding Fee Structure & Invoices
-                      </h3>
+                  {/* Greeting header */}
+                  <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                    <div>
+                      <h3 className="text-lg font-bold text-slate-100">Welcome back, {parentName}</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">Here's what's happening with your children today.</p>
                     </div>
+                  </div>
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                      {academicRecord?.fees?.map((f: any, idx: number) => (
-                        <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
-                          <div className="space-y-1">
-                            <div className="flex justify-between items-start">
-                              <span className={`text-[9.5px] font-bold tracking-wider px-2.5 py-0.5 rounded-full uppercase border ${
-                                f.status === 'PAID' 
-                                  ? 'bg-green-500/10 border-green-500/15 text-green-400' 
-                                  : f.status === 'PENDING' 
-                                    ? 'bg-amber-500/10 border-amber-500/15 text-amber-400' 
-                                    : 'bg-red-500/10 border-red-500/15 text-red-400'
-                              }`}>
-                                {f.status}
-                              </span>
-                              {f.status === 'REJECTED' && (
-                                <span className="text-[9.5px] font-semibold text-red-400 bg-red-500/5 px-2 py-0.5 rounded border border-red-500/10">
-                                  Verification Failed
-                                </span>
-                              )}
-                            </div>
-                            <h4 className="font-bold text-slate-200 text-sm mt-2">{f.description}</h4>
-                            <p className="text-xs text-slate-400">Total Bill Amount: {studentSchool?.currencySymbol || '$'}{f.amount.toFixed(2)}</p>
-                            <p className="text-[10px] text-slate-500">Bill Due: {new Date(f.dueDate).toLocaleDateString()}</p>
+                  {/* Stats Row */}
+                  <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+                    {/* Stat 1: Total Outstanding */}
+                    {(() => {
+                      const outstandingFees = (academicRecord?.fees || []).filter((f: any) => f.status !== 'PAID');
+                      const totalOutstanding = outstandingFees.reduce((acc: number, f: any) => acc + f.amount, 0);
+                      const pendingCount = outstandingFees.length;
+                      return (
+                        <GlassCard className="p-4 flex items-center gap-4">
+                          <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+                            <DollarSign size={20} />
                           </div>
+                          <div>
+                            <span className="block text-[9px] uppercase tracking-wider text-slate-500 font-bold font-mono">Total Outstanding</span>
+                            <h4 className="text-base font-extrabold text-slate-200 mt-0.5">
+                              ₹{totalOutstanding.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </h4>
+                            <span className="text-[9px] text-rose-400 font-medium">{pendingCount} Invoice(s) Pending</span>
+                          </div>
+                        </GlassCard>
+                      );
+                    })()}
 
-                          {f.status === 'PAID' ? (
-                            <div className="text-[10px] text-slate-500 border-t border-slate-850 pt-2 flex justify-between items-center">
-                              <span>Receipt Download Ready</span>
-                              <button
-                                onClick={async () => {
-                                  if (!studentSchool) return;
-                                  const studentProfile = academicRecord?.studentProfile || {};
-                                  await downloadReceiptPdf({
-                                    schoolId: studentSchool.id,
-                                    schoolName: studentSchool.name,
-                                    schoolAddress: studentSchool.address || '',
-                                    schoolPhone: studentSchool.phone || '',
-                                    schoolEmail: (studentSchool as any).email || '',
-                                    logoUrl: studentSchool.logoUrl || '',
-                                    sealUrl: studentSchool.sealUrl || '',
-                                    currencySymbol: studentSchool.currencySymbol || '$',
-                                    studentName: studentProfile.fullName || 'Student',
-                                    studentId: selectedStudent,
-                                    admissionNumber: studentProfile.admissionNumber || '',
-                                    className: studentProfile.className || '',
-                                    sectionName: studentProfile.sectionName || '',
-                                    feeDescription: f.description,
-                                    amount: Number(f.amount),
-                                    paymentDate: f.paymentDate || new Date().toISOString(),
-                                    paymentMethod: f.paymentMethod || 'ONLINE',
-                                    transactionId: f.transactionId || f.utrNumber
-                                  });
-                                }}
-                                className="px-2 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded flex items-center gap-1 font-semibold cursor-pointer active:scale-95 transition-all text-[9px]"
-                              >
-                                <Download size={10} />
-                                Download
-                              </button>
+                    {/* Stat 2: Paid This Session */}
+                    {(() => {
+                      const paidFees = (academicRecord?.fees || []).filter((f: any) => f.status === 'PAID');
+                      const totalPaid = paidFees.reduce((acc: number, f: any) => acc + f.amount, 0);
+                      return (
+                        <GlassCard className="p-4 flex items-center gap-4">
+                          <div className="p-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                            <Calendar size={20} />
+                          </div>
+                          <div>
+                            <span className="block text-[9px] uppercase tracking-wider text-slate-500 font-bold font-mono">Paid This Session</span>
+                            <h4 className="text-base font-extrabold text-slate-200 mt-0.5">
+                              ₹{totalPaid.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                            </h4>
+                            <span className="text-[9px] text-emerald-400 font-medium">2026-27 Academic Year</span>
+                          </div>
+                        </GlassCard>
+                      );
+                    })()}
+
+                    {/* Stat 3: Total Invoices */}
+                    <GlassCard className="p-4 flex items-center gap-4">
+                      <div className="p-2.5 rounded-xl bg-violet-500/10 text-violet-400 border border-violet-500/20">
+                        <FileText size={20} />
+                      </div>
+                      <div>
+                        <span className="block text-[9px] uppercase tracking-wider text-slate-500 font-bold font-mono">Total Invoices</span>
+                        <h4 className="text-base font-extrabold text-slate-200 mt-0.5">
+                          {(academicRecord?.fees || []).length}
+                        </h4>
+                        <span className="text-[9px] text-slate-400 font-medium">This Academic Year</span>
+                      </div>
+                    </GlassCard>
+
+                    {/* Stat 4: Recent Payment */}
+                    {(() => {
+                      const paidFees = (academicRecord?.fees || []).filter((f: any) => f.status === 'PAID');
+                      const lastPayment = paidFees.length > 0 ? paidFees[paidFees.length - 1] : null;
+                      return (
+                        <GlassCard className="p-4 flex items-center gap-4">
+                          <div className="p-2.5 rounded-xl bg-amber-500/10 text-amber-400 border border-amber-500/20">
+                            <Clock size={20} />
+                          </div>
+                          <div>
+                            <span className="block text-[9px] uppercase tracking-wider text-slate-500 font-bold font-mono">Recent Payment</span>
+                            <h4 className="text-base font-extrabold text-slate-200 mt-0.5">
+                              {lastPayment ? `₹${lastPayment.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}` : '—'}
+                            </h4>
+                            <span className="text-[9px] text-slate-450 font-medium">
+                              {lastPayment ? new Date(lastPayment.paymentDate || lastPayment.dueDate).toLocaleDateString() : 'No recent payments'}
+                            </span>
+                          </div>
+                        </GlassCard>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Main Grid: Left Outstanding Invoices, Right Quick Actions & Payment Instructions */}
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    
+                    {/* Left Panel: Outstanding Invoices */}
+                    <div className="lg:col-span-8 space-y-4">
+                      <GlassCard className="p-5 space-y-4">
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                          <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                            Outstanding Invoices
+                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/20">
+                              {(academicRecord?.fees || []).filter((f: any) => f.status !== 'PAID').length}
+                            </span>
+                          </h4>
+                          <button
+                            onClick={() => {
+                              const el = document.getElementById('recent-payments-section');
+                              if (el) el.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className="text-xs font-bold text-brand-400 hover:text-brand-300 transition-colors flex items-center gap-1"
+                          >
+                            View All Invoices &rarr;
+                          </button>
+                        </div>
+
+                        <div className="space-y-3">
+                          {(academicRecord?.fees || []).filter((f: any) => f.status !== 'PAID').length === 0 ? (
+                            <div className="text-center py-10 text-slate-500 text-xs">
+                              No outstanding invoices. All fees are paid!
                             </div>
                           ) : (
-                            <div className="border-t border-slate-850 pt-3 flex flex-col gap-2">
-                              {f.status === 'REJECTED' && f.rejectionReason && (
-                                <div className="p-2 bg-red-500/5 border border-red-500/10 rounded-xl text-[10px] text-red-400 flex items-start gap-1">
-                                  <AlertCircle size={12} className="shrink-0 mt-0.5" />
-                                  <div>
-                                    <span className="font-bold">Reason: </span>
-                                    {f.rejectionReason}
+                            (academicRecord?.fees || []).filter((f: any) => f.status !== 'PAID').map((f: any, idx: number) => {
+                              const studentProfile = academicRecord?.studentProfile || {};
+                              return (
+                                <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-slate-800/80 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 transition-all duration-200">
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-2">
+                                      <span className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded border ${
+                                        f.status === 'REJECTED'
+                                          ? 'bg-rose-500/10 border-rose-500/25 text-rose-400 font-bold'
+                                          : f.status === 'PENDING'
+                                            ? 'bg-amber-500/10 border-amber-500/25 text-amber-400 font-bold'
+                                            : 'bg-red-500/10 border-red-500/25 text-red-400 font-bold'
+                                      }`}>
+                                        {f.status}
+                                      </span>
+                                      {f.status === 'REJECTED' && (
+                                        <span className="text-[9.5px] font-semibold text-rose-400 bg-rose-500/5 px-2 py-0.5 rounded border border-rose-500/10">
+                                          Verification Failed
+                                        </span>
+                                      )}
+                                    </div>
+                                    <h5 className="font-bold text-xs text-slate-200 mt-1">{f.description}</h5>
+                                    <p className="text-[10px] text-slate-450 font-sans">
+                                      {studentProfile.fullName || 'Student'} ({studentProfile.className || 'N/A'})
+                                    </p>
+                                    <p className="text-[9.5px] text-slate-500 font-mono">Due Date: {new Date(f.dueDate).toLocaleDateString()}</p>
+                                    
+                                    {f.status === 'REJECTED' && f.rejectionReason && (
+                                      <div className="mt-2 p-2 bg-red-500/5 border border-red-500/10 rounded-xl text-[10px] text-red-400 flex items-start gap-1">
+                                        <AlertCircle size={12} className="shrink-0 mt-0.5" />
+                                        <div>
+                                          <span className="font-bold">Rejection Reason: </span>
+                                          {f.rejectionReason}
+                                        </div>
+                                      </div>
+                                    )}
+                                  </div>
+
+                                  <div className="flex items-center gap-4 sm:text-right sm:flex-col sm:items-end sm:gap-2 justify-between">
+                                    <span className="text-sm font-extrabold text-slate-200">
+                                      ₹{f.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                    </span>
+                                    {f.status === 'PENDING' ? (
+                                      <span className="px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg text-[10px] font-bold uppercase tracking-wider">
+                                        Awaiting Verification
+                                      </span>
+                                    ) : (
+                                      <div className="flex items-center gap-2">
+                                        <button
+                                          onClick={() => {
+                                            setSelectedFee(f);
+                                            setShowProofModal(true);
+                                            setUtrNumber('');
+                                            setScreenshotFile(null);
+                                          }}
+                                          className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5"
+                                        >
+                                          Pay Now
+                                        </button>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
-                              )}
-                              
-                              <div className="flex justify-between items-center">
-                                <span className="text-[10px] text-slate-450 italic">
-                                  {f.status === 'PENDING' ? 'Awaiting verification' : 'Payment required'}
-                                </span>
-                                {f.status === 'PENDING' ? (
-                                  <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full uppercase">
-                                    Submitted
-                                  </span>
-                                ) : (
+                              );
+                            })
+                          )}
+                        </div>
+
+                        <div className="pt-2 flex justify-center">
+                          <button
+                            onClick={() => {
+                              const el = document.getElementById('recent-payments-section');
+                              if (el) el.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className="text-xs font-bold text-slate-400 hover:text-slate-300 transition-colors"
+                          >
+                            View All Invoices & Payment History
+                          </button>
+                        </div>
+                      </GlassCard>
+                    </div>
+
+                    {/* Right Panel: Quick Actions & Payment Instructions */}
+                    <div className="lg:col-span-4 space-y-4">
+                      
+                      {/* Quick Actions */}
+                      <GlassCard className="p-4 space-y-3">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Quick Actions</h4>
+                        <div className="grid grid-cols-2 gap-2">
+                          <button 
+                            onClick={() => {
+                              const outstandingFirst = (academicRecord?.fees || []).find((f: any) => f.status !== 'PAID');
+                              if (outstandingFirst) {
+                                setSelectedFee(outstandingFirst);
+                                setShowProofModal(true);
+                                setUtrNumber('');
+                                setScreenshotFile(null);
+                              } else {
+                                alert('All fees are currently cleared!');
+                              }
+                            }}
+                            className="p-3 bg-slate-900/40 hover:bg-slate-900/60 border border-slate-850 rounded-xl transition-all flex flex-col items-center justify-center text-center gap-1.5 active:scale-[0.97]"
+                          >
+                            <DollarSign className="text-brand-400" size={16} />
+                            <span className="text-[10px] font-bold text-slate-200">Pay Fees</span>
+                            <span className="text-[8px] text-slate-500">Make a payment</span>
+                          </button>
+
+                          <button 
+                            onClick={() => {
+                              const el = document.getElementById('recent-payments-section');
+                              if (el) el.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className="p-3 bg-slate-900/40 hover:bg-slate-900/60 border border-slate-850 rounded-xl transition-all flex flex-col items-center justify-center text-center gap-1.5 active:scale-[0.97]"
+                          >
+                            <Clock className="text-brand-400" size={16} />
+                            <span className="text-[10px] font-bold text-slate-200">Payment History</span>
+                            <span className="text-[8px] text-slate-500">View all payments</span>
+                          </button>
+
+                          <button 
+                            onClick={() => {
+                              const el = document.getElementById('recent-payments-section');
+                              if (el) el.scrollIntoView({ behavior: 'smooth' });
+                            }}
+                            className="p-3 bg-slate-900/40 hover:bg-slate-900/60 border border-slate-850 rounded-xl transition-all flex flex-col items-center justify-center text-center gap-1.5 active:scale-[0.97]"
+                          >
+                            <FileText className="text-brand-400" size={16} />
+                            <span className="text-[10px] font-bold text-slate-200">Download Receipts</span>
+                            <span className="text-[8px] text-slate-500">Get receipts</span>
+                          </button>
+
+                          <button 
+                            onClick={() => {
+                              const outstandingFirst = (academicRecord?.fees || []).find((f: any) => f.status !== 'PAID');
+                              if (outstandingFirst) {
+                                setSelectedFee(outstandingFirst);
+                                setShowProofModal(true);
+                                setUtrNumber('');
+                                setScreenshotFile(null);
+                              } else {
+                                alert('No outstanding fees to submit proof for.');
+                              }
+                            }}
+                            className="p-3 bg-brand-500/10 hover:bg-brand-500/20 border border-brand-500/25 rounded-xl transition-all flex flex-col items-center justify-center text-center gap-1.5 active:scale-[0.97]"
+                          >
+                            <Download className="text-brand-400" size={16} />
+                            <span className="text-[10px] font-bold text-slate-200">Submit Payment Proof</span>
+                            <span className="text-[8px] text-slate-500">Upload screenshot</span>
+                          </button>
+                        </div>
+                      </GlassCard>
+
+                      {/* Payment Instructions */}
+                      <GlassCard className="p-4 space-y-3">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">Payment Instructions</h4>
+                        
+                        {/* Tab buttons */}
+                        <div className="flex border-b border-slate-850 pb-1 text-[10px] font-bold text-slate-500">
+                          {[
+                            { id: 'qr', label: 'UPI QR Code' },
+                            { id: 'upi', label: 'UPI ID' },
+                            { id: 'bank', label: 'Bank Transfer' }
+                          ].map(t => (
+                            <button
+                              key={t.id}
+                              onClick={() => setPayInstructTab(t.id as any)}
+                              className={`flex-1 pb-1.5 text-center transition-all ${
+                                payInstructTab === t.id
+                                  ? 'text-brand-400 border-b-2 border-brand-400'
+                                  : 'hover:text-slate-300'
+                              }`}
+                            >
+                              {t.label}
+                            </button>
+                          ))}
+                        </div>
+
+                        {/* Tab content */}
+                        <div className="space-y-3 pt-2">
+                          {payInstructTab === 'qr' && (
+                            <div className="space-y-3 text-center flex flex-col items-center">
+                              {schoolPaymentSettings?.showQrToParents && schoolPaymentSettings?.qrCodeUrl ? (
+                                <>
+                                  <div className="w-32 h-32 bg-white p-2 rounded-xl flex items-center justify-center border border-slate-800">
+                                    <img src={schoolPaymentSettings.qrCodeUrl} alt="UPI Payment QR" className="max-w-full max-h-full object-contain" />
+                                  </div>
+                                  <div>
+                                    <h5 className="text-[11px] font-bold text-slate-200 font-sans">Scan & Pay Using Any UPI App</h5>
+                                    <p className="text-[9px] text-slate-505 mt-0.5 leading-normal">Pay to the QR code using PhonePe, Google Pay, Paytm, BHIM or any UPI app.</p>
+                                  </div>
                                   <button
                                     onClick={() => {
-                                      setSelectedFee(f);
-                                      setShowProofModal(true);
-                                      setUtrNumber('');
-                                      setScreenshotFile(null);
+                                      const a = document.createElement('a');
+                                      a.href = schoolPaymentSettings.qrCodeUrl || '';
+                                      a.download = 'school_payment_qr.png';
+                                      a.target = '_blank';
+                                      a.click();
                                     }}
-                                    className="px-3 py-1 bg-brand-500 hover:bg-brand-600 text-white rounded-lg flex items-center gap-1 font-semibold cursor-pointer active:scale-95 transition-all text-xs"
+                                    className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-350 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
                                   >
-                                    <Paperclip size={12} />
-                                    {f.status === 'REJECTED' ? 'Resubmit Proof' : 'Submit Proof'}
+                                    <Download size={10} /> Download QR Code
                                   </button>
-                                )}
-                              </div>
+                                </>
+                              ) : (
+                                <p className="text-slate-500 text-[10px] py-4">UPI QR Code payments are currently not enabled by the school.</p>
+                              )}
+                            </div>
+                          )}
+
+                          {payInstructTab === 'upi' && (
+                            <div className="space-y-2 text-center flex flex-col items-center">
+                              {schoolPaymentSettings?.upiId ? (
+                                <>
+                                  <div className="bg-slate-950/60 border border-slate-850 px-3 py-2 rounded-xl text-center w-full">
+                                    <span className="text-xs font-mono font-bold text-slate-350 block select-all">{schoolPaymentSettings.upiId}</span>
+                                  </div>
+                                  <button
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(schoolPaymentSettings.upiId || '');
+                                      alert('UPI ID copied to clipboard!');
+                                    }}
+                                    className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-350 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                  >
+                                    Copy UPI ID
+                                  </button>
+                                </>
+                              ) : (
+                                <p className="text-slate-500 text-[10px] py-4">UPI payment channel is not configured.</p>
+                              )}
+                            </div>
+                          )}
+
+                          {payInstructTab === 'bank' && (
+                            <div className="space-y-2">
+                              {schoolPaymentSettings?.showBankToParents ? (
+                                <div className="space-y-2 text-xs p-3 bg-slate-950/20 rounded-xl border border-slate-850/80">
+                                  {[
+                                    { label: 'Account Holder Name', value: schoolPaymentSettings.accountHolderName },
+                                    { label: 'Bank Name', value: schoolPaymentSettings.bankName },
+                                    { label: 'Account Number', value: schoolPaymentSettings.accountNumber },
+                                    { label: 'IFSC', value: schoolPaymentSettings.ifscCode },
+                                    { label: 'Branch', value: schoolPaymentSettings.branchName },
+                                    { label: 'UPI ID', value: schoolPaymentSettings.upiId }
+                                  ].map(item => (
+                                    <div key={item.label} className="flex justify-between items-center py-1 border-b border-slate-850/40 last:border-0">
+                                      <span className="text-slate-500 text-[9px] font-bold uppercase">{item.label}</span>
+                                      <span className="text-slate-200 font-semibold text-[10px] font-mono">{item.value || '—'}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-slate-500 text-[10px] py-4 text-center">Bank Transfer details are not shared by the school.</p>
+                              )}
                             </div>
                           )}
                         </div>
-                      ))}
+
+                        {schoolPaymentSettings?.paymentInstructions && (
+                          <div className="p-2 border-t border-slate-850/40 text-[9px] text-slate-450 leading-normal">
+                            <span className="font-bold text-slate-350">Instructions: </span>
+                            {schoolPaymentSettings.paymentInstructions}
+                          </div>
+                        )}
+                        <div className="text-[9px] text-slate-505 text-center pt-1.5 border-t border-slate-850/40 leading-normal">
+                          After payment, please upload the screenshot using <span className="text-brand-400 font-bold hover:underline cursor-pointer" onClick={() => {
+                            const outstandingFirst = (academicRecord?.fees || []).find((f: any) => f.status !== 'PAID');
+                            if (outstandingFirst) {
+                              setSelectedFee(outstandingFirst);
+                              setShowProofModal(true);
+                              setUtrNumber('');
+                              setScreenshotFile(null);
+                            }
+                          }}>Submit Payment Proof</span>.
+                        </div>
+                      </GlassCard>
+
                     </div>
-                  </GlassCard>
-                  
+                  </div>
+
+                  {/* Recent Payments Section */}
+                  <div id="recent-payments-section">
+                    <GlassCard className="p-5 space-y-4">
+                      <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                        <h4 className="text-sm font-bold text-slate-200">Recent Payments</h4>
+                        <span className="text-xs text-slate-500 font-medium">All billing receipts on record</span>
+                      </div>
+
+                      {(() => {
+                        const allFees = academicRecord?.fees || [];
+                        return allFees.length === 0 ? (
+                          <div className="text-center py-8 text-slate-500 text-xs">No payment records found.</div>
+                        ) : (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs text-left">
+                              <thead>
+                                <tr className="border-b border-slate-850 text-slate-500 text-[9px] font-bold uppercase tracking-wider">
+                                  <th className="py-2.5 px-3">Date</th>
+                                  <th className="py-2.5 px-3">Invoice</th>
+                                  <th className="py-2.5 px-3">Amount</th>
+                                  <th className="py-2.5 px-3">Payment Method</th>
+                                  <th className="py-2.5 px-3">Status</th>
+                                  <th className="py-2.5 px-3 text-right">Receipt</th>
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-900 text-slate-350">
+                                {allFees.map((f: any, idx: number) => {
+                                  const studentProfile = academicRecord?.studentProfile || {};
+                                  return (
+                                    <tr key={idx} className="hover:bg-slate-900/20 transition-colors">
+                                      <td className="py-3 px-3 font-medium text-slate-400">
+                                        {new Date(f.paymentDate || f.dueDate).toLocaleDateString()}
+                                      </td>
+                                      <td className="py-3 px-3">
+                                        <div className="font-semibold text-slate-200">{f.description}</div>
+                                        <div className="text-[9px] text-slate-550">
+                                          {studentProfile.fullName || 'Student'} ({studentProfile.className || 'N/A'})
+                                        </div>
+                                      </td>
+                                      <td className="py-3 px-3 font-semibold text-slate-200">
+                                        ₹{f.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </td>
+                                      <td className="py-3 px-3 font-mono text-slate-450">{f.paymentMethod || 'UPI'}</td>
+                                      <td className="py-3 px-3">
+                                        <span className={`text-[9.5px] font-bold px-2 py-0.5 rounded border uppercase ${
+                                          f.status === 'PAID'
+                                            ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                            : f.status === 'PENDING'
+                                              ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                                              : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                        }`}>
+                                          {f.status === 'PAID' ? 'APPROVED' : f.status}
+                                        </span>
+                                      </td>
+                                      <td className="py-3 px-3 text-right">
+                                        {f.status === 'PAID' ? (
+                                          <button
+                                            onClick={async () => {
+                                              if (!studentSchool) return;
+                                              const studentProfile = academicRecord?.studentProfile || {};
+                                              await downloadReceiptPdf({
+                                                schoolId: studentSchool.id,
+                                                schoolName: studentSchool.name,
+                                                schoolAddress: studentSchool.address || '',
+                                                schoolPhone: studentSchool.phone || '',
+                                                schoolEmail: (studentSchool as any).email || '',
+                                                logoUrl: studentSchool.logoUrl || '',
+                                                sealUrl: studentSchool.sealUrl || '',
+                                                currencySymbol: studentSchool.currencySymbol || '$',
+                                                studentName: studentProfile.fullName || 'Student',
+                                                studentId: selectedStudent,
+                                                admissionNumber: studentProfile.admissionNumber || '',
+                                                className: studentProfile.className || '',
+                                                sectionName: studentProfile.sectionName || '',
+                                                feeDescription: f.description,
+                                                amount: Number(f.amount),
+                                                paymentDate: f.paymentDate || new Date().toISOString(),
+                                                paymentMethod: f.paymentMethod || 'ONLINE',
+                                                transactionId: f.transactionId || f.utrNumber
+                                              });
+                                            }}
+                                            className="px-2.5 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/20 rounded-lg font-bold text-[10px] inline-flex items-center gap-1 active:scale-95 transition-all text-right ml-auto"
+                                          >
+                                            <Download size={11} /> Download
+                                          </button>
+                                        ) : (
+                                          <span className="text-[10px] text-slate-605">—</span>
+                                        )}
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                        );
+                      })()}
+                    </GlassCard>
+                  </div>
+
                   {/* Submit Proof Modal */}
                   {showProofModal && selectedFee && (
                     <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-                      <div className="w-full max-w-md bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4 shadow-2xl animate-fade-in text-xs text-slate-300">
+                      <div className="w-full max-w-md bg-slate-900 border border-slate-805 rounded-3xl p-6 space-y-4 shadow-2xl animate-fade-in text-xs text-slate-350">
                         <div className="flex justify-between items-center border-b border-slate-800 pb-3">
                           <div>
                             <h3 className="font-bold text-slate-100 text-base">Submit Payment Proof</h3>
@@ -1543,7 +1849,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                               setShowProofModal(false);
                               setSelectedFee(null);
                             }}
-                            className="p-1 rounded-lg bg-slate-850 hover:bg-slate-800 text-slate-400 hover:text-slate-200 transition-colors"
+                            className="p-1 rounded-lg bg-slate-850 hover:bg-slate-805 text-slate-400 hover:text-slate-200 transition-colors"
                           >
                             <X size={18} />
                           </button>
@@ -1552,7 +1858,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                         <div className="space-y-4">
                           <div className="p-3 bg-brand-500/5 border border-brand-500/10 rounded-xl flex justify-between items-center">
                             <span className="text-xs text-slate-400">Total Payable:</span>
-                            <span className="text-sm font-bold text-brand-400">{studentSchool?.currencySymbol || '$'}{selectedFee.amount.toFixed(2)}</span>
+                            <span className="text-sm font-bold text-brand-400">₹{selectedFee.amount.toFixed(2)}</span>
                           </div>
 
                           <div className="space-y-1">
@@ -1585,7 +1891,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
                           <div className="space-y-1">
                             <label className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">
-                              UTR / Transaction Reference Number
+                              UTR / Reference Number
                             </label>
                             <input
                               type="text"
@@ -1600,7 +1906,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                             <label className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">
                               Upload Payment Screenshot / Receipt
                             </label>
-                            <div className="relative border border-dashed border-slate-800 hover:border-slate-700 bg-slate-950/20 rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 transition-colors cursor-pointer">
+                            <div className="relative border border-dashed border-slate-800 hover:border-slate-750 bg-slate-950/20 rounded-xl p-4 flex flex-col items-center justify-center gap-1.5 transition-colors cursor-pointer">
                               <input
                                 type="file"
                                 accept="image/*,application/pdf"
@@ -1615,7 +1921,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                               <span className="text-xs text-slate-300 font-semibold text-center truncate max-w-full px-2">
                                 {screenshotFile ? screenshotFile.name : 'Choose file or drag here'}
                               </span>
-                              <span className="text-[9px] text-slate-500">Max size 5MB (PNG, JPG, PDF)</span>
+                              <span className="text-[9px] text-slate-505">Max size 5MB (PNG, JPG, PDF)</span>
                             </div>
                           </div>
                         </div>

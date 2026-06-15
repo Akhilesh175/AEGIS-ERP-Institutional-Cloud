@@ -763,6 +763,45 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   }, [selectedMapping, activeTab, refreshTrigger]);
 
   useEffect(() => {
+    if (activeTab === 'paymentsettings' && session?.user.id) {
+      const loadPaymentSettings = async () => {
+        setFpLoading(true);
+        try {
+          const userId = session.user.id;
+          const s = await mockApi.fetchFacultyPaymentSettings(userId, userId, session.user.role || 'TEACHER');
+          setFpSettings(s);
+          if (s) {
+            setFpUpiId(s.upiId || '');
+            setFpBankName(s.bankName || '');
+            setFpAccNumber(s.accountNumber || '');
+            setFpIfsc(s.ifscCode || '');
+            setFpBranch(s.branchName || '');
+            if (s.qrCodeUrl) setFpQrPreview(s.qrCodeUrl);
+          } else {
+            setFpUpiId('');
+            setFpBankName('');
+            setFpAccNumber('');
+            setFpIfsc('');
+            setFpBranch('');
+            setFpQrPreview(null);
+          }
+          const schoolId = session.user.schoolId || '';
+          if (schoolId) {
+            const records = await mockApi.fetchPayrollRecords(schoolId);
+            const userRecords = records.filter(r => r.userId === userId || r.employeeName === `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim());
+            setMyPayrollRecords(userRecords);
+          }
+        } catch (err) {
+          console.error('Failed to load payment settings:', err);
+        } finally {
+          setFpLoading(false);
+        }
+      };
+      loadPaymentSettings();
+    }
+  }, [activeTab, session]);
+
+  useEffect(() => {
     if (teacherId && selectedManagedClass && hmSelectedStudent && hmSelectedExam) {
       mockApi.classTeacherGetStudentReportCard(
         teacherId,
@@ -5000,26 +5039,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             )}
           </GlassCard>
 
-          {/* Load details on mount */}
-          {!fpSettings && !fpLoading && (() => {
-            setFpLoading(true);
-            const userId = session?.user.id || '';
-            mockApi.fetchFacultyPaymentSettings(userId, userId, session?.user.role || 'TEACHER')
-              .then(s => {
-                setFpSettings(s);
-                if (s) {
-                  setFpUpiId(s.upiId || '');
-                  setFpBankName(s.bankName || '');
-                  setFpAccNumber(s.accountNumber || '');
-                  setFpIfsc(s.ifscCode || '');
-                  setFpBranch(s.branchName || '');
-                  if (s.qrCodeUrl) setFpQrPreview(s.qrCodeUrl);
-                }
-              })
-              .catch(() => {})
-              .finally(() => setFpLoading(false));
-            return null;
-          })()}
+
 
           {fpLoading ? (
             <div className="flex items-center justify-center py-16">
@@ -5147,11 +5167,12 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
               </h4>
               <button
                 onClick={async () => {
-                  const schoolId = mockDb.teachers.find(t => t.id === teacherId)?.schoolId || '';
+                  const schoolId = session?.user.schoolId || '';
                   if (schoolId) {
                     try {
                       const records = await mockApi.fetchPayrollRecords(schoolId);
-                      setMyPayrollRecords(records.filter(r => r.userId === teacherId || r.employeeName === `${session?.user.firstName || ''} ${session?.user.lastName || ''}`.trim()));
+                      const userId = session?.user.id || '';
+                      setMyPayrollRecords(records.filter(r => r.userId === userId || r.employeeName === `${session?.user.firstName || ''} ${session?.user.lastName || ''}`.trim()));
                     } catch (e) { console.warn(e); }
                   }
                 }}

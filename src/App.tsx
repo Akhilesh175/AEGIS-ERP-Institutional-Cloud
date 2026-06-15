@@ -27,15 +27,28 @@ const getTabsForRole = (role: string, planName: string): string[] => {
     case 'PARENT':
       return ['dashboard', 'notifications', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'transit', 'forums', 'hostel', 'support'];
     case 'TEACHER':
+    case 'DRIVER':
       return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics', 'paymentsettings', 'support'];
     case 'SUPER_ADMIN':
       return ['dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'support'];
-    default: // ADMIN or any SUB_ADMIN role
+    case 'ADMIN':
       return [
         'dashboard', 'impersonation', 'dangerzone', 'subscriptions',
         'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
         'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support'
+      ];
+    case 'FINANCE_ADMIN':
+      return [
+        'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
+        'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
+        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support'
+      ];
+    default: // Sub-admin roles (Librarian, Warden, Academic Admin, Exam Controller, etc.)
+      return [
+        'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
+        'communications', 'rbac', 'backups', 'books', 'transport', 'marksheets', 'quizzes', 
+        'attendance', 'assignments', 'hostel', 'support', 'paymentsettings'
       ];
   }
 };
@@ -1122,7 +1135,13 @@ export const App: React.FC = () => {
                     {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
                     {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
                     {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
-                    {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN'].includes(session.user.role)) && <AdminPortal activeTab={activeTab} />}
+                    {/* Sub-admins: route paymentsettings to TeacherPortal (salary/banking), everything else to AdminPortal */}
+                    {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN', 'DRIVER'].includes(session.user.role) && (
+                      activeTab === 'paymentsettings'
+                        ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
+                        : <AdminPortal activeTab={activeTab} />
+                    )}
+                    {session.user.role === 'ADMIN' && <AdminPortal activeTab={activeTab} />}
                     {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
                   </>
                 )}

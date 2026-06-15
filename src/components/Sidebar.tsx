@@ -266,6 +266,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         if (permissions.security) {
           subAdminTabs.push({ id: 'backups', label: 'Disaster Recovery', icon: Database, locked: !isEnterprise });
         }
+
+        // All sub-admins can access their own payment settings (salary / banking)
+        subAdminTabs.push({ id: 'paymentsettings', label: 'Payment Settings', icon: DollarSign });
         
         subAdminTabs.push({ id: 'support', label: 'Help & Support', icon: HelpCircle });
         return subAdminTabs;
