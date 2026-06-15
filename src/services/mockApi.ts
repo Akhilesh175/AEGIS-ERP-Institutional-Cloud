@@ -11,7 +11,7 @@ import {
   HostelFee, HostelPayment, HostelMessMenu,
   SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport,
   SupportTicketMessage, SupportTicketStatusLog, SupportNotification, SupportInternalNote,
-  SchoolPaymentSettings, FacultyPaymentSettings
+  SchoolPaymentSettings, FacultyPaymentSettings, SalaryPayment, EmployeeSalaryLedger
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
@@ -16261,6 +16261,185 @@ export const mockApi = {
     const auditAction = status === 'PAID' ? 'FEE_PAYMENT_APPROVED' : 'FEE_PAYMENT_REJECTED';
     mockDb.addLog(adminId, auditAction, { paymentId, rejectionReason });
     return savedPayment;
+  },
+
+  // ── SALARY PAYMENTS ─────────────────────────────────────────────────────
+
+  async submitSalaryPayment(
+    adminId: string,
+    schoolId: string,
+    payload: {
+      employeeId: string;
+      month: string;
+      amount: number;
+      utrNumber: string;
+      paymentScreenshotUrl: string;
+    }
+  ): Promise<SalaryPayment> {
+    await delay();
+    const dupLocal = mockDb.salaryPayments.find(p => p.utrNumber === payload.utrNumber);
+    if (dupLocal) throw new Error(`UTR "${payload.utrNumber}" already used for a salary payment.`);
+    const now = new Date().toISOString();
+    const newPayment: SalaryPayment = {
+      id: 'sp-' + Math.random().toString(36).substr(2, 9),
+      employeeId: payload.employeeId,
+      schoolId,
+      month: payload.month,
+      amount: payload.amount,
+      utrNumber: payload.utrNumber,
+      paymentScreenshotUrl: payload.paymentScreenshotUrl,
+      status: 'PENDING',
+      rejectionReason: null,
+      rejectedBy: null,
+      rejectedAt: null,
+      createdBy: adminId,
+      createdAt: now,
+      updatedAt: now,
+    };
+    try {
+      const { data, error } = await supabase
+        .from('salary_payments')
+        .insert({
+          employee_id: newPayment.employeeId,
+          school_id: newPayment.schoolId,
+          month: newPayment.month,
+          amount: newPayment.amount,
+          utr_number: newPayment.utrNumber,
+          payment_screenshot_url: newPayment.paymentScreenshotUrl,
+          status: 'PENDING',
+          created_by: adminId,
+        })
+        .select('*')
+        .single();
+      if (data && !error) {
+        newPayment.id = data.id;
+        newPayment.createdAt = data.created_at;
+        newPayment.updatedAt = data.updated_at;
+      }
+    } catch (e) {
+      console.warn('submitSalaryPayment: Supabase unavailable, using local store:', e);
+    }
+    mockDb.salaryPayments.push(newPayment);
+    mockDb.saveAll();
+    mockDb.addLog(adminId, 'SALARY_PAYMENT_SUBMITTED', { employeeId: payload.employeeId, month: payload.month, amount: payload.amount });
+    return newPayment;
+  },
+
+  async getSalaryPayments(schoolId: string): Promise<SalaryPayment[]> {
+    await delay(200);
+    try {
+      const { data, error } = await supabase
+        .from('salary_payments')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false });
+      if (data && !error) {
+        return (data as any[]).map(r => ({
+          id: r.id, employeeId: r.employee_id, schoolId: r.school_id,
+          month: r.month, amount: Number(r.amount), utrNumber: r.utr_number,
+          paymentScreenshotUrl: r.payment_screenshot_url,
+          status: r.status as SalaryPayment['status'],
+          rejectionReason: r.rejection_reason, rejectedBy: r.rejected_by,
+          rejectedAt: r.rejected_at, createdBy: r.created_by,
+          createdAt: r.created_at, updatedAt: r.updated_at,
+        }));
+      }
+    } catch (e) {
+      console.warn('getSalaryPayments: falling back to local store.');
+    }
+    return mockDb.salaryPayments
+      .filter(p => p.schoolId === schoolId)
+      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+  },
+
+  async approveSalaryPayment(
+    adminId: string,
+    paymentId: string,
+    action: 'APPROVED' | 'REJECTED',
+    rejectionReason?: string
+  ): Promise<SalaryPayment> {
+    await delay();
+    const now = new Date().toISOString();
+    let updated: SalaryPayment | null = null;
+    try {
+      const patch: any = { status: action, updated_at: now };
+      if (action === 'REJECTED') {
+        patch.rejection_reason = rejectionReason || 'Details mismatch';
+        patch.rejected_by = adminId;
+        patch.rejected_at = now;
+      }
+      const { data, error } = await supabase
+        .from('salary_payments').update(patch).eq('id', paymentId).select('*').single();
+      if (data && !error) {
+        updated = {
+          id: data.id, employeeId: data.employee_id, schoolId: data.school_id,
+          month: data.month, amount: Number(data.amount), utrNumber: data.utr_number,
+          paymentScreenshotUrl: data.payment_screenshot_url, status: data.status,
+          rejectionReason: data.rejection_reason, rejectedBy: data.rejected_by,
+          rejectedAt: data.rejected_at, createdBy: data.created_by,
+          createdAt: data.created_at, updatedAt: data.updated_at,
+        };
+        if (action === 'APPROVED') {
+          await supabase.from('employee_salary_ledger').insert({
+            employee_id: updated.employeeId, salary_payment_id: paymentId,
+            month: updated.month, amount: updated.amount, payment_date: now, utr_number: updated.utrNumber,
+          });
+        }
+      }
+    } catch (e) {
+      console.warn('approveSalaryPayment: Supabase unavailable, using local store:', e);
+    }
+    const idx = mockDb.salaryPayments.findIndex(p => p.id === paymentId);
+    if (idx === -1 && !updated) throw new Error('Salary payment not found.');
+    if (idx !== -1) {
+      mockDb.salaryPayments[idx].status = action;
+      mockDb.salaryPayments[idx].updatedAt = now;
+      if (action === 'REJECTED') {
+        mockDb.salaryPayments[idx].rejectionReason = rejectionReason || 'Details mismatch';
+        mockDb.salaryPayments[idx].rejectedBy = adminId;
+        mockDb.salaryPayments[idx].rejectedAt = now;
+      }
+      updated = updated || mockDb.salaryPayments[idx];
+      if (action === 'APPROVED' && !mockDb.salaryLedger.find(l => l.salaryPaymentId === paymentId)) {
+        const p = mockDb.salaryPayments[idx];
+        mockDb.salaryLedger.push({
+          id: 'sl-' + Math.random().toString(36).substr(2, 9),
+          employeeId: p.employeeId, salaryPaymentId: paymentId,
+          month: p.month, amount: p.amount, paymentDate: now,
+          utrNumber: p.utrNumber, createdAt: now,
+        });
+      }
+      mockDb.saveAll();
+    }
+    mockDb.addLog(adminId, action === 'APPROVED' ? 'SALARY_PAYMENT_APPROVED' : 'SALARY_PAYMENT_REJECTED', { paymentId, rejectionReason });
+    return updated!;
+  },
+
+  async getSalaryLedger(schoolId: string, employeeId?: string): Promise<EmployeeSalaryLedger[]> {
+    await delay(200);
+    try {
+      const { data, error } = await supabase
+        .from('employee_salary_ledger')
+        .select('*, salary_payments!inner(school_id)')
+        .order('payment_date', { ascending: false });
+      if (data && !error) {
+        let rows = (data as any[]).map(r => ({
+          id: r.id, employeeId: r.employee_id, salaryPaymentId: r.salary_payment_id,
+          month: r.month, amount: Number(r.amount), paymentDate: r.payment_date,
+          utrNumber: r.utr_number, createdAt: r.created_at,
+        }));
+        if (employeeId) rows = rows.filter(r => r.employeeId === employeeId);
+        return rows;
+      }
+    } catch (e) {
+      console.warn('getSalaryLedger: falling back to local store.');
+    }
+    const schoolPaymentIds = new Set(
+      mockDb.salaryPayments.filter(p => p.schoolId === schoolId).map(p => p.id)
+    );
+    let local = mockDb.salaryLedger.filter(l => schoolPaymentIds.has(l.salaryPaymentId));
+    if (employeeId) local = local.filter(l => l.employeeId === employeeId);
+    return local.sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
   }
 };
 

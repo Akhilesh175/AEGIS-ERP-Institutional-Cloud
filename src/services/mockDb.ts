@@ -11,7 +11,7 @@ import {
   LibraryInvoice, DigitalLibraryAsset, ExamSubject, StudentMark, ReportCard, ExamResult, QuizResult, DriverSalaryPayout, PayrollRecord,
   SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport,
   SupportTicketMessage, SupportTicketStatusLog, SupportNotification, SupportInternalNote,
-  SchoolPaymentSettings, FacultyPaymentSettings
+  SchoolPaymentSettings, FacultyPaymentSettings, SalaryPayment, EmployeeSalaryLedger
 } from '../types';
 
 // Storage keys
@@ -582,6 +582,8 @@ class MockDatabase {
   payrollRecords: PayrollRecord[];
   schoolPaymentSettings: SchoolPaymentSettings[];
   facultyPaymentSettings: FacultyPaymentSettings[];
+  salaryPayments: SalaryPayment[];
+  salaryLedger: EmployeeSalaryLedger[];
   hostels: any[];
   hostelBlocks: any[];
   hostelRooms: any[];
@@ -715,6 +717,8 @@ class MockDatabase {
     this.knowledgeBaseArticles = getStorage<KnowledgeBaseArticle[]>('knowledge_base_articles', SEED_KNOWLEDGE_BASE);
     this.schoolPaymentSettings = getStorage<SchoolPaymentSettings[]>('school_payment_settings', SEED_SCHOOL_PAYMENT_SETTINGS);
     this.facultyPaymentSettings = getStorage<FacultyPaymentSettings[]>('faculty_payment_settings', SEED_FACULTY_PAYMENT_SETTINGS);
+    this.salaryPayments = getStorage<SalaryPayment[]>('salary_payments', []);
+    this.salaryLedger = getStorage<EmployeeSalaryLedger[]>('salary_ledger', []);
   }
 
   saveAll() {
@@ -800,6 +804,8 @@ class MockDatabase {
     setStorage('knowledge_base_articles', this.knowledgeBaseArticles);
     setStorage('school_payment_settings', this.schoolPaymentSettings);
     setStorage('faculty_payment_settings', this.facultyPaymentSettings);
+    setStorage('salary_payments', this.salaryPayments);
+    setStorage('salary_ledger', this.salaryLedger);
   }
 
   // --- CRUD HELPERS ---

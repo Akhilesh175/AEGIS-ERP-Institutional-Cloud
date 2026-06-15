@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
 import { mockDb } from '../services/mockDb';
-import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePayment, DriverSalaryPayout, PayrollRecord, SchoolPaymentSettings } from '../types';
+import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePayment, DriverSalaryPayout, PayrollRecord, SchoolPaymentSettings, SalaryPayment, EmployeeSalaryLedger, FacultyPaymentSettings } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
@@ -73,7 +73,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [examSubjects, setExamSubjects] = useState<any[]>([]);
   const [driverSalaryPayouts, setDriverSalaryPayouts] = useState<DriverSalaryPayout[]>([]);
   const [transportFeeRecords, setTransportFeeRecords] = useState<any[]>([]);
-  const [feesSubTab, setFeesSubTab] = useState<'billing' | 'drivers' | 'payroll' | 'payment-settings' | 'verify-payments'>('billing');
+  const [feesSubTab, setFeesSubTab] = useState<'billing' | 'drivers' | 'payroll' | 'payment-settings' | 'verify-payments' | 'salary-payments' | 'salary-queue'>('billing');
   // Payment Settings sub-tab state
   const [schoolPaySettings, setSchoolPaySettings] = useState<SchoolPaymentSettings | null>(null);
   const [paySettingsLoading, setPaySettingsLoading] = useState(false);
@@ -102,6 +102,23 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectTargetId, setRejectTargetId] = useState('');
   const [rejectReason, setRejectReason] = useState('');
+  // Salary Payments state
+  const [salaryPaymentsList, setSalaryPaymentsList] = useState<SalaryPayment[]>([]);
+  const [salaryLedgerList, setSalaryLedgerList] = useState<EmployeeSalaryLedger[]>([]);
+  const [salarySelectedEmpId, setSalarySelectedEmpId] = useState('');
+  const [salaryMonth, setSalaryMonth] = useState(new Date().toISOString().substring(0, 7));
+  const [salaryAmount, setSalaryAmount] = useState('');
+  const [salaryUtr, setSalaryUtr] = useState('');
+  const [salaryScreenshotUrl, setSalaryScreenshotUrl] = useState('');
+  const [salaryScreenshotFile, setSalaryScreenshotFile] = useState<File | null>(null);
+  const [isSubmittingSalary, setIsSubmittingSalary] = useState(false);
+  const [salaryActionId, setSalaryActionId] = useState<string | null>(null);
+  const [showSalaryRejectModal, setShowSalaryRejectModal] = useState(false);
+  const [salaryRejectTargetId, setSalaryRejectTargetId] = useState('');
+  const [salaryRejectReason, setSalaryRejectReason] = useState('');
+  const [salarySearch, setSalarySearch] = useState('');
+  const [empPaySettings, setEmpPaySettings] = useState<FacultyPaymentSettings | null>(null);
+  const [empPaySettingsLoading, setEmpPaySettingsLoading] = useState(false);
   const [payrollRecords, setPayrollRecords] = useState<PayrollRecord[]>([]);
   const [payrollSearch, setPayrollSearch] = useState('');
   const [payrollMonthFilter, setPayrollMonthFilter] = useState('');
@@ -5501,6 +5518,49 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                   )}
                 </button>
               )}
+              {(session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN') && (
+                <button
+                  onClick={async () => {
+                    setFeesSubTab('salary-payments');
+                    const schoolId = session?.user.schoolId || '';
+                    if (salaryPaymentsList.length === 0) {
+                      const payments = await mockApi.getSalaryPayments(schoolId);
+                      setSalaryPaymentsList(payments);
+                      const ledger = await mockApi.getSalaryLedger(schoolId);
+                      setSalaryLedgerList(ledger);
+                    }
+                  }}
+                  className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
+                    feesSubTab === 'salary-payments'
+                      ? 'bg-teal-600 text-white shadow-lg shadow-teal-500/10'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Salary Payments
+                </button>
+              )}
+              {(session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN') && (
+                <button
+                  onClick={async () => {
+                    setFeesSubTab('salary-queue');
+                    const schoolId = session?.user.schoolId || '';
+                    const payments = await mockApi.getSalaryPayments(schoolId);
+                    setSalaryPaymentsList(payments);
+                  }}
+                  className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all relative ${
+                    feesSubTab === 'salary-queue'
+                      ? 'bg-orange-600 text-white shadow-lg shadow-orange-500/10'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  Salary Queue
+                  {salaryPaymentsList.filter(p => p.status === 'PENDING').length > 0 && (
+                    <span className="absolute -top-1 -right-1 w-4 h-4 bg-orange-500 rounded-full text-[9px] font-black text-white flex items-center justify-center">
+                      {salaryPaymentsList.filter(p => p.status === 'PENDING').length}
+                    </span>
+                  )}
+                </button>
+              )}
             </div>
 
             {/* Financial Overview Metrics Cards */}
@@ -6783,6 +6843,392 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 )}
               </div>
             )}
+
+            {/* ══════════════ SALARY PAYMENTS TAB ══════════════ */}
+            {feesSubTab === 'salary-payments' && (
+              <div className="space-y-5 animate-fade-in">
+                {/* Header */}
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                      <Banknote className="text-teal-400" size={18} />
+                      Salary Payment Disbursement
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Submit salary payments with proof for employee disbursements. Approved payments auto-generate ledger entries.</p>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-5 gap-5">
+                  {/* Left — Employee Selector & Bank Info (2 cols) */}
+                  <div className="lg:col-span-2 space-y-4">
+                    <GlassCard className="p-4 space-y-3">
+                      <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                        <Users className="text-teal-400" size={14} />
+                        Select Employee
+                      </h4>
+                      <select
+                        value={salarySelectedEmpId}
+                        onChange={async (e) => {
+                          setSalarySelectedEmpId(e.target.value);
+                          setEmpPaySettings(null);
+                          if (e.target.value) {
+                            setEmpPaySettingsLoading(true);
+                            try {
+                              const s = await mockApi.fetchFacultyPaymentSettings(e.target.value, adminId || '', session?.user.role || 'ADMIN');
+                              setEmpPaySettings(s);
+                            } catch (err) { console.warn(err); }
+                            setEmpPaySettingsLoading(false);
+                          }
+                        }}
+                        className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500"
+                      >
+                        <option value="">— Choose an employee —</option>
+                        {teachers.map(t => {
+                          const u = mockDb.users.find(u => u.id === t.userId);
+                          return (
+                            <option key={t.id} value={t.userId || t.id}>
+                              {u ? `${u.firstName} ${u.lastName}` : `Teacher ${t.employeeId}`} ({t.employeeId})
+                            </option>
+                          );
+                        })}
+                      </select>
+
+                      {/* Employee Bank Details (read-only) */}
+                      {salarySelectedEmpId && (
+                        <div className="space-y-2 pt-2 border-t border-slate-850">
+                          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Employee Payment Details</p>
+                          {empPaySettingsLoading ? (
+                            <div className="flex justify-center py-4"><div className="w-5 h-5 border-2 border-teal-500 border-t-transparent rounded-full animate-spin" /></div>
+                          ) : empPaySettings ? (
+                            <div className="space-y-1.5 text-[11px]">
+                              {empPaySettings.upiId && (
+                                <div className="flex justify-between"><span className="text-slate-500">UPI ID</span><span className="text-slate-200 font-mono">{empPaySettings.upiId}</span></div>
+                              )}
+                              {empPaySettings.bankName && (
+                                <div className="flex justify-between"><span className="text-slate-500">Bank</span><span className="text-slate-200">{empPaySettings.bankName}</span></div>
+                              )}
+                              {empPaySettings.accountNumber && (
+                                <div className="flex justify-between"><span className="text-slate-500">Account</span><span className="text-slate-200 font-mono">••••{empPaySettings.accountNumber.slice(-4)}</span></div>
+                              )}
+                              {empPaySettings.ifscCode && (
+                                <div className="flex justify-between"><span className="text-slate-500">IFSC</span><span className="text-slate-200 font-mono">{empPaySettings.ifscCode}</span></div>
+                              )}
+                              {empPaySettings.branchName && (
+                                <div className="flex justify-between"><span className="text-slate-500">Branch</span><span className="text-slate-200">{empPaySettings.branchName}</span></div>
+                              )}
+                              {empPaySettings.qrCodeUrl && (
+                                <div className="pt-1">
+                                  <p className="text-slate-500 text-[10px] mb-1">QR Code</p>
+                                  <img src={empPaySettings.qrCodeUrl} alt="Employee QR" className="w-20 h-20 rounded-lg border border-slate-700 object-cover" />
+                                </div>
+                              )}
+                              {!empPaySettings.upiId && !empPaySettings.bankName && !empPaySettings.accountNumber && (
+                                <p className="text-slate-600 text-[10px] italic">Employee has not configured payment details yet.</p>
+                              )}
+                            </div>
+                          ) : (
+                            <p className="text-slate-600 text-[10px] italic">No payment settings found for this employee.</p>
+                          )}
+                        </div>
+                      )}
+                    </GlassCard>
+                  </div>
+
+                  {/* Right — Payment Form (3 cols) */}
+                  <GlassCard className="lg:col-span-3 p-5 space-y-4">
+                    <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <CreditCard className="text-teal-400" size={14} />
+                      Submit Salary Payment Proof
+                    </h4>
+                    <form onSubmit={async (e) => {
+                      e.preventDefault();
+                      if (!salarySelectedEmpId || !salaryAmount || !salaryUtr) return;
+                      setIsSubmittingSalary(true);
+                      try {
+                        let screenshotUrl = salaryScreenshotUrl;
+                        if (salaryScreenshotFile) {
+                          const filePath = `salary-proofs/${Date.now()}-${salaryScreenshotFile.name}`;
+                          const { data: uploadData } = await supabase.storage
+                            .from('fee-payment-proofs')
+                            .upload(filePath, salaryScreenshotFile, { cacheControl: '3600', upsert: false });
+                          if (uploadData?.path) {
+                            const { data: urlData } = supabase.storage.from('fee-payment-proofs').getPublicUrl(uploadData.path);
+                            screenshotUrl = urlData.publicUrl;
+                          }
+                        }
+                        await mockApi.submitSalaryPayment(
+                          adminId || '',
+                          session?.user.schoolId || '',
+                          {
+                            employeeId: salarySelectedEmpId,
+                            month: salaryMonth,
+                            amount: parseFloat(salaryAmount),
+                            utrNumber: salaryUtr,
+                            paymentScreenshotUrl: screenshotUrl || 'https://placehold.co/400x300?text=Payment+Proof',
+                          }
+                        );
+                        const updated = await mockApi.getSalaryPayments(session?.user.schoolId || '');
+                        setSalaryPaymentsList(updated);
+                        setSalaryAmount(''); setSalaryUtr(''); setSalaryScreenshotUrl(''); setSalaryScreenshotFile(null);
+                        alert('Salary payment submitted successfully!');
+                      } catch (err: any) {
+                        alert(err?.message || 'Failed to submit salary payment.');
+                      }
+                      setIsSubmittingSalary(false);
+                    }} className="space-y-3">
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-500 uppercase">Month</label>
+                          <input type="month" value={salaryMonth} onChange={e => setSalaryMonth(e.target.value)}
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500" />
+                        </div>
+                        <div className="space-y-1">
+                          <label className="text-[9px] font-bold text-slate-500 uppercase">Amount ({overview?.currencySymbol || '₹'})</label>
+                          <input type="number" min="1" step="0.01" value={salaryAmount} onChange={e => setSalaryAmount(e.target.value)} placeholder="e.g. 45000"
+                            className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500" required />
+                        </div>
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">UTR / Transaction Reference</label>
+                        <input type="text" value={salaryUtr} onChange={e => setSalaryUtr(e.target.value)} placeholder="e.g. UTIB0000123456789"
+                          className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-teal-500 font-mono" required />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold text-slate-500 uppercase">Payment Screenshot</label>
+                        <div className="flex items-center gap-2">
+                          <label className="flex-1 flex items-center gap-2 cursor-pointer px-3 py-2 bg-slate-900 border border-slate-800 rounded-lg text-xs text-slate-400 hover:border-teal-500 transition-colors">
+                            <Upload size={13} />
+                            {salaryScreenshotFile ? salaryScreenshotFile.name : 'Choose file...'}
+                            <input type="file" accept="image/*" className="hidden" onChange={e => {
+                              const f = e.target.files?.[0];
+                              if (f) { setSalaryScreenshotFile(f); setSalaryScreenshotUrl(URL.createObjectURL(f)); }
+                            }} />
+                          </label>
+                          {salaryScreenshotUrl && (
+                            <img src={salaryScreenshotUrl} alt="Preview" className="w-10 h-10 rounded-lg border border-slate-700 object-cover" />
+                          )}
+                        </div>
+                      </div>
+                      <button type="submit" disabled={isSubmittingSalary || !salarySelectedEmpId || !salaryAmount || !salaryUtr}
+                        className="w-full py-2 rounded-xl text-xs font-bold bg-teal-600 hover:bg-teal-500 text-white transition-all disabled:opacity-50 flex items-center justify-center gap-1.5 active:scale-[0.98]">
+                        {isSubmittingSalary ? <div className="w-4 h-4 border-2 border-white/40 border-t-white rounded-full animate-spin" /> : <Send size={13} />}
+                        Submit Salary Payment
+                      </button>
+                    </form>
+                  </GlassCard>
+                </div>
+
+                {/* Payroll Ledger */}
+                <GlassCard className="p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <FileSpreadsheet className="text-teal-400" size={14} />
+                      Payroll Ledger (Auto-Generated)
+                    </h4>
+                    <button onClick={async () => {
+                      const ledger = await mockApi.getSalaryLedger(session?.user.schoolId || '');
+                      setSalaryLedgerList(ledger);
+                    }} className="text-[10px] text-slate-500 hover:text-teal-400 transition-colors flex items-center gap-1">
+                      <RefreshCw size={10} /> Refresh
+                    </button>
+                  </div>
+                  {salaryLedgerList.length === 0 ? (
+                    <div className="text-center py-8">
+                      <FileSpreadsheet className="mx-auto text-slate-700 mb-2" size={28} />
+                      <p className="text-slate-500 text-xs">No ledger entries yet. Approved salary payments will appear here automatically.</p>
+                    </div>
+                  ) : (
+                    <div className="overflow-x-auto">
+                      <table className="w-full text-xs">
+                        <thead>
+                          <tr className="border-b border-slate-850">
+                            {['Employee', 'Month', 'Amount', 'UTR', 'Payment Date'].map(h => (
+                              <th key={h} className="text-left py-2 px-2 text-[9px] font-bold text-slate-500 uppercase tracking-wider">{h}</th>
+                            ))}
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {salaryLedgerList.map(entry => {
+                            const empUser = mockDb.users.find(u => u.id === entry.employeeId);
+                            return (
+                              <tr key={entry.id} className="border-b border-slate-900 hover:bg-slate-900/30">
+                                <td className="py-2 px-2 text-slate-200">{empUser ? `${empUser.firstName} ${empUser.lastName}` : entry.employeeId.substring(0, 8)}</td>
+                                <td className="py-2 px-2 text-slate-300">{entry.month}</td>
+                                <td className="py-2 px-2 text-emerald-400 font-bold">{overview?.currencySymbol || '₹'}{entry.amount.toLocaleString()}</td>
+                                <td className="py-2 px-2 text-slate-400 font-mono text-[10px]">{entry.utrNumber}</td>
+                                <td className="py-2 px-2 text-slate-400">{new Date(entry.paymentDate).toLocaleDateString()}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </GlassCard>
+              </div>
+            )}
+
+            {/* ══════════════ SALARY APPROVAL QUEUE TAB ══════════════ */}
+            {feesSubTab === 'salary-queue' && (
+              <div className="space-y-4 animate-fade-in">
+                {/* Header */}
+                <div className="flex items-center justify-between flex-wrap gap-3">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                      <ShieldCheck className="text-orange-400" size={18} />
+                      Salary Payment Approval Queue
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Review submitted salary payment proofs. Approved payments auto-generate employee salary ledger entries.</p>
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" size={13} />
+                    <input type="text" placeholder="Search by name / UTR..."
+                      value={salarySearch} onChange={e => setSalarySearch(e.target.value)}
+                      className="pl-8 pr-3 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-orange-500 w-52 transition-colors" />
+                  </div>
+                </div>
+
+                {/* Stats */}
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Pending', count: salaryPaymentsList.filter(p => p.status === 'PENDING').length, color: 'orange' },
+                    { label: 'Approved', count: salaryPaymentsList.filter(p => p.status === 'APPROVED').length, color: 'emerald' },
+                    { label: 'Rejected', count: salaryPaymentsList.filter(p => p.status === 'REJECTED').length, color: 'rose' },
+                  ].map(stat => (
+                    <GlassCard key={stat.label} className={`p-3 text-center border-${stat.color}-500/10`}>
+                      <p className={`text-xl font-extrabold text-${stat.color}-400`}>{stat.count}</p>
+                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{stat.label}</p>
+                    </GlassCard>
+                  ))}
+                </div>
+
+                {/* Pending queue */}
+                {(() => {
+                  const pending = salaryPaymentsList
+                    .filter(p => p.status === 'PENDING')
+                    .filter(p => {
+                      if (!salarySearch) return true;
+                      const empUser = mockDb.users.find(u => u.id === p.employeeId);
+                      const name = empUser ? `${empUser.firstName} ${empUser.lastName}`.toLowerCase() : '';
+                      return name.includes(salarySearch.toLowerCase()) || p.utrNumber.toLowerCase().includes(salarySearch.toLowerCase());
+                    });
+                  if (pending.length === 0) {
+                    return (
+                      <GlassCard className="p-12 text-center">
+                        <ShieldCheck className="mx-auto text-emerald-400/40 mb-3" size={40} />
+                        <p className="text-slate-400 font-semibold text-sm">No pending salary proofs</p>
+                        <p className="text-slate-600 text-xs mt-1">All salary payments have been reviewed</p>
+                      </GlassCard>
+                    );
+                  }
+                  return (
+                    <div className="space-y-3">
+                      {pending.map(payment => {
+                        const empUser = mockDb.users.find(u => u.id === payment.employeeId);
+                        const teacher = teachers.find(t => t.userId === payment.employeeId);
+                        const isActing = salaryActionId === payment.id;
+                        return (
+                          <GlassCard key={payment.id} className="p-4 border-orange-500/10">
+                            <div className="flex flex-col sm:flex-row gap-4">
+                              {/* Screenshot */}
+                              <div className="flex-shrink-0">
+                                <a href={payment.paymentScreenshotUrl} target="_blank" rel="noopener noreferrer">
+                                  <div className="w-24 h-24 rounded-xl overflow-hidden border border-slate-700 bg-slate-900 flex items-center justify-center hover:border-orange-500/50 transition-colors">
+                                    <img src={payment.paymentScreenshotUrl} alt="Salary Proof" className="w-full h-full object-cover"
+                                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+                                    <ExternalLink className="text-slate-600" size={18} />
+                                  </div>
+                                </a>
+                                <p className="text-[9px] text-slate-600 text-center mt-1">View proof</p>
+                              </div>
+                              {/* Details */}
+                              <div className="flex-1 space-y-2 min-w-0">
+                                <div className="flex items-start justify-between gap-2">
+                                  <div>
+                                    <p className="text-sm font-bold text-slate-100">{empUser ? `${empUser.firstName} ${empUser.lastName}` : 'Unknown Employee'}</p>
+                                    <p className="text-[11px] text-slate-500">{teacher?.employeeId || '—'} · {empUser?.role || 'TEACHER'}</p>
+                                  </div>
+                                  <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">PENDING REVIEW</span>
+                                </div>
+                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
+                                  <div>
+                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Month</p>
+                                    <p className="text-slate-200">{payment.month}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Amount</p>
+                                    <p className="text-emerald-400 font-bold">{overview?.currencySymbol || '₹'}{payment.amount.toLocaleString()}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">UTR / Ref</p>
+                                    <p className="text-slate-200 font-mono text-[10px]">{payment.utrNumber}</p>
+                                  </div>
+                                  <div>
+                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Submitted</p>
+                                    <p className="text-slate-200">{new Date(payment.createdAt).toLocaleDateString()}</p>
+                                  </div>
+                                </div>
+                                {/* Actions */}
+                                <div className="flex gap-2 pt-1">
+                                  <button disabled={isActing} onClick={async () => {
+                                    setSalaryActionId(payment.id);
+                                    try {
+                                      await mockApi.approveSalaryPayment(adminId || '', payment.id, 'APPROVED');
+                                      const updated = await mockApi.getSalaryPayments(session?.user.schoolId || '');
+                                      setSalaryPaymentsList(updated);
+                                      const ledger = await mockApi.getSalaryLedger(session?.user.schoolId || '');
+                                      setSalaryLedgerList(ledger);
+                                    } catch (err: any) { alert(err?.message || 'Failed to approve salary.'); }
+                                    setSalaryActionId(null);
+                                  }} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all disabled:opacity-50">
+                                    {isActing ? <div className="w-3 h-3 border border-emerald-400/60 border-t-transparent rounded-full animate-spin" /> : <CheckCircle size={13} />}
+                                    Approve
+                                  </button>
+                                  <button disabled={isActing} onClick={() => {
+                                    setSalaryRejectTargetId(payment.id);
+                                    setSalaryRejectReason('');
+                                    setShowSalaryRejectModal(true);
+                                  }} className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-all disabled:opacity-50">
+                                    <Ban size={13} /> Reject
+                                  </button>
+                                </div>
+                              </div>
+                            </div>
+                          </GlassCard>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
+                {/* Recently processed */}
+                {salaryPaymentsList.filter(p => p.status === 'APPROVED' || p.status === 'REJECTED').length > 0 && (
+                  <GlassCard className="p-4 space-y-3">
+                    <h4 className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
+                      <Clock size={12} /> Recently Processed Salaries
+                    </h4>
+                    <div className="space-y-2">
+                      {salaryPaymentsList
+                        .filter(p => p.status === 'APPROVED' || p.status === 'REJECTED')
+                        .slice(0, 10)
+                        .map(p => {
+                          const empUser = mockDb.users.find(u => u.id === p.employeeId);
+                          return (
+                            <div key={p.id} className="flex items-center gap-3 text-xs">
+                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${p.status === 'APPROVED' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                              <span className="text-slate-300 font-semibold">{empUser ? `${empUser.firstName} ${empUser.lastName}` : '—'}</span>
+                              <span className="text-slate-500">{p.month}</span>
+                              <span className="text-slate-500">{overview?.currencySymbol || '₹'}{p.amount.toLocaleString()}</span>
+                              <span className={`ml-auto font-bold text-[10px] ${p.status === 'APPROVED' ? 'text-emerald-400' : 'text-rose-400'}`}>{p.status}</span>
+                              {p.rejectionReason && <span className="text-rose-400/70 text-[10px] italic truncate max-w-32">{p.rejectionReason}</span>}
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </GlassCard>
+                )}
+              </div>
+            )}
           </div>
         </PremiumLock>
       )}
@@ -6832,6 +7278,54 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 className="glass-btn-danger text-xs flex items-center gap-1.5 disabled:opacity-50"
               >
                 {verifyActionId ? <div className="w-3 h-3 border border-white/60 border-t-transparent rounded-full animate-spin" /> : <Ban size={13} />}
+                Confirm Rejection
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* ── REJECT SALARY PAYMENT MODAL ── */}
+      {showSalaryRejectModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
+          <GlassCard className="w-full max-w-sm space-y-4">
+            <div className="border-b border-slate-850 pb-2 flex items-center justify-between">
+              <h4 className="font-bold text-slate-100 text-sm flex items-center gap-1.5">
+                <Ban className="text-rose-400" size={15} />
+                Reject Salary Payment
+              </h4>
+              <button onClick={() => setShowSalaryRejectModal(false)} className="text-xs text-slate-400 hover:text-slate-200">Close</button>
+            </div>
+            <div className="space-y-3">
+              <p className="text-xs text-slate-400">Provide a reason for rejecting this salary payment proof.</p>
+              <div>
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1">Rejection Reason</label>
+                <textarea rows={3} value={salaryRejectReason} onChange={(e) => setSalaryRejectReason(e.target.value)}
+                  placeholder="e.g. UTR mismatch, amount incorrect, blurry screenshot..."
+                  className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-100 focus:outline-none focus:border-rose-500 resize-none" />
+              </div>
+            </div>
+            <div className="flex justify-end gap-2 pt-1 border-t border-slate-850">
+              <button onClick={() => setShowSalaryRejectModal(false)} className="glass-btn-secondary text-xs">Cancel</button>
+              <button
+                disabled={!salaryRejectReason.trim() || salaryActionId !== null}
+                onClick={async () => {
+                  setSalaryActionId(salaryRejectTargetId);
+                  try {
+                    await mockApi.approveSalaryPayment(adminId || '', salaryRejectTargetId, 'REJECTED', salaryRejectReason.trim());
+                    const updated = await mockApi.getSalaryPayments(session?.user.schoolId || '');
+                    setSalaryPaymentsList(updated);
+                    setShowSalaryRejectModal(false);
+                    setSalaryRejectTargetId('');
+                    setSalaryRejectReason('');
+                  } catch (e: any) {
+                    alert(e?.message || 'Failed to reject salary payment');
+                  }
+                  setSalaryActionId(null);
+                }}
+                className="glass-btn-danger text-xs flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {salaryActionId ? <div className="w-3 h-3 border border-white/60 border-t-transparent rounded-full animate-spin" /> : <Ban size={13} />}
                 Confirm Rejection
               </button>
             </div>

@@ -1138,5 +1138,33 @@ export interface FacultyPaymentSettings {
   updatedAt?: string;
 }
 
+export interface SalaryPayment {
+  id: string;
+  employeeId: string;
+  schoolId: string;
+  month: string;               // e.g. "2026-06"
+  amount: number;
+  utrNumber: string;
+  paymentScreenshotUrl: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  rejectionReason?: string | null;
+  rejectedBy?: string | null;
+  rejectedAt?: string | null;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface EmployeeSalaryLedger {
+  id: string;
+  employeeId: string;
+  salaryPaymentId: string;
+  month: string;
+  amount: number;
+  paymentDate: string;
+  utrNumber: string;
+  createdAt: string;
+}
+
 
 
