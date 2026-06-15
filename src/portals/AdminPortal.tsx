@@ -5452,7 +5452,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     if (!schoolPaySettings) {
                       setPaySettingsLoading(true);
                       try {
-                        const s = await mockApi.fetchSchoolPaymentSettings(adminId || '', session?.user.role || '');
+                        const s = await mockApi.fetchSchoolPaymentSettings(session?.user.schoolId || '', session?.user.role || '');
                         if (s) {
                           setSchoolPaySettings(s);
                           setPsAccHolder(s.accountHolderName || '');

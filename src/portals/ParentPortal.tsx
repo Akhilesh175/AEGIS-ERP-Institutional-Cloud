@@ -79,6 +79,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   const [schoolPaymentSettings, setSchoolPaymentSettings] = useState<SchoolPaymentSettings | null>(null);
   const [selectedFee, setSelectedFee] = useState<any | null>(null);
   const [showProofModal, setShowProofModal] = useState(false);
+  const [showPayModal, setShowPayModal] = useState(false);
+  const [payModalTab, setPayModalTab] = useState<'qr' | 'upi' | 'bank'>('qr');
   const [paymentMethod, setPaymentMethod] = useState('UPI');
   const [utrNumber, setUtrNumber] = useState('');
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
@@ -1506,9 +1508,14 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                         <button
                                           onClick={() => {
                                             setSelectedFee(f);
-                                            setShowProofModal(true);
-                                            setUtrNumber('');
-                                            setScreenshotFile(null);
+                                            setShowPayModal(true);
+                                            if (schoolPaymentSettings?.qrPaymentEnabled && schoolPaymentSettings?.showQrToParents) {
+                                              setPayModalTab('qr');
+                                            } else if (schoolPaymentSettings?.upiId) {
+                                              setPayModalTab('upi');
+                                            } else {
+                                              setPayModalTab('bank');
+                                            }
                                           }}
                                           className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5"
                                         >
@@ -1549,9 +1556,14 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                               const outstandingFirst = (academicRecord?.fees || []).find((f: any) => f.status !== 'PAID');
                               if (outstandingFirst) {
                                 setSelectedFee(outstandingFirst);
-                                setShowProofModal(true);
-                                setUtrNumber('');
-                                setScreenshotFile(null);
+                                setShowPayModal(true);
+                                if (schoolPaymentSettings?.qrPaymentEnabled && schoolPaymentSettings?.showQrToParents) {
+                                  setPayModalTab('qr');
+                                } else if (schoolPaymentSettings?.upiId) {
+                                  setPayModalTab('upi');
+                                } else {
+                                  setPayModalTab('bank');
+                                }
                               } else {
                                 alert('All fees are currently cleared!');
                               }
@@ -1834,6 +1846,171 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                       })()}
                     </GlassCard>
                   </div>
+
+                  {/* Pay Fees Modal */}
+                  {showPayModal && selectedFee && (
+                    <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+                      <div className="w-full max-w-md bg-slate-900 border border-slate-805 rounded-3xl p-6 space-y-4 shadow-2xl animate-fade-in text-xs text-slate-350">
+                        <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                          <div>
+                            <h3 className="font-bold text-slate-100 text-base">Pay School Fees</h3>
+                            <p className="text-[10px] text-slate-400 mt-0.5">{selectedFee.description}</p>
+                          </div>
+                          <button 
+                            type="button"
+                            onClick={() => {
+                              setShowPayModal(false);
+                              setSelectedFee(null);
+                            }}
+                            className="p-1 rounded-lg bg-slate-850 hover:bg-slate-805 text-slate-400 hover:text-slate-200 transition-colors"
+                          >
+                            <X size={18} />
+                          </button>
+                        </div>
+
+                        {/* Invoice & Outstanding Details */}
+                        <div className="p-3 bg-brand-500/5 border border-brand-500/10 rounded-xl flex justify-between items-center">
+                          <span className="text-xs text-slate-400 font-semibold">Amount to Pay:</span>
+                          <span className="text-sm font-extrabold text-brand-400">₹{selectedFee.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</span>
+                        </div>
+
+                        {/* Payment Instructions / Gateways */}
+                        <div className="space-y-3">
+                          <label className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block mb-1">Select Payment Method</label>
+                          
+                          {/* Method Selector Tabs */}
+                          <div className="flex border-b border-slate-850 pb-1 text-[10px] font-bold text-slate-500">
+                            {[
+                              { id: 'qr', label: 'UPI QR Code', show: !!(schoolPaymentSettings?.qrPaymentEnabled && schoolPaymentSettings?.showQrToParents && schoolPaymentSettings?.qrCodeUrl) },
+                              { id: 'upi', label: 'UPI ID', show: !!schoolPaymentSettings?.upiId },
+                              { id: 'bank', label: 'Bank Transfer', show: !!schoolPaymentSettings?.showBankToParents }
+                            ].filter(t => t.show).map(t => (
+                              <button
+                                key={t.id}
+                                type="button"
+                                onClick={() => setPayModalTab(t.id as any)}
+                                className={`flex-1 pb-1.5 text-center transition-all ${
+                                  payModalTab === t.id
+                                    ? 'text-brand-400 border-b-2 border-brand-400'
+                                    : 'hover:text-slate-350'
+                                }`}
+                              >
+                                {t.label}
+                              </button>
+                            ))}
+                          </div>
+
+                          {/* Tab Contents */}
+                          <div className="space-y-3 pt-2">
+                            {payModalTab === 'qr' && schoolPaymentSettings?.qrCodeUrl && (
+                              <div className="space-y-3 text-center flex flex-col items-center">
+                                <div className="w-36 h-36 bg-white p-2 rounded-xl flex items-center justify-center border border-slate-800">
+                                  <img src={schoolPaymentSettings.qrCodeUrl} alt="UPI Payment QR" className="max-w-full max-h-full object-contain" />
+                                </div>
+                                <div>
+                                  <h5 className="text-[11px] font-bold text-slate-200">Scan & Pay Using Any UPI App</h5>
+                                  <p className="text-[9px] text-slate-505 mt-0.5 leading-normal">GPay, PhonePe, Paytm, BHIM or any banking app</p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const a = document.createElement('a');
+                                    a.href = schoolPaymentSettings.qrCodeUrl || '';
+                                    a.download = 'school_payment_qr.png';
+                                    a.target = '_blank';
+                                    a.click();
+                                  }}
+                                  className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-350 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  <Download size={10} /> Download QR Code
+                                </button>
+                              </div>
+                            )}
+
+                            {payModalTab === 'upi' && schoolPaymentSettings?.upiId && (
+                              <div className="space-y-3 text-center flex flex-col items-center">
+                                <div className="bg-slate-950/60 border border-slate-850 px-3 py-2 rounded-xl text-center w-full">
+                                  <span className="text-xs font-mono font-bold text-slate-350 block select-all">{schoolPaymentSettings.upiId}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(schoolPaymentSettings.upiId || '');
+                                    alert('UPI ID copied to clipboard!');
+                                  }}
+                                  className="px-3 py-1.5 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-350 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer"
+                                >
+                                  Copy UPI ID
+                                </button>
+                              </div>
+                            )}
+
+                            {payModalTab === 'bank' && schoolPaymentSettings?.showBankToParents && (
+                              <div className="space-y-2">
+                                <div className="space-y-2 text-xs p-3 bg-slate-950/20 rounded-xl border border-slate-850/80">
+                                  {[
+                                    { label: 'Account Holder Name', value: schoolPaymentSettings.accountHolderName },
+                                    { label: 'Bank Name', value: schoolPaymentSettings.bankName },
+                                    { label: 'Account Number', value: schoolPaymentSettings.accountNumber },
+                                    { label: 'IFSC', value: schoolPaymentSettings.ifscCode },
+                                    { label: 'Branch', value: schoolPaymentSettings.branchName },
+                                    { label: 'SWIFT Code', value: schoolPaymentSettings.swiftCode }
+                                  ].filter(item => item.value).map(item => (
+                                    <div key={item.label} className="flex justify-between items-center py-1 border-b border-slate-850/40 last:border-0">
+                                      <span className="text-slate-505 text-[9px] font-bold uppercase">{item.label}</span>
+                                      <span className="text-slate-205 font-semibold text-[10px] font-mono select-all">{item.value || '—'}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              </div>
+                            )}
+
+                            {!schoolPaymentSettings?.qrCodeUrl && !schoolPaymentSettings?.upiId && !schoolPaymentSettings?.showBankToParents && (
+                              <p className="text-slate-500 text-[10px] py-4 text-center">No online payment methods are currently enabled by the school. Please contact school administration.</p>
+                            )}
+                          </div>
+
+                          {schoolPaymentSettings?.paymentInstructions && (
+                            <div className="p-2.5 bg-slate-950/20 rounded-xl border border-slate-850/50 text-[9.5px] text-slate-400 leading-normal">
+                              <span className="font-bold text-slate-300">Instructions: </span>
+                              {schoolPaymentSettings.paymentInstructions}
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Modal Actions */}
+                        <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowPayModal(false);
+                              setSelectedFee(null);
+                            }}
+                            className="px-4 py-2 bg-slate-850 hover:bg-slate-800 text-slate-300 rounded-xl text-xs font-semibold cursor-pointer"
+                          >
+                            Close
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setShowPayModal(false);
+                              setShowProofModal(true);
+                              setUtrNumber('');
+                              setScreenshotFile(null);
+                              if (payModalTab === 'qr' || payModalTab === 'upi') {
+                                setPaymentMethod('UPI');
+                              } else {
+                                setPaymentMethod('BANK_TRANSFER');
+                              }
+                            }}
+                            className="px-4 py-2 bg-brand-500 hover:bg-brand-600 text-white rounded-xl text-xs font-semibold cursor-pointer flex items-center gap-1.5"
+                          >
+                            I've Paid — Submit Proof
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Submit Proof Modal */}
                   {showProofModal && selectedFee && (
