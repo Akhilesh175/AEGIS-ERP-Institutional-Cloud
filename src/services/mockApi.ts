@@ -11,7 +11,7 @@ import {
   HostelFee, HostelPayment, HostelMessMenu,
   SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport,
   SupportTicketMessage, SupportTicketStatusLog, SupportNotification, SupportInternalNote,
-  SchoolPaymentSettings, FacultyPaymentSettings, SalaryPayment, EmployeeSalaryLedger
+  SchoolPaymentSettings, FacultyPaymentSettings, SalaryPayment, EmployeeSalaryLedger, PaymentAuditLog
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
@@ -16091,6 +16091,38 @@ export const mockApi = {
     return savedRecord;
   },
 
+  // ── PAYMENT AUDIT LOG ─────────────────────────────────────────────────
+
+  async logPaymentAction(
+    paymentId: string,
+    action: 'SUBMITTED' | 'APPROVED' | 'REJECTED',
+    performedBy: string,
+    details?: Record<string, any>
+  ): Promise<void> {
+    const now = new Date().toISOString();
+    const log: PaymentAuditLog = {
+      id: 'pal-' + Math.random().toString(36).substr(2, 9),
+      paymentId,
+      action,
+      performedBy,
+      performedAt: now,
+      details,
+    };
+    try {
+      await supabase.from('payment_audit_logs').insert({
+        payment_id: paymentId,
+        action,
+        performed_by: performedBy,
+        performed_at: now,
+        details: details ? JSON.stringify(details) : null,
+      });
+    } catch (e) {
+      console.warn('logPaymentAction: Supabase unavailable, using local store:', e);
+    }
+    mockDb.paymentAuditLogs.push(log);
+    mockDb.saveAll();
+  },
+
   async submitFeePaymentProof(
     parentId: string,
     studentId: string,
@@ -16099,6 +16131,21 @@ export const mockApi = {
     utr: string,
     screenshotFile: File
   ): Promise<FeePayment> {
+    // UTR uniqueness validation
+    const dupLocal = mockDb.feePayments.find(p => p.utrNumber === utr && p.status !== 'REJECTED');
+    if (dupLocal) throw new Error(`UTR "${utr}" has already been used for another fee payment.`);
+    try {
+      const { data: dupDb } = await supabase
+        .from('fee_payments')
+        .select('id')
+        .eq('utr_number', utr)
+        .neq('status', 'REJECTED')
+        .maybeSingle();
+      if (dupDb) throw new Error(`UTR "${utr}" has already been used for another fee payment.`);
+    } catch (e: any) {
+      if (e.message?.includes('UTR')) throw e;
+      // Supabase unavailable — local check was already done above
+    }
     const screenshotUrl = await this.uploadPaymentAsset(
       'payment-proofs', 
       `student-${studentId}/fees`, 
@@ -16192,6 +16239,7 @@ export const mockApi = {
     }
 
     mockDb.addLog(parentId, 'FEE_PAYMENT_PROOF_SUBMITTED', { studentId, feeStructureId, utr });
+    await this.logPaymentAction(savedPayment.id, 'SUBMITTED', parentId, { studentId, feeStructureId, utr, method });
     return savedPayment;
   },
 
@@ -16260,6 +16308,8 @@ export const mockApi = {
 
     const auditAction = status === 'PAID' ? 'FEE_PAYMENT_APPROVED' : 'FEE_PAYMENT_REJECTED';
     mockDb.addLog(adminId, auditAction, { paymentId, rejectionReason });
+    const logAction = status === 'PAID' ? 'APPROVED' as const : 'REJECTED' as const;
+    await this.logPaymentAction(paymentId, logAction, adminId, { status, rejectionReason, invoiceId: savedPayment.feeStructureId });
     return savedPayment;
   },
 
@@ -16322,6 +16372,7 @@ export const mockApi = {
     mockDb.salaryPayments.push(newPayment);
     mockDb.saveAll();
     mockDb.addLog(adminId, 'SALARY_PAYMENT_SUBMITTED', { employeeId: payload.employeeId, month: payload.month, amount: payload.amount });
+    await this.logPaymentAction(newPayment.id, 'SUBMITTED', adminId, { employeeId: payload.employeeId, month: payload.month, amount: payload.amount, utrNumber: payload.utrNumber });
     return newPayment;
   },
 
@@ -16412,6 +16463,8 @@ export const mockApi = {
       mockDb.saveAll();
     }
     mockDb.addLog(adminId, action === 'APPROVED' ? 'SALARY_PAYMENT_APPROVED' : 'SALARY_PAYMENT_REJECTED', { paymentId, rejectionReason });
+    const salaryLogAction = action === 'APPROVED' ? 'APPROVED' as const : 'REJECTED' as const;
+    await this.logPaymentAction(paymentId, salaryLogAction, adminId, { action, rejectionReason, employeeId: updated?.employeeId, amount: updated?.amount });
     return updated!;
   },
 

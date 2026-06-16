@@ -498,6 +498,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_mess_menu' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_fees' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'hostel_payments' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_payments' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fee_structures' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'notifications', filter: `user_id=eq.${session?.user?.id}` }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'school_subscriptions' }, () => {
         console.log('Realtime school_subscriptions change detected in parent portal, refreshing plan...');

@@ -1166,5 +1166,15 @@ export interface EmployeeSalaryLedger {
   createdAt: string;
 }
 
+export interface PaymentAuditLog {
+  id: string;
+  paymentId: string;
+  action: 'SUBMITTED' | 'APPROVED' | 'REJECTED';
+  performedBy: string;
+  performedAt: string;
+  details?: Record<string, any>;
+}
+
+
 
 

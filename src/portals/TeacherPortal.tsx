@@ -799,7 +799,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       };
       loadPaymentSettings();
     }
-  }, [activeTab, session]);
+  }, [activeTab, session, refreshTrigger]);
 
   useEffect(() => {
     if (teacherId && selectedManagedClass && hmSelectedStudent && hmSelectedExam) {
@@ -959,6 +959,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       .on('postgres_changes', { event: '*', schema: 'public', table: 'transport_assignments' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'driver_attendance' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'drivers' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'salary_payments' }, handleAcademicSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'employee_salary_ledger' }, handleAcademicSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'school_subscriptions' }, () => {
         console.log('Realtime school_subscriptions change detected in teacher portal, refreshing plan...');
         syncSubscriptionPlan();
