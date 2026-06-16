@@ -16100,27 +16100,17 @@ export const mockApi = {
     details?: Record<string, any>
   ): Promise<void> {
     const now = new Date().toISOString();
-    const log: PaymentAuditLog = {
-      id: 'pal-' + Math.random().toString(36).substr(2, 9),
-      paymentId,
+    const { error } = await supabase.from('payment_audit_logs').insert({
+      payment_id: paymentId,
       action,
-      performedBy,
-      performedAt: now,
-      details,
-    };
-    try {
-      await supabase.from('payment_audit_logs').insert({
-        payment_id: paymentId,
-        action,
-        performed_by: performedBy,
-        performed_at: now,
-        details: details ? JSON.stringify(details) : null,
-      });
-    } catch (e) {
-      console.warn('logPaymentAction: Supabase unavailable, using local store:', e);
+      performed_by: performedBy,
+      performed_at: now,
+      details: details ? JSON.stringify(details) : null,
+    });
+    if (error) {
+      console.error('Error logging payment action:', error);
+      throw error;
     }
-    mockDb.paymentAuditLogs.push(log);
-    mockDb.saveAll();
   },
 
   async submitFeePaymentProof(
@@ -16327,80 +16317,103 @@ export const mockApi = {
     }
   ): Promise<SalaryPayment> {
     await delay();
-    const dupLocal = mockDb.salaryPayments.find(p => p.utrNumber === payload.utrNumber);
-    if (dupLocal) throw new Error(`UTR "${payload.utrNumber}" already used for a salary payment.`);
-    const now = new Date().toISOString();
+    
+    // Check UTR uniqueness directly on Supabase (excluding REJECTED payments)
+    const { data: dupData, error: dupError } = await supabase
+      .from('salary_payments')
+      .select('id')
+      .eq('utr_number', payload.utrNumber)
+      .neq('status', 'REJECTED')
+      .maybeSingle();
+      
+    if (dupError) {
+      console.error('Error checking UTR uniqueness:', dupError);
+      throw dupError;
+    }
+    if (dupData) {
+      throw new Error(`UTR "${payload.utrNumber}" already used for a salary payment.`);
+    }
+
+    const { data, error } = await supabase
+      .from('salary_payments')
+      .insert({
+        employee_id: payload.employeeId,
+        school_id: schoolId,
+        month: payload.month,
+        amount: payload.amount,
+        utr_number: payload.utrNumber,
+        payment_screenshot_url: payload.paymentScreenshotUrl,
+        status: 'PENDING',
+        created_by: adminId,
+      })
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Error submitting salary payment:', error);
+      throw error;
+    }
+    if (!data) {
+      throw new Error('Failed to submit salary payment: no data returned from database.');
+    }
+
     const newPayment: SalaryPayment = {
-      id: 'sp-' + Math.random().toString(36).substr(2, 9),
+      id: data.id,
+      employeeId: data.employee_id,
+      schoolId: data.school_id,
+      month: data.month,
+      amount: Number(data.amount),
+      utrNumber: data.utr_number,
+      paymentScreenshotUrl: data.payment_screenshot_url,
+      status: data.status as SalaryPayment['status'],
+      rejectionReason: data.rejection_reason,
+      rejectedBy: data.rejected_by,
+      rejectedAt: data.rejected_at,
+      createdBy: data.created_by,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+
+    await this.logPaymentAction(newPayment.id, 'SUBMITTED', adminId, {
       employeeId: payload.employeeId,
-      schoolId,
       month: payload.month,
       amount: payload.amount,
-      utrNumber: payload.utrNumber,
-      paymentScreenshotUrl: payload.paymentScreenshotUrl,
-      status: 'PENDING',
-      rejectionReason: null,
-      rejectedBy: null,
-      rejectedAt: null,
-      createdBy: adminId,
-      createdAt: now,
-      updatedAt: now,
-    };
-    try {
-      const { data, error } = await supabase
-        .from('salary_payments')
-        .insert({
-          employee_id: newPayment.employeeId,
-          school_id: newPayment.schoolId,
-          month: newPayment.month,
-          amount: newPayment.amount,
-          utr_number: newPayment.utrNumber,
-          payment_screenshot_url: newPayment.paymentScreenshotUrl,
-          status: 'PENDING',
-          created_by: adminId,
-        })
-        .select('*')
-        .single();
-      if (data && !error) {
-        newPayment.id = data.id;
-        newPayment.createdAt = data.created_at;
-        newPayment.updatedAt = data.updated_at;
-      }
-    } catch (e) {
-      console.warn('submitSalaryPayment: Supabase unavailable, using local store:', e);
-    }
-    mockDb.salaryPayments.push(newPayment);
-    mockDb.saveAll();
-    mockDb.addLog(adminId, 'SALARY_PAYMENT_SUBMITTED', { employeeId: payload.employeeId, month: payload.month, amount: payload.amount });
-    await this.logPaymentAction(newPayment.id, 'SUBMITTED', adminId, { employeeId: payload.employeeId, month: payload.month, amount: payload.amount, utrNumber: payload.utrNumber });
+      utrNumber: payload.utrNumber
+    });
+
     return newPayment;
   },
 
   async getSalaryPayments(schoolId: string): Promise<SalaryPayment[]> {
-    await delay(200);
-    try {
-      const { data, error } = await supabase
-        .from('salary_payments')
-        .select('*')
-        .eq('school_id', schoolId)
-        .order('created_at', { ascending: false });
-      if (data && !error) {
-        return (data as any[]).map(r => ({
-          id: r.id, employeeId: r.employee_id, schoolId: r.school_id,
-          month: r.month, amount: Number(r.amount), utrNumber: r.utr_number,
-          paymentScreenshotUrl: r.payment_screenshot_url,
-          status: r.status as SalaryPayment['status'],
-          rejectionReason: r.rejection_reason, rejectedBy: r.rejected_by,
-          rejectedAt: r.rejected_at, createdBy: r.created_by,
-          createdAt: r.created_at, updatedAt: r.updated_at,
-        }));
-      }
-    } catch (e) {
-      console.warn('getSalaryPayments: falling back to local store.');
+    await delay(100);
+    const { data, error } = await supabase
+      .from('salary_payments')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      console.error('Error loading salary payments:', error);
+      throw error;
     }
-    return mockDb.salaryPayments
-      .filter(p => p.schoolId === schoolId)
-      .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    if (!data) return [];
+
+    return (data as any[]).map(r => ({
+      id: r.id,
+      employeeId: r.employee_id,
+      schoolId: r.school_id,
+      month: r.month,
+      amount: Number(r.amount),
+      utrNumber: r.utr_number,
+      paymentScreenshotUrl: r.payment_screenshot_url,
+      status: r.status as SalaryPayment['status'],
+      rejectionReason: r.rejection_reason,
+      rejectedBy: r.rejected_by,
+      rejectedAt: r.rejected_at,
+      createdBy: r.created_by,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+    }));
   },
 
   async approveSalaryPayment(
@@ -16411,88 +16424,103 @@ export const mockApi = {
   ): Promise<SalaryPayment> {
     await delay();
     const now = new Date().toISOString();
-    let updated: SalaryPayment | null = null;
-    try {
-      const patch: any = { status: action, updated_at: now };
-      if (action === 'REJECTED') {
-        patch.rejection_reason = rejectionReason || 'Details mismatch';
-        patch.rejected_by = adminId;
-        patch.rejected_at = now;
-      }
-      const { data, error } = await supabase
-        .from('salary_payments').update(patch).eq('id', paymentId).select('*').single();
-      if (data && !error) {
-        updated = {
-          id: data.id, employeeId: data.employee_id, schoolId: data.school_id,
-          month: data.month, amount: Number(data.amount), utrNumber: data.utr_number,
-          paymentScreenshotUrl: data.payment_screenshot_url, status: data.status,
-          rejectionReason: data.rejection_reason, rejectedBy: data.rejected_by,
-          rejectedAt: data.rejected_at, createdBy: data.created_by,
-          createdAt: data.created_at, updatedAt: data.updated_at,
-        };
-        if (action === 'APPROVED') {
-          await supabase.from('employee_salary_ledger').insert({
-            employee_id: updated.employeeId, salary_payment_id: paymentId,
-            month: updated.month, amount: updated.amount, payment_date: now, utr_number: updated.utrNumber,
-          });
-        }
-      }
-    } catch (e) {
-      console.warn('approveSalaryPayment: Supabase unavailable, using local store:', e);
+    const patch: any = { status: action, updated_at: now };
+    if (action === 'REJECTED') {
+      patch.rejection_reason = rejectionReason || 'Details mismatch';
+      patch.rejected_by = adminId;
+      patch.rejected_at = now;
     }
-    const idx = mockDb.salaryPayments.findIndex(p => p.id === paymentId);
-    if (idx === -1 && !updated) throw new Error('Salary payment not found.');
-    if (idx !== -1) {
-      mockDb.salaryPayments[idx].status = action;
-      mockDb.salaryPayments[idx].updatedAt = now;
-      if (action === 'REJECTED') {
-        mockDb.salaryPayments[idx].rejectionReason = rejectionReason || 'Details mismatch';
-        mockDb.salaryPayments[idx].rejectedBy = adminId;
-        mockDb.salaryPayments[idx].rejectedAt = now;
-      }
-      updated = updated || mockDb.salaryPayments[idx];
-      if (action === 'APPROVED' && !mockDb.salaryLedger.find(l => l.salaryPaymentId === paymentId)) {
-        const p = mockDb.salaryPayments[idx];
-        mockDb.salaryLedger.push({
-          id: 'sl-' + Math.random().toString(36).substr(2, 9),
-          employeeId: p.employeeId, salaryPaymentId: paymentId,
-          month: p.month, amount: p.amount, paymentDate: now,
-          utrNumber: p.utrNumber, createdAt: now,
+    
+    const { data, error } = await supabase
+      .from('salary_payments')
+      .update(patch)
+      .eq('id', paymentId)
+      .select('*')
+      .single();
+
+    if (error) {
+      console.error('Error updating salary payment status:', error);
+      throw error;
+    }
+    if (!data) {
+      throw new Error('Salary payment not found.');
+    }
+
+    const updated: SalaryPayment = {
+      id: data.id,
+      employeeId: data.employee_id,
+      schoolId: data.school_id,
+      month: data.month,
+      amount: Number(data.amount),
+      utrNumber: data.utr_number,
+      paymentScreenshotUrl: data.payment_screenshot_url,
+      status: data.status as SalaryPayment['status'],
+      rejectionReason: data.rejection_reason,
+      rejectedBy: data.rejected_by,
+      rejectedAt: data.rejected_at,
+      createdBy: data.created_by,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+    };
+
+    if (action === 'APPROVED') {
+      const { error: ledgerError } = await supabase
+        .from('employee_salary_ledger')
+        .insert({
+          employee_id: updated.employeeId,
+          salary_payment_id: paymentId,
+          month: updated.month,
+          amount: updated.amount,
+          payment_date: now,
+          utr_number: updated.utrNumber,
         });
+        
+      if (ledgerError) {
+        console.error('Error creating ledger entry:', ledgerError);
+        throw ledgerError;
       }
-      mockDb.saveAll();
     }
-    mockDb.addLog(adminId, action === 'APPROVED' ? 'SALARY_PAYMENT_APPROVED' : 'SALARY_PAYMENT_REJECTED', { paymentId, rejectionReason });
+
     const salaryLogAction = action === 'APPROVED' ? 'APPROVED' as const : 'REJECTED' as const;
-    await this.logPaymentAction(paymentId, salaryLogAction, adminId, { action, rejectionReason, employeeId: updated?.employeeId, amount: updated?.amount });
-    return updated!;
+    await this.logPaymentAction(paymentId, salaryLogAction, adminId, {
+      action,
+      rejectionReason,
+      employeeId: updated.employeeId,
+      amount: updated.amount,
+    });
+
+    return updated;
   },
 
   async getSalaryLedger(schoolId: string, employeeId?: string): Promise<EmployeeSalaryLedger[]> {
-    await delay(200);
-    try {
-      const { data, error } = await supabase
-        .from('employee_salary_ledger')
-        .select('*, salary_payments!inner(school_id)')
-        .order('payment_date', { ascending: false });
-      if (data && !error) {
-        let rows = (data as any[]).map(r => ({
-          id: r.id, employeeId: r.employee_id, salaryPaymentId: r.salary_payment_id,
-          month: r.month, amount: Number(r.amount), paymentDate: r.payment_date,
-          utrNumber: r.utr_number, createdAt: r.created_at,
-        }));
-        if (employeeId) rows = rows.filter(r => r.employeeId === employeeId);
-        return rows;
-      }
-    } catch (e) {
-      console.warn('getSalaryLedger: falling back to local store.');
+    await delay(100);
+    let query = supabase
+      .from('employee_salary_ledger')
+      .select('*, salary_payments!inner(school_id)')
+      .eq('salary_payments.school_id', schoolId)
+      .order('payment_date', { ascending: false });
+    
+    if (employeeId) {
+      query = query.eq('employee_id', employeeId);
     }
-    const schoolPaymentIds = new Set(
-      mockDb.salaryPayments.filter(p => p.schoolId === schoolId).map(p => p.id)
-    );
-    let local = mockDb.salaryLedger.filter(l => schoolPaymentIds.has(l.salaryPaymentId));
-    if (employeeId) local = local.filter(l => l.employeeId === employeeId);
-    return local.sort((a, b) => new Date(b.paymentDate).getTime() - new Date(a.paymentDate).getTime());
+    
+    const { data, error } = await query;
+    if (error) {
+      console.error('Error fetching salary ledger:', error);
+      throw error;
+    }
+    if (!data) return [];
+    
+    return (data as any[]).map(r => ({
+      id: r.id,
+      employeeId: r.employee_id,
+      salaryPaymentId: r.salary_payment_id,
+      month: r.month,
+      amount: Number(r.amount),
+      paymentDate: r.payment_date,
+      utrNumber: r.utr_number,
+      createdAt: r.created_at,
+    }));
   }
 };
 

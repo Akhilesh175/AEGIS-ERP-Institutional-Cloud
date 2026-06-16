@@ -5,7 +5,7 @@ import { mockDb } from '../services/mockDb';
 import { supabase } from '../lib/supabase';
 import { 
   TeacherClassSubjectMapping, Student, AssignmentSubmission, 
-  Class, Subject, Assignment, User, Timetable, Exam, StudyMaterial, Quiz, Section, HomeworkAttachment, FacultyPaymentSettings, PayrollRecord
+  Class, Subject, Assignment, User, Timetable, Exam, StudyMaterial, Quiz, Section, HomeworkAttachment, FacultyPaymentSettings, PayrollRecord, EmployeeSalaryLedger
 } from '../types';
 import { GlassCard } from '../components/GlassCard';
 import { 
@@ -223,7 +223,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const [fpBranch, setFpBranch] = useState('');
   const [fpShowAccNumber, setFpShowAccNumber] = useState(false);
   // Salary history
-  const [myPayrollRecords, setMyPayrollRecords] = useState<PayrollRecord[]>([]);
+  const [mySalaryLedger, setMySalaryLedger] = useState<EmployeeSalaryLedger[]>([]);
 
   // Helper to filter items by selected analyticsDateRange
   const filterByDateRange = (dateStr: string) => {
@@ -787,9 +787,8 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
           }
           const schoolId = session.user.schoolId || '';
           if (schoolId) {
-            const records = await mockApi.fetchPayrollRecords(schoolId);
-            const userRecords = records.filter(r => r.userId === userId || r.employeeName === `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim());
-            setMyPayrollRecords(userRecords);
+            const ledger = await mockApi.getSalaryLedger(schoolId, userId);
+            setMySalaryLedger(ledger);
           }
         } catch (err) {
           console.error('Failed to load payment settings:', err);
@@ -5170,11 +5169,11 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
               <button
                 onClick={async () => {
                   const schoolId = session?.user.schoolId || '';
-                  if (schoolId) {
+                  const userId = session?.user.id || '';
+                  if (schoolId && userId) {
                     try {
-                      const records = await mockApi.fetchPayrollRecords(schoolId);
-                      const userId = session?.user.id || '';
-                      setMyPayrollRecords(records.filter(r => r.userId === userId || r.employeeName === `${session?.user.firstName || ''} ${session?.user.lastName || ''}`.trim()));
+                      const ledger = await mockApi.getSalaryLedger(schoolId, userId);
+                      setMySalaryLedger(ledger);
                     } catch (e) { console.warn(e); }
                   }
                 }}
@@ -5184,7 +5183,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
               </button>
             </div>
 
-            {myPayrollRecords.length === 0 ? (
+            {mySalaryLedger.length === 0 ? (
               <div className="text-center py-8">
                 <Banknote className="mx-auto text-slate-700 mb-2" size={28} />
                 <p className="text-slate-500 text-xs">No salary records found.</p>
@@ -5195,54 +5194,45 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 <table className="w-full text-xs">
                   <thead>
                     <tr className="border-b border-slate-850">
-                      {['Month', 'Gross', 'Deductions', 'Net Salary', 'Status', 'Action'].map(h => (
+                      {['Month', 'Amount Disbursed', 'Payment Date', 'UTR Number', 'Status', 'Action'].map(h => (
                         <th key={h} className="text-left py-2 px-2 text-[10px] font-bold uppercase tracking-wider text-slate-500">{h}</th>
                       ))}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-900">
-                    {myPayrollRecords.map(rec => (
+                    {mySalaryLedger.map(rec => (
                       <tr key={rec.id} className="hover:bg-slate-900/30 transition-colors">
-                        <td className="py-2.5 px-2 font-semibold text-slate-200">{rec.payoutMonth || '—'}</td>
-                        <td className="py-2.5 px-2 text-slate-300">₹{((rec.baseSalary || 0) + (rec.allowances || 0)).toLocaleString()}</td>
-                        <td className="py-2.5 px-2 text-rose-400">-₹{(rec.deductions || 0).toLocaleString()}</td>
-                        <td className="py-2.5 px-2 text-emerald-400 font-bold">₹{(rec.netSalary || 0).toLocaleString()}</td>
+                        <td className="py-2.5 px-2 font-semibold text-slate-200">{rec.month || '—'}</td>
+                        <td className="py-2.5 px-2 text-emerald-400 font-bold">₹{rec.amount.toLocaleString()}</td>
+                        <td className="py-2.5 px-2 text-slate-300">{new Date(rec.paymentDate).toLocaleDateString()}</td>
+                        <td className="py-2.5 px-2 text-slate-300 font-mono">{rec.utrNumber}</td>
                         <td className="py-2.5 px-2">
-                          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            rec.payoutStatus === 'PAID'
-                              ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                              : rec.payoutStatus === 'PENDING'
-                              ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                              : 'bg-slate-800 text-slate-500'
-                          }`}>{rec.payoutStatus}</span>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">PAID</span>
                         </td>
                         <td className="py-2.5 px-2">
                           <button
                             onClick={() => {
-                              // Generate a simple text-based payslip download
+                              // Generate a simple text-based payslip download from database ledger
                               const content = [
-                                'SALARY SLIP',
-                                '============',
-                                `Employee: ${rec.employeeName || `${session?.user.firstName || ''} ${session?.user.lastName || ''}`.trim() || 'N/A'}`,
-                                `Month: ${rec.payoutMonth || 'N/A'}`,
-                                `Employee Type: ${rec.employeeType || 'N/A'}`,
+                                'SALARY PAYMENT SLIP',
+                                '===================',
+                                `Employee Name: ${session?.user.firstName || ''} ${session?.user.lastName || ''}`.trim(),
+                                `Employee ID:   ${rec.employeeId}`,
+                                `Month:         ${rec.month}`,
+                                `Amount Paid:   ₹${(rec.amount || 0).toLocaleString()}`,
+                                `Payment Date:  ${new Date(rec.paymentDate).toLocaleString()}`,
+                                `UTR Number:    ${rec.utrNumber}`,
+                                `Reference ID:  ${rec.id}`,
                                 '',
-                                `Base Salary:   ₹${(rec.baseSalary || 0).toLocaleString()}`,
-                                `Allowances:    ₹${(rec.allowances || 0).toLocaleString()}`,
-                                `Deductions:    -₹${(rec.deductions || 0).toLocaleString()}`,
-                                `──────────────────`,
-                                `Net Salary:    ₹${(rec.netSalary || 0).toLocaleString()}`,
+                                'Status: PAID (Disbursed)',
                                 '',
-                                `Status: ${rec.payoutStatus || 'N/A'}`,
-                                `Notes: ${rec.notes || 'N/A'}`,
-                                '',
-                                'Generated by AEGIS ERP'
+                                'Generated by AEGIS ERP Institutional Cloud'
                               ].join('\n');
                               const blob = new Blob([content], { type: 'text/plain' });
                               const url = URL.createObjectURL(blob);
                               const a = document.createElement('a');
                               a.href = url;
-                              a.download = `payslip_${rec.payoutMonth || rec.id}.txt`;
+                              a.download = `payslip_${rec.month.replace(/\s+/g, '_')}.txt`;
                               a.click();
                               URL.revokeObjectURL(url);
                             }}
