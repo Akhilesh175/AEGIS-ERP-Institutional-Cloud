@@ -189,6 +189,7 @@ BEGIN
     ALTER PUBLICATION supabase_realtime ADD TABLE public.salary_payments;
     ALTER PUBLICATION supabase_realtime ADD TABLE public.employee_salary_ledger;
     ALTER PUBLICATION supabase_realtime ADD TABLE public.payment_audit_logs;
+    ALTER PUBLICATION supabase_realtime ADD TABLE public.fee_payments;
   END IF;
 EXCEPTION
   WHEN OTHERS THEN NULL;

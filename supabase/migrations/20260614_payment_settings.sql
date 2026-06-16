@@ -153,6 +153,9 @@ BEGIN
     WHERE table_schema = 'public' AND table_name = 'fee_payments'
   ) THEN
 
+    -- Add REJECTED to payment_status enum
+    EXECUTE 'ALTER TYPE public.payment_status ADD VALUE IF NOT EXISTS ''REJECTED''';
+
     -- payment_screenshot_url
     IF NOT EXISTS (
       SELECT 1 FROM information_schema.columns

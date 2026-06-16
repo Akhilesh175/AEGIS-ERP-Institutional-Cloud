@@ -12,6 +12,8 @@
  * Run with:  npx ts-node scratch/test-payment-security.ts
  */
 
+import './load-env';
+import './mock-localStorage';
 import { mockApi } from '../src/services/mockApi';
 import { mockDb } from '../src/services/mockDb';
 
@@ -176,7 +178,7 @@ async function runTests(): Promise<void> {
       );
       assert(
         crossTeacherView === null || crossTeacherView?.accountNumber == null,
-        'Teacher cannot see another teacher's bank account number'
+        "Teacher cannot see another teacher's bank account number"
       );
     }
   } else {

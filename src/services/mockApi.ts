@@ -2147,6 +2147,9 @@ export const mockApi = {
 
   async syncFeePaymentsData(schoolId: string): Promise<void> {
     try {
+      await this.syncClassesData(schoolId).catch(() => {});
+      await this.syncFeeStructuresData(schoolId).catch(() => {});
+
       const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
       const schoolClassIds = mockDb.classes.filter(c => c.schoolId === schoolId).map(c => c.id);
       const structuresList = mockDb.feeStructures.filter(fs => schoolClassIds.includes(fs.classId));
@@ -16100,16 +16103,126 @@ export const mockApi = {
     details?: Record<string, any>
   ): Promise<void> {
     const now = new Date().toISOString();
-    const { error } = await supabase.from('payment_audit_logs').insert({
-      payment_id: paymentId,
-      action,
-      performed_by: performedBy,
-      performed_at: now,
-      details: details ? JSON.stringify(details) : null,
-    });
-    if (error) {
-      console.error('Error logging payment action:', error);
-      throw error;
+    let resolvedUserId = performedBy;
+
+    try {
+      // 1. Check if performedBy exists directly in public.users
+      const { data: userCheck } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('id', performedBy)
+        .maybeSingle();
+
+      if (!userCheck) {
+        // 2. Check parents table for user_id
+        const { data: parentCheck } = await supabaseAdmin
+          .from('parents')
+          .select('user_id')
+          .eq('id', performedBy)
+          .maybeSingle();
+        
+        if (parentCheck?.user_id) {
+          resolvedUserId = parentCheck.user_id;
+        } else {
+          // 3. Check teachers table for user_id
+          const { data: teacherCheck } = await supabaseAdmin
+            .from('teachers')
+            .select('user_id')
+            .eq('id', performedBy)
+            .maybeSingle();
+            
+          if (teacherCheck?.user_id) {
+            resolvedUserId = teacherCheck.user_id;
+          } else {
+            // 4. Check students table for user_id
+            const { data: studentCheck } = await supabaseAdmin
+              .from('students')
+              .select('user_id')
+              .eq('id', performedBy)
+              .maybeSingle();
+              
+            if (studentCheck?.user_id) {
+              resolvedUserId = studentCheck.user_id;
+            }
+          }
+        }
+      }
+
+      // Fallback: Check local mockDb cache if we couldn't resolve from database
+      if (resolvedUserId === performedBy) {
+        const localParent = mockDb.parents.find(p => p.id === performedBy);
+        if (localParent) {
+          resolvedUserId = localParent.userId;
+        } else {
+          const localTeacher = mockDb.teachers.find(t => t.id === performedBy);
+          if (localTeacher) {
+            resolvedUserId = localTeacher.userId;
+          } else {
+            const localStudent = mockDb.students.find(s => s.id === performedBy);
+            if (localStudent) {
+              resolvedUserId = localStudent.userId;
+            }
+          }
+        }
+      }
+
+      // Validate that resolvedUserId exists in public.users, otherwise sync it from auth.users
+      const { data: finalUserCheck } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('id', resolvedUserId)
+        .maybeSingle();
+
+      if (!finalUserCheck) {
+        console.warn(`User profile for ID ${resolvedUserId} not found in public.users. Attempting auto-sync from auth.users...`);
+        try {
+          const { data: authUserRes } = await supabaseAdmin.auth.admin.getUserById(resolvedUserId);
+          if (authUserRes?.user) {
+            const authUser = authUserRes.user;
+            const metadata = authUser.user_metadata || {};
+            const email = authUser.email || '';
+            const role = metadata.role || 'PARENT';
+            const schoolId = metadata.school_id || 'school-1';
+            
+            const { error: insErr } = await supabaseAdmin.from('users').insert({
+              id: resolvedUserId,
+              email: email,
+              role: role,
+              first_name: metadata.first_name || 'User',
+              last_name: metadata.last_name || '',
+              phone: authUser.phone || '',
+              school_id: schoolId,
+              is_active: true
+            });
+            if (insErr) {
+              console.error('Failed to auto-sync missing user profile to public.users:', insErr);
+            } else {
+              console.log(`Successfully auto-synced user ${resolvedUserId} to public.users.`);
+            }
+          } else {
+            console.warn(`User ${resolvedUserId} not found in auth.users either.`);
+          }
+        } catch (syncErr) {
+          console.error(`Error auto-syncing user ${resolvedUserId}:`, syncErr);
+        }
+      }
+    } catch (resolveErr) {
+      console.error('Error resolving performedBy user ID mapping:', resolveErr);
+    }
+
+    try {
+      const { error } = await supabase.from('payment_audit_logs').insert({
+        payment_id: paymentId,
+        action,
+        performed_by: resolvedUserId,
+        performed_at: now,
+        details: details ? JSON.stringify(details) : null,
+      });
+      if (error) {
+        console.error('Database error inserting into payment_audit_logs:', error);
+      }
+    } catch (insertErr) {
+      console.error('Exception inserting into payment_audit_logs:', insertErr);
     }
   },
 
@@ -16143,8 +16256,14 @@ export const mockApi = {
       screenshotFile
     );
 
-    let existingPayment = mockDb.feePayments.find(p => p.feeStructureId === feeStructureId && p.studentId === studentId);
-    const paymentId = existingPayment?.id || 'fp-' + Math.random().toString(36).substr(2, 9);
+    const existingPayment = mockDb.feePayments.find(p => p.feeStructureId === feeStructureId && p.studentId === studentId);
+    const isUUID = (id: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(id);
+    const paymentId = (existingPayment?.id && isUUID(existingPayment.id))
+      ? existingPayment.id
+      : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+          const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          return v.toString(16);
+        });
     
     const structure = mockDb.feeStructures.find(s => s.id === feeStructureId);
     const amount = structure?.amount || 0;
@@ -16182,7 +16301,9 @@ export const mockApi = {
         })
         .select('*')
         .single();
-      if (data && !error) {
+      if (error) {
+        console.error('Failed to upsert fee payment in Supabase:', error);
+      } else if (data) {
         savedPayment = {
           id: data.id,
           feeStructureId: data.fee_structure_id,

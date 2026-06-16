@@ -87,6 +87,7 @@ CREATE POLICY "Enable select for finance admin for payroll" ON public.faculty_pa
     );
 
 -- 3. Add parent proof columns to fee_payments table
+ALTER TYPE public.payment_status ADD VALUE IF NOT EXISTS 'REJECTED';
 ALTER TABLE public.fee_payments ADD COLUMN IF NOT EXISTS payment_screenshot_url TEXT;
 ALTER TABLE public.fee_payments ADD COLUMN IF NOT EXISTS utr_number TEXT;
 ALTER TABLE public.fee_payments ADD COLUMN IF NOT EXISTS rejection_reason TEXT;
@@ -97,6 +98,7 @@ begin
   if exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
     alter publication supabase_realtime add table public.school_payment_settings;
     alter publication supabase_realtime add table public.faculty_payment_settings;
+    alter publication supabase_realtime add table public.fee_payments;
   end if;
 exception
   when others then null;
