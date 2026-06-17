@@ -2178,7 +2178,10 @@ export const mockApi = {
             paymentMethod: r.payment_method || '',
             transactionId: r.transaction_id || undefined,
             status: r.status as any,
-            createdAt: r.created_at
+            createdAt: r.created_at,
+            paymentScreenshotUrl: r.payment_screenshot_url || undefined,
+            utrNumber: r.utr_number || undefined,
+            rejectionReason: r.rejection_reason || undefined
           };
           const idx = mockDb.feePayments.findIndex(p => p.id === fp.id);
           if (idx === -1) mockDb.feePayments.push(fp);
@@ -16364,8 +16367,8 @@ export const mockApi = {
     const { data: dbUser } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).maybeSingle();
     const role = dbUser?.role || operator?.role || '';
 
-    if (role !== 'FINANCE_ADMIN' && role !== 'SUPER_ADMIN') {
-      throw new Error('Unauthorized: Only Finance Admin is authorized to verify/approve payments.');
+    if (role !== 'ADMIN' && role !== 'FINANCE_ADMIN' && role !== 'SUPER_ADMIN') {
+      throw new Error('Unauthorized: Only Admin / Finance Admin is authorized to verify/approve payments.');
     }
 
     let savedPayment: FeePayment | null = null;

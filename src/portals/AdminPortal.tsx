@@ -102,6 +102,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [showRejectModal, setShowRejectModal] = useState(false);
   const [rejectTargetId, setRejectTargetId] = useState('');
   const [rejectReason, setRejectReason] = useState('');
+  const [verifyStatusFilter, setVerifyStatusFilter] = useState<'ALL' | 'PENDING' | 'PAID' | 'REJECTED'>('PENDING');
+  const [verifySelectedPayment, setVerifySelectedPayment] = useState<FeePayment | null>(null);
+  const [verifyReceiptFullscreen, setVerifyReceiptFullscreen] = useState(false);
   // Salary Payments state
   const [salaryPaymentsList, setSalaryPaymentsList] = useState<SalaryPayment[]>([]);
   const [salaryLedgerList, setSalaryLedgerList] = useState<EmployeeSalaryLedger[]>([]);
@@ -6662,187 +6665,399 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     </h3>
                     <p className="text-[11px] text-slate-500 mt-0.5">Review parent-submitted payment proofs. Approve or reject with a reason.</p>
                   </div>
-                  <div className="relative">
-                    <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500" size={13} />
-                    <input
-                      type="text"
-                      placeholder="Search by student / UTR..."
-                      value={verifySearch}
-                      onChange={e => setVerifySearch(e.target.value)}
-                      className="pl-8 pr-3 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-amber-500 w-52 transition-colors"
-                    />
-                  </div>
                 </div>
 
-                {/* Stats row */}
-                <div className="grid grid-cols-3 gap-3">
+                {/* Stats row — 4 counters */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
-                    { label: 'Pending Review', count: (feePayments || []).filter(p => p.status === 'PENDING' && p.paymentScreenshotUrl).length, color: 'amber' },
-                    { label: 'Approved', count: (feePayments || []).filter(p => p.status === 'PAID').length, color: 'emerald' },
-                    { label: 'Rejected', count: (feePayments || []).filter(p => p.status === 'REJECTED').length, color: 'rose' },
+                    { label: 'PENDING REVIEW', count: (feePayments || []).filter(p => p.status === 'PENDING' && p.paymentScreenshotUrl).length, color: 'amber', border: 'border-l-amber-500' },
+                    { label: 'APPROVED', count: (feePayments || []).filter(p => p.status === 'PAID').length, color: 'emerald', border: 'border-l-emerald-500' },
+                    { label: 'REJECTED', count: (feePayments || []).filter(p => p.status === 'REJECTED').length, color: 'rose', border: 'border-l-rose-500' },
+                    { label: 'TOTAL PAYMENTS', count: (feePayments || []).filter(p => p.paymentScreenshotUrl).length, color: 'cyan', border: 'border-l-cyan-500' },
                   ].map(stat => (
-                    <GlassCard key={stat.label} className={`p-3 text-center border-${stat.color}-500/10`}>
-                      <p className={`text-xl font-extrabold text-${stat.color}-400`}>{stat.count}</p>
-                      <p className="text-[10px] text-slate-500 font-bold uppercase tracking-wider mt-0.5">{stat.label}</p>
-                    </GlassCard>
+                    <div key={stat.label} className={`bg-slate-900/60 border border-slate-800 ${stat.border} border-l-[3px] rounded-xl p-3.5 text-center transition-all hover:bg-slate-900/80`}>
+                      <p className={`text-2xl font-extrabold text-${stat.color}-400`}>{stat.count}</p>
+                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-1">{stat.label}</p>
+                    </div>
                   ))}
                 </div>
 
-                {/* Payment proof cards */}
-                {(() => {
-                  const pendingProofs = (feePayments || [])
-                    .filter(p => p.status === 'PENDING' && p.paymentScreenshotUrl)
-                    .filter(p => {
-                      if (!verifySearch) return true;
-                      const student = students.find(s => s.id === p.studentId);
-                      const name = (student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() : '').toLowerCase();
-                      const utr = (p.utrNumber || p.transactionId || '').toLowerCase();
-                      return name.includes(verifySearch.toLowerCase()) || utr.includes(verifySearch.toLowerCase());
-                    });
+                {/* Search + Status Filter Bar */}
+                <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
+                  <div className="relative flex-1 w-full">
+                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={13} />
+                    <input
+                      type="text"
+                      placeholder="Search by student / UTR / parent name..."
+                      value={verifySearch}
+                      onChange={e => setVerifySearch(e.target.value)}
+                      className="w-full pl-9 pr-3 py-2 text-xs bg-slate-900/80 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-amber-500/60 transition-colors placeholder-slate-600"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] text-slate-500 font-semibold whitespace-nowrap">Status:</span>
+                    <select
+                      value={verifyStatusFilter}
+                      onChange={e => setVerifyStatusFilter(e.target.value as any)}
+                      className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500/60 cursor-pointer"
+                    >
+                      <option value="PENDING">Pending</option>
+                      <option value="ALL">All</option>
+                      <option value="PAID">Approved</option>
+                      <option value="REJECTED">Rejected</option>
+                    </select>
+                  </div>
+                </div>
 
-                  if (pendingProofs.length === 0) {
-                    return (
-                      <GlassCard className="p-12 text-center">
-                        <ShieldCheck className="mx-auto text-emerald-400/40 mb-3" size={40} />
-                        <p className="text-slate-400 font-semibold text-sm">No pending payment proofs</p>
-                        <p className="text-slate-600 text-xs mt-1">All submitted payments have been reviewed</p>
-                      </GlassCard>
-                    );
-                  }
+                {/* Main content area: Table + Side Panel */}
+                <div className="flex gap-4">
+                  {/* Left: Verification Queue Table */}
+                  <div className={`flex-1 min-w-0 transition-all ${verifySelectedPayment ? 'max-w-[calc(100%-370px)]' : ''}`}>
+                    {(() => {
+                      const allProofs = (feePayments || [])
+                        .filter(p => p.paymentScreenshotUrl)
+                        .filter(p => {
+                          if (verifyStatusFilter === 'ALL') return true;
+                          if (verifyStatusFilter === 'PENDING') return p.status === 'PENDING';
+                          if (verifyStatusFilter === 'PAID') return p.status === 'PAID';
+                          if (verifyStatusFilter === 'REJECTED') return p.status === 'REJECTED';
+                          return true;
+                        })
+                        .filter(p => {
+                          if (!verifySearch) return true;
+                          const q = verifySearch.toLowerCase();
+                          const student = students.find(s => s.id === p.studentId);
+                          const name = student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim().toLowerCase() : '';
+                          const utr = (p.utrNumber || p.transactionId || '').toLowerCase();
+                          const admNo = (student?.admissionNumber || '').toLowerCase();
+                          // Find parent name via mapping
+                          const mapping = mockDb.parentStudentMappings.find(m => m.studentId === p.studentId);
+                          const parent = mapping ? parents.find(pr => pr.id === mapping.parentId) : null;
+                          const parentName = parent ? `${parent.userDetails?.firstName || ''} ${parent.userDetails?.lastName || ''}`.trim().toLowerCase() : '';
+                          return name.includes(q) || utr.includes(q) || parentName.includes(q) || admNo.includes(q);
+                        })
+                        .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
 
-                  return (
-                    <div className="space-y-3">
-                      {pendingProofs.map(payment => {
-                        const student = students.find(s => s.id === payment.studentId);
-                        const structure = feeStructures.find(fs => fs.id === payment.feeStructureId);
-                        const studentClass = classes.find(c => c.id === student?.classId);
-                        const isActing = verifyActionId === payment.id;
+                      if (allProofs.length === 0) {
                         return (
-                          <GlassCard key={payment.id} className="p-4 border-amber-500/10">
-                            <div className="flex flex-col sm:flex-row gap-4">
-                              {/* Screenshot Thumbnail */}
-                              <div className="flex-shrink-0">
-                                <a href={payment.paymentScreenshotUrl} target="_blank" rel="noopener noreferrer">
-                                  <div className="w-24 h-24 rounded-xl overflow-hidden border border-slate-700 bg-slate-900 flex items-center justify-center hover:border-amber-500/50 transition-colors">
-                                    <img
-                                      src={payment.paymentScreenshotUrl}
-                                      alt="Payment Proof"
-                                      className="w-full h-full object-cover"
-                                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                    />
-                                    <ExternalLink className="text-slate-600" size={18} />
-                                  </div>
-                                </a>
-                                <p className="text-[9px] text-slate-600 text-center mt-1">View proof</p>
-                              </div>
+                          <GlassCard className="p-12 text-center">
+                            <ShieldCheck className="mx-auto text-emerald-400/30 mb-3" size={44} />
+                            <p className="text-slate-400 font-semibold text-sm">No payment records found</p>
+                            <p className="text-slate-600 text-xs mt-1">
+                              {verifyStatusFilter === 'PENDING' ? 'All submitted payments have been reviewed' : 'No matching records for the current filter'}
+                            </p>
+                          </GlassCard>
+                        );
+                      }
 
-                              {/* Details */}
-                              <div className="flex-1 space-y-2 min-w-0">
-                                <div className="flex items-start justify-between gap-2">
-                                  <div>
-                                    <p className="text-sm font-bold text-slate-100">{student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() || 'Unknown Student' : 'Unknown Student'}</p>
-                                    <p className="text-[11px] text-slate-500">{studentClass?.name || 'No class'} · {student?.rollNumber || '—'}</p>
-                                  </div>
-                                  <span className="text-[10px] font-bold text-amber-400 bg-amber-500/10 border border-amber-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">
-                                    PENDING REVIEW
+                      return (
+                        <div className="bg-slate-900/40 border border-slate-800 rounded-xl overflow-hidden">
+                          {/* Table */}
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-xs">
+                              <thead>
+                                <tr className="border-b border-slate-800">
+                                  {['STUDENT / PARENT', 'CLASS', 'AMOUNT', 'UTR NUMBER', 'SUBMITTED ON', 'STATUS', 'ACTION'].map(h => (
+                                    <th key={h} className="text-left py-3 px-3 text-[9px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody className="divide-y divide-slate-850">
+                                {allProofs.map(payment => {
+                                  const student = students.find(s => s.id === payment.studentId);
+                                  const studentClass = classes.find(c => c.id === student?.classId);
+                                  const mapping = mockDb.parentStudentMappings.find(m => m.studentId === payment.studentId);
+                                  const parentRecord = mapping ? parents.find(pr => pr.id === mapping.parentId) : null;
+                                  const studentName = student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() || 'Unknown' : 'Unknown';
+                                  const parentName = parentRecord ? `${parentRecord.userDetails?.firstName || ''} ${parentRecord.userDetails?.lastName || ''}`.trim() : '';
+                                  const initials = studentName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+                                  const isSelected = verifySelectedPayment?.id === payment.id;
+
+                                  return (
+                                    <tr
+                                      key={payment.id}
+                                      onClick={() => { setVerifySelectedPayment(payment); setRejectReason(''); }}
+                                      className={`cursor-pointer transition-all duration-150 group ${
+                                        isSelected
+                                          ? 'bg-brand-500/5 border-l-2 border-l-brand-500'
+                                          : 'hover:bg-slate-900/60 border-l-2 border-l-transparent'
+                                      }`}
+                                    >
+                                      {/* Student / Parent */}
+                                      <td className="py-3 px-3">
+                                        <div className="flex items-center gap-2.5 min-w-[180px]">
+                                          <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-400 flex-shrink-0 overflow-hidden">
+                                            {student?.userDetails?.avatarUrl ? (
+                                              <img src={student.userDetails.avatarUrl} alt="" className="w-full h-full object-cover rounded-full" />
+                                            ) : (
+                                              initials
+                                            )}
+                                          </div>
+                                          <div className="min-w-0">
+                                            <p className="text-slate-100 font-semibold text-[11px] truncate">{studentName}</p>
+                                            {parentName && <p className="text-slate-500 text-[10px] truncate">Parent: {parentName}</p>}
+                                            <p className="text-slate-600 text-[9px] font-mono">Adm No: {student?.admissionNumber || '—'}</p>
+                                          </div>
+                                        </div>
+                                      </td>
+                                      {/* Class */}
+                                      <td className="py-3 px-3 text-slate-300 font-medium whitespace-nowrap">{studentClass?.name || '—'}</td>
+                                      {/* Amount */}
+                                      <td className="py-3 px-3 text-slate-100 font-bold whitespace-nowrap">{overview?.currencySymbol || '₹'}{payment.amountPaid.toLocaleString()}</td>
+                                      {/* UTR Number */}
+                                      <td className="py-3 px-3 text-slate-300 font-mono text-[10px] whitespace-nowrap">{payment.utrNumber || payment.transactionId || '—'}</td>
+                                      {/* Submitted On */}
+                                      <td className="py-3 px-3 whitespace-nowrap">
+                                        <p className="text-slate-300 text-[11px]">{payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</p>
+                                        <p className="text-slate-600 text-[9px]">{payment.createdAt ? new Date(payment.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}</p>
+                                      </td>
+                                      {/* Status */}
+                                      <td className="py-3 px-3">
+                                        <span className={`text-[9px] font-bold px-2.5 py-1 rounded-full border uppercase whitespace-nowrap ${
+                                          payment.status === 'PENDING'
+                                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                                            : payment.status === 'PAID'
+                                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                                              : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                        }`}>
+                                          {payment.status === 'PAID' ? 'APPROVED' : payment.status}
+                                        </span>
+                                      </td>
+                                      {/* Action */}
+                                      <td className="py-3 px-3">
+                                        <div className="flex items-center gap-1.5">
+                                          <button
+                                            onClick={e => { e.stopPropagation(); setVerifySelectedPayment(payment); setRejectReason(''); }}
+                                            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-colors"
+                                            title="View Details"
+                                          >
+                                            <Eye size={14} />
+                                          </button>
+                                          <ChevronRight size={14} className="text-slate-700 group-hover:text-slate-500 transition-colors" />
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  );
+                                })}
+                              </tbody>
+                            </table>
+                          </div>
+                          {/* Footer */}
+                          <div className="px-4 py-3 border-t border-slate-800 flex items-center justify-between">
+                            <p className="text-[10px] text-slate-600">
+                              Showing 1 to {allProofs.length} of {allProofs.length} {verifyStatusFilter === 'PENDING' ? 'pending' : ''} payments
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Right: Payment Details Side Panel */}
+                  {verifySelectedPayment && (() => {
+                    const sp = verifySelectedPayment;
+                    const student = students.find(s => s.id === sp.studentId);
+                    const studentClass = classes.find(c => c.id === student?.classId);
+                    const structure = feeStructures.find(fs => fs.id === sp.feeStructureId);
+                    const mapping = mockDb.parentStudentMappings.find(m => m.studentId === sp.studentId);
+                    const parentRecord = mapping ? parents.find(pr => pr.id === mapping.parentId) : null;
+                    const studentName = student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() || 'Unknown' : 'Unknown';
+                    const parentName = parentRecord ? `${parentRecord.userDetails?.firstName || ''} ${parentRecord.userDetails?.lastName || ''}`.trim() : '—';
+                    const initials = studentName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
+                    const isActing = verifyActionId === sp.id;
+
+                    return (
+                      <div className="w-[350px] flex-shrink-0 bg-[#0c1020] border border-slate-800 rounded-xl overflow-hidden animate-fade-in">
+                        {/* Panel Header */}
+                        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
+                          <h4 className="font-bold text-slate-100 text-sm">Payment Details</h4>
+                          <button onClick={() => setVerifySelectedPayment(null)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-colors">
+                            <X size={16} />
+                          </button>
+                        </div>
+
+                        <div className="p-4 space-y-5 max-h-[calc(100vh-300px)] overflow-y-auto">
+                          {/* Student Information */}
+                          <div>
+                            <h5 className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider mb-2.5">Student Information</h5>
+                            <div className="flex items-start gap-3">
+                              <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-400 flex-shrink-0 overflow-hidden">
+                                {student?.userDetails?.avatarUrl ? (
+                                  <img src={student.userDetails.avatarUrl} alt="" className="w-full h-full object-cover rounded-full" />
+                                ) : (
+                                  initials
+                                )}
+                              </div>
+                              <div className="space-y-0.5">
+                                <p className="text-sm font-bold text-slate-100">{studentName}</p>
+                                <p className="text-[10px] text-slate-500">Admission No: {student?.admissionNumber || '—'}</p>
+                                <p className="text-[10px] text-slate-500">Class: {studentClass?.name || '—'}</p>
+                                <p className="text-[10px] text-slate-500">Parent Name: {parentName}</p>
+                                <p className="text-[10px] text-slate-500">Contact: {student?.userDetails?.phone || parentRecord?.userDetails?.phone || '—'}</p>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Payment Information */}
+                          <div>
+                            <h5 className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-2">Payment Information</h5>
+                            <div className="space-y-1.5 text-[11px]">
+                              {[
+                                { label: 'Fee Head', value: structure?.description || '—' },
+                                { label: 'Amount', value: `${overview?.currencySymbol || '₹'}${sp.amountPaid.toLocaleString()}`, bold: true },
+                                { label: 'UTR Number', value: sp.utrNumber || sp.transactionId || '—', mono: true, copy: true },
+                                { label: 'Payment Method', value: sp.paymentMethod || '—' },
+                                { label: 'Submitted On', value: sp.createdAt ? `${new Date(sp.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}, ${new Date(sp.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}` : '—' },
+                              ].map(item => (
+                                <div key={item.label} className="flex items-start justify-between gap-2">
+                                  <span className="text-slate-500 whitespace-nowrap">{item.label}:</span>
+                                  <span className={`text-right ${item.bold ? 'text-slate-100 font-bold' : 'text-slate-300'} ${item.mono ? 'font-mono text-[10px]' : ''}`}>
+                                    {item.value}
+                                    {item.copy && sp.utrNumber && (
+                                      <button
+                                        onClick={() => { navigator.clipboard.writeText(sp.utrNumber || ''); }}
+                                        className="ml-1.5 text-slate-600 hover:text-cyan-400 transition-colors inline-block"
+                                        title="Copy UTR"
+                                      >
+                                        <ExternalLink size={10} />
+                                      </button>
+                                    )}
                                   </span>
                                 </div>
+                              ))}
+                            </div>
+                          </div>
 
-                                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-[11px]">
-                                  <div>
-                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Fee Type</p>
-                                    <p className="text-slate-200">{structure?.description || '—'}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Amount</p>
-                                    <p className="text-emerald-400 font-bold">{overview?.currencySymbol || '₹'}{payment.amountPaid.toLocaleString()}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">Method</p>
-                                    <p className="text-slate-200">{payment.paymentMethod || '—'}</p>
-                                  </div>
-                                  <div>
-                                    <p className="text-slate-500 font-bold uppercase tracking-wider text-[9px]">UTR / Ref</p>
-                                    <p className="text-slate-200 font-mono text-[10px]">{payment.utrNumber || payment.transactionId || '—'}</p>
+                          {/* Payment Proof */}
+                          <div>
+                            <h5 className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2">Payment Proof (Screenshot / Receipt)</h5>
+                            {sp.paymentScreenshotUrl ? (
+                              <div className="space-y-2">
+                                <div
+                                  className="relative w-full h-36 rounded-xl overflow-hidden border border-slate-700 bg-slate-900 cursor-pointer group/proof hover:border-amber-500/40 transition-colors"
+                                  onClick={() => setVerifyReceiptFullscreen(true)}
+                                >
+                                  <img
+                                    src={sp.paymentScreenshotUrl}
+                                    alt="Payment Proof"
+                                    className="w-full h-full object-contain"
+                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                                  />
+                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/proof:opacity-100 transition-opacity flex items-center justify-center">
+                                    <span className="text-[10px] text-white font-bold bg-black/60 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
+                                      <Eye size={12} /> View Full Size
+                                    </span>
                                   </div>
                                 </div>
+                                <p className="text-[9px] text-slate-600 text-center">Click on image to preview full size</p>
+                              </div>
+                            ) : (
+                              <p className="text-[10px] text-slate-600 italic">No screenshot uploaded.</p>
+                            )}
+                          </div>
 
-                                <p className="text-[10px] text-slate-600">
-                                  Submitted: {payment.createdAt ? new Date(payment.createdAt).toLocaleString() : '—'}
-                                </p>
-
-                                {/* Action Buttons */}
-                                <div className="flex gap-2 pt-1">
+                          {/* Actions */}
+                          <div>
+                            <h5 className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-2.5">Actions</h5>
+                            {sp.status === 'PENDING' ? (
+                              <div className="space-y-3">
+                                <div className="grid grid-cols-2 gap-2">
                                   <button
                                     disabled={isActing}
                                     onClick={async () => {
-                                      setVerifyActionId(payment.id);
+                                      setVerifyActionId(sp.id);
                                       try {
-                                        await mockApi.verifyFeePayment(adminId || '', payment.id, 'PAID');
-                                        // Refresh payments list
+                                        await mockApi.verifyFeePayment(adminId || '', sp.id, 'PAID');
                                         const updated = await mockApi.adminGetFeePayments();
                                         setFeePayments(updated);
+                                        setVerifySelectedPayment(null);
                                       } catch (e: any) {
                                         alert(e?.message || 'Failed to approve payment');
                                       }
                                       setVerifyActionId(null);
                                     }}
-                                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all disabled:opacity-50"
+                                    className="flex items-center justify-center gap-1.5 text-xs font-bold py-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all disabled:opacity-50 active:scale-[0.97]"
                                   >
-                                    {isActing ? <div className="w-3 h-3 border border-emerald-400/60 border-t-transparent rounded-full animate-spin" /> : <CheckCircle size={13} />}
-                                    Approve
+                                    {isActing ? <div className="w-3.5 h-3.5 border-2 border-emerald-400/60 border-t-transparent rounded-full animate-spin" /> : <CheckCircle size={14} />}
+                                    Approve Payment
                                   </button>
                                   <button
                                     disabled={isActing}
-                                    onClick={() => {
-                                      setRejectTargetId(payment.id);
-                                      setRejectReason('');
-                                      setShowRejectModal(true);
+                                    onClick={async () => {
+                                      if (!rejectReason.trim()) {
+                                        alert('Please enter a rejection reason before rejecting.');
+                                        return;
+                                      }
+                                      setVerifyActionId(sp.id);
+                                      try {
+                                        await mockApi.verifyFeePayment(adminId || '', sp.id, 'REJECTED', rejectReason.trim());
+                                        const updated = await mockApi.adminGetFeePayments();
+                                        setFeePayments(updated);
+                                        setVerifySelectedPayment(null);
+                                        setRejectReason('');
+                                      } catch (e: any) {
+                                        alert(e?.message || 'Failed to reject payment');
+                                      }
+                                      setVerifyActionId(null);
                                     }}
-                                    className="flex items-center gap-1.5 text-xs font-bold px-3 py-1.5 rounded-lg bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-all disabled:opacity-50"
+                                    className="flex items-center justify-center gap-1.5 text-xs font-bold py-2.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-all disabled:opacity-50 active:scale-[0.97]"
                                   >
-                                    <Ban size={13} /> Reject
+                                    {isActing ? <div className="w-3.5 h-3.5 border-2 border-rose-400/60 border-t-transparent rounded-full animate-spin" /> : <XCircle size={14} />}
+                                    Reject Payment
                                   </button>
                                 </div>
+                                {/* Rejection Reason */}
+                                <div>
+                                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
+                                    Rejection Reason <span className="text-slate-700 normal-case">(Required if rejecting)</span>
+                                  </label>
+                                  <textarea
+                                    rows={2}
+                                    value={rejectReason}
+                                    onChange={(e) => setRejectReason(e.target.value)}
+                                    placeholder="Enter reason for rejection..."
+                                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-rose-500/50 resize-none transition-colors placeholder-slate-700"
+                                  />
+                                </div>
                               </div>
-                            </div>
-                          </GlassCard>
-                        );
-                      })}
-                    </div>
-                  );
-                })()}
+                            ) : (
+                              <div className="text-center py-3">
+                                <span className={`text-xs font-bold ${sp.status === 'PAID' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {sp.status === 'PAID' ? '✓ Payment Approved' : '✗ Payment Rejected'}
+                                </span>
+                                {sp.rejectionReason && (
+                                  <p className="text-[10px] text-rose-400/70 italic mt-1">{sp.rejectionReason}</p>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
 
-                {/* Recently processed (last 5 PAID/REJECTED with screenshot) */}
-                {(feePayments || []).filter(p => (p.status === 'PAID' || p.status === 'REJECTED') && p.paymentScreenshotUrl).length > 0 && (
-                  <GlassCard className="p-4 space-y-3">
-                    <h4 className="text-xs font-bold text-slate-400 flex items-center gap-1.5">
-                      <Clock size={12} /> Recently Processed
-                    </h4>
-                    <div className="space-y-2">
-                      {(feePayments || [])
-                        .filter(p => (p.status === 'PAID' || p.status === 'REJECTED') && p.paymentScreenshotUrl)
-                        .slice(-5).reverse()
-                        .map(p => {
-                          const student = students.find(s => s.id === p.studentId);
-                          return (
-                            <div key={p.id} className="flex items-center gap-3 text-xs">
-                              <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
-                                p.status === 'PAID' ? 'bg-emerald-400' : 'bg-rose-400'
-                              }`} />
-                              <span className="text-slate-300 font-semibold">{student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() || '—' : '—'}</span>
-                              <span className="text-slate-500">{overview?.currencySymbol || '₹'}{p.amountPaid.toLocaleString()}</span>
-                              <span className={`ml-auto font-bold text-[10px] ${
-                                p.status === 'PAID' ? 'text-emerald-400' : 'text-rose-400'
-                              }`}>{p.status}</span>
-                              {p.rejectionReason && (
-                                <span className="text-rose-400/70 text-[10px] italic truncate max-w-32">{p.rejectionReason}</span>
-                              )}
-                            </div>
-                          );
-                        })}
+                {/* Receipt Fullscreen Lightbox */}
+                {verifyReceiptFullscreen && verifySelectedPayment?.paymentScreenshotUrl && (
+                  <div
+                    className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in"
+                    onClick={() => setVerifyReceiptFullscreen(false)}
+                  >
+                    <div className="relative max-w-3xl max-h-[85vh] w-full" onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => setVerifyReceiptFullscreen(false)}
+                        className="absolute -top-3 -right-3 z-10 w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors shadow-lg"
+                      >
+                        <X size={16} />
+                      </button>
+                      <img
+                        src={verifySelectedPayment.paymentScreenshotUrl}
+                        alt="Payment Receipt Full Size"
+                        className="w-full h-full object-contain rounded-xl border border-slate-700 shadow-2xl"
+                      />
+                      <p className="text-center text-[10px] text-slate-500 mt-2">UTR: {verifySelectedPayment.utrNumber || verifySelectedPayment.transactionId || '—'}</p>
                     </div>
-                  </GlassCard>
+                  </div>
                 )}
               </div>
             )}
