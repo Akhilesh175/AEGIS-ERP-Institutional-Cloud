@@ -6655,29 +6655,31 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
             {/* ── VERIFY PAYMENTS SUB-TAB ── */}
             {feesSubTab === 'verify-payments' && (
-              <div className="space-y-4 animate-fade-in">
+              <div className="space-y-5 animate-fade-in">
                 {/* Header */}
                 <div className="flex items-center justify-between flex-wrap gap-3">
                   <div>
-                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
-                      <ShieldCheck className="text-amber-400" size={18} />
+                    <h3 className="text-[15px] font-bold text-slate-100 flex items-center gap-2.5">
+                      <div className="w-7 h-7 rounded-lg bg-gradient-to-br from-amber-500/20 to-amber-600/10 border border-amber-500/20 flex items-center justify-center">
+                        <ShieldCheck className="text-amber-400" size={15} />
+                      </div>
                       Fee Payment Verification Queue
                     </h3>
-                    <p className="text-[11px] text-slate-500 mt-0.5">Review parent-submitted payment proofs. Approve or reject with a reason.</p>
+                    <p className="text-[11px] text-slate-500 mt-1 ml-[38px]">Review parent-submitted payment proofs. Approve or reject with a reason.</p>
                   </div>
                 </div>
 
                 {/* Stats row — 4 counters */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                   {[
-                    { label: 'PENDING REVIEW', count: (feePayments || []).filter(p => p.status === 'PENDING' && p.paymentScreenshotUrl).length, color: 'amber', border: 'border-l-amber-500' },
-                    { label: 'APPROVED', count: (feePayments || []).filter(p => p.status === 'PAID').length, color: 'emerald', border: 'border-l-emerald-500' },
-                    { label: 'REJECTED', count: (feePayments || []).filter(p => p.status === 'REJECTED').length, color: 'rose', border: 'border-l-rose-500' },
-                    { label: 'TOTAL PAYMENTS', count: (feePayments || []).filter(p => p.paymentScreenshotUrl).length, color: 'cyan', border: 'border-l-cyan-500' },
+                    { label: 'PENDING REVIEW', count: (feePayments || []).filter(p => p.status === 'PENDING' && p.paymentScreenshotUrl).length, numColor: 'text-amber-400', borderColor: 'border-t-amber-500', bgHover: 'hover:border-amber-500/40' },
+                    { label: 'APPROVED', count: (feePayments || []).filter(p => p.status === 'PAID').length, numColor: 'text-emerald-400', borderColor: 'border-t-emerald-500', bgHover: 'hover:border-emerald-500/40' },
+                    { label: 'REJECTED', count: (feePayments || []).filter(p => p.status === 'REJECTED').length, numColor: 'text-rose-400', borderColor: 'border-t-rose-500', bgHover: 'hover:border-rose-500/40' },
+                    { label: 'TOTAL PAYMENTS', count: (feePayments || []).filter(p => p.paymentScreenshotUrl).length, numColor: 'text-cyan-400', borderColor: 'border-t-cyan-500', bgHover: 'hover:border-cyan-500/40' },
                   ].map(stat => (
-                    <div key={stat.label} className={`bg-slate-900/60 border border-slate-800 ${stat.border} border-l-[3px] rounded-xl p-3.5 text-center transition-all hover:bg-slate-900/80`}>
-                      <p className={`text-2xl font-extrabold text-${stat.color}-400`}>{stat.count}</p>
-                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-wider mt-1">{stat.label}</p>
+                    <div key={stat.label} className={`bg-[#0d1224] border border-slate-800/80 ${stat.borderColor} border-t-[3px] rounded-xl p-4 text-center transition-all ${stat.bgHover}`}>
+                      <p className={`text-[26px] font-extrabold leading-tight ${stat.numColor}`}>{stat.count}</p>
+                      <p className="text-[9px] text-slate-500 font-bold uppercase tracking-[0.1em] mt-1.5">{stat.label}</p>
                     </div>
                   ))}
                 </div>
@@ -6685,34 +6687,34 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 {/* Search + Status Filter Bar */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                   <div className="relative flex-1 w-full">
-                    <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500" size={13} />
+                    <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                     <input
                       type="text"
                       placeholder="Search by student / UTR / parent name..."
                       value={verifySearch}
                       onChange={e => setVerifySearch(e.target.value)}
-                      className="w-full pl-9 pr-3 py-2 text-xs bg-slate-900/80 border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-amber-500/60 transition-colors placeholder-slate-600"
+                      className="w-full pl-10 pr-4 py-2.5 text-xs bg-[#0d1224] border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all placeholder-slate-600"
                     />
                   </div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] text-slate-500 font-semibold whitespace-nowrap">Status:</span>
                     <select
                       value={verifyStatusFilter}
                       onChange={e => setVerifyStatusFilter(e.target.value as any)}
-                      className="bg-slate-900 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-amber-500/60 cursor-pointer"
+                      className="bg-[#0d1224] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500/50 cursor-pointer appearance-none min-w-[140px]"
+                      style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
                     >
-                      <option value="PENDING">Pending</option>
-                      <option value="ALL">All</option>
-                      <option value="PAID">Approved</option>
-                      <option value="REJECTED">Rejected</option>
+                      <option value="PENDING">Status: Pending</option>
+                      <option value="ALL">Status: All</option>
+                      <option value="PAID">Status: Approved</option>
+                      <option value="REJECTED">Status: Rejected</option>
                     </select>
                   </div>
                 </div>
 
                 {/* Main content area: Table + Side Panel */}
-                <div className="flex gap-4">
+                <div className="flex gap-4 items-start">
                   {/* Left: Verification Queue Table */}
-                  <div className={`flex-1 min-w-0 transition-all ${verifySelectedPayment ? 'max-w-[calc(100%-370px)]' : ''}`}>
+                  <div className={`flex-1 min-w-0 transition-all duration-300 ${verifySelectedPayment ? 'max-w-[calc(100%-370px)]' : ''}`}>
                     {(() => {
                       const allProofs = (feePayments || [])
                         .filter(p => p.paymentScreenshotUrl)
@@ -6740,30 +6742,32 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
                       if (allProofs.length === 0) {
                         return (
-                          <GlassCard className="p-12 text-center">
-                            <ShieldCheck className="mx-auto text-emerald-400/30 mb-3" size={44} />
-                            <p className="text-slate-400 font-semibold text-sm">No payment records found</p>
-                            <p className="text-slate-600 text-xs mt-1">
-                              {verifyStatusFilter === 'PENDING' ? 'All submitted payments have been reviewed' : 'No matching records for the current filter'}
+                          <div className="bg-[#0d1224] border border-slate-800 rounded-xl p-14 text-center">
+                            <div className="w-16 h-16 rounded-2xl bg-slate-800/50 mx-auto mb-4 flex items-center justify-center">
+                              <ShieldCheck className="text-emerald-400/40" size={32} />
+                            </div>
+                            <p className="text-slate-300 font-semibold text-sm">No payment records found</p>
+                            <p className="text-slate-600 text-xs mt-1.5">
+                              {verifyStatusFilter === 'PENDING' ? 'All submitted payments have been reviewed ✓' : 'No matching records for the current filter'}
                             </p>
-                          </GlassCard>
+                          </div>
                         );
                       }
 
                       return (
-                        <div className="bg-slate-900/40 border border-slate-800 rounded-xl overflow-hidden">
+                        <div className="bg-[#0d1224] border border-slate-800 rounded-xl overflow-hidden">
                           {/* Table */}
                           <div className="overflow-x-auto">
                             <table className="w-full text-xs">
                               <thead>
-                                <tr className="border-b border-slate-800">
+                                <tr className="border-b border-slate-800/80">
                                   {['STUDENT / PARENT', 'CLASS', 'AMOUNT', 'UTR NUMBER', 'SUBMITTED ON', 'STATUS', 'ACTION'].map(h => (
-                                    <th key={h} className="text-left py-3 px-3 text-[9px] font-bold text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                                    <th key={h} className="text-left py-3.5 px-4 text-[9px] font-bold text-slate-500 uppercase tracking-[0.08em] whitespace-nowrap">{h}</th>
                                   ))}
                                 </tr>
                               </thead>
-                              <tbody className="divide-y divide-slate-850">
-                                {allProofs.map(payment => {
+                              <tbody>
+                                {allProofs.map((payment, idx) => {
                                   const student = students.find(s => s.id === payment.studentId);
                                   const studentClass = classes.find(c => c.id === student?.classId);
                                   const mapping = mockDb.parentStudentMappings.find(m => m.studentId === payment.studentId);
@@ -6776,17 +6780,17 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                   return (
                                     <tr
                                       key={payment.id}
-                                      onClick={() => { setVerifySelectedPayment(payment); setRejectReason(''); }}
-                                      className={`cursor-pointer transition-all duration-150 group ${
+                                      onClick={() => { setVerifySelectedPayment(payment); setRejectReason(''); setVerifyReceiptFullscreen(false); }}
+                                      className={`cursor-pointer transition-all duration-150 group border-l-[3px] ${
                                         isSelected
-                                          ? 'bg-brand-500/5 border-l-2 border-l-brand-500'
-                                          : 'hover:bg-slate-900/60 border-l-2 border-l-transparent'
-                                      }`}
+                                          ? 'bg-cyan-500/[0.04] border-l-cyan-400 shadow-[inset_0_0_30px_rgba(34,211,238,0.02)]'
+                                          : 'hover:bg-slate-800/30 border-l-transparent'
+                                      } ${idx !== allProofs.length - 1 ? 'border-b border-b-slate-800/50' : ''}`}
                                     >
                                       {/* Student / Parent */}
-                                      <td className="py-3 px-3">
-                                        <div className="flex items-center gap-2.5 min-w-[180px]">
-                                          <div className="w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-400 flex-shrink-0 overflow-hidden">
+                                      <td className="py-3.5 px-4">
+                                        <div className="flex items-center gap-3 min-w-[200px]">
+                                          <div className="w-[38px] h-[38px] rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600/50 flex items-center justify-center text-[10px] font-bold text-slate-300 flex-shrink-0 overflow-hidden shadow-sm">
                                             {student?.userDetails?.avatarUrl ? (
                                               <img src={student.userDetails.avatarUrl} alt="" className="w-full h-full object-cover rounded-full" />
                                             ) : (
@@ -6794,41 +6798,41 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                             )}
                                           </div>
                                           <div className="min-w-0">
-                                            <p className="text-slate-100 font-semibold text-[11px] truncate">{studentName}</p>
-                                            {parentName && <p className="text-slate-500 text-[10px] truncate">Parent: {parentName}</p>}
-                                            <p className="text-slate-600 text-[9px] font-mono">Adm No: {student?.admissionNumber || '—'}</p>
+                                            <p className="text-slate-100 font-semibold text-[11.5px] truncate leading-tight">{studentName}</p>
+                                            {parentName && <p className="text-slate-500 text-[10px] truncate mt-0.5">Parent: {parentName}</p>}
+                                            <p className="text-slate-600 text-[9px] font-mono mt-0.5">Adm No: {student?.admissionNumber || '—'}</p>
                                           </div>
                                         </div>
                                       </td>
                                       {/* Class */}
-                                      <td className="py-3 px-3 text-slate-300 font-medium whitespace-nowrap">{studentClass?.name || '—'}</td>
+                                      <td className="py-3.5 px-4 text-slate-300 font-semibold whitespace-nowrap text-[11.5px]">{studentClass?.name || '—'}</td>
                                       {/* Amount */}
-                                      <td className="py-3 px-3 text-slate-100 font-bold whitespace-nowrap">{overview?.currencySymbol || '₹'}{payment.amountPaid.toLocaleString()}</td>
+                                      <td className="py-3.5 px-4 text-slate-100 font-bold whitespace-nowrap text-[11.5px]">{overview?.currencySymbol || '₹'}{payment.amountPaid.toLocaleString()}</td>
                                       {/* UTR Number */}
-                                      <td className="py-3 px-3 text-slate-300 font-mono text-[10px] whitespace-nowrap">{payment.utrNumber || payment.transactionId || '—'}</td>
+                                      <td className="py-3.5 px-4 text-cyan-300/80 font-mono text-[10.5px] whitespace-nowrap">{payment.utrNumber || payment.transactionId || '—'}</td>
                                       {/* Submitted On */}
-                                      <td className="py-3 px-3 whitespace-nowrap">
+                                      <td className="py-3.5 px-4 whitespace-nowrap">
                                         <p className="text-slate-300 text-[11px]">{payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</p>
-                                        <p className="text-slate-600 text-[9px]">{payment.createdAt ? new Date(payment.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}</p>
+                                        <p className="text-slate-600 text-[9px] mt-0.5">{payment.createdAt ? new Date(payment.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}</p>
                                       </td>
                                       {/* Status */}
-                                      <td className="py-3 px-3">
-                                        <span className={`text-[9px] font-bold px-2.5 py-1 rounded-full border uppercase whitespace-nowrap ${
+                                      <td className="py-3.5 px-4">
+                                        <span className={`inline-flex items-center text-[9px] font-bold px-3 py-1.5 rounded-full border uppercase whitespace-nowrap tracking-wide ${
                                           payment.status === 'PENDING'
-                                            ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                                            ? 'bg-amber-500/10 border-amber-500/25 text-amber-400'
                                             : payment.status === 'PAID'
-                                              ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
-                                              : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                              ? 'bg-emerald-500/10 border-emerald-500/25 text-emerald-400'
+                                              : 'bg-rose-500/10 border-rose-500/25 text-rose-400'
                                         }`}>
                                           {payment.status === 'PAID' ? 'APPROVED' : payment.status}
                                         </span>
                                       </td>
                                       {/* Action */}
-                                      <td className="py-3 px-3">
-                                        <div className="flex items-center gap-1.5">
+                                      <td className="py-3.5 px-4">
+                                        <div className="flex items-center gap-2">
                                           <button
-                                            onClick={e => { e.stopPropagation(); setVerifySelectedPayment(payment); setRejectReason(''); }}
-                                            className="p-1.5 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-colors"
+                                            onClick={e => { e.stopPropagation(); setVerifySelectedPayment(payment); setRejectReason(''); setVerifyReceiptFullscreen(false); }}
+                                            className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-800 text-slate-500 hover:text-cyan-400 transition-all"
                                             title="View Details"
                                           >
                                             <Eye size={14} />
@@ -6842,11 +6846,16 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                               </tbody>
                             </table>
                           </div>
-                          {/* Footer */}
-                          <div className="px-4 py-3 border-t border-slate-800 flex items-center justify-between">
+                          {/* Footer with Pagination */}
+                          <div className="px-4 py-3 border-t border-slate-800/80 flex items-center justify-between">
                             <p className="text-[10px] text-slate-600">
-                              Showing 1 to {allProofs.length} of {allProofs.length} {verifyStatusFilter === 'PENDING' ? 'pending' : ''} payments
+                              Showing 1 to {allProofs.length} of {allProofs.length} {verifyStatusFilter === 'PENDING' ? 'pending ' : ''}payments
                             </p>
+                            <div className="flex items-center gap-1">
+                              <button className="w-7 h-7 rounded-lg border border-slate-800 flex items-center justify-center text-slate-600 hover:text-slate-300 hover:border-slate-700 transition-colors text-[11px]">&lt;</button>
+                              <button className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold text-[11px]">1</button>
+                              <button className="w-7 h-7 rounded-lg border border-slate-800 flex items-center justify-center text-slate-600 hover:text-slate-300 hover:border-slate-700 transition-colors text-[11px]">&gt;</button>
+                            </div>
                           </div>
                         </div>
                       );
@@ -6863,60 +6872,67 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     const parentRecord = mapping ? parents.find(pr => pr.id === mapping.parentId) : null;
                     const studentName = student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() || 'Unknown' : 'Unknown';
                     const parentName = parentRecord ? `${parentRecord.userDetails?.firstName || ''} ${parentRecord.userDetails?.lastName || ''}`.trim() : '—';
+                    const parentPhone = parentRecord?.userDetails?.phone || student?.userDetails?.phone || '—';
                     const initials = studentName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
                     const isActing = verifyActionId === sp.id;
 
                     return (
-                      <div className="w-[350px] flex-shrink-0 bg-[#0c1020] border border-slate-800 rounded-xl overflow-hidden animate-fade-in">
+                      <div className="w-[350px] flex-shrink-0 bg-[#0a0e1a] border border-slate-800 rounded-xl overflow-hidden animate-fade-in shadow-xl shadow-black/20">
                         {/* Panel Header */}
-                        <div className="px-4 py-3 border-b border-slate-800 flex items-center justify-between">
-                          <h4 className="font-bold text-slate-100 text-sm">Payment Details</h4>
-                          <button onClick={() => setVerifySelectedPayment(null)} className="p-1 rounded-lg hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-colors">
-                            <X size={16} />
+                        <div className="px-5 py-3.5 border-b border-slate-800 flex items-center justify-between bg-[#0d1224]">
+                          <h4 className="font-bold text-slate-100 text-[13px]">Payment Details</h4>
+                          <button onClick={() => setVerifySelectedPayment(null)} className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-800 text-slate-500 hover:text-slate-200 transition-colors">
+                            <X size={15} />
                           </button>
                         </div>
 
-                        <div className="p-4 space-y-5 max-h-[calc(100vh-300px)] overflow-y-auto">
+                        <div className="p-5 space-y-5 max-h-[calc(100vh-280px)] overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#1e293b transparent' }}>
                           {/* Student Information */}
                           <div>
-                            <h5 className="text-[10px] font-bold text-cyan-400 uppercase tracking-wider mb-2.5">Student Information</h5>
-                            <div className="flex items-start gap-3">
-                              <div className="w-12 h-12 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-xs font-bold text-slate-400 flex-shrink-0 overflow-hidden">
+                            <h5 className="text-[10px] font-bold text-cyan-400 uppercase tracking-[0.1em] mb-3 flex items-center gap-1.5">
+                              <div className="w-1 h-3 rounded-full bg-cyan-400" />
+                              Student Information
+                            </h5>
+                            <div className="flex items-start gap-3.5">
+                              <div className="w-[48px] h-[48px] rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border-2 border-slate-600/40 flex items-center justify-center text-xs font-bold text-slate-300 flex-shrink-0 overflow-hidden shadow-md">
                                 {student?.userDetails?.avatarUrl ? (
                                   <img src={student.userDetails.avatarUrl} alt="" className="w-full h-full object-cover rounded-full" />
                                 ) : (
                                   initials
                                 )}
                               </div>
-                              <div className="space-y-0.5">
-                                <p className="text-sm font-bold text-slate-100">{studentName}</p>
-                                <p className="text-[10px] text-slate-500">Admission No: {student?.admissionNumber || '—'}</p>
-                                <p className="text-[10px] text-slate-500">Class: {studentClass?.name || '—'}</p>
-                                <p className="text-[10px] text-slate-500">Parent Name: {parentName}</p>
-                                <p className="text-[10px] text-slate-500">Contact: {student?.userDetails?.phone || parentRecord?.userDetails?.phone || '—'}</p>
+                              <div className="space-y-1 flex-1 min-w-0">
+                                <p className="text-[13px] font-bold text-slate-100 leading-tight">{studentName}</p>
+                                <p className="text-[10.5px] text-slate-500">Admission No: <span className="text-slate-400 font-mono">{student?.admissionNumber || '—'}</span></p>
+                                <p className="text-[10.5px] text-slate-500">Class: <span className="text-slate-400">{studentClass?.name || '—'}</span></p>
+                                <p className="text-[10.5px] text-slate-500">Parent Name: <span className="text-slate-400">{parentName}</span></p>
+                                <p className="text-[10.5px] text-slate-500">Contact: <span className="text-slate-400 font-mono">{parentPhone}</span></p>
                               </div>
                             </div>
                           </div>
 
                           {/* Payment Information */}
                           <div>
-                            <h5 className="text-[10px] font-bold text-amber-400 uppercase tracking-wider mb-2">Payment Information</h5>
-                            <div className="space-y-1.5 text-[11px]">
+                            <h5 className="text-[10px] font-bold text-amber-400 uppercase tracking-[0.1em] mb-3 flex items-center gap-1.5">
+                              <div className="w-1 h-3 rounded-full bg-amber-400" />
+                              Payment Information
+                            </h5>
+                            <div className="space-y-2 text-[11px]">
                               {[
-                                { label: 'Fee Head', value: structure?.description || '—' },
-                                { label: 'Amount', value: `${overview?.currencySymbol || '₹'}${sp.amountPaid.toLocaleString()}`, bold: true },
+                                { label: 'Fee Head', value: structure?.description || structure ? `${structure.description}` : 'Tuition Fee', highlight: false },
+                                { label: 'Amount', value: `${overview?.currencySymbol || '₹'}${sp.amountPaid.toLocaleString()}`, highlight: true },
                                 { label: 'UTR Number', value: sp.utrNumber || sp.transactionId || '—', mono: true, copy: true },
-                                { label: 'Payment Method', value: sp.paymentMethod || '—' },
+                                { label: 'Payment Method', value: sp.paymentMethod || 'UPI' },
                                 { label: 'Submitted On', value: sp.createdAt ? `${new Date(sp.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}, ${new Date(sp.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}` : '—' },
                               ].map(item => (
-                                <div key={item.label} className="flex items-start justify-between gap-2">
-                                  <span className="text-slate-500 whitespace-nowrap">{item.label}:</span>
-                                  <span className={`text-right ${item.bold ? 'text-slate-100 font-bold' : 'text-slate-300'} ${item.mono ? 'font-mono text-[10px]' : ''}`}>
+                                <div key={item.label} className="flex items-start justify-between gap-3">
+                                  <span className="text-slate-500 whitespace-nowrap text-[11px]">{item.label}:</span>
+                                  <span className={`text-right flex items-center gap-1 ${item.highlight ? 'text-slate-100 font-bold' : 'text-slate-300'} ${item.mono ? 'font-mono text-[10.5px]' : ''}`}>
                                     {item.value}
                                     {item.copy && sp.utrNumber && (
                                       <button
                                         onClick={() => { navigator.clipboard.writeText(sp.utrNumber || ''); }}
-                                        className="ml-1.5 text-slate-600 hover:text-cyan-400 transition-colors inline-block"
+                                        className="ml-1 text-slate-600 hover:text-cyan-400 transition-colors flex-shrink-0"
                                         title="Copy UTR"
                                       >
                                         <ExternalLink size={10} />
@@ -6930,38 +6946,79 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
                           {/* Payment Proof */}
                           <div>
-                            <h5 className="text-[10px] font-bold text-emerald-400 uppercase tracking-wider mb-2">Payment Proof (Screenshot / Receipt)</h5>
+                            <h5 className="text-[10px] font-bold text-emerald-400 uppercase tracking-[0.1em] mb-3 flex items-center gap-1.5">
+                              <div className="w-1 h-3 rounded-full bg-emerald-400" />
+                              Payment Proof (Screenshot / Receipt)
+                            </h5>
                             {sp.paymentScreenshotUrl ? (
                               <div className="space-y-2">
-                                <div
-                                  className="relative w-full h-36 rounded-xl overflow-hidden border border-slate-700 bg-slate-900 cursor-pointer group/proof hover:border-amber-500/40 transition-colors"
-                                  onClick={() => setVerifyReceiptFullscreen(true)}
-                                >
-                                  <img
-                                    src={sp.paymentScreenshotUrl}
-                                    alt="Payment Proof"
-                                    className="w-full h-full object-contain"
-                                    onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
-                                  />
-                                  <div className="absolute inset-0 bg-black/40 opacity-0 group-hover/proof:opacity-100 transition-opacity flex items-center justify-center">
-                                    <span className="text-[10px] text-white font-bold bg-black/60 px-3 py-1.5 rounded-lg flex items-center gap-1.5">
-                                      <Eye size={12} /> View Full Size
-                                    </span>
+                                <div className="flex gap-3 items-start">
+                                  {/* Receipt Thumbnail */}
+                                  <div
+                                    className="relative w-[120px] h-[140px] flex-shrink-0 rounded-xl overflow-hidden border border-slate-700/80 bg-slate-900 cursor-pointer group/proof hover:border-cyan-500/40 transition-all"
+                                    onClick={() => setVerifyReceiptFullscreen(true)}
+                                  >
+                                    <img
+                                      src={sp.paymentScreenshotUrl}
+                                      alt="Payment Proof"
+                                      className="w-full h-full object-cover"
+                                      onError={(e) => {
+                                        const target = e.target as HTMLImageElement;
+                                        target.style.display = 'none';
+                                        const parent = target.parentElement;
+                                        if (parent) {
+                                          const fallback = document.createElement('div');
+                                          fallback.className = 'absolute inset-0 flex items-center justify-center text-slate-600';
+                                          fallback.innerHTML = '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><path d="m21 15-5-5L5 21"/></svg>';
+                                          parent.appendChild(fallback);
+                                        }
+                                      }}
+                                    />
+                                    <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover/proof:opacity-100 transition-opacity" />
+                                  </div>
+                                  {/* View Full Size link */}
+                                  <div className="flex flex-col gap-2 pt-1">
+                                    <button
+                                      onClick={() => setVerifyReceiptFullscreen(true)}
+                                      className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-cyan-400 transition-colors font-medium"
+                                    >
+                                      <Eye size={13} />
+                                      View Full Size
+                                    </button>
+                                    <button
+                                      onClick={() => {
+                                        const link = document.createElement('a');
+                                        link.href = sp.paymentScreenshotUrl || '';
+                                        link.download = `receipt-${sp.utrNumber || sp.id}.png`;
+                                        link.target = '_blank';
+                                        link.click();
+                                      }}
+                                      className="flex items-center gap-1.5 text-[11px] text-slate-400 hover:text-emerald-400 transition-colors font-medium"
+                                    >
+                                      <Download size={13} />
+                                      Download
+                                    </button>
                                   </div>
                                 </div>
-                                <p className="text-[9px] text-slate-600 text-center">Click on image to preview full size</p>
+                                <p className="text-[9px] text-slate-600 italic">Click on image to preview full size</p>
                               </div>
                             ) : (
-                              <p className="text-[10px] text-slate-600 italic">No screenshot uploaded.</p>
+                              <div className="w-full py-8 rounded-xl border border-dashed border-slate-700 bg-slate-900/40 flex flex-col items-center gap-2">
+                                <Image className="text-slate-700" size={24} />
+                                <p className="text-[10px] text-slate-600">No screenshot uploaded</p>
+                              </div>
                             )}
                           </div>
 
                           {/* Actions */}
                           <div>
-                            <h5 className="text-[10px] font-bold text-rose-400 uppercase tracking-wider mb-2.5">Actions</h5>
+                            <h5 className="text-[10px] font-bold text-rose-400 uppercase tracking-[0.1em] mb-3 flex items-center gap-1.5">
+                              <div className="w-1 h-3 rounded-full bg-rose-400" />
+                              Actions
+                            </h5>
                             {sp.status === 'PENDING' ? (
                               <div className="space-y-3">
-                                <div className="grid grid-cols-2 gap-2">
+                                <div className="grid grid-cols-2 gap-2.5">
                                   <button
                                     disabled={isActing}
                                     onClick={async () => {
@@ -6976,9 +7033,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                       }
                                       setVerifyActionId(null);
                                     }}
-                                    className="flex items-center justify-center gap-1.5 text-xs font-bold py-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 hover:bg-emerald-500/20 transition-all disabled:opacity-50 active:scale-[0.97]"
+                                    className="flex items-center justify-center gap-1.5 text-[11px] font-bold py-2.5 rounded-xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-500/20 hover:border-emerald-500/40 transition-all disabled:opacity-50 active:scale-[0.97]"
                                   >
-                                    {isActing ? <div className="w-3.5 h-3.5 border-2 border-emerald-400/60 border-t-transparent rounded-full animate-spin" /> : <CheckCircle size={14} />}
+                                    {isActing ? <div className="w-3.5 h-3.5 border-2 border-emerald-400/60 border-t-transparent rounded-full animate-spin" /> : <CheckCircle size={13} />}
                                     Approve Payment
                                   </button>
                                   <button
@@ -7000,33 +7057,34 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                       }
                                       setVerifyActionId(null);
                                     }}
-                                    className="flex items-center justify-center gap-1.5 text-xs font-bold py-2.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/20 hover:bg-rose-500/20 transition-all disabled:opacity-50 active:scale-[0.97]"
+                                    className="flex items-center justify-center gap-1.5 text-[11px] font-bold py-2.5 rounded-xl bg-rose-500/10 text-rose-400 border border-rose-500/25 hover:bg-rose-500/20 hover:border-rose-500/40 transition-all disabled:opacity-50 active:scale-[0.97]"
                                   >
-                                    {isActing ? <div className="w-3.5 h-3.5 border-2 border-rose-400/60 border-t-transparent rounded-full animate-spin" /> : <XCircle size={14} />}
+                                    {isActing ? <div className="w-3.5 h-3.5 border-2 border-rose-400/60 border-t-transparent rounded-full animate-spin" /> : <XCircle size={13} />}
                                     Reject Payment
                                   </button>
                                 </div>
                                 {/* Rejection Reason */}
                                 <div>
-                                  <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-1">
-                                    Rejection Reason <span className="text-slate-700 normal-case">(Required if rejecting)</span>
+                                  <label className="text-[10px] font-semibold text-slate-500 block mb-1.5">
+                                    <span className="font-bold">Rejection Reason</span> <span className="text-slate-600 font-normal">(Required if rejecting)</span>
                                   </label>
-                                  <textarea
-                                    rows={2}
+                                  <input
+                                    type="text"
                                     value={rejectReason}
                                     onChange={(e) => setRejectReason(e.target.value)}
                                     placeholder="Enter reason for rejection..."
-                                    className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 text-xs text-slate-100 focus:outline-none focus:border-rose-500/50 resize-none transition-colors placeholder-slate-700"
+                                    className="w-full bg-[#0d1224] border border-slate-800 rounded-xl px-3 py-2.5 text-xs text-slate-100 focus:outline-none focus:border-rose-500/50 focus:ring-1 focus:ring-rose-500/20 transition-all placeholder-slate-700"
                                   />
                                 </div>
                               </div>
                             ) : (
-                              <div className="text-center py-3">
-                                <span className={`text-xs font-bold ${sp.status === 'PAID' ? 'text-emerald-400' : 'text-rose-400'}`}>
-                                  {sp.status === 'PAID' ? '✓ Payment Approved' : '✗ Payment Rejected'}
-                                </span>
+                              <div className="text-center py-4 rounded-xl bg-slate-900/40 border border-slate-800">
+                                <div className={`inline-flex items-center gap-1.5 text-xs font-bold ${sp.status === 'PAID' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                                  {sp.status === 'PAID' ? <CheckCircle size={14} /> : <XCircle size={14} />}
+                                  {sp.status === 'PAID' ? 'Payment Approved' : 'Payment Rejected'}
+                                </div>
                                 {sp.rejectionReason && (
-                                  <p className="text-[10px] text-rose-400/70 italic mt-1">{sp.rejectionReason}</p>
+                                  <p className="text-[10px] text-rose-400/70 italic mt-1.5 px-4">{sp.rejectionReason}</p>
                                 )}
                               </div>
                             )}
@@ -7040,13 +7098,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 {/* Receipt Fullscreen Lightbox */}
                 {verifyReceiptFullscreen && verifySelectedPayment?.paymentScreenshotUrl && (
                   <div
-                    className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-6 animate-fade-in"
+                    className="fixed inset-0 z-50 bg-black/85 backdrop-blur-md flex items-center justify-center p-6 animate-fade-in"
                     onClick={() => setVerifyReceiptFullscreen(false)}
                   >
                     <div className="relative max-w-3xl max-h-[85vh] w-full" onClick={e => e.stopPropagation()}>
                       <button
                         onClick={() => setVerifyReceiptFullscreen(false)}
-                        className="absolute -top-3 -right-3 z-10 w-8 h-8 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors shadow-lg"
+                        className="absolute -top-3 -right-3 z-10 w-9 h-9 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center text-slate-400 hover:text-white hover:bg-slate-700 transition-colors shadow-lg"
                       >
                         <X size={16} />
                       </button>
@@ -7055,7 +7113,22 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         alt="Payment Receipt Full Size"
                         className="w-full h-full object-contain rounded-xl border border-slate-700 shadow-2xl"
                       />
-                      <p className="text-center text-[10px] text-slate-500 mt-2">UTR: {verifySelectedPayment.utrNumber || verifySelectedPayment.transactionId || '—'}</p>
+                      <div className="flex items-center justify-center gap-4 mt-3">
+                        <p className="text-[11px] text-slate-500">UTR: <span className="font-mono text-slate-400">{verifySelectedPayment.utrNumber || verifySelectedPayment.transactionId || '—'}</span></p>
+                        <button
+                          onClick={() => {
+                            const link = document.createElement('a');
+                            link.href = verifySelectedPayment.paymentScreenshotUrl || '';
+                            link.download = `receipt-${verifySelectedPayment.utrNumber || verifySelectedPayment.id}.png`;
+                            link.target = '_blank';
+                            link.click();
+                          }}
+                          className="flex items-center gap-1.5 text-[11px] text-cyan-400 hover:text-cyan-300 transition-colors font-medium"
+                        >
+                          <Download size={12} />
+                          Download Receipt
+                        </button>
+                      </div>
                     </div>
                   </div>
                 )}
