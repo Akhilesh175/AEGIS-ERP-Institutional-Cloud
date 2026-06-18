@@ -6684,13 +6684,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                   ))}
                 </div>
 
-                {/* Search + Status Filter Bar */}
+                {/* Search + Status Filter + Export */}
                 <div className="flex flex-col sm:flex-row items-start sm:items-center gap-3">
                   <div className="relative flex-1 w-full">
                     <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-500" size={14} />
                     <input
                       type="text"
-                      placeholder="Search by student / UTR / parent name..."
+                      placeholder="Search by student / parent / admission no / UTR..."
                       value={verifySearch}
                       onChange={e => setVerifySearch(e.target.value)}
                       className="w-full pl-10 pr-4 py-2.5 text-xs bg-[#0d1224] border border-slate-800 rounded-xl text-slate-100 focus:outline-none focus:border-cyan-500/50 focus:ring-1 focus:ring-cyan-500/20 transition-all placeholder-slate-600"
@@ -6700,7 +6700,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     <select
                       value={verifyStatusFilter}
                       onChange={e => setVerifyStatusFilter(e.target.value as any)}
-                      className="bg-[#0d1224] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500/50 cursor-pointer appearance-none min-w-[140px]"
+                      className="bg-[#0d1224] border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 focus:outline-none focus:border-cyan-500/50 cursor-pointer appearance-none min-w-[130px]"
                       style={{ backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%2364748b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E")`, backgroundRepeat: 'no-repeat', backgroundPosition: 'right 12px center' }}
                     >
                       <option value="PENDING">Status: Pending</option>
@@ -6708,6 +6708,28 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                       <option value="PAID">Status: Approved</option>
                       <option value="REJECTED">Status: Rejected</option>
                     </select>
+                    <button
+                      className="flex items-center gap-1.5 px-3.5 py-2.5 bg-[#0d1224] border border-slate-800 rounded-xl text-xs text-slate-400 hover:text-slate-200 hover:border-slate-700 transition-all"
+                      onClick={() => {
+                        const csvRows = ['Student,Class,Fee Head,Invoice No,Amount,UTR,Status,Submitted'];
+                        (feePayments || []).filter(p => p.paymentScreenshotUrl).forEach(p => {
+                          const st = students.find(s => s.id === p.studentId);
+                          const stName = st ? `${st.userDetails?.firstName || ''} ${st.userDetails?.lastName || ''}`.trim() : '';
+                          const cls = classes.find(c => c.id === st?.classId);
+                          const fs = feeStructures.find(f => f.id === p.feeStructureId);
+                          const invHash = p.feeStructureId.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0);
+                          csvRows.push(`"${stName}","${cls?.name || ''}","${fs?.description || ''}","INV-2026-${String(invHash % 10000).padStart(4, '0')}","${p.amountPaid}","${p.utrNumber || p.transactionId || ''}","${p.status}","${p.createdAt ? new Date(p.createdAt).toLocaleString() : ''}"`);
+                        });
+                        const blob = new Blob([csvRows.join('\n')], { type: 'text/csv' });
+                        const url = URL.createObjectURL(blob);
+                        const a = document.createElement('a');
+                        a.href = url; a.download = 'fee_payments_export.csv'; a.click();
+                        URL.revokeObjectURL(url);
+                      }}
+                    >
+                      <Download size={13} />
+                      Export
+                    </button>
                   </div>
                 </div>
 
@@ -6732,13 +6754,20 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           const name = student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim().toLowerCase() : '';
                           const utr = (p.utrNumber || p.transactionId || '').toLowerCase();
                           const admNo = (student?.admissionNumber || '').toLowerCase();
-                          // Find parent name via mapping
                           const mapping = mockDb.parentStudentMappings.find(m => m.studentId === p.studentId);
                           const parent = mapping ? parents.find(pr => pr.id === mapping.parentId) : null;
                           const parentName = parent ? `${parent.userDetails?.firstName || ''} ${parent.userDetails?.lastName || ''}`.trim().toLowerCase() : '';
-                          return name.includes(q) || utr.includes(q) || parentName.includes(q) || admNo.includes(q);
+                          const structure = feeStructures.find(f => f.id === p.feeStructureId);
+                          const feeHead = (structure?.description || '').toLowerCase();
+                          return name.includes(q) || utr.includes(q) || parentName.includes(q) || admNo.includes(q) || feeHead.includes(q);
                         })
                         .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+
+                      // Pagination
+                      const pageSize = 5;
+                      const totalPages = Math.max(1, Math.ceil(allProofs.length / pageSize));
+                      const currentPage = Math.min(totalPages, Math.max(1, 1)); // future: can add state for page
+                      const pagedProofs = allProofs.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
                       if (allProofs.length === 0) {
                         return (
@@ -6761,13 +6790,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             <table className="w-full text-xs">
                               <thead>
                                 <tr className="border-b border-slate-800/80">
-                                  {['STUDENT / PARENT', 'CLASS', 'AMOUNT', 'UTR NUMBER', 'SUBMITTED ON', 'STATUS', 'ACTION'].map(h => (
-                                    <th key={h} className="text-left py-3.5 px-4 text-[9px] font-bold text-slate-500 uppercase tracking-[0.08em] whitespace-nowrap">{h}</th>
+                                  {['STUDENT / PARENT', 'CLASS', 'FEE HEAD', 'INVOICE NO.', 'AMOUNT', 'UTR NUMBER', 'SUBMITTED ON', 'STATUS', 'ACTION'].map(h => (
+                                    <th key={h} className="text-left py-3.5 px-3 text-[9px] font-bold text-slate-500 uppercase tracking-[0.08em] whitespace-nowrap">{h}</th>
                                   ))}
                                 </tr>
                               </thead>
                               <tbody>
-                                {allProofs.map((payment, idx) => {
+                                {pagedProofs.map((payment, idx) => {
                                   const student = students.find(s => s.id === payment.studentId);
                                   const studentClass = classes.find(c => c.id === student?.classId);
                                   const mapping = mockDb.parentStudentMappings.find(m => m.studentId === payment.studentId);
@@ -6776,6 +6805,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                   const parentName = parentRecord ? `${parentRecord.userDetails?.firstName || ''} ${parentRecord.userDetails?.lastName || ''}`.trim() : '';
                                   const initials = studentName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
                                   const isSelected = verifySelectedPayment?.id === payment.id;
+                                  const structure = feeStructures.find(f => f.id === payment.feeStructureId);
+                                  const invHash = payment.feeStructureId.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0);
+                                  const invoiceNo = `INV-2026-${String(invHash % 10000).padStart(4, '0')}`;
 
                                   return (
                                     <tr
@@ -6785,12 +6817,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                         isSelected
                                           ? 'bg-cyan-500/[0.04] border-l-cyan-400 shadow-[inset_0_0_30px_rgba(34,211,238,0.02)]'
                                           : 'hover:bg-slate-800/30 border-l-transparent'
-                                      } ${idx !== allProofs.length - 1 ? 'border-b border-b-slate-800/50' : ''}`}
+                                      } ${idx !== pagedProofs.length - 1 ? 'border-b border-b-slate-800/50' : ''}`}
                                     >
                                       {/* Student / Parent */}
-                                      <td className="py-3.5 px-4">
-                                        <div className="flex items-center gap-3 min-w-[200px]">
-                                          <div className="w-[38px] h-[38px] rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600/50 flex items-center justify-center text-[10px] font-bold text-slate-300 flex-shrink-0 overflow-hidden shadow-sm">
+                                      <td className="py-3 px-3">
+                                        <div className="flex items-center gap-2.5 min-w-[170px]">
+                                          <div className="w-[36px] h-[36px] rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600/50 flex items-center justify-center text-[10px] font-bold text-slate-300 flex-shrink-0 overflow-hidden shadow-sm">
                                             {student?.userDetails?.avatarUrl ? (
                                               <img src={student.userDetails.avatarUrl} alt="" className="w-full h-full object-cover rounded-full" />
                                             ) : (
@@ -6798,26 +6830,32 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                             )}
                                           </div>
                                           <div className="min-w-0">
-                                            <p className="text-slate-100 font-semibold text-[11.5px] truncate leading-tight">{studentName}</p>
+                                            <p className="text-slate-100 font-semibold text-[11px] truncate leading-tight">{studentName}</p>
                                             {parentName && <p className="text-slate-500 text-[10px] truncate mt-0.5">Parent: {parentName}</p>}
                                             <p className="text-slate-600 text-[9px] font-mono mt-0.5">Adm No: {student?.admissionNumber || '—'}</p>
                                           </div>
                                         </div>
                                       </td>
                                       {/* Class */}
-                                      <td className="py-3.5 px-4 text-slate-300 font-semibold whitespace-nowrap text-[11.5px]">{studentClass?.name || '—'}</td>
+                                      <td className="py-3 px-3 text-slate-300 font-semibold whitespace-nowrap text-[11px]">{studentClass?.name || '—'}</td>
+                                      {/* Fee Head */}
+                                      <td className="py-3 px-3 whitespace-nowrap">
+                                        <p className="text-slate-200 text-[11px] font-medium truncate max-w-[120px]">{structure?.description || '—'}</p>
+                                      </td>
+                                      {/* Invoice No. */}
+                                      <td className="py-3 px-3 text-cyan-300/70 font-mono text-[10px] whitespace-nowrap">{invoiceNo}</td>
                                       {/* Amount */}
-                                      <td className="py-3.5 px-4 text-slate-100 font-bold whitespace-nowrap text-[11.5px]">{overview?.currencySymbol || '₹'}{payment.amountPaid.toLocaleString()}</td>
+                                      <td className="py-3 px-3 text-slate-100 font-bold whitespace-nowrap text-[11px]">{overview?.currencySymbol || '₹'}{payment.amountPaid.toLocaleString()}</td>
                                       {/* UTR Number */}
-                                      <td className="py-3.5 px-4 text-cyan-300/80 font-mono text-[10.5px] whitespace-nowrap">{payment.utrNumber || payment.transactionId || '—'}</td>
+                                      <td className="py-3 px-3 text-cyan-300/80 font-mono text-[10px] whitespace-nowrap">{payment.utrNumber || payment.transactionId || '—'}</td>
                                       {/* Submitted On */}
-                                      <td className="py-3.5 px-4 whitespace-nowrap">
-                                        <p className="text-slate-300 text-[11px]">{payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</p>
+                                      <td className="py-3 px-3 whitespace-nowrap">
+                                        <p className="text-slate-300 text-[10.5px]">{payment.createdAt ? new Date(payment.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</p>
                                         <p className="text-slate-600 text-[9px] mt-0.5">{payment.createdAt ? new Date(payment.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true }) : ''}</p>
                                       </td>
                                       {/* Status */}
-                                      <td className="py-3.5 px-4">
-                                        <span className={`inline-flex items-center text-[9px] font-bold px-3 py-1.5 rounded-full border uppercase whitespace-nowrap tracking-wide ${
+                                      <td className="py-3 px-3">
+                                        <span className={`inline-flex items-center text-[9px] font-bold px-2.5 py-1 rounded-full border uppercase whitespace-nowrap tracking-wide ${
                                           payment.status === 'PENDING'
                                             ? 'bg-amber-500/10 border-amber-500/25 text-amber-400'
                                             : payment.status === 'PAID'
@@ -6828,8 +6866,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                         </span>
                                       </td>
                                       {/* Action */}
-                                      <td className="py-3.5 px-4">
-                                        <div className="flex items-center gap-2">
+                                      <td className="py-3 px-3">
+                                        <div className="flex items-center gap-1.5">
                                           <button
                                             onClick={e => { e.stopPropagation(); setVerifySelectedPayment(payment); setRejectReason(''); setVerifyReceiptFullscreen(false); }}
                                             className="w-7 h-7 rounded-lg flex items-center justify-center hover:bg-slate-800 text-slate-500 hover:text-cyan-400 transition-all"
@@ -6849,11 +6887,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           {/* Footer with Pagination */}
                           <div className="px-4 py-3 border-t border-slate-800/80 flex items-center justify-between">
                             <p className="text-[10px] text-slate-600">
-                              Showing 1 to {allProofs.length} of {allProofs.length} {verifyStatusFilter === 'PENDING' ? 'pending ' : ''}payments
+                              Showing {Math.min(pagedProofs.length, 1)} to {pagedProofs.length} of {allProofs.length} {verifyStatusFilter === 'PENDING' ? 'pending ' : ''}payments
                             </p>
                             <div className="flex items-center gap-1">
                               <button className="w-7 h-7 rounded-lg border border-slate-800 flex items-center justify-center text-slate-600 hover:text-slate-300 hover:border-slate-700 transition-colors text-[11px]">&lt;</button>
-                              <button className="w-7 h-7 rounded-lg bg-cyan-500/15 border border-cyan-500/30 flex items-center justify-center text-cyan-400 font-bold text-[11px]">1</button>
+                              {Array.from({ length: Math.min(totalPages, 3) }, (_, i) => (
+                                <button key={i} className={`w-7 h-7 rounded-lg flex items-center justify-center font-bold text-[11px] ${i === 0 ? 'bg-cyan-500/15 border border-cyan-500/30 text-cyan-400' : 'border border-slate-800 text-slate-600 hover:text-slate-300 hover:border-slate-700 transition-colors'}`}>{i + 1}</button>
+                              ))}
                               <button className="w-7 h-7 rounded-lg border border-slate-800 flex items-center justify-center text-slate-600 hover:text-slate-300 hover:border-slate-700 transition-colors text-[11px]">&gt;</button>
                             </div>
                           </div>
@@ -6875,6 +6915,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     const parentPhone = parentRecord?.userDetails?.phone || student?.userDetails?.phone || '—';
                     const initials = studentName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
                     const isActing = verifyActionId === sp.id;
+                    const invHash = sp.feeStructureId.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0);
+                    const invoiceNo = `INV-2026-${String(invHash % 10000).padStart(4, '0')}`;
 
                     return (
                       <div className="w-[350px] flex-shrink-0 bg-[#0a0e1a] border border-slate-800 rounded-xl overflow-hidden animate-fade-in shadow-xl shadow-black/20">
@@ -6887,7 +6929,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         </div>
 
                         <div className="p-5 space-y-5 max-h-[calc(100vh-280px)] overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#1e293b transparent' }}>
-                          {/* Student Information */}
+                          {/* 1. Student Information */}
                           <div>
                             <h5 className="text-[10px] font-bold text-cyan-400 uppercase tracking-[0.1em] mb-3 flex items-center gap-1.5">
                               <div className="w-1 h-3 rounded-full bg-cyan-400" />
@@ -6911,23 +6953,44 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             </div>
                           </div>
 
-                          {/* Payment Information */}
+                          {/* 2. Fee Information */}
                           <div>
                             <h5 className="text-[10px] font-bold text-amber-400 uppercase tracking-[0.1em] mb-3 flex items-center gap-1.5">
                               <div className="w-1 h-3 rounded-full bg-amber-400" />
+                              Fee Information
+                            </h5>
+                            <div className="space-y-2 text-[11px]">
+                              {[
+                                { label: 'Fee Head', value: structure?.description || '—' },
+                                { label: 'Invoice No', value: invoiceNo, mono: true },
+                                { label: 'Amount', value: `${overview?.currencySymbol || '₹'}${sp.amountPaid.toLocaleString()}`, highlight: true },
+                                { label: 'Due Date', value: structure?.dueDate ? new Date(structure.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—' },
+                              ].map(item => (
+                                <div key={item.label} className="flex items-start justify-between gap-3">
+                                  <span className="text-slate-500 whitespace-nowrap text-[11px]">{item.label}:</span>
+                                  <span className={`text-right ${item.highlight ? 'text-slate-100 font-bold' : 'text-slate-300'} ${item.mono ? 'font-mono text-[10.5px]' : ''}`}>
+                                    {item.value}
+                                  </span>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+
+                          {/* 3. Payment Information */}
+                          <div>
+                            <h5 className="text-[10px] font-bold text-violet-400 uppercase tracking-[0.1em] mb-3 flex items-center gap-1.5">
+                              <div className="w-1 h-3 rounded-full bg-violet-400" />
                               Payment Information
                             </h5>
                             <div className="space-y-2 text-[11px]">
                               {[
-                                { label: 'Fee Head', value: structure?.description || structure ? `${structure.description}` : 'Tuition Fee', highlight: false },
-                                { label: 'Amount', value: `${overview?.currencySymbol || '₹'}${sp.amountPaid.toLocaleString()}`, highlight: true },
                                 { label: 'UTR Number', value: sp.utrNumber || sp.transactionId || '—', mono: true, copy: true },
                                 { label: 'Payment Method', value: sp.paymentMethod || 'UPI' },
                                 { label: 'Submitted On', value: sp.createdAt ? `${new Date(sp.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}, ${new Date(sp.createdAt).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true })}` : '—' },
                               ].map(item => (
                                 <div key={item.label} className="flex items-start justify-between gap-3">
                                   <span className="text-slate-500 whitespace-nowrap text-[11px]">{item.label}:</span>
-                                  <span className={`text-right flex items-center gap-1 ${item.highlight ? 'text-slate-100 font-bold' : 'text-slate-300'} ${item.mono ? 'font-mono text-[10.5px]' : ''}`}>
+                                  <span className={`text-right flex items-center gap-1 text-slate-300 ${item.mono ? 'font-mono text-[10.5px]' : ''}`}>
                                     {item.value}
                                     {item.copy && sp.utrNumber && (
                                       <button
@@ -6944,7 +7007,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             </div>
                           </div>
 
-                          {/* Payment Proof */}
+                          {/* 4. Payment Proof */}
                           <div>
                             <h5 className="text-[10px] font-bold text-emerald-400 uppercase tracking-[0.1em] mb-3 flex items-center gap-1.5">
                               <div className="w-1 h-3 rounded-full bg-emerald-400" />
@@ -6953,7 +7016,6 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             {sp.paymentScreenshotUrl ? (
                               <div className="space-y-2">
                                 <div className="flex gap-3 items-start">
-                                  {/* Receipt Thumbnail */}
                                   <div
                                     className="relative w-[120px] h-[140px] flex-shrink-0 rounded-xl overflow-hidden border border-slate-700/80 bg-slate-900 cursor-pointer group/proof hover:border-cyan-500/40 transition-all"
                                     onClick={() => setVerifyReceiptFullscreen(true)}
@@ -6976,7 +7038,6 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                     />
                                     <div className="absolute inset-0 bg-gradient-to-t from-black/60 via-transparent to-transparent opacity-0 group-hover/proof:opacity-100 transition-opacity" />
                                   </div>
-                                  {/* View Full Size link */}
                                   <div className="flex flex-col gap-2 pt-1">
                                     <button
                                       onClick={() => setVerifyReceiptFullscreen(true)}
@@ -7010,7 +7071,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             )}
                           </div>
 
-                          {/* Actions */}
+                          {/* 5. Actions */}
                           <div>
                             <h5 className="text-[10px] font-bold text-rose-400 uppercase tracking-[0.1em] mb-3 flex items-center gap-1.5">
                               <div className="w-1 h-3 rounded-full bg-rose-400" />
@@ -7063,7 +7124,6 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                     Reject Payment
                                   </button>
                                 </div>
-                                {/* Rejection Reason */}
                                 <div>
                                   <label className="text-[10px] font-semibold text-slate-500 block mb-1.5">
                                     <span className="font-bold">Rejection Reason</span> <span className="text-slate-600 font-normal">(Required if rejecting)</span>
@@ -7134,6 +7194,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 )}
               </div>
             )}
+
 
             {/* ══════════════ SALARY PAYMENTS TAB ══════════════ */}
             {feesSubTab === 'salary-payments' && (

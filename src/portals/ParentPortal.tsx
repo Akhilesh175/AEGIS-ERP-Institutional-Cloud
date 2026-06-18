@@ -11,7 +11,7 @@ import { GlassCard } from '../components/GlassCard';
 import { supabase } from '../lib/supabase';
 import { 
   Eye, Award, DollarSign, Calendar, FileText, 
-  User as UserIcon, ShieldAlert, CheckCircle, AlertCircle, UsersRound, Clock,
+  User as UserIcon, ShieldAlert, CheckCircle, XCircle, AlertCircle, UsersRound, Clock,
   BookOpen, Play, Download, MessageCircle, Paperclip,
   Filter, Search, ChevronDown, ChevronRight, ExternalLink,
   BookMarked, Layers, Home, Coffee, Utensils, ClipboardList, Check, X, Bell, Mail
@@ -86,6 +86,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   const [screenshotFile, setScreenshotFile] = useState<File | null>(null);
   const [submittingProof, setSubmittingProof] = useState(false);
   const [payInstructTab, setPayInstructTab] = useState<'qr' | 'upi' | 'bank'>('qr');
+  const [feePaySubTab, setFeePaySubTab] = useState<'outstanding' | 'history'>('outstanding');
+  const [selectedFeeForProof, setSelectedFeeForProof] = useState<string | null>(null);
   
   // Compute plan directly from Zustand session (single source of truth), with mockDb fallback
   const studentObj = mockDb.students.find(s => s.id === selectedStudent);
@@ -2156,6 +2158,312 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                       </div>
                     </div>
                   )}
+
+                  {/* ══════════════ MY PAYMENTS — 3-Panel Layout ══════════════ */}
+                  <div className="mt-8 pt-8 border-t border-slate-800/60">
+                    <div className="flex items-center justify-between mb-5">
+                      <div>
+                        <h3 className="text-lg font-bold text-slate-100">My Payments</h3>
+                        <p className="text-xs text-slate-400 mt-0.5">View and manage all fee payments</p>
+                      </div>
+                      <div className="flex items-center bg-slate-900/60 rounded-xl border border-slate-800 p-0.5">
+                        {[
+                          { id: 'outstanding' as const, label: 'Outstanding Fees' },
+                          { id: 'history' as const, label: 'Payment History' },
+                        ].map(tab => (
+                          <button
+                            key={tab.id}
+                            onClick={() => setFeePaySubTab(tab.id)}
+                            className={`px-4 py-1.5 text-xs font-semibold rounded-lg transition-all ${feePaySubTab === tab.id ? 'bg-brand-500/15 text-brand-400 border border-brand-500/25' : 'text-slate-400 hover:text-slate-200 border border-transparent'}`}
+                          >
+                            {tab.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {feePaySubTab === 'outstanding' && (
+                      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
+                        {/* Left Panel: Select Fee to Pay */}
+                        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 space-y-4">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-100">Select Fee to Pay</h4>
+                            <p className="text-[10px] text-slate-500 mt-0.5">Choose a fee from the list below to submit payment proof</p>
+                          </div>
+                          <div className="space-y-2.5 max-h-[340px] overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#1e293b transparent' }}>
+                            {(() => {
+                              const outstanding = (academicRecord?.fees || []).filter((f: any) => f.status !== 'PAID');
+                              if (outstanding.length === 0) {
+                                return <div className="text-center py-6 text-slate-500 text-xs">No outstanding fees. All paid! 🎉</div>;
+                              }
+                              return outstanding.map((f: any, idx: number) => {
+                                const invHash = f.id.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0);
+                                const invoiceNo = `INV-2026-${String(invHash % 10000).padStart(4, '0')}`;
+                                const isSelected = selectedFeeForProof === f.id;
+                                return (
+                                  <div
+                                    key={idx}
+                                    onClick={() => {
+                                      if (f.status === 'PENDING') return;
+                                      setSelectedFeeForProof(f.id);
+                                      setSelectedFee(f);
+                                    }}
+                                    className={`p-3.5 rounded-xl border cursor-pointer transition-all ${
+                                      f.status === 'PENDING'
+                                        ? 'border-amber-500/20 bg-amber-500/5 opacity-60 cursor-not-allowed'
+                                        : isSelected
+                                          ? 'border-brand-500/40 bg-brand-500/5 ring-1 ring-brand-500/20'
+                                          : 'border-slate-800 hover:border-slate-700 bg-slate-950/30'
+                                    }`}
+                                  >
+                                    <div className="flex items-start gap-3">
+                                      <div className={`mt-0.5 w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0 ${
+                                        f.status === 'PENDING' ? 'border-amber-500/40' : isSelected ? 'border-brand-500 bg-brand-500' : 'border-slate-600'
+                                      }`}>
+                                        {isSelected && f.status !== 'PENDING' && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                      </div>
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <p className="text-xs font-bold text-slate-200 truncate">{f.description}</p>
+                                          <span className="text-sm font-extrabold text-slate-100 whitespace-nowrap">₹{f.amount.toLocaleString()}</span>
+                                        </div>
+                                        <p className="text-[9.5px] text-slate-500 mt-0.5">Invoice: <span className="font-mono text-slate-400">{invoiceNo}</span></p>
+                                        <div className="flex items-center justify-between mt-1">
+                                          <p className="text-[9.5px] text-slate-500">Due Date: <span className="text-slate-400">{new Date(f.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span></p>
+                                          {f.status === 'PENDING' && (
+                                            <span className="text-[8px] font-bold px-1.5 py-0.5 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded uppercase">Pending Verification</span>
+                                          )}
+                                          {f.status === 'REJECTED' && (
+                                            <span className="text-[8px] font-bold px-1.5 py-0.5 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded uppercase">Rejected</span>
+                                          )}
+                                        </div>
+                                        {f.status === 'REJECTED' && f.rejectionReason && (
+                                          <p className="text-[9px] text-rose-400/80 mt-1 italic">Reason: {f.rejectionReason}</p>
+                                        )}
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                          <p className="text-[9px] text-amber-400/80 flex items-center gap-1">
+                            <AlertCircle size={10} className="flex-shrink-0" />
+                            Select a fee above to proceed with payment proof submission.
+                          </p>
+                        </div>
+
+                        {/* Middle Panel: Submit Payment Proof */}
+                        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 space-y-4">
+                          <h4 className="text-sm font-bold text-slate-100">Submit Payment Proof</h4>
+                          {(() => {
+                            const selFee = selectedFeeForProof ? (academicRecord?.fees || []).find((f: any) => f.id === selectedFeeForProof) : null;
+                            if (!selFee) {
+                              return (
+                                <div className="text-center py-12 text-slate-500 text-xs space-y-2">
+                                  <DollarSign size={24} className="mx-auto text-slate-700" />
+                                  <p>Select a fee from the left panel to submit payment proof.</p>
+                                </div>
+                              );
+                            }
+                            const invHash = selFee.id.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0);
+                            const invoiceNo = `INV-2026-${String(invHash % 10000).padStart(4, '0')}`;
+                            return (
+                              <>
+                                <div className="p-3 bg-brand-500/5 border border-brand-500/10 rounded-xl space-y-1">
+                                  <p className="text-[10px] text-slate-400">For: <span className="font-semibold text-slate-200">{selFee.description}</span></p>
+                                  <div className="flex items-center gap-4">
+                                    <p className="text-[10px] text-slate-500">Invoice: <span className="font-mono text-slate-400">{invoiceNo}</span></p>
+                                    <p className="text-[10px] text-slate-500">Amount: <span className="font-bold text-slate-100">₹{selFee.amount.toLocaleString()}</span></p>
+                                  </div>
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">UTR Number *</label>
+                                  <input
+                                    type="text"
+                                    placeholder="Enter UTR number"
+                                    value={utrNumber}
+                                    onChange={(e) => setUtrNumber(e.target.value)}
+                                    className="w-full bg-slate-950 border border-slate-850 rounded-xl px-3 py-2.5 text-xs text-slate-200 focus:outline-none focus:border-brand-500 transition-colors placeholder-slate-600"
+                                  />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-[10.5px] font-bold text-slate-400 uppercase tracking-wider block">Upload Payment Screenshot / Receipt *</label>
+                                  <div className="relative border border-dashed border-slate-800 hover:border-slate-700 bg-slate-950/30 rounded-xl p-6 flex flex-col items-center justify-center gap-1.5 transition-colors cursor-pointer">
+                                    <input
+                                      type="file"
+                                      accept="image/*,application/pdf"
+                                      onChange={(e) => {
+                                        if (e.target.files && e.target.files[0]) setScreenshotFile(e.target.files[0]);
+                                      }}
+                                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                                    />
+                                    <Download size={20} className="text-slate-600" />
+                                    <span className="text-xs text-slate-300 font-semibold text-center truncate max-w-full px-2">
+                                      {screenshotFile ? screenshotFile.name : 'Click to upload or drag and drop'}
+                                    </span>
+                                    <span className="text-[9px] text-slate-600">JPG, PNG, PDF up to 5MB</span>
+                                  </div>
+                                </div>
+                                <button
+                                  disabled={submittingProof}
+                                  onClick={async () => {
+                                    if (!utrNumber.trim()) { alert('Please enter your transaction UTR/Reference number.'); return; }
+                                    if (!screenshotFile) { alert('Please upload a payment screenshot/receipt file.'); return; }
+                                    try {
+                                      setSubmittingProof(true);
+                                      await mockApi.submitFeePaymentProof(parentId || '', selectedStudent, selFee.id, paymentMethod, utrNumber.trim(), screenshotFile);
+                                      alert('Payment proof submitted successfully! Finance Admin will verify shortly.');
+                                      setSelectedFeeForProof(null);
+                                      setUtrNumber('');
+                                      setScreenshotFile(null);
+                                      await loadAcademicRecord();
+                                    } catch (err: any) {
+                                      alert(err.message || 'Failed to submit payment proof.');
+                                    } finally {
+                                      setSubmittingProof(false);
+                                    }
+                                  }}
+                                  className="w-full py-2.5 bg-brand-500 hover:bg-brand-600 disabled:bg-brand-800 text-white rounded-xl text-xs font-bold cursor-pointer flex items-center justify-center gap-1.5 transition-all active:scale-[0.97]"
+                                >
+                                  {submittingProof ? 'Submitting...' : 'Submit Payment Proof'}
+                                </button>
+                              </>
+                            );
+                          })()}
+                        </div>
+
+                        {/* Right Panel: Payment History */}
+                        <div className="bg-slate-900/40 border border-slate-800 rounded-2xl p-5 space-y-4">
+                          <div>
+                            <h4 className="text-sm font-bold text-slate-100">Payment History</h4>
+                            <p className="text-[10px] text-slate-500 mt-0.5">All payments and their current status</p>
+                          </div>
+                          <div className="space-y-3 max-h-[340px] overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: '#1e293b transparent' }}>
+                            {(() => {
+                              const allFees = academicRecord?.fees || [];
+                              const withPayments = allFees.filter((f: any) => f.status === 'PAID' || f.status === 'REJECTED' || f.status === 'PENDING');
+                              if (withPayments.length === 0) {
+                                return <div className="text-center py-8 text-slate-500 text-xs">No payment history yet.</div>;
+                              }
+                              return withPayments.map((f: any, idx: number) => {
+                                const invHash = f.id.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0);
+                                const invoiceNo = `INV-2026-${String(invHash % 10000).padStart(4, '0')}`;
+                                return (
+                                  <div key={idx} className={`p-3.5 rounded-xl border transition-all ${
+                                    f.status === 'REJECTED' ? 'border-rose-500/20 bg-rose-500/5' : f.status === 'PAID' ? 'border-slate-800 bg-slate-950/30' : 'border-amber-500/15 bg-amber-500/[0.02]'
+                                  }`}>
+                                    <div className="flex items-start justify-between gap-3">
+                                      <div className="flex-1 min-w-0">
+                                        <div className="flex items-center gap-2">
+                                          {f.status === 'PAID' && <CheckCircle size={12} className="text-emerald-400 flex-shrink-0" />}
+                                          {f.status === 'REJECTED' && <XCircle size={12} className="text-rose-400 flex-shrink-0" />}
+                                          {f.status === 'PENDING' && <Clock size={12} className="text-amber-400 flex-shrink-0" />}
+                                          <p className="text-xs font-bold text-slate-200 truncate">{f.description}</p>
+                                        </div>
+                                        <p className="text-[9.5px] text-slate-500 mt-1 ml-5">Invoice: <span className="font-mono text-slate-400">{invoiceNo}</span></p>
+                                        {f.status === 'PAID' && <p className="text-[9.5px] text-slate-500 ml-5">Paid On: <span className="text-slate-400">{f.paymentDate ? new Date(f.paymentDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }) : '—'}</span></p>}
+                                        {f.status === 'REJECTED' && (
+                                          <>
+                                            {f.rejectionReason && <p className="text-[9px] text-rose-400/80 mt-1 ml-5 italic">Reason: {f.rejectionReason}. Please upload a clearer screenshot.</p>}
+                                            <button className="mt-2 ml-5 flex items-center gap-1 text-[10px] font-bold text-cyan-400 hover:text-cyan-300 transition-colors"
+                                              onClick={() => { setSelectedFeeForProof(f.id); setSelectedFee(f); setFeePaySubTab('outstanding'); setUtrNumber(''); setScreenshotFile(null); }}>
+                                              ↻ Re-upload Payment Proof
+                                            </button>
+                                          </>
+                                        )}
+                                      </div>
+                                      <div className="flex flex-col items-end gap-1 flex-shrink-0">
+                                        <span className="text-sm font-extrabold text-slate-100">₹{f.amount.toLocaleString()}</span>
+                                        <span className={`text-[8px] font-bold px-2 py-0.5 rounded-full border uppercase tracking-wide ${
+                                          f.status === 'PAID' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : f.status === 'REJECTED' ? 'bg-rose-500/10 border-rose-500/20 text-rose-400' : 'bg-amber-500/10 border-amber-500/20 text-amber-400'
+                                        }`}>{f.status === 'PAID' ? 'APPROVED' : f.status}</span>
+                                      </div>
+                                    </div>
+                                  </div>
+                                );
+                              });
+                            })()}
+                          </div>
+                          <button onClick={() => setFeePaySubTab('history')} className="text-xs font-bold text-brand-400 hover:text-brand-300 transition-colors flex items-center gap-1">
+                            View All Payment History →
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
+                    {feePaySubTab === 'history' && (
+                      <GlassCard className="p-5 space-y-4">
+                        <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                          <h4 className="text-sm font-bold text-slate-200">Complete Payment History</h4>
+                          <span className="text-xs text-slate-500 font-medium">All billing records</span>
+                        </div>
+                        {(() => {
+                          const allFees = academicRecord?.fees || [];
+                          return allFees.length === 0 ? (
+                            <div className="text-center py-8 text-slate-500 text-xs">No payment records found.</div>
+                          ) : (
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs text-left">
+                                <thead>
+                                  <tr className="border-b border-slate-850 text-slate-500 text-[9px] font-bold uppercase tracking-wider">
+                                    <th className="py-2.5 px-3">Date</th>
+                                    <th className="py-2.5 px-3">Invoice</th>
+                                    <th className="py-2.5 px-3">Fee Head</th>
+                                    <th className="py-2.5 px-3">Amount</th>
+                                    <th className="py-2.5 px-3">Status</th>
+                                    <th className="py-2.5 px-3">Details</th>
+                                    <th className="py-2.5 px-3 text-right">Actions</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-900 text-slate-350">
+                                  {allFees.map((f: any, idx: number) => {
+                                    const invHash = f.id.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0);
+                                    const invoiceNo = `INV-2026-${String(invHash % 10000).padStart(4, '0')}`;
+                                    return (
+                                      <tr key={idx} className="hover:bg-slate-900/20 transition-colors">
+                                        <td className="py-3 px-3 font-medium text-slate-400">{new Date(f.paymentDate || f.dueDate).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</td>
+                                        <td className="py-3 px-3 font-mono text-[10px] text-slate-400">{invoiceNo}</td>
+                                        <td className="py-3 px-3"><div className="font-semibold text-slate-200">{f.description}</div></td>
+                                        <td className="py-3 px-3 font-semibold text-slate-200">₹{f.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
+                                        <td className="py-3 px-3">
+                                          <span className={`text-[9.5px] font-bold px-2 py-0.5 rounded border uppercase ${
+                                            f.status === 'PAID' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : f.status === 'PENDING' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                          }`}>{f.status === 'PAID' ? 'APPROVED' : f.status}</span>
+                                        </td>
+                                        <td className="py-3 px-3 text-[10px]">
+                                          {f.status === 'REJECTED' && f.rejectionReason && <span className="text-rose-400 italic">{f.rejectionReason}</span>}
+                                          {f.status === 'PENDING' && <span className="text-amber-400">Awaiting verification</span>}
+                                          {f.status === 'PAID' && f.utrNumber && <span className="text-slate-500 font-mono">UTR: {f.utrNumber}</span>}
+                                        </td>
+                                        <td className="py-3 px-3 text-right">
+                                          {f.status === 'PAID' ? (
+                                            <button onClick={async () => {
+                                              if (!studentSchool) return;
+                                              const sp = academicRecord?.studentProfile || {};
+                                              await downloadReceiptPdf({ schoolId: studentSchool.id, schoolName: studentSchool.name, schoolAddress: studentSchool.address || '', schoolPhone: studentSchool.phone || '', schoolEmail: (studentSchool as any).email || '', logoUrl: studentSchool.logoUrl || '', sealUrl: studentSchool.sealUrl || '', currencySymbol: studentSchool.currencySymbol || '$', studentName: sp.fullName || 'Student', studentId: selectedStudent, admissionNumber: sp.admissionNumber || '', className: sp.className || '', sectionName: sp.sectionName || '', feeDescription: f.description, amount: Number(f.amount), paymentDate: f.paymentDate || new Date().toISOString(), paymentMethod: f.paymentMethod || 'ONLINE', transactionId: f.transactionId || f.utrNumber });
+                                            }} className="px-2.5 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/20 rounded-lg font-bold text-[10px] inline-flex items-center gap-1 active:scale-95 transition-all">
+                                              <Download size={11} /> Receipt
+                                            </button>
+                                          ) : f.status === 'REJECTED' ? (
+                                            <button onClick={() => { setSelectedFeeForProof(f.id); setSelectedFee(f); setFeePaySubTab('outstanding'); setUtrNumber(''); setScreenshotFile(null); }}
+                                              className="px-2.5 py-1 bg-cyan-500/10 hover:bg-cyan-500/20 text-cyan-400 border border-cyan-500/20 rounded-lg font-bold text-[10px] inline-flex items-center gap-1 active:scale-95 transition-all">
+                                              ↻ Re-upload
+                                            </button>
+                                          ) : <span className="text-[10px] text-slate-605">—</span>}
+                                        </td>
+                                      </tr>
+                                    );
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          );
+                        })()}
+                      </GlassCard>
+                    )}
+                  </div>
+
                 </div>
               </PremiumLock>
             )}

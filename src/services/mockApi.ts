@@ -16101,7 +16101,7 @@ export const mockApi = {
 
   async logPaymentAction(
     paymentId: string,
-    action: 'SUBMITTED' | 'APPROVED' | 'REJECTED',
+    action: 'SUBMITTED' | 'APPROVED' | 'REJECTED' | 'RE_UPLOADED',
     performedBy: string,
     details?: Record<string, any>
   ): Promise<void> {
@@ -16352,8 +16352,10 @@ export const mockApi = {
       savedPayment = localPayment;
     }
 
-    mockDb.addLog(parentId, 'FEE_PAYMENT_PROOF_SUBMITTED', { studentId, feeStructureId, utr });
-    await this.logPaymentAction(savedPayment.id, 'SUBMITTED', parentId, { studentId, feeStructureId, utr, method });
+    const isReUpload = existingPayment?.status === 'REJECTED';
+    const auditAction = isReUpload ? 'FEE_PAYMENT_PROOF_RE_UPLOADED' : 'FEE_PAYMENT_PROOF_SUBMITTED';
+    mockDb.addLog(parentId, auditAction, { studentId, feeStructureId, utr });
+    await this.logPaymentAction(savedPayment.id, isReUpload ? 'RE_UPLOADED' : 'SUBMITTED', parentId, { studentId, feeStructureId, utr, method });
     return savedPayment;
   },
 
