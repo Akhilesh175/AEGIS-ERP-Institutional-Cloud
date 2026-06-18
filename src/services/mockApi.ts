@@ -3686,12 +3686,13 @@ export const mockApi = {
         description: fs.description,
         amount: fs.amount,
         dueDate: fs.dueDate,
-        status: payment ? payment.status : 'PENDING',
+        status: payment ? payment.status : 'UNPAID',
         paymentDate: payment ? payment.paymentDate : '',
         paymentId: payment?.id || '',
         paymentScreenshotUrl: payment?.paymentScreenshotUrl || '',
         utrNumber: payment?.utrNumber || '',
-        rejectionReason: payment?.rejectionReason || ''
+        rejectionReason: payment?.rejectionReason || '',
+        paymentMethod: payment?.paymentMethod || ''
       };
     });
 

@@ -1472,9 +1472,11 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                           ? 'bg-rose-500/10 border-rose-500/25 text-rose-400 font-bold'
                                           : f.status === 'PENDING'
                                             ? 'bg-amber-500/10 border-amber-500/25 text-amber-400 font-bold'
-                                            : 'bg-red-500/10 border-red-500/25 text-red-400 font-bold'
+                                            : f.status === 'UNPAID'
+                                              ? 'bg-red-500/10 border-red-500/25 text-red-400 font-bold'
+                                              : 'bg-red-500/10 border-red-500/25 text-red-400 font-bold'
                                       }`}>
-                                        {f.status}
+                                        {f.status === 'UNPAID' ? 'UNPAID' : f.status}
                                       </span>
                                       {f.status === 'REJECTED' && (
                                         <span className="text-[9.5px] font-semibold text-rose-400 bg-rose-500/5 px-2 py-0.5 rounded border border-rose-500/10">
@@ -1507,7 +1509,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                       <span className="px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg text-[10px] font-bold uppercase tracking-wider">
                                         Awaiting Verification
                                       </span>
-                                    ) : (
+                                    ) : f.status === 'UNPAID' || f.status === 'REJECTED' ? (
                                       <div className="flex items-center gap-2">
                                         <button
                                           onClick={() => {
@@ -1526,7 +1528,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                           Pay Now
                                         </button>
                                       </div>
-                                    )}
+                                    ) : null}
                                   </div>
                                 </div>
                               );
@@ -1800,7 +1802,9 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                             ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
                                             : f.status === 'PENDING'
                                               ? 'bg-amber-500/10 border-amber-500/20 text-amber-400'
-                                              : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                              : f.status === 'UNPAID'
+                                                ? 'bg-slate-500/10 border-slate-500/20 text-slate-400'
+                                                : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
                                         }`}>
                                           {f.status === 'PAID' ? 'APPROVED' : f.status}
                                         </span>
@@ -2428,12 +2432,13 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                         <td className="py-3 px-3 font-semibold text-slate-200">₹{f.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}</td>
                                         <td className="py-3 px-3">
                                           <span className={`text-[9.5px] font-bold px-2 py-0.5 rounded border uppercase ${
-                                            f.status === 'PAID' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : f.status === 'PENDING' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
+                                            f.status === 'PAID' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400' : f.status === 'PENDING' ? 'bg-amber-500/10 border-amber-500/20 text-amber-400' : f.status === 'UNPAID' ? 'bg-slate-500/10 border-slate-500/20 text-slate-400' : 'bg-rose-500/10 border-rose-500/20 text-rose-400'
                                           }`}>{f.status === 'PAID' ? 'APPROVED' : f.status}</span>
                                         </td>
                                         <td className="py-3 px-3 text-[10px]">
                                           {f.status === 'REJECTED' && f.rejectionReason && <span className="text-rose-400 italic">{f.rejectionReason}</span>}
                                           {f.status === 'PENDING' && <span className="text-amber-400">Awaiting verification</span>}
+                                          {f.status === 'UNPAID' && <span className="text-slate-500">Not yet paid</span>}
                                           {f.status === 'PAID' && f.utrNumber && <span className="text-slate-500 font-mono">UTR: {f.utrNumber}</span>}
                                         </td>
                                         <td className="py-3 px-3 text-right">
