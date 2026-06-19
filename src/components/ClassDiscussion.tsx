@@ -15,6 +15,15 @@ interface ClassDiscussionProps {
   academicSessionId: string;
 }
 
+const getUserInitials = (name: string): string => {
+  if (!name) return '?';
+  const parts = name.trim().split(/\s+/);
+  if (parts.length >= 2) {
+    return `${parts[0].charAt(0)}${parts[parts.length - 1].charAt(0)}`.toUpperCase();
+  }
+  return name.substring(0, 2).toUpperCase();
+};
+
 export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
   currentUserId,
   currentUserRole,
@@ -710,12 +719,27 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
                   return (
                     <div key={msg.id} className={`flex gap-3 max-w-[85%] ${isCurrentUser ? 'ml-auto flex-row-reverse' : 'mr-auto'}`}>
                       {/* Avatar */}
-                      <div className="h-9 w-9 rounded-full bg-slate-800 flex-shrink-0 overflow-hidden border border-slate-700/60 flex items-center justify-center text-xs font-bold text-slate-300">
+                      <div className="h-10 w-10 rounded-full bg-slate-800 flex-shrink-0 overflow-hidden border border-slate-700/60 flex items-center justify-center text-xs font-bold text-slate-300 relative">
                         {msg.senderAvatar ? (
-                          <img src={msg.senderAvatar} alt={msg.senderName} className="h-full w-full object-cover" />
-                        ) : (
-                          msg.senderName ? msg.senderName.substring(0, 2).toUpperCase() : '?'
-                        )}
+                          <img 
+                            src={msg.senderAvatar} 
+                            alt={msg.senderName} 
+                            className="h-full w-full object-cover" 
+                            onError={(e) => {
+                              e.currentTarget.style.display = 'none';
+                              const fallback = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+                              if (fallback) {
+                                (fallback as HTMLElement).style.display = 'flex';
+                              }
+                            }}
+                          />
+                        ) : null}
+                        <span 
+                          className="avatar-fallback animate-fade-in" 
+                          style={{ display: msg.senderAvatar ? 'none' : 'flex' }}
+                        >
+                          {getUserInitials(msg.senderName || '')}
+                        </span>
                       </div>
 
                       {/* Bubble */}
@@ -1086,7 +1110,7 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
                     placeholder="Search members..."
                     className="w-full bg-slate-950/70 border border-slate-850 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none"
                     value={memberSearchQuery}
-                    onChange={(e) => setFileSearchQuery(e.target.value)}
+                    onChange={(e) => setMemberSearchQuery(e.target.value)}
                   />
                 </div>
 
@@ -1100,13 +1124,28 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
                       <div key={member.id} className="flex items-center justify-between p-2 rounded-xl bg-slate-950/20 border border-slate-850 hover:bg-slate-950/40 transition-colors">
                         <div className="flex items-center gap-2.5 truncate">
                           {/* Online status wrapper */}
-                          <div className="relative">
-                            <div className="h-8.5 w-8.5 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold border border-slate-700/60 overflow-hidden text-slate-300">
+                          <div className="relative flex-shrink-0">
+                            <div className="h-10 w-10 rounded-full bg-slate-800 flex items-center justify-center text-xs font-bold border border-slate-700/60 overflow-hidden text-slate-300 relative">
                               {member.avatarUrl ? (
-                                <img src={member.avatarUrl} alt={member.userFirst} className="h-full w-full object-cover" />
-                              ) : (
-                                `${member.userFirst?.charAt(0) || ''}${member.userLast?.charAt(0) || ''}`.toUpperCase()
-                              )}
+                                <img 
+                                  src={member.avatarUrl} 
+                                  alt={member.userFirst} 
+                                  className="h-full w-full object-cover" 
+                                  onError={(e) => {
+                                    e.currentTarget.style.display = 'none';
+                                    const fallback = e.currentTarget.parentElement?.querySelector('.avatar-fallback');
+                                    if (fallback) {
+                                      (fallback as HTMLElement).style.display = 'flex';
+                                    }
+                                  }}
+                                />
+                              ) : null}
+                              <span 
+                                className="avatar-fallback animate-fade-in" 
+                                style={{ display: member.avatarUrl ? 'none' : 'flex' }}
+                              >
+                                {getUserInitials(`${member.userFirst || ''} ${member.userLast || ''}`)}
+                              </span>
                             </div>
                             <span className={`absolute -bottom-0.5 -right-0.5 h-2.5 w-2.5 rounded-full border-2 border-slate-900 ${
                               isOnline ? 'bg-emerald-400' : 'bg-slate-600'
