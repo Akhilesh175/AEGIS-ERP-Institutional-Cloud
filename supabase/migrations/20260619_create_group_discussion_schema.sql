@@ -204,7 +204,7 @@ CREATE POLICY "class_chat_members_select" ON public.class_chat_members
 CREATE POLICY "class_chat_members_write_admin" ON public.class_chat_members
   FOR ALL USING (
     school_id = get_auth_user_school_id() AND EXISTS (
-      SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('ADMIN', 'SUPER_ADMIN', 'TEACHER', 'CLASS_TEACHER', 'ACADEMIC_ADMIN')
+      SELECT 1 FROM public.users WHERE id = auth.uid() AND role::text IN ('ADMIN', 'SUPER_ADMIN', 'TEACHER', 'CLASS_TEACHER', 'ACADEMIC_ADMIN')
     )
   );
 
@@ -233,7 +233,7 @@ CREATE POLICY "class_messages_update" ON public.class_messages
   FOR UPDATE USING (
     school_id = get_auth_user_school_id() AND (
       sender_id = auth.uid() OR EXISTS (
-        SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('ADMIN', 'SUPER_ADMIN', 'ACADEMIC_ADMIN', 'TEACHER', 'CLASS_TEACHER')
+        SELECT 1 FROM public.users WHERE id = auth.uid() AND role::text IN ('ADMIN', 'SUPER_ADMIN', 'ACADEMIC_ADMIN', 'TEACHER', 'CLASS_TEACHER')
       )
     )
   );
@@ -257,14 +257,14 @@ CREATE POLICY "attachments_all" ON public.class_message_attachments
 CREATE POLICY "pinned_all" ON public.class_pinned_messages
   FOR ALL USING (
     school_id = get_auth_user_school_id() AND EXISTS (
-      SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('ADMIN', 'SUPER_ADMIN', 'ACADEMIC_ADMIN', 'TEACHER', 'CLASS_TEACHER')
+      SELECT 1 FROM public.users WHERE id = auth.uid() AND role::text IN ('ADMIN', 'SUPER_ADMIN', 'ACADEMIC_ADMIN', 'TEACHER', 'CLASS_TEACHER')
     )
   );
 
 CREATE POLICY "announcements_all" ON public.class_announcements
   FOR ALL USING (
     school_id = get_auth_user_school_id() AND EXISTS (
-      SELECT 1 FROM public.users WHERE id = auth.uid() AND role IN ('ADMIN', 'SUPER_ADMIN', 'ACADEMIC_ADMIN', 'TEACHER', 'CLASS_TEACHER')
+      SELECT 1 FROM public.users WHERE id = auth.uid() AND role::text IN ('ADMIN', 'SUPER_ADMIN', 'ACADEMIC_ADMIN', 'TEACHER', 'CLASS_TEACHER')
     )
   );
 
