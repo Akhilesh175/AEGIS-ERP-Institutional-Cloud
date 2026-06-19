@@ -90,35 +90,51 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
         if (parsed?.user?.schoolId) {
           import('../services/mockApi').then(async ({ mockApi }) => {
             try {
+              let updatedUser = { ...parsed.user };
+              let sessionChanged = false;
+              if (!parsed.user.academicSessionId) {
+                const activeSessId = await mockApi.resolveActiveSessionId(parsed.user.schoolId);
+                if (activeSessId) {
+                  updatedUser.academicSessionId = activeSessId;
+                  sessionChanged = true;
+                }
+              }
+
               const livePlan = await mockApi.getLiveSchoolSubscriptionPlan(parsed.user.schoolId);
               if (!localStorage.getItem('aegis_session')) {
                 console.log('Session was cleared during background sync. Aborting.');
                 return;
               }
-              if (livePlan) {
-                const updatedSession = { ...parsed, schoolSubscriptionPlan: livePlan.toLowerCase() };
+              if (livePlan || sessionChanged) {
+                const updatedSession = { 
+                  ...parsed, 
+                  user: updatedUser,
+                  schoolSubscriptionPlan: livePlan ? livePlan.toLowerCase() : parsed.schoolSubscriptionPlan 
+                };
                 set({ session: updatedSession });
                 localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
                 
-                // Force sync the local mockDb school registry to invalidate any stale premium tier states
-                const dbSchoolsRaw = localStorage.getItem('aegis_erp_db_schools');
-                if (dbSchoolsRaw) {
-                  try {
-                    const dbSchools = JSON.parse(dbSchoolsRaw);
-                    const idx = dbSchools.findIndex((s: any) => s.id === parsed.user.schoolId);
-                    if (idx !== -1 && dbSchools[idx].subscriptionPlan !== livePlan.toLowerCase()) {
-                      dbSchools[idx].subscriptionPlan = livePlan.toLowerCase();
-                      localStorage.setItem('aegis_erp_db_schools', JSON.stringify(dbSchools));
+                if (livePlan) {
+                  // Force sync the local mockDb school registry to invalidate any stale premium tier states
+                  const dbSchoolsRaw = localStorage.getItem('aegis_erp_db_schools');
+                  if (dbSchoolsRaw) {
+                    try {
+                      const dbSchools = JSON.parse(dbSchoolsRaw);
+                      const idx = dbSchools.findIndex((s: any) => s.id === parsed.user.schoolId);
+                      if (idx !== -1 && dbSchools[idx].subscriptionPlan !== livePlan.toLowerCase()) {
+                        dbSchools[idx].subscriptionPlan = livePlan.toLowerCase();
+                        localStorage.setItem('aegis_erp_db_schools', JSON.stringify(dbSchools));
+                      }
+                      
+                      // Keep the in-memory mockDb singleton in sync!
+                      const { mockDb } = await import('../services/mockDb');
+                      const memIdx = mockDb.schools.findIndex((s: any) => s.id === parsed.user.schoolId);
+                      if (memIdx !== -1) {
+                        mockDb.schools[memIdx].subscriptionPlan = livePlan.toLowerCase();
+                      }
+                    } catch (err) {
+                      console.error('Failed to parse cached schools:', err);
                     }
-                    
-                    // Keep the in-memory mockDb singleton in sync!
-                    const { mockDb } = await import('../services/mockDb');
-                    const memIdx = mockDb.schools.findIndex((s: any) => s.id === parsed.user.schoolId);
-                    if (memIdx !== -1) {
-                      mockDb.schools[memIdx].subscriptionPlan = livePlan.toLowerCase();
-                    }
-                  } catch (err) {
-                    console.error('Failed to parse cached schools:', err);
                   }
                 }
               }

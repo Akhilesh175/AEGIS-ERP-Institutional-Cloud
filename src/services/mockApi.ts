@@ -1492,6 +1492,10 @@ export const mockApi = {
       throw new Error('Your account has been deactivated. Please contact your school administrator.');
     }
 
+    const activeSessionId = userProfile.school_id
+      ? await this.resolveActiveSessionId(userProfile.school_id)
+      : undefined;
+
     // Map database profile to frontend User object
     const user: User = {
       id: userProfile.id,
@@ -1503,6 +1507,7 @@ export const mockApi = {
       avatarUrl: userProfile.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
       isActive: userProfile.is_active,
       schoolId: userProfile.school_id,
+      academicSessionId: activeSessionId,
       createdAt: userProfile.created_at || new Date().toISOString(),
       updatedAt: userProfile.created_at || new Date().toISOString()
     };
@@ -9317,7 +9322,9 @@ export const mockApi = {
         .eq('academic_session_id', academicSessionId)
         .eq('is_archived', false);
       if (error) throw new Error('Failed to fetch chat groups: ' + error.message);
+      console.log("getClassChatGroups Raw Supabase Response:", data);
       dbGroups = data || [];
+      console.log("getClassChatGroups Filtered Response:", dbGroups);
     } else {
       const { data, error } = await supabaseAdmin
         .from('class_chat_members')
@@ -9327,10 +9334,12 @@ export const mockApi = {
         .eq('academic_session_id', academicSessionId)
         .eq('class_chat_groups.is_archived', false);
       if (error) throw new Error('Failed to fetch chat groups: ' + error.message);
+      console.log("getClassChatGroups Raw Supabase Response:", data);
       dbGroups = (data || []).map((m: any) => m.class_chat_groups);
+      console.log("getClassChatGroups Filtered Response:", dbGroups);
     }
 
-    return dbGroups.map((g: any) => ({
+    const rendered = dbGroups.map((g: any) => ({
       id: g.id,
       schoolId: g.school_id,
       academicSessionId: g.academic_session_id,
@@ -9339,6 +9348,8 @@ export const mockApi = {
       isArchived: g.is_archived,
       createdAt: g.created_at
     }));
+    console.log("getClassChatGroups Final Rendered Response:", rendered);
+    return rendered;
   },
 
   async getClassChatMembers(schoolId: string, academicSessionId: string, groupId: string): Promise<any[]> {
@@ -9349,6 +9360,9 @@ export const mockApi = {
       .eq('group_id', groupId);
 
     if (error) throw new Error('Failed to fetch chat members: ' + error.message);
+
+    console.log("getClassChatMembers Raw Membership Data:", data);
+    console.log("getClassChatMembers Filtered Membership Data:", data);
 
     return (data || []).map((m: any) => ({
       id: m.id,

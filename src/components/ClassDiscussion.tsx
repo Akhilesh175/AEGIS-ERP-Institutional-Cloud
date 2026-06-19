@@ -547,6 +547,15 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
   // Verify role permission to perform actions like mute, pin, announce
   const canPerformStaffActions = ['ADMIN', 'TEACHER', 'CLASS_TEACHER', 'ACADEMIC_ADMIN', 'SUPER_ADMIN'].includes(currentUserRole);
 
+  useEffect(() => {
+    console.log("Current User:", { id: currentUserId, role: currentUserRole });
+    console.log("School ID:", schoolId);
+    console.log("Active Session:", academicSessionId);
+    console.log("Raw Groups:", groups);
+    console.log("Filtered Groups:", filteredGroups);
+    console.log("Memberships:", members);
+  }, [currentUserId, currentUserRole, schoolId, academicSessionId, groups, filteredGroups, members]);
+
   return (
     <div className="flex h-[calc(100vh-80px)] w-full overflow-hidden bg-slate-950/20 text-slate-100 rounded-3xl backdrop-blur-xl border border-slate-800/80 shadow-2xl">
       {/* ── LEFT PANEL: CLASS GROUPS ────────────────────────────────────────── */}
