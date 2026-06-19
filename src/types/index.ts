@@ -1,6 +1,6 @@
 // --- CORE ENUMS ---
 
-export type UserRole = 'STUDENT' | 'PARENT' | 'TEACHER' | 'ADMIN' | 'SUPER_ADMIN' | 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN' | 'CUSTOM_SUB_ADMIN' | 'DRIVER';
+export type UserRole = 'STUDENT' | 'PARENT' | 'TEACHER' | 'ADMIN' | 'SUPER_ADMIN' | 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN' | 'SPORTS_ADMIN' | 'CUSTOM_SUB_ADMIN' | 'DRIVER';
 
 export type GenderType = 'MALE' | 'FEMALE' | 'OTHER';
 
@@ -1571,4 +1571,210 @@ export interface SportNotification {
   isRead: boolean;
   createdAt: string;
 }
+
+export interface SportAdmin {
+  id: string;
+  schoolId: string;
+  userId: string;
+  employeeId?: string;
+  fullName: string;
+  email: string;
+  mobile?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SportFinanceTransaction {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  type: 'REVENUE' | 'EXPENSE';
+  category: 'FEE_PAYMENT' | 'EQUIPMENT_PURCHASE' | 'SALARY_PAYOUT' | 'TOURNAMENT_EXPENSE' | 'FINE' | 'OTHER';
+  amount: number;
+  referenceId: string;
+  transactionDate: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  remarks?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SportSalaryRecord {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  userId: string;
+  employeeRole: 'SPORTS_ADMIN' | 'COACH';
+  amount: number;
+  bonus: number;
+  deductions: number;
+  month: string;
+  status: 'GENERATED' | 'PENDING_APPROVAL' | 'APPROVED' | 'PAID';
+  approvedBy?: string | null;
+  paymentDate?: string | null;
+  transactionId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  employeeName?: string;
+}
+
+export interface SportBudgetAllocation {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  allocatedAmount: number;
+  spentAmount: number;
+  category: 'EQUIPMENT' | 'TOURNAMENT' | 'SALARY' | 'TRAVEL' | 'OTHER';
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SportExpense {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  category: 'EQUIPMENT_PURCHASE' | 'TOURNAMENT_EXPENSE' | 'OTHER';
+  title: string;
+  description?: string;
+  amountRequested: number;
+  amountApproved?: number | null;
+  requestedBy: string;
+  approvedBy?: string | null;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  vendor?: string;
+  invoiceNumber?: string;
+  paymentStatus: 'PENDING' | 'RELEASED';
+  referenceId?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  requestedByName?: string;
+  approvedByName?: string;
+}
+
+export interface SportFine {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  studentId: string;
+  amount: number;
+  reason: string;
+  status: 'UNPAID' | 'PAID';
+  dueDate: string;
+  paymentDate?: string | null;
+  utrNumber?: string | null;
+  paymentScreenshotUrl?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  studentName?: string;
+}
+
+export interface SportActivityLog {
+  id: string;
+  schoolId: string;
+  userId: string;
+  userRole: string;
+  actionType: string;
+  affectedRecord?: string;
+  ipAddress?: string;
+  device?: string;
+  details?: any;
+  createdAt: string;
+  userName?: string;
+}
+
+export interface SportCoachAttendance {
+  id: string;
+  schoolId: string;
+  coachId: string;
+  attendanceDate: string;
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'HALF_DAY' | 'LEAVE' | 'TRAINING_DUTY' | 'TOURNAMENT_DUTY' | 'MEDICAL_LEAVE';
+  checkIn?: string | null;
+  checkOut?: string | null;
+  workingHours: number;
+  remarks?: string | null;
+  
+  // Biometric/Device/GPS Metadata
+  deviceId?: string | null;
+  ipAddress?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  attendanceSource?: 'MANUAL' | 'QR_CODE' | 'BIOMETRIC' | 'FACE_RECOGNITION' | 'MOBILE_GPS' | null;
+
+  // Soft Delete
+  deletedAt?: string | null;
+  deletedBy?: string | null;
+
+  createdBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  coachName?: string;
+  coachEmail?: string;
+}
+
+export interface SportCoachLeave {
+  id: string;
+  schoolId: string;
+  coachId: string;
+  startDate: string;
+  endDate: string;
+  leaveType: 'CASUAL' | 'SICK' | 'MEDICAL' | 'MATERNITY' | 'PATERNITY' | 'DUTY_LEAVE' | 'OTHER';
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  reason?: string | null;
+  approvedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  coachName?: string;
+}
+
+export interface SportCoachWorkLog {
+  id: string;
+  schoolId: string;
+  coachId: string;
+  logDate: string;
+  sessionName?: string | null; // e.g. "Cricket Training"
+  loginTime?: string | null;
+  logoutTime?: string | null;
+  durationMinutes: number;
+  sessionType: string;
+
+  // Biometric/Device/GPS Metadata
+  deviceId?: string | null;
+  ipAddress?: string | null;
+  latitude?: number | null;
+  longitude?: number | null;
+  attendanceSource?: 'MANUAL' | 'QR_CODE' | 'BIOMETRIC' | 'FACE_RECOGNITION' | 'MOBILE_GPS' | null;
+
+  createdAt: string;
+  coachName?: string;
+}
+
+export interface SportCoachAttendanceCorrection {
+  id: string;
+  schoolId: string;
+  attendanceId: string;
+  requestedStatus: 'PRESENT' | 'ABSENT' | 'LATE' | 'HALF_DAY' | 'LEAVE' | 'TRAINING_DUTY' | 'TOURNAMENT_DUTY' | 'MEDICAL_LEAVE';
+  requestedCheckIn?: string | null;
+  requestedCheckOut?: string | null;
+  reason: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  approvedBy?: string | null;
+  createdAt: string;
+  updatedAt: string;
+  coachName?: string;
+  attendanceDate?: string;
+}
+
+export interface SportCoachAttendanceHistory {
+  id: string;
+  schoolId: string;
+  attendanceId: string;
+  oldValue: string;
+  newValue: string;
+  editedBy?: string | null;
+  editedAt: string;
+  editReason?: string | null;
+  editorName?: string;
+}
+
 

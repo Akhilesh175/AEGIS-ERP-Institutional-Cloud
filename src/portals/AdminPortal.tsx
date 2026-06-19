@@ -614,7 +614,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [saFirst, setSaFirst] = useState('');
   const [saLast, setSaLast] = useState('');
   const [saPhone, setSaPhone] = useState('');
-  const [saRole, setSaRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN'>('FINANCE_ADMIN');
+  const [saRole, setSaRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN' | 'SPORTS_ADMIN'>('FINANCE_ADMIN');
   const [saPassword, setSaPassword] = useState('password');
   const [saEmployeeId, setSaEmployeeId] = useState('');
 
@@ -624,7 +624,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [editFirst, setEditFirst] = useState('');
   const [editLast, setEditLast] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [editRole, setEditRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN' | 'HOSTEL_ADMIN' | 'WARDEN'>('FINANCE_ADMIN');
+  const [editRole, setEditRole] = useState<'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN' | 'HOSTEL_ADMIN' | 'WARDEN' | 'SPORTS_ADMIN'>('FINANCE_ADMIN');
   const [editEmployeeId, setEditEmployeeId] = useState('');
   const [editIsActive, setEditIsActive] = useState(true);
 
@@ -675,6 +675,11 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     CUSTOM_SUB_ADMIN: {
       name: 'Custom Operator',
       description: 'Customizable operator role with custom-assigned modular access tags.',
+      permissions: ['billing', 'directory']
+    },
+    SPORTS_ADMIN: {
+      name: 'Sports Admin',
+      description: 'Responsible for managing sports schedules, teams, matches, coach attendances, and sports-module finances.',
       permissions: ['billing', 'directory']
     }
   };
@@ -3732,7 +3737,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
 
 
-  const isSubAdmin = ['FINANCE_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'ACADEMIC_ADMIN', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN'].includes(session?.user.role || '');
+  const isSubAdmin = ['FINANCE_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'ACADEMIC_ADMIN', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN'].includes(session?.user.role || '');
 
   if (isSubAdmin && currentPlanName !== 'enterprise') {
     return (
@@ -9719,6 +9724,24 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         </td>
                         {(session?.user.role === 'ADMIN' || session?.user.role === 'SUPER_ADMIN') && (
                           <td className="py-3 px-4 text-right">
+                            {op.role === 'SPORTS_ADMIN' && (
+                              <button
+                                onClick={async () => {
+                                  const targetSchoolId = prompt("Enter Target School UUID to transfer this Sports Admin:");
+                                  if (!targetSchoolId) return;
+                                  try {
+                                    await mockApi.transferSportsAdmin(session!.user.id, op.id, targetSchoolId);
+                                    alert("Sports Admin successfully transferred to target school!");
+                                    loadData();
+                                  } catch (err: any) {
+                                    alert(`Error transferring: ${err.message}`);
+                                  }
+                                }}
+                                className="mr-2 px-2 py-1 rounded font-bold text-[9px] transition-all bg-amber-500/10 hover:bg-amber-500/20 text-amber-400 border border-amber-500/20"
+                              >
+                                Transfer
+                              </button>
+                            )}
                             <button
                               onClick={() => {
                                 setShowEditSubAdmin(op);
@@ -10044,6 +10067,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                   <option value="TRANSPORT_MANAGER">Transport Fleet Manager</option>
                   <option value="HOSTEL_ADMIN">Hostel Administrator</option>
                   <option value="WARDEN">Hostel Warden</option>
+                  <option value="SPORTS_ADMIN">Sports Administrator</option>
                 </select>
               </div>
               <div className="space-y-1 sm:col-span-2">
@@ -10151,6 +10175,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                   <option value="HOSTEL_ADMIN">Hostel Administrator</option>
                   <option value="WARDEN">Hostel Warden</option>
                   <option value="CUSTOM_SUB_ADMIN">Custom Operator</option>
+                  <option value="SPORTS_ADMIN">Sports Administrator</option>
                 </select>
               </div>
               <div className="space-y-1 sm:col-span-2">

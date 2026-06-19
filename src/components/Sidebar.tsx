@@ -212,6 +212,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       case 'TRANSPORT_MANAGER':
       case 'HOSTEL_ADMIN':
       case 'WARDEN':
+      case 'SPORTS_ADMIN':
       case 'CUSTOM_SUB_ADMIN': {
         const isFreemium = planName === 'freemium';
         const isBasic = planName === 'basic';
@@ -316,7 +317,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
             {role === 'TEACHER' && 'Teacher Portal'}
             {role === 'ADMIN' && 'Head Administrative Portal'}
             {role === 'SUPER_ADMIN' && 'Super Admin Engine'}
-            {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN'].includes(role) && 'Sub-Admin Portal'}
+            {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN'].includes(role) && 'Sub-Admin Portal'}
           </p>
         </div>
 

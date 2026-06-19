@@ -45,6 +45,8 @@ const getTabsForRole = (role: string, planName: string): string[] => {
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
         'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'sports'
       ];
+    case 'SPORTS_ADMIN':
+      return ['dashboard', 'sports', 'paymentsettings', 'support'];
     default: { // Sub-admin roles (Librarian, Warden, Academic Admin, Exam Controller, etc.)
       const tabs = [
         'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
@@ -1148,7 +1150,7 @@ export const App: React.FC = () => {
                         {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
                         {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
                         {/* Sub-admins: route paymentsettings to TeacherPortal (salary/banking), everything else to AdminPortal */}
-                        {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN', 'DRIVER'].includes(session.user.role) && (
+                        {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN', 'DRIVER'].includes(session.user.role) && (
                           activeTab === 'paymentsettings'
                             ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
                             : <AdminPortal activeTab={activeTab} />

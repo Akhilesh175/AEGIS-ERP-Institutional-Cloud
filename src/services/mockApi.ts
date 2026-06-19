@@ -6183,7 +6183,7 @@ export const mockApi = {
     firstName: string, 
     lastName: string, 
     phone: string, 
-    role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN', 
+    role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN' | 'SPORTS_ADMIN' | 'CUSTOM_SUB_ADMIN', 
     password: string,
     employeeId?: string,
     username?: string,
@@ -6232,7 +6232,8 @@ export const mockApi = {
       'TRANSPORT_MANAGER': 'Transport Manager',
       'HOSTEL_ADMIN': 'Hostel Admin',
       'WARDEN': 'Hostel Warden',
-      'CUSTOM_SUB_ADMIN': 'Custom Operator'
+      'CUSTOM_SUB_ADMIN': 'Custom Operator',
+      'SPORTS_ADMIN': 'Sports Admin'
     };
     const roleDescMap: Record<string, string> = {
       'FINANCE_ADMIN': 'Responsible for billing, invoices, payment structures, and fee tracking.',
@@ -6242,7 +6243,8 @@ export const mockApi = {
       'TRANSPORT_MANAGER': 'Administers school buses, routes, driver information, and passenger maps.',
       'HOSTEL_ADMIN': 'Responsible for hostels, blocks, floors, rooms, beds, admissions, leave requests, visitor logs, complaints, and mess menus.',
       'WARDEN': 'Responsible for daily hostel operations, attendance logging, and initial leave requests.',
-      'CUSTOM_SUB_ADMIN': 'Customizable operator role with custom-assigned modular access tags.'
+      'CUSTOM_SUB_ADMIN': 'Customizable operator role with custom-assigned modular access tags.',
+      'SPORTS_ADMIN': 'Responsible for managing sports schedules, teams, matches, coach attendances, and sports-module finances.'
     };
     const defaultRolePermissions: Record<string, Record<string, boolean>> = {
       'FINANCE_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
@@ -6252,7 +6254,8 @@ export const mockApi = {
       'TRANSPORT_MANAGER': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
       'HOSTEL_ADMIN': { billing: false, directory: false, academics: false, grading: false, security: false, books: false, transport: false, hostel: true },
       'WARDEN': { billing: false, directory: false, academics: false, grading: false, security: false, books: false, transport: false, hostel: true },
-      'CUSTOM_SUB_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false, hostel: false }
+      'CUSTOM_SUB_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false, hostel: false },
+      'SPORTS_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false, hostel: false }
     };
 
     let { data: dbRole } = await supabaseAdmin
@@ -6335,6 +6338,7 @@ export const mockApi = {
     else if (role === 'HOSTEL_ADMIN') dedicatedTable = 'hostel_admins';
     else if (role === 'WARDEN') dedicatedTable = 'hostel_wardens';
     else if (role === 'CUSTOM_SUB_ADMIN') dedicatedTable = 'custom_sub_admins';
+    else if (role === 'SPORTS_ADMIN') dedicatedTable = 'sports_admins';
 
     if (dedicatedTable) {
       const profileInsert: any = {
@@ -6355,6 +6359,12 @@ export const mockApi = {
         profileInsert.status = isActive !== undefined ? (isActive ? 'ACTIVE' : 'INACTIVE') : 'ACTIVE';
         profileInsert.designation = designation || null;
         profileInsert.joining_date = joiningDate || new Date().toISOString().split('T')[0];
+      } else if (role === 'SPORTS_ADMIN') {
+        profileInsert.employee_id = trimmedEmployeeId || null;
+        profileInsert.full_name = `${firstName} ${lastName}`.trim();
+        profileInsert.email = normalizedEmail;
+        profileInsert.mobile = phone || null;
+        profileInsert.status = isActive !== undefined ? (isActive ? 'ACTIVE' : 'INACTIVE') : 'ACTIVE';
       } else {
         profileInsert.role_id = roleId;
         profileInsert.status = 'ACTIVE';
@@ -6502,7 +6512,7 @@ export const mockApi = {
     firstName: string,
     lastName: string,
     phone: string,
-    role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN' | 'HOSTEL_ADMIN' | 'WARDEN',
+    role: 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'CUSTOM_SUB_ADMIN' | 'HOSTEL_ADMIN' | 'WARDEN' | 'SPORTS_ADMIN',
     employeeId: string,
     isActive: boolean
   ): Promise<void> {
@@ -6549,7 +6559,8 @@ export const mockApi = {
       'LIBRARIAN': 'Librarian',
       'TRANSPORT_MANAGER': 'Transport Manager',
       'HOSTEL_ADMIN': 'Hostel Admin',
-      'CUSTOM_SUB_ADMIN': 'Custom Operator'
+      'CUSTOM_SUB_ADMIN': 'Custom Operator',
+      'SPORTS_ADMIN': 'Sports Admin'
     };
     const roleDescMap: Record<string, string> = {
       'FINANCE_ADMIN': 'Responsible for billing, invoices, payment structures, and fee tracking.',
@@ -6558,7 +6569,8 @@ export const mockApi = {
       'LIBRARIAN': 'Manages library book inventory, issue/return logs, and late fee tracking.',
       'TRANSPORT_MANAGER': 'Administers school buses, routes, driver information, and passenger maps.',
       'HOSTEL_ADMIN': 'Responsible for hostels, blocks, floors, rooms, beds, admissions, leave requests, visitor logs, complaints, and mess menus.',
-      'CUSTOM_SUB_ADMIN': 'Customizable operator role with custom-assigned modular access tags.'
+      'CUSTOM_SUB_ADMIN': 'Customizable operator role with custom-assigned modular access tags.',
+      'SPORTS_ADMIN': 'Responsible for managing sports schedules, teams, matches, coach attendances, and sports-module finances.'
     };
     const defaultRolePermissions: Record<string, Record<string, boolean>> = {
       'FINANCE_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
@@ -6567,7 +6579,8 @@ export const mockApi = {
       'LIBRARIAN': { billing: false, directory: true, academics: true, grading: false, security: false, books: true, transport: false, hostel: false },
       'TRANSPORT_MANAGER': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
       'HOSTEL_ADMIN': { billing: false, directory: false, academics: false, grading: false, security: false, books: false, transport: false, hostel: true },
-      'CUSTOM_SUB_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false, hostel: false }
+      'CUSTOM_SUB_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false, hostel: false },
+      'SPORTS_ADMIN': { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: false, hostel: false }
     };
 
     let targetRoleId: string | null = null;
@@ -6649,6 +6662,7 @@ export const mockApi = {
       if (roleCode === 'HOSTEL_ADMIN') return 'hostel_admins';
       if (roleCode === 'WARDEN') return 'hostel_wardens';
       if (roleCode === 'CUSTOM_SUB_ADMIN') return 'custom_sub_admins';
+      if (roleCode === 'SPORTS_ADMIN') return 'sports_admins';
       return '';
     };
 
@@ -6672,6 +6686,16 @@ export const mockApi = {
             address: null,
             assigned_locations: []
           });
+        } else if (newTable === 'sports_admins') {
+          await supabaseAdmin.from('sports_admins').insert({
+            user_id: userId,
+            school_id: schoolId,
+            employee_id: trimmedEmployeeId,
+            full_name: `${firstName} ${lastName}`.trim(),
+            email: normalizedEmail,
+            mobile: phone || null,
+            status: isActive ? 'ACTIVE' : 'INACTIVE'
+          });
         } else {
           await supabaseAdmin.from(newTable).insert({
             user_id: userId,
@@ -6691,6 +6715,17 @@ export const mockApi = {
             .from('hostel_wardens')
             .update({
               phone: phone
+            })
+            .eq('user_id', userId);
+        } else if (newTable === 'sports_admins') {
+          await supabaseAdmin
+            .from('sports_admins')
+            .update({
+              employee_id: trimmedEmployeeId,
+              full_name: `${firstName} ${lastName}`.trim(),
+              email: normalizedEmail,
+              mobile: phone || null,
+              status: isActive ? 'ACTIVE' : 'INACTIVE'
             })
             .eq('user_id', userId);
         } else {
@@ -17433,19 +17468,23 @@ export const mockApi = {
     validateSchoolId(schoolId, 'fetchSportsCoaches');
     const { data, error } = await supabaseAdmin
       .from('sports_coaches')
-      .select('*, users(first_name, last_name, email)')
-      .eq('school_id', schoolId);
+      .select('*, users(email)')
+      .eq('school_id', schoolId)
+      .order('coach_name');
     if (error) throw error;
     return (data || []).map(r => ({
       id: r.id,
       schoolId: r.school_id,
       userId: r.user_id,
+      employeeId: r.employee_id,
+      coachName: r.coach_name,
       specialization: r.specialization,
-      bio: r.bio,
+      experienceYears: r.experience_years,
+      certification: r.certification,
+      salary: Number(r.salary),
       status: r.status,
-      coachName: r.users ? `${r.users.first_name} ${r.users.last_name}` : 'Unknown Coach',
-      coachEmail: r.users?.email || '',
-      createdAt: r.created_at
+      createdAt: r.created_at,
+      coachEmail: r.users?.email || ''
     }));
   },
 
@@ -18400,6 +18439,13 @@ export const mockApi = {
   },
 
   async updateSportsFeePaymentStatus(paymentId: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string): Promise<any> {
+    const { data: currentPayment } = await supabaseAdmin.from('sports_fee_payments').select('school_id, amount_paid, sports_fee_id').eq('id', paymentId).single();
+    if (!currentPayment) throw new Error('Payment not found');
+    
+    // Get academic session
+    const { data: fee } = await supabaseAdmin.from('sports_fees').select('academic_session_id, fee_type').eq('id', currentPayment.sports_fee_id).single();
+    const sessionId = fee?.academic_session_id || '';
+
     const { data, error } = await supabaseAdmin
       .from('sports_fee_payments')
       .update({
@@ -18411,7 +18457,907 @@ export const mockApi = {
       .select()
       .single();
     if (error) throw error;
+
+    if (status === 'APPROVED' && sessionId) {
+      await supabaseAdmin.from('sports_finance_transactions').insert({
+        school_id: currentPayment.school_id,
+        academic_session_id: sessionId,
+        type: 'REVENUE',
+        category: 'FEE_PAYMENT',
+        amount: Number(currentPayment.amount_paid),
+        reference_id: paymentId,
+        status: 'APPROVED',
+        remarks: `Sports Fee Payment approved: ${fee?.fee_type || 'Sports Fee'}`
+      });
+    }
+
     return data;
+  },
+
+  async fetchAllSportsAttendance(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchAllSportsAttendance');
+    const { data, error } = await supabaseAdmin
+      .from('sports_attendance')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      sessionId: r.session_id,
+      studentId: r.student_id,
+      date: r.date,
+      status: r.status,
+      remarks: r.remarks,
+      markedBy: r.marked_by
+    }));
+  },
+
+  async fetchSportsAdmins(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsAdmins');
+    const { data, error } = await supabaseAdmin
+      .from('sports_admins')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('full_name');
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      userId: r.user_id,
+      employeeId: r.employee_id,
+      fullName: r.full_name,
+      email: r.email,
+      mobile: r.mobile,
+      status: r.status,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    }));
+  },
+
+  async createSportsAdmin(
+    adminId: string, 
+    email: string, 
+    firstName: string, 
+    lastName: string, 
+    phone: string, 
+    employeeId: string, 
+    password: string
+  ): Promise<any> {
+    const { data: admin } = await supabaseAdmin.from('users').select('school_id, role').eq('id', adminId).single();
+    if (!admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+    const schoolId = admin.school_id;
+    const normalizedEmail = validateAndNormalizeEmail(email);
+
+    // 1. Create auth user
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: normalizedEmail,
+      password,
+      email_confirm: true,
+      user_metadata: { school_id: schoolId, role: 'SPORTS_ADMIN' }
+    });
+    if (authError || !authData.user) throw new Error(authError?.message || 'Failed to create auth user');
+
+    const newUserId = authData.user.id;
+
+    // 2. Insert into users table
+    const { error: dbUserError } = await supabaseAdmin.from('users').insert({
+      id: newUserId,
+      email: normalizedEmail,
+      role: 'SPORTS_ADMIN',
+      first_name: firstName,
+      last_name: lastName,
+      phone: phone,
+      school_id: schoolId,
+      employee_id: employeeId || null,
+      is_active: true
+    });
+    if (dbUserError) {
+      await supabaseAdmin.auth.admin.deleteUser(newUserId);
+      throw dbUserError;
+    }
+
+    // 3. Insert into sports_admins table
+    const { data: sportsAdmin, error: saError } = await supabaseAdmin.from('sports_admins').insert({
+      school_id: schoolId,
+      user_id: newUserId,
+      employee_id: employeeId || null,
+      full_name: `${firstName} ${lastName}`,
+      email: normalizedEmail,
+      mobile: phone,
+      status: 'ACTIVE'
+    }).select().single();
+
+    if (saError) {
+      await supabaseAdmin.from('users').delete().eq('id', newUserId);
+      await supabaseAdmin.auth.admin.deleteUser(newUserId);
+      throw saError;
+    }
+
+    await this.logSportsActivity(schoolId, adminId, 'ADMIN', 'CREATE_SPORTS_ADMIN', `Created Sports Admin ${firstName} ${lastName}`, undefined, undefined, { sportsAdminId: sportsAdmin.id });
+    return sportsAdmin;
+  },
+
+  async updateSportsAdmin(adminId: string, sportsAdminId: string, updateData: any): Promise<any> {
+    const { data: admin } = await supabaseAdmin.from('users').select('school_id, role').eq('id', adminId).single();
+    if (!admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+    
+    const { data: currentAdmin, error: fetchErr } = await supabaseAdmin.from('sports_admins').select('*').eq('id', sportsAdminId).single();
+    if (fetchErr || !currentAdmin) throw new Error('Sports admin profile not found');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_admins')
+      .update({
+        full_name: updateData.fullName,
+        mobile: updateData.mobile,
+        status: updateData.status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', sportsAdminId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    // Sync user status and name
+    const [firstName, ...rest] = (updateData.fullName || '').split(' ');
+    const lastName = rest.join(' ');
+    await supabaseAdmin.from('users').update({
+      first_name: firstName,
+      last_name: lastName,
+      phone: updateData.mobile,
+      is_active: updateData.status === 'ACTIVE'
+    }).eq('id', currentAdmin.user_id);
+
+    await this.logSportsActivity(admin.school_id, adminId, 'ADMIN', 'EDIT_SPORTS_ADMIN', `Updated Sports Admin ${updateData.fullName}`, undefined, undefined, { sportsAdminId });
+    return data;
+  },
+
+  async deactivateSportsAdmin(adminId: string, sportsAdminId: string, isActive: boolean): Promise<any> {
+    const { data: admin } = await supabaseAdmin.from('users').select('school_id, role').eq('id', adminId).single();
+    if (!admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+
+    const status = isActive ? 'ACTIVE' : 'INACTIVE';
+    const { data: currentAdmin } = await supabaseAdmin.from('sports_admins').select('user_id, full_name').eq('id', sportsAdminId).single();
+    if (!currentAdmin) throw new Error('Sports Admin not found');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_admins')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', sportsAdminId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    await supabaseAdmin.from('users').update({ is_active: isActive }).eq('id', currentAdmin.user_id);
+    
+    await this.logSportsActivity(admin.school_id, adminId, 'ADMIN', isActive ? 'ACTIVATE_SPORTS_ADMIN' : 'DEACTIVATE_SPORTS_ADMIN', `${isActive ? 'Activated' : 'Deactivated'} Sports Admin ${currentAdmin.full_name}`, undefined, undefined, { sportsAdminId });
+    return data;
+  },
+
+  async resetSportsAdminPassword(adminId: string, sportsAdminId: string, newPassword: string): Promise<void> {
+    const { data: admin } = await supabaseAdmin.from('users').select('school_id, role').eq('id', adminId).single();
+    if (!admin || admin.role !== 'ADMIN') throw new Error('Unauthorized');
+
+    const { data: currentAdmin } = await supabaseAdmin.from('sports_admins').select('user_id, full_name').eq('id', sportsAdminId).single();
+    if (!currentAdmin) throw new Error('Sports Admin not found');
+
+    const { error } = await supabaseAdmin.auth.admin.updateUserById(currentAdmin.user_id, {
+      password: newPassword
+    });
+    if (error) throw error;
+
+    await this.logSportsActivity(admin.school_id, adminId, 'ADMIN', 'RESET_PASSWORD_SPORTS_ADMIN', `Reset password for Sports Admin ${currentAdmin.full_name}`, undefined, undefined, { sportsAdminId });
+  },
+
+  async addSportsCoach(adminId: string, coach: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', adminId).single();
+    if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+    
+    const normalizedEmail = validateAndNormalizeEmail(coach.email);
+    const password = coach.password || 'AegisSports123';
+    
+    const { data: authData, error: authError } = await supabaseAdmin.auth.admin.createUser({
+      email: normalizedEmail,
+      password,
+      email_confirm: true,
+      user_metadata: { school_id: user.school_id, role: 'TEACHER' }
+    });
+    if (authError || !authData.user) throw new Error(authError?.message || 'Failed to create auth user');
+    
+    const newUserId = authData.user.id;
+    
+    const [firstName, ...rest] = coach.name.split(' ');
+    const lastName = rest.join(' ');
+
+    await supabaseAdmin.from('users').insert({
+      id: newUserId,
+      email: normalizedEmail,
+      role: 'TEACHER',
+      first_name: firstName,
+      last_name: lastName,
+      phone: coach.phone || null,
+      school_id: user.school_id,
+      employee_id: coach.employeeId || null,
+      is_active: true
+    });
+
+    const isSportsAdmin = user.role === 'SPORTS_ADMIN';
+    const coachSalary = isSportsAdmin ? 0 : Number(coach.salary || 0);
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_coaches')
+      .insert({
+        school_id: user.school_id,
+        user_id: newUserId,
+        employee_id: coach.employeeId || null,
+        coach_name: coach.name,
+        specialization: coach.specialization,
+        experience_years: Number(coach.experienceYears || 0),
+        certification: coach.certification || null,
+        salary: coachSalary,
+        status: 'ACTIVE'
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    await this.logSportsActivity(user.school_id, adminId, user.role, 'CREATE_COACH', `Added coach ${coach.name}`, undefined, undefined, { coachId: data.id });
+    return data;
+  },
+
+  async updateSportsCoach(adminId: string, coachId: string, updateData: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', adminId).single();
+    if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+
+    const isSportsAdmin = user.role === 'SPORTS_ADMIN';
+    const updatePayload: any = {
+      coach_name: updateData.name,
+      specialization: updateData.specialization,
+      experience_years: Number(updateData.experienceYears || 0),
+      certification: updateData.certification || null,
+      status: updateData.status,
+      updated_at: new Date().toISOString()
+    };
+    if (!isSportsAdmin) {
+      updatePayload.salary = Number(updateData.salary || 0);
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_coaches')
+      .update(updatePayload)
+      .eq('id', coachId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    const [firstName, ...rest] = (updateData.name || '').split(' ');
+    const lastName = rest.join(' ');
+    await supabaseAdmin.from('users').update({
+      first_name: firstName,
+      last_name: lastName,
+      is_active: updateData.status === 'ACTIVE'
+    }).eq('id', data.user_id);
+
+    await this.logSportsActivity(user.school_id, adminId, user.role, 'EDIT_COACH', `Updated coach ${updateData.name}`, undefined, undefined, { coachId });
+    return data;
+  },
+
+  async deactivateSportsCoach(adminId: string, coachId: string, isActive: boolean): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', adminId).single();
+    if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+
+    const status = isActive ? 'ACTIVE' : 'INACTIVE';
+    const { data, error } = await supabaseAdmin
+      .from('sports_coaches')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', coachId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    await supabaseAdmin.from('users').update({ is_active: isActive }).eq('id', data.user_id);
+
+    await this.logSportsActivity(user.school_id, adminId, user.role, isActive ? 'ACTIVATE_COACH' : 'DEACTIVATE_COACH', `${isActive ? 'Activated' : 'Deactivated'} coach`, undefined, undefined, { coachId });
+    return data;
+  },
+
+  async fetchBudgets(schoolId: string, academicSessionId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchBudgets');
+    const { data, error } = await supabaseAdmin
+      .from('sports_budget_allocations')
+      .select('*')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      allocatedAmount: Number(r.allocated_amount),
+      spentAmount: Number(r.spent_amount),
+      category: r.category,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    }));
+  },
+
+  async allocateBudget(userId: string, budget: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_budget_allocations')
+      .upsert({
+        school_id: user.school_id,
+        academic_session_id: budget.academicSessionId,
+        allocated_amount: Number(budget.allocatedAmount),
+        category: budget.category
+      }, { onConflict: 'school_id,academic_session_id,category' })
+      .select()
+      .single();
+    
+    if (error) throw error;
+    
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'ALLOCATE_BUDGET', `Allocated ₹${budget.allocatedAmount} budget for ${budget.category}`, undefined, undefined, { budgetId: data.id });
+    return data;
+  },
+
+  async fetchExpenses(schoolId: string, academicSessionId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchExpenses');
+    const { data, error } = await supabaseAdmin
+      .from('sports_expenses')
+      .select('*, requested:users!requested_by(first_name, last_name), approved:users!approved_by(first_name, last_name)')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      category: r.category,
+      title: r.title,
+      description: r.description,
+      amountRequested: Number(r.amount_requested),
+      amountApproved: r.amount_approved ? Number(r.amount_approved) : null,
+      requestedBy: r.requested_by,
+      approvedBy: r.approved_by,
+      status: r.status,
+      vendor: r.vendor,
+      invoiceNumber: r.invoice_number,
+      paymentStatus: r.payment_status,
+      referenceId: r.reference_id,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      requestedByName: r.requested ? `${r.requested.first_name} ${r.requested.last_name}` : 'Unknown',
+      approvedByName: r.approved ? `${r.approved.first_name} ${r.approved.last_name}` : null
+    }));
+  },
+
+  async requestExpense(userId: string, expense: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_expenses')
+      .insert({
+        school_id: user.school_id,
+        academic_session_id: expense.academicSessionId,
+        category: expense.category,
+        title: expense.title,
+        description: expense.description || null,
+        amount_requested: Number(expense.amountRequested),
+        requested_by: userId,
+        vendor: expense.vendor || null,
+        invoice_number: expense.invoiceNumber || null,
+        reference_id: expense.referenceId || null,
+        status: 'PENDING'
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    await this.logSportsActivity(user.school_id, userId, user.role, 'REQUEST_EXPENSE', `Requested expense ₹${expense.amountRequested} for ${expense.title}`, undefined, undefined, { expenseId: data.id });
+    return data;
+  },
+
+  async approveExpense(userId: string, expenseId: string, approveData: { status: 'APPROVED' | 'REJECTED'; amountApproved?: number }): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
+
+    const amountApproved = approveData.status === 'APPROVED' ? Number(approveData.amountApproved || 0) : null;
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_expenses')
+      .update({
+        status: approveData.status,
+        amount_approved: amountApproved,
+        approved_by: userId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', expenseId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    if (approveData.status === 'APPROVED') {
+      const budgetCategoryMap: Record<string, string> = {
+        'EQUIPMENT_PURCHASE': 'EQUIPMENT',
+        'TOURNAMENT_EXPENSE': 'TOURNAMENT',
+        'OTHER': 'OTHER'
+      };
+      const budgetCategory = budgetCategoryMap[data.category] || 'OTHER';
+      
+      const { data: budget } = await supabaseAdmin
+        .from('sports_budget_allocations')
+        .select('spent_amount')
+        .eq('school_id', user.school_id)
+        .eq('academic_session_id', data.academic_session_id)
+        .eq('category', budgetCategory)
+        .maybeSingle();
+      
+      if (budget) {
+        await supabaseAdmin
+          .from('sports_budget_allocations')
+          .update({
+            spent_amount: Number(budget.spent_amount) + Number(amountApproved)
+          })
+          .eq('school_id', user.school_id)
+          .eq('academic_session_id', data.academic_session_id)
+          .eq('category', budgetCategory);
+      }
+    }
+
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', approveData.status === 'APPROVED' ? 'APPROVE_EXPENSE' : 'REJECT_EXPENSE', `${approveData.status === 'APPROVED' ? 'Approved' : 'Rejected'} expense of ₹${data.amount_requested}`, undefined, undefined, { expenseId });
+    return data;
+  },
+
+  async releaseExpensePayment(userId: string, expenseId: string): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_expenses')
+      .update({
+        payment_status: 'RELEASED',
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', expenseId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    await supabaseAdmin.from('sports_finance_transactions').insert({
+      school_id: user.school_id,
+      academic_session_id: data.academic_session_id,
+      type: 'EXPENSE',
+      category: data.category === 'EQUIPMENT_PURCHASE' ? 'EQUIPMENT_PURCHASE' : (data.category === 'TOURNAMENT_EXPENSE' ? 'TOURNAMENT_EXPENSE' : 'OTHER'),
+      amount: Number(data.amount_approved),
+      reference_id: expenseId,
+      status: 'APPROVED',
+      remarks: `Payment released for expense: ${data.title}`
+    });
+
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'RELEASE_EXPENSE_PAYMENT', `Released payment for expense ${data.title}`, undefined, undefined, { expenseId });
+    return data;
+  },
+
+  async fetchSalaryRecords(schoolId: string, academicSessionId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSalaryRecords');
+    const { data, error } = await supabaseAdmin
+      .from('sports_salary_records')
+      .select('*, users(first_name, last_name)')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId)
+      .order('month', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      userId: r.user_id,
+      employeeRole: r.employee_role,
+      amount: Number(r.amount),
+      bonus: Number(r.bonus),
+      deductions: Number(r.deductions),
+      month: r.month,
+      status: r.status,
+      approvedBy: r.approved_by,
+      paymentDate: r.payment_date,
+      transactionId: r.transaction_id,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      employeeName: r.users ? `${r.users.first_name} ${r.users.last_name}` : 'Unknown Employee'
+    }));
+  },
+
+  async generateMonthlyPayroll(userId: string, academicSessionId: string, month: string): Promise<void> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
+    const schoolId = user.school_id;
+
+    const { data: coaches } = await supabaseAdmin
+      .from('sports_coaches')
+      .select('id, user_id, salary')
+      .eq('school_id', schoolId)
+      .eq('status', 'ACTIVE');
+    
+    const { data: admins } = await supabaseAdmin
+      .from('sports_admins')
+      .select('user_id')
+      .eq('school_id', schoolId)
+      .eq('status', 'ACTIVE');
+
+    const salaryRecords = [];
+
+    if (coaches) {
+      for (const coach of coaches) {
+        // Fetch attendance for this coach in this month (month is YYYY-MM)
+        const startDate = `${month}-01`;
+        const endDate = `${month}-31`;
+        const { data: attRecords } = await supabaseAdmin
+          .from('sports_coach_attendance')
+          .select('*')
+          .eq('school_id', schoolId)
+          .eq('coach_id', coach.id)
+          .gte('attendance_date', startDate)
+          .lte('attendance_date', endDate);
+
+        let absentCount = 0;
+        let halfDayCount = 0;
+        let lateCount = 0;
+        let presentCount = 0;
+        let totalExpectedDays = attRecords ? attRecords.length : 0;
+        let overtimeHours = 0;
+
+        if (attRecords) {
+          attRecords.forEach((att: any) => {
+            if (att.status === 'ABSENT') absentCount++;
+            else if (att.status === 'HALF_DAY') halfDayCount++;
+            else if (att.status === 'LATE') {
+              lateCount++;
+              presentCount++;
+            } else if (['PRESENT', 'TRAINING_DUTY', 'TOURNAMENT_DUTY'].includes(att.status)) {
+              presentCount++;
+            } else if (att.status === 'LEAVE' || att.status === 'MEDICAL_LEAVE') {
+              // Paid leave, but count as expected days
+            }
+
+            const hours = Number(att.working_hours || 0);
+            if (hours > 8) {
+              overtimeHours += (hours - 8);
+            }
+          });
+        }
+
+        const baseSalary = Number(coach.salary || 0);
+        // Deduction = pro-rated day salary per absent day, half day pro-rated per half day, plus ₹100 per late arrival
+        const deductions = Math.round((absentCount * (baseSalary / 30)) + (halfDayCount * (baseSalary / 60)) + (lateCount * 100));
+        
+        // Overtime = ₹250 per hour
+        const overtimePay = Math.round(overtimeHours * 250);
+
+        // Attendance % = present / total. If total is 0, defaults to 100
+        const attendancePct = totalExpectedDays > 0 ? (presentCount / totalExpectedDays) * 100 : 100;
+        const bonus = attendancePct >= 95 && totalExpectedDays > 0 ? 2000.00 : 0.00;
+
+        salaryRecords.push({
+          school_id: schoolId,
+          academic_session_id: academicSessionId,
+          user_id: coach.user_id,
+          employee_role: 'COACH',
+          amount: baseSalary + overtimePay,
+          bonus: bonus,
+          deductions: deductions,
+          month,
+          status: 'GENERATED'
+        });
+      }
+    }
+
+    if (admins) {
+      for (const adm of admins) {
+        salaryRecords.push({
+          school_id: schoolId,
+          academic_session_id: academicSessionId,
+          user_id: adm.user_id,
+          employee_role: 'SPORTS_ADMIN',
+          amount: 25000.00,
+          bonus: 0.00,
+          deductions: 0.00,
+          month,
+          status: 'GENERATED'
+        });
+      }
+    }
+
+    for (const rec of salaryRecords) {
+      const { data: existing } = await supabaseAdmin
+        .from('sports_salary_records')
+        .select('id')
+        .eq('school_id', schoolId)
+        .eq('user_id', rec.user_id)
+        .eq('month', month)
+        .maybeSingle();
+      
+      if (!existing) {
+        await supabaseAdmin.from('sports_salary_records').insert(rec);
+      } else {
+        await supabaseAdmin.from('sports_salary_records').update(rec).eq('id', existing.id);
+      }
+    }
+
+    await this.logSportsActivity(schoolId, userId, 'FINANCE_ADMIN', 'GENERATE_PAYROLL', `Generated payroll for month ${month}`, undefined, undefined, { month });
+  },
+
+  async approveSalaryRecord(userId: string, salaryId: string): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_salary_records')
+      .update({
+        status: 'APPROVED',
+        approved_by: userId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', salaryId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'APPROVE_SALARY', `Approved salary payout for employee`, undefined, undefined, { salaryId });
+    return data;
+  },
+
+  async paySalaryRecord(userId: string, salaryId: string, payData: { bonus?: number; deductions?: number; transactionId?: string }): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
+
+    const { data: existingRecord } = await supabaseAdmin
+      .from('sports_salary_records')
+      .select('amount, academic_session_id')
+      .eq('id', salaryId)
+      .single();
+    
+    if (!existingRecord) throw new Error('Salary record not found');
+
+    const finalAmount = Number(existingRecord.amount) + Number(payData.bonus || 0) - Number(payData.deductions || 0);
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_salary_records')
+      .update({
+        status: 'PAID',
+        bonus: Number(payData.bonus || 0),
+        deductions: Number(payData.deductions || 0),
+        transaction_id: payData.transactionId || `TXN-SAL-${Math.floor(Math.random() * 900000 + 100000)}`,
+        payment_date: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', salaryId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    await supabaseAdmin.from('sports_finance_transactions').insert({
+      school_id: user.school_id,
+      academic_session_id: existingRecord.academic_session_id,
+      type: 'EXPENSE',
+      category: 'SALARY_PAYOUT',
+      amount: finalAmount,
+      reference_id: salaryId,
+      status: 'APPROVED',
+      remarks: `Salary payout processed for ${data.employee_role}`
+    });
+
+    const { data: budget } = await supabaseAdmin
+      .from('sports_budget_allocations')
+      .select('spent_amount')
+      .eq('school_id', user.school_id)
+      .eq('academic_session_id', existingRecord.academic_session_id)
+      .eq('category', 'SALARY')
+      .maybeSingle();
+    
+    if (budget) {
+      await supabaseAdmin
+        .from('sports_budget_allocations')
+        .update({
+          spent_amount: Number(budget.spent_amount) + finalAmount
+        })
+        .eq('school_id', user.school_id)
+        .eq('academic_session_id', existingRecord.academic_session_id)
+        .eq('category', 'SALARY');
+    }
+
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'PAY_SALARY', `Completed payment of ₹${finalAmount} for salary`, undefined, undefined, { salaryId });
+    return data;
+  },
+
+  async fetchFines(schoolId: string, academicSessionId: string, studentId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchFines');
+    let query = supabaseAdmin
+      .from('sports_fines')
+      .select('*, students(*, users(first_name, last_name))')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId);
+    
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    }
+
+    const { data, error } = await query.order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      studentId: r.student_id,
+      amount: Number(r.amount),
+      reason: r.reason,
+      status: r.status,
+      dueDate: r.due_date,
+      paymentDate: r.payment_date,
+      utrNumber: r.utr_number,
+      paymentScreenshotUrl: r.payment_screenshot_url,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student'
+    }));
+  },
+
+  async issueFine(userId: string, fine: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['ADMIN', 'SPORTS_ADMIN', 'COACH', 'TEACHER'].includes(user.role)) throw new Error('Unauthorized');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_fines')
+      .insert({
+        school_id: user.school_id,
+        academic_session_id: fine.academicSessionId,
+        student_id: fine.studentId,
+        amount: Number(fine.amount),
+        reason: fine.reason,
+        due_date: fine.dueDate,
+        status: 'UNPAID'
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    await this.logSportsActivity(user.school_id, userId, user.role, 'ISSUE_FINE', `Issued fine of ₹${fine.amount} to student`, undefined, undefined, { fineId: data.id });
+    return data;
+  },
+
+  async submitFinePayment(fineId: string, payData: { utrNumber: string; screenshotUrl?: string }): Promise<any> {
+    const { data, error } = await supabaseAdmin
+      .from('sports_fines')
+      .update({
+        utr_number: payData.utrNumber,
+        payment_screenshot_url: payData.screenshotUrl || null,
+        payment_date: new Date().toISOString(),
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', fineId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+    return data;
+  },
+
+  async approveFinePayment(userId: string, fineId: string, status: 'PAID' | 'UNPAID'): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_fines')
+      .update({
+        status: status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', fineId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    if (status === 'PAID') {
+      await supabaseAdmin.from('sports_finance_transactions').insert({
+        school_id: user.school_id,
+        academic_session_id: data.academic_session_id,
+        type: 'REVENUE',
+        category: 'FINE',
+        amount: Number(data.amount),
+        reference_id: fineId,
+        status: 'APPROVED',
+        remarks: `Fine paid by student: ${data.reason}`
+      });
+    }
+
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', status === 'PAID' ? 'APPROVE_FINE_PAYMENT' : 'REJECT_FINE_PAYMENT', `${status === 'PAID' ? 'Approved' : 'Rejected'} fine payment`, undefined, undefined, { fineId });
+    return data;
+  },
+
+  async fetchFinanceTransactions(schoolId: string, academicSessionId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchFinanceTransactions');
+    const { data, error } = await supabaseAdmin
+      .from('sports_finance_transactions')
+      .select('*')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId)
+      .order('transaction_date', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      type: r.type,
+      category: r.category,
+      amount: Number(r.amount),
+      referenceId: r.reference_id,
+      transactionDate: r.transaction_date,
+      status: r.status,
+      remarks: r.remarks,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
+    }));
+  },
+
+  async fetchSportsActivityLogs(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsActivityLogs');
+    const { data, error } = await supabaseAdmin
+      .from('sports_activity_logs')
+      .select('*, users(first_name, last_name)')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false })
+      .limit(100);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      userId: r.user_id,
+      userRole: r.user_role,
+      actionType: r.action_type,
+      affectedRecord: r.affected_record,
+      ipAddress: r.ip_address,
+      device: r.device,
+      details: r.details,
+      createdAt: r.created_at,
+      userName: r.users ? `${r.users.first_name} ${r.users.last_name}` : 'System'
+    }));
+  },
+
+  async logSportsActivity(
+    schoolId: string, 
+    userId: string, 
+    userRole: string, 
+    actionType: string, 
+    affectedRecord: string, 
+    ipAddress?: string, 
+    device?: string, 
+    details?: any
+  ): Promise<void> {
+    await supabaseAdmin.from('sports_activity_logs').insert({
+      school_id: schoolId,
+      user_id: userId,
+      user_role: userRole,
+      action_type: actionType,
+      affected_record: affectedRecord,
+      ip_address: ipAddress || '127.0.0.1',
+      device: device || 'Web Browser',
+      details: details || {}
+    });
   },
 
   async fetchSportsNotifications(schoolId: string, userId: string): Promise<any[]> {
@@ -18444,6 +19390,621 @@ export const mockApi = {
       .single();
     if (error) throw error;
     return data;
+  },
+
+  async fetchCoachAttendance(schoolId: string, date?: string, coachId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchCoachAttendance');
+    let query = supabaseAdmin
+      .from('sports_coach_attendance')
+      .select('*, sports_coaches(*, users(email))')
+      .eq('school_id', schoolId)
+      .is('deleted_at', null); // Soft delete filter
+    
+    if (date) {
+      query = query.eq('attendance_date', date);
+    }
+    if (coachId) {
+      query = query.eq('coach_id', coachId);
+    }
+
+    const { data, error } = await query.order('attendance_date', { ascending: false });
+    if (error) throw error;
+
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      coachId: r.coach_id,
+      attendanceDate: r.attendance_date,
+      status: r.status,
+      checkIn: r.check_in,
+      checkOut: r.check_out,
+      workingHours: Number(r.working_hours || 0),
+      remarks: r.remarks,
+      deviceId: r.device_id,
+      ipAddress: r.ip_address,
+      latitude: r.latitude ? Number(r.latitude) : null,
+      longitude: r.longitude ? Number(r.longitude) : null,
+      attendanceSource: r.attendance_source,
+      createdBy: r.created_by,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      coachName: r.sports_coaches?.coach_name || 'Unknown Coach',
+      coachEmail: r.sports_coaches?.users?.email || ''
+    }));
+  },
+
+  async markCoachAttendance(userId: string, record: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+
+    // Retrieve existing active record
+    const { data: existing } = await supabaseAdmin
+      .from('sports_coach_attendance')
+      .select('*')
+      .eq('school_id', user.school_id)
+      .eq('coach_id', record.coachId)
+      .eq('attendance_date', record.attendanceDate)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    let data;
+    let error;
+
+    if (existing) {
+      const hasChanges = existing.status !== record.status ||
+                         existing.check_in !== (record.checkIn || null) ||
+                         existing.check_out !== (record.checkOut || null) ||
+                         existing.working_hours !== Number(record.workingHours || 0) ||
+                         existing.remarks !== (record.remarks || null);
+      
+      if (hasChanges) {
+        const oldValueStr = JSON.stringify({
+          status: existing.status,
+          check_in: existing.check_in,
+          check_out: existing.check_out,
+          working_hours: existing.working_hours,
+          remarks: existing.remarks
+        });
+        const newValueStr = JSON.stringify({
+          status: record.status,
+          check_in: record.checkIn || null,
+          check_out: record.checkOut || null,
+          working_hours: record.workingHours || 0,
+          remarks: record.remarks || null
+        });
+
+        const res = await supabaseAdmin
+          .from('sports_coach_attendance')
+          .update({
+            status: record.status,
+            check_in: record.checkIn || null,
+            check_out: record.checkOut || null,
+            working_hours: Number(record.workingHours || 0),
+            remarks: record.remarks || null,
+            device_id: record.deviceId || existing.device_id || null,
+            ip_address: record.ipAddress || existing.ip_address || null,
+            latitude: record.latitude || existing.latitude || null,
+            longitude: record.longitude || existing.longitude || null,
+            attendance_source: record.attendanceSource || existing.attendance_source || 'MANUAL',
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', existing.id)
+          .select()
+          .single();
+        
+        data = res.data;
+        error = res.error;
+
+        if (!error && data) {
+          // Log edit history
+          await supabaseAdmin
+            .from('sports_coach_attendance_history')
+            .insert({
+              school_id: user.school_id,
+              attendance_id: existing.id,
+              old_value: oldValueStr,
+              new_value: newValueStr,
+              edited_by: userId,
+              edit_reason: record.editReason || 'Administrative update'
+            });
+        }
+      } else {
+        data = existing;
+      }
+    } else {
+      const res = await supabaseAdmin
+        .from('sports_coach_attendance')
+        .insert({
+          school_id: user.school_id,
+          coach_id: record.coachId,
+          attendance_date: record.attendanceDate,
+          status: record.status,
+          check_in: record.checkIn || null,
+          check_out: record.checkOut || null,
+          working_hours: Number(record.workingHours || 0),
+          remarks: record.remarks || null,
+          device_id: record.deviceId || null,
+          ip_address: record.ipAddress || null,
+          latitude: record.latitude || null,
+          longitude: record.longitude || null,
+          attendance_source: record.attendanceSource || 'MANUAL',
+          created_by: userId
+        })
+        .select()
+        .single();
+      
+      data = res.data;
+      error = res.error;
+    }
+
+    if (error) throw error;
+
+    await this.logSportsActivity(
+      user.school_id, 
+      userId, 
+      user.role, 
+      'MARK_COACH_ATTENDANCE', 
+      `Marked attendance for coach on ${record.attendanceDate} as ${record.status}`,
+      undefined,
+      undefined,
+      { attendanceId: data.id }
+    );
+    return data;
+  },
+
+  async fetchCoachLeaves(schoolId: string, coachId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchCoachLeaves');
+    let query = supabaseAdmin
+      .from('sports_coach_leaves')
+      .select('*, sports_coaches(coach_name)')
+      .eq('school_id', schoolId);
+    
+    if (coachId) {
+      query = query.eq('coach_id', coachId);
+    }
+
+    const { data, error } = await query.order('start_date', { ascending: false });
+    if (error) throw error;
+
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      coachId: r.coach_id,
+      startDate: r.start_date,
+      endDate: r.end_date,
+      leaveType: r.leave_type,
+      status: r.status,
+      reason: r.reason,
+      approvedBy: r.approved_by,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      coachName: r.sports_coaches?.coach_name || 'Unknown Coach'
+    }));
+  },
+
+  async applyCoachLeave(userId: string, leaveData: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id').eq('id', userId).single();
+    if (!user) throw new Error('Unauthorized');
+    
+    const { data: coachProfile } = await supabaseAdmin
+      .from('sports_coaches')
+      .select('id')
+      .eq('user_id', userId)
+      .single();
+    
+    if (!coachProfile) throw new Error('Coach profile not found for user');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_coach_leaves')
+      .insert({
+        school_id: user.school_id,
+        coach_id: coachProfile.id,
+        start_date: leaveData.startDate,
+        end_date: leaveData.endDate,
+        leave_type: leaveData.leaveType,
+        reason: leaveData.reason || null,
+        status: 'PENDING'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await this.logSportsActivity(
+      user.school_id, 
+      userId, 
+      'COACH', 
+      'APPLY_LEAVE', 
+      `Applied for leave from ${leaveData.startDate} to ${leaveData.endDate}`,
+      undefined,
+      undefined,
+      { leaveId: data.id }
+    );
+    return data;
+  },
+
+  async approveCoachLeave(userId: string, leaveId: string, status: 'APPROVED' | 'REJECTED'): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_coach_leaves')
+      .update({
+        status,
+        approved_by: userId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', leaveId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await this.logSportsActivity(
+      user.school_id, 
+      userId, 
+      user.role, 
+      status === 'APPROVED' ? 'APPROVE_LEAVE' : 'REJECT_LEAVE', 
+      `${status === 'APPROVED' ? 'Approved' : 'Rejected'} leave application`,
+      undefined,
+      undefined,
+      { leaveId }
+    );
+    return data;
+  },
+
+  async fetchCoachWorkLogs(schoolId: string, coachId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchCoachWorkLogs');
+    let query = supabaseAdmin
+      .from('sports_coach_work_logs')
+      .select('*, sports_coaches(coach_name)')
+      .eq('school_id', schoolId);
+    
+    if (coachId) {
+      query = query.eq('coach_id', coachId);
+    }
+
+    const { data, error } = await query.order('log_date', { ascending: false });
+    if (error) throw error;
+
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      coachId: r.coach_id,
+      logDate: r.log_date,
+      sessionName: r.session_name,
+      loginTime: r.login_time,
+      logoutTime: r.logout_time,
+      durationMinutes: r.duration_minutes,
+      sessionType: r.session_type,
+      deviceId: r.device_id,
+      ipAddress: r.ip_address,
+      latitude: r.latitude ? Number(r.latitude) : null,
+      longitude: r.longitude ? Number(r.longitude) : null,
+      attendanceSource: r.attendance_source,
+      createdAt: r.created_at,
+      coachName: r.sports_coaches?.coach_name || 'Unknown Coach'
+    }));
+  },
+
+  async logCoachWorkSession(userId: string, logData: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id').eq('id', userId).single();
+    if (!user) throw new Error('Unauthorized');
+
+    const { data: coachProfile } = await supabaseAdmin
+      .from('sports_coaches')
+      .select('id')
+      .eq('user_id', userId)
+      .single();
+    
+    if (!coachProfile) throw new Error('Coach profile not found for user');
+
+    let duration = Number(logData.durationMinutes || 0);
+    if (!duration && logData.loginTime && logData.logoutTime) {
+      const diff = new Date(logData.logoutTime).getTime() - new Date(logData.loginTime).getTime();
+      duration = Math.max(0, Math.floor(diff / 60000));
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_coach_work_logs')
+      .insert({
+        school_id: user.school_id,
+        coach_id: coachProfile.id,
+        log_date: logData.logDate,
+        session_name: logData.sessionName || 'Training Session',
+        login_time: logData.loginTime || null,
+        logout_time: logData.logoutTime || null,
+        duration_minutes: duration,
+        session_type: logData.sessionType || 'PRACTICE',
+        device_id: logData.deviceId || null,
+        ip_address: logData.ipAddress || null,
+        latitude: logData.latitude || null,
+        longitude: logData.longitude || null,
+        attendance_source: logData.attendanceSource || 'MANUAL'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Recalculate total working hours for coach on logDate
+    const { data: logs } = await supabaseAdmin
+      .from('sports_coach_work_logs')
+      .select('duration_minutes')
+      .eq('coach_id', coachProfile.id)
+      .eq('log_date', logData.logDate);
+    
+    const totalMinutes = (logs || []).reduce((sum, item) => sum + (item.duration_minutes || 0), 0);
+    const totalHours = Number((totalMinutes / 60).toFixed(2));
+
+    const { data: existingAttendance } = await supabaseAdmin
+      .from('sports_coach_attendance')
+      .select('*')
+      .eq('coach_id', coachProfile.id)
+      .eq('attendance_date', logData.logDate)
+      .is('deleted_at', null)
+      .maybeSingle();
+
+    if (existingAttendance) {
+      await supabaseAdmin
+        .from('sports_coach_attendance')
+        .update({
+          working_hours: totalHours,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', existingAttendance.id);
+    } else {
+      await supabaseAdmin
+        .from('sports_coach_attendance')
+        .insert({
+          school_id: user.school_id,
+          coach_id: coachProfile.id,
+          attendance_date: logData.logDate,
+          status: 'PRESENT',
+          working_hours: totalHours,
+          created_by: userId,
+          attendance_source: logData.attendanceSource || 'MANUAL',
+          device_id: logData.deviceId || null,
+          ip_address: logData.ipAddress || null,
+          latitude: logData.latitude || null,
+          longitude: logData.longitude || null
+        });
+    }
+
+    return data;
+  },
+
+  async fetchCoachAttendanceCorrections(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchCoachAttendanceCorrections');
+    const { data, error } = await supabaseAdmin
+      .from('sports_coach_attendance_corrections')
+      .select('*, sports_coach_attendance(attendance_date, sports_coaches(coach_name))')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false });
+    
+    if (error) throw error;
+
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      attendanceId: r.attendance_id,
+      requestedStatus: r.requested_status,
+      requestedCheckIn: r.requested_check_in,
+      requestedCheckOut: r.requested_check_out,
+      reason: r.reason,
+      status: r.status,
+      approvedBy: r.approved_by,
+      createdAt: r.created_at,
+      updatedAt: r.updated_at,
+      coachName: r.sports_coach_attendance?.sports_coaches?.coach_name || 'Unknown Coach',
+      attendanceDate: r.sports_coach_attendance?.attendance_date
+    }));
+  },
+
+  async submitAttendanceCorrection(userId: string, correctionRequest: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id').eq('id', userId).single();
+    if (!user) throw new Error('Unauthorized');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_coach_attendance_corrections')
+      .insert({
+        school_id: user.school_id,
+        attendance_id: correctionRequest.attendanceId,
+        requested_status: correctionRequest.requestedStatus,
+        requested_check_in: correctionRequest.requestedCheckIn || null,
+        requested_check_out: correctionRequest.requestedCheckOut || null,
+        reason: correctionRequest.reason,
+        status: 'PENDING'
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    await this.logSportsActivity(
+      user.school_id, 
+      userId, 
+      'COACH', 
+      'SUBMIT_ATTENDANCE_CORRECTION', 
+      `Submitted correction request for attendance log`,
+      undefined,
+      undefined,
+      { correctionId: data.id }
+    );
+    return data;
+  },
+
+  async approveAttendanceCorrection(userId: string, correctionId: string, status: 'APPROVED' | 'REJECTED'): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+
+    const { data: corr } = await supabaseAdmin
+      .from('sports_coach_attendance_corrections')
+      .select('*')
+      .eq('id', correctionId)
+      .single();
+    
+    if (!corr) throw new Error('Correction request not found');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_coach_attendance_corrections')
+      .update({
+        status,
+        approved_by: userId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', correctionId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    if (status === 'APPROVED') {
+      let workingHours = 0;
+      if (corr.requested_check_in && corr.requested_check_out) {
+        const [inH, inM] = corr.requested_check_in.split(':').map(Number);
+        const [outH, outM] = corr.requested_check_out.split(':').map(Number);
+        workingHours = (outH + outM / 60) - (inH + inM / 60);
+        if (workingHours < 0) workingHours += 24;
+      }
+
+      await supabaseAdmin
+        .from('sports_coach_attendance')
+        .update({
+          status: corr.requested_status,
+          check_in: corr.requested_check_in || null,
+          check_out: corr.requested_check_out || null,
+          working_hours: workingHours,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', corr.attendance_id);
+    }
+
+    await this.logSportsActivity(
+      user.school_id, 
+      userId, 
+      user.role, 
+      status === 'APPROVED' ? 'APPROVE_ATTENDANCE_CORRECTION' : 'REJECT_ATTENDANCE_CORRECTION', 
+      `${status === 'APPROVED' ? 'Approved' : 'Rejected'} attendance correction request`,
+      undefined,
+      undefined,
+      { correctionId }
+    );
+    return data;
+  },
+
+  async softDeleteCoachAttendance(userId: string, attendanceId: string, reason: string): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+
+    const { data: existing } = await supabaseAdmin
+      .from('sports_coach_attendance')
+      .select('*')
+      .eq('id', attendanceId)
+      .is('deleted_at', null)
+      .single();
+
+    if (!existing) throw new Error('Attendance record not found or already deleted');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_coach_attendance')
+      .update({
+        deleted_at: new Date().toISOString(),
+        deleted_by: userId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', attendanceId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Log the edit history for soft deletes
+    await supabaseAdmin
+      .from('sports_coach_attendance_history')
+      .insert({
+        school_id: user.school_id,
+        attendance_id: attendanceId,
+        old_value: JSON.stringify(existing),
+        new_value: 'SOFT_DELETED',
+        edited_by: userId,
+        edit_reason: reason
+      });
+
+    await this.logSportsActivity(
+      user.school_id,
+      userId,
+      user.role,
+      'DELETE_COACH_ATTENDANCE',
+      `Soft deleted attendance record for date ${existing.attendance_date}`,
+      undefined,
+      undefined,
+      { attendanceId }
+    );
+    return data;
+  },
+
+  async fetchCoachAttendanceHistory(schoolId: string, attendanceId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchCoachAttendanceHistory');
+    let query = supabaseAdmin
+      .from('sports_coach_attendance_history')
+      .select('*, users(first_name, last_name)')
+      .eq('school_id', schoolId);
+    
+    if (attendanceId) {
+      query = query.eq('attendance_id', attendanceId);
+    }
+    
+    const { data, error } = await query.order('edited_at', { ascending: false });
+    if (error) throw error;
+    
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      attendanceId: r.attendance_id,
+      oldValue: r.old_value,
+      newValue: r.new_value,
+      editedBy: r.edited_by,
+      editedAt: r.edited_at,
+      editReason: r.edit_reason,
+      editorName: r.users ? `${r.users.first_name} ${r.users.last_name}` : 'System'
+    }));
+  },
+
+  async transferSportsAdmin(adminId: string, sportsAdminUserId: string, targetSchoolId: string): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('role').eq('id', adminId).single();
+    if (!user || !['ADMIN', 'SUPER_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+
+    // Update target user school_id in users
+    const { data: updatedUser, error: err1 } = await supabaseAdmin
+      .from('users')
+      .update({
+        school_id: targetSchoolId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', sportsAdminUserId)
+      .select()
+      .single();
+
+    if (err1) throw err1;
+
+    // Update target user school_id in sports_admins
+    await supabaseAdmin
+      .from('sports_admins')
+      .update({
+        school_id: targetSchoolId,
+        updated_at: new Date().toISOString()
+      })
+      .eq('user_id', sportsAdminUserId);
+
+    await this.logSportsActivity(targetSchoolId, adminId, user.role, 'TRANSFER_SPORTS_ADMIN', `Transferred Sports Admin to school ${targetSchoolId}`, undefined, undefined, { sportsAdminUserId });
+    return updatedUser;
+  },
+
+  async fetchSchools(): Promise<any[]> {
+    const { data, error } = await supabaseAdmin.from('schools').select('id, name');
+    if (error) throw error;
+    return data || [];
   }
 };
 
