@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS public.user_roles (
   assigned_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
   assigned_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
   updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  deactivated_by UUID REFERENCES public.users(id) ON DELETE SET NULL,
+  deactivated_at TIMESTAMP WITH TIME ZONE,
   CONSTRAINT uniq_user_school_role UNIQUE (user_id, school_id, role_code)
 );
 
@@ -58,6 +60,28 @@ INSERT INTO public.user_roles (user_id, school_id, role_code, status, assigned_b
 SELECT id, school_id, role, CASE WHEN is_active THEN 'ACTIVE' ELSE 'INACTIVE' END, id
 FROM public.users
 ON CONFLICT (user_id, school_id, role_code) DO NOTHING;
+
+-- Self-healing: If a user is registered in teachers table, ensure they have TEACHER role as ACTIVE in user_roles
+INSERT INTO public.user_roles (user_id, school_id, role_code, status, assigned_by)
+SELECT user_id, school_id, 'TEACHER', 'ACTIVE', user_id
+FROM public.teachers
+ON CONFLICT (user_id, school_id, role_code) 
+DO UPDATE SET status = 'ACTIVE', updated_at = NOW();
+
+-- Self-healing: If a user is registered in sports_coaches table, ensure they have COACH role as ACTIVE in user_roles
+INSERT INTO public.user_roles (user_id, school_id, role_code, status, assigned_by)
+SELECT user_id, school_id, 'COACH', 'ACTIVE', user_id
+FROM public.sports_coaches
+ON CONFLICT (user_id, school_id, role_code) 
+DO UPDATE SET status = 'ACTIVE', updated_at = NOW();
+
+-- Self-healing: Re-enable users (is_active = true) in public.users if they have any ACTIVE role in user_roles
+UPDATE public.users u
+SET is_active = true
+WHERE EXISTS (
+  SELECT 1 FROM public.user_roles ur
+  WHERE ur.user_id = u.id AND ur.status = 'ACTIVE'
+);
 
 -- 4. Enable Row Level Security (RLS)
 ALTER TABLE public.user_roles ENABLE ROW LEVEL SECURITY;

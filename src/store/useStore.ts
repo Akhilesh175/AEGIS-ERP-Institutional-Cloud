@@ -203,7 +203,6 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
       console.error('Failed to sync subscription plan in polling loop:', e);
     }
   },
-
   syncUserSession: async () => {
     const currentSession = get().session;
     if (!currentSession) return;
@@ -220,16 +219,54 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
         return;
       }
 
-      // Check if user role has updated
-      if (currentSession.user.role !== dbUser.role) {
-        console.log(`Role updated in DB from ${currentSession.user.role} to ${dbUser.role}. Refreshing session...`);
+      if (dbUser.is_active === false) {
+        console.log('User account is deactivated. Logging out...');
+        set({ session: null });
+        localStorage.removeItem('aegis_session');
+        return;
+      }
+
+      const { data: rolesData } = await supabase
+        .from('user_roles')
+        .select('role_code')
+        .eq('user_id', currentSession.user.id)
+        .eq('status', 'ACTIVE');
+      
+      const activeRoles = (rolesData || []).map(r => r.role_code);
+      if (activeRoles.length === 0) {
+        console.log('User has no active roles. Logging out...');
+        set({ session: null });
+        localStorage.removeItem('aegis_session');
+        return;
+      }
+
+      let currentRole = dbUser.role;
+      let sessionChanged = false;
+
+      if (!activeRoles.includes(currentRole)) {
+        const { mockApi } = await import('../services/mockApi');
+        currentRole = mockApi.getHighestPriorityRole(activeRoles);
+        await supabase.from('users').update({ role: currentRole }).eq('id', currentSession.user.id);
+        sessionChanged = true;
+      }
+
+      // Check if user role, active roles list, or profile details have changed
+      const rolesChanged = JSON.stringify(currentSession.user.roles || []) !== JSON.stringify(activeRoles);
+      const profileChanged = currentSession.user.role !== currentRole || 
+                            currentSession.user.firstName !== dbUser.first_name ||
+                            currentSession.user.lastName !== dbUser.last_name ||
+                            currentSession.user.isActive !== dbUser.is_active;
+
+      if (profileChanged || rolesChanged || sessionChanged) {
+        console.log('User session state changed. Syncing context...');
         const updatedUser = {
           ...currentSession.user,
-          role: dbUser.role,
+          role: currentRole as any,
           firstName: dbUser.first_name,
           lastName: dbUser.last_name,
           phone: dbUser.phone || '',
-          isActive: dbUser.is_active
+          isActive: dbUser.is_active,
+          roles: activeRoles
         };
         const updatedSession = { ...currentSession, user: updatedUser };
         set({ session: updatedSession });
@@ -239,7 +276,6 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
       console.error('Error in syncUserSession:', e);
     }
   },
-
   switchActiveRole: async (newRole: string) => {
     const currentSession = get().session;
     if (!currentSession) return;
