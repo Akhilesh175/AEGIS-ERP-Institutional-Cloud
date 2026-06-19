@@ -377,7 +377,7 @@ BEGIN
 
   -- Check if teacher has subject mapping
   SELECT EXISTS (
-    SELECT 1 FROM public.teacher_class_subject_mapping 
+    SELECT 1 FROM public.teacher_class_subject_mappings 
     WHERE class_id = p_class_id AND teacher_id = p_teacher_id
   ) INTO v_is_subject_teacher;
 
@@ -410,7 +410,7 @@ END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
 CREATE OR REPLACE TRIGGER trg_teacher_mapping_sync
-AFTER INSERT OR UPDATE OR DELETE ON public.teacher_class_subject_mapping
+AFTER INSERT OR UPDATE OR DELETE ON public.teacher_class_subject_mappings
 FOR EACH ROW EXECUTE FUNCTION process_teacher_mapping_sync();
 
 
@@ -502,7 +502,7 @@ BEGIN
       IF v_teacher.id IS NOT NULL THEN
         -- Recheck all maps
         FOR v_mapping IN 
-          SELECT DISTINCT class_id FROM public.teacher_class_subject_mapping WHERE teacher_id = v_teacher.id
+          SELECT DISTINCT class_id FROM public.teacher_class_subject_mappings WHERE teacher_id = v_teacher.id
           UNION
           SELECT id AS class_id FROM public.classes WHERE class_teacher_id = v_teacher.id
         LOOP
