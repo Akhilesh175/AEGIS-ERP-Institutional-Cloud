@@ -2241,6 +2241,11 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                             <span className="text-[8px] font-bold px-1.5 py-0.5 bg-rose-500/10 border border-rose-500/20 text-rose-400 rounded uppercase">Rejected</span>
                                           )}
                                         </div>
+                                        {f.status === 'PENDING' && (
+                                          <p className="text-[9px] text-amber-400/80 mt-1.5 font-medium leading-relaxed italic">
+                                            Payment proof already submitted. Waiting for Finance Admin verification.
+                                          </p>
+                                        )}
                                         {f.status === 'REJECTED' && f.rejectionReason && (
                                           <p className="text-[9px] text-rose-400/80 mt-1 italic">Reason: {f.rejectionReason}</p>
                                         )}

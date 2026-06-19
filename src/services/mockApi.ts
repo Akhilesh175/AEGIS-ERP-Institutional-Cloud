@@ -3676,17 +3676,19 @@ export const mockApi = {
         createdAt: a.createdAt
       };
     });
-
-    // Fees summary
     const structures = mockDb.feeStructures.filter(fs => fs.classId === student.classId);
-    const feeSummaries = structures.map(fs => {
+    const feeSummaries = structures.map((fs: any) => {
       const payment = mockDb.feePayments.find(p => p.feeStructureId === fs.id && p.studentId === studentId);
+      const hasProof = !!(payment && (payment.utrNumber || payment.paymentScreenshotUrl));
+      const feeStatus = payment 
+        ? (payment.status === 'PENDING' && !hasProof ? 'UNPAID' : payment.status) 
+        : 'UNPAID';
       return {
         id: fs.id,
         description: fs.description,
         amount: fs.amount,
         dueDate: fs.dueDate,
-        status: payment ? payment.status : 'UNPAID',
+        status: feeStatus,
         paymentDate: payment ? payment.paymentDate : '',
         paymentId: payment?.id || '',
         paymentScreenshotUrl: payment?.paymentScreenshotUrl || '',
