@@ -30,6 +30,10 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
   const [loadingGroups, setLoadingGroups] = useState(true);
   const [loadingMessages, setLoadingMessages] = useState(false);
 
+  useEffect(() => {
+    console.log(`[App Routing] Mount ClassDiscussion component: route = groupdiscussion, userRole = ${currentUserRole}`);
+  }, [currentUserRole]);
+
   // Message compose state
   const [messageText, setMessageText] = useState('');
   const [replyTo, setReplyTo] = useState<ClassMessage | null>(null);

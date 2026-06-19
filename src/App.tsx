@@ -23,12 +23,12 @@ const getTabsForRole = (role: string, planName: string): string[] => {
 
   switch (role) {
     case 'STUDENT':
-      return ['dashboard', 'timetable', 'grades', 'materials', 'quizzes', 'library', 'transit', 'forums', 'fees', 'hostel', 'support'];
+      return ['dashboard', 'timetable', 'grades', 'materials', 'quizzes', 'library', 'transit', 'forums', 'fees', 'hostel', 'support', 'groupdiscussion'];
     case 'PARENT':
       return ['dashboard', 'notifications', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'transit', 'forums', 'hostel', 'support'];
     case 'TEACHER':
     case 'DRIVER':
-      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics', 'paymentsettings', 'support'];
+      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics', 'paymentsettings', 'support', 'groupdiscussion'];
     case 'SUPER_ADMIN':
       return ['dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'support'];
     case 'ADMIN':
@@ -36,7 +36,7 @@ const getTabsForRole = (role: string, planName: string): string[] => {
         'dashboard', 'impersonation', 'dangerzone', 'subscriptions',
         'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support'
+        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'groupdiscussion'
       ];
     case 'FINANCE_ADMIN':
       return [
@@ -44,12 +44,17 @@ const getTabsForRole = (role: string, planName: string): string[] => {
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
         'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support'
       ];
-    default: // Sub-admin roles (Librarian, Warden, Academic Admin, Exam Controller, etc.)
-      return [
+    default: { // Sub-admin roles (Librarian, Warden, Academic Admin, Exam Controller, etc.)
+      const tabs = [
         'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'communications', 'rbac', 'backups', 'books', 'transport', 'marksheets', 'quizzes', 
         'attendance', 'assignments', 'hostel', 'support', 'paymentsettings'
       ];
+      if (role === 'ACADEMIC_ADMIN') {
+        tabs.push('groupdiscussion');
+      }
+      return tabs;
+    }
   }
 };
 
@@ -1054,6 +1059,8 @@ export const App: React.FC = () => {
       </div>
     );
   }
+
+  console.log(`[App Routing] Active tab/route: ${activeTab}, Role: ${session?.user?.role}`);
 
   return (
     <div className="min-h-screen bg-[#070a13] flex flex-col transition-colors duration-300">
