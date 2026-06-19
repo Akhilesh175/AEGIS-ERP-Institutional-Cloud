@@ -127,6 +127,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'timetable', label: 'Schedule', icon: Calendar },
           { id: 'grades', label: 'Report Cards', icon: Award },
           { id: 'documents', label: 'Documents Center', icon: FileText },
+          { id: 'groupdiscussion', label: 'Group Discussion', icon: MessageSquare },
           { id: 'materials', label: 'Materials', icon: BookOpen, locked: lock('materials') },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
           { id: 'library', label: 'Library Books', icon: BookMarked, locked: lock('library') },
@@ -161,6 +162,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         return [
           { id: 'dashboard', label: 'Classes Taught', icon: LayoutDashboard },
           { id: 'timetable', label: 'Teaching Schedule', icon: Calendar },
+          { id: 'groupdiscussion', label: 'Group Discussion', icon: MessageSquare },
           { id: 'classroster', label: 'Class Roster', icon: Users, locked: lock('classroster') },
           { id: 'attendance', label: 'Attendance Roll', icon: Layers, locked: lock('attendance') },
           { id: 'grades', label: 'Gradebook Matrix', icon: Award },
@@ -185,6 +187,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'subjects', label: 'Subject Catalog', icon: BookMarked },
           { id: 'academicsessions', label: 'Academic Sessions', icon: Calendar },
           { id: 'documents', label: 'Documents Center', icon: FileText },
+          { id: 'groupdiscussion', label: 'Group Discussion', icon: MessageSquare },
           { id: 'attendance', label: 'Student Attendance', icon: Layers, locked: lock('attendance') },
           { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: lock('fees') },
           { id: 'hostel', label: 'Hostel Registry', icon: Home, locked: lock('hostel') },
@@ -214,6 +217,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         const subAdminTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
           { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard }
         ];
+
+        if (role === 'ACADEMIC_ADMIN') {
+          subAdminTabs.push({ id: 'groupdiscussion', label: 'Group Discussion', icon: MessageSquare });
+        }
         
         // If billing is allowed
         if (permissions.billing) {

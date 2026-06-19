@@ -25,6 +25,7 @@ import {
   downloadStudentIdCardPdf, downloadAdmissionFormPdf, 
   downloadBonafideCertificatePdf 
 } from '../components/DocumentTemplates';
+import { ClassDiscussion } from '../components/ClassDiscussion';
 
 const renderVideoPlayer = (url: string) => {
   if (!url) return null;
@@ -891,6 +892,15 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
             </GlassCard>
           </div>
         </div>
+      )}
+
+      {activeTab === 'groupdiscussion' && session?.user && (
+        <ClassDiscussion
+          currentUserId={session.user.id}
+          currentUserRole={session.user.role}
+          schoolId={session.user.schoolId || ''}
+          academicSessionId={session.user.academicSessionId || ''}
+        />
       )}
 
       {activeTab === 'timetable' && (

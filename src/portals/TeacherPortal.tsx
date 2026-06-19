@@ -17,6 +17,7 @@ import {
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
+import { ClassDiscussion } from '../components/ClassDiscussion';
 
 export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: string) => void }> = ({ activeTab, setActiveTab }) => {
   const { session, syncSubscriptionPlan } = useStore();
@@ -1847,6 +1848,15 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
             </GlassCard>
           </div>
         </div>
+      )}
+
+      {activeTab === 'groupdiscussion' && (
+        <ClassDiscussion
+          currentUserId={session?.user.id || ''}
+          currentUserRole={session?.user.role || 'TEACHER'}
+          schoolId={session?.user.schoolId || ''}
+          academicSessionId={session?.user.academicSessionId || ''}
+        />
       )}
 
       {activeTab === 'timetable' && (

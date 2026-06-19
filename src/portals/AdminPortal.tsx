@@ -21,6 +21,7 @@ import {
   downloadTransferCertificatePdf, downloadBonafideCertificatePdf, 
   downloadCertificateOfExcellencePdf 
 } from '../components/DocumentTemplates';
+import { ClassDiscussion } from '../components/ClassDiscussion';
 
 export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawActiveTab }) => {
   const activeTab = rawActiveTab.split('/')[0];
@@ -13470,6 +13471,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
             </GlassCard>
           )}
         </div>
+      )}
+
+      {activeTab === 'groupdiscussion' && (
+        <ClassDiscussion
+          currentUserId={session?.user.id || ''}
+          currentUserRole={session?.user.role || 'ADMIN'}
+          schoolId={session?.user.schoolId || ''}
+          academicSessionId={session?.user.academicSessionId || ''}
+        />
       )}
 
       {activeTab === 'attendance' && (

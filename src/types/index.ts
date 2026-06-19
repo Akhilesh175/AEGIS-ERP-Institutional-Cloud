@@ -1175,6 +1175,97 @@ export interface PaymentAuditLog {
   details?: Record<string, any>;
 }
 
+// --- GROUP DISCUSSION ---
 
+export interface ClassChatGroup {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  classId: string;
+  name: string;
+  isArchived: boolean;
+  createdAt: string;
+}
 
+export interface ClassChatMember {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  groupId: string;
+  userId: string;
+  role: 'STUDENT' | 'TEACHER' | 'CLASS_TEACHER' | 'ACADEMIC_ADMIN' | 'SCHOOL_ADMIN';
+  mutedUntil: string | null;
+  isPermanentlyMuted: boolean;
+  joinedAt: string;
+  userFirst?: string;
+  userLast?: string;
+  avatarUrl?: string;
+}
 
+export interface ClassMessageReaction {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  messageId: string;
+  userId: string;
+  reaction: string;
+  createdAt: string;
+  userFirst?: string;
+  userLast?: string;
+}
+
+export interface ClassMessageAttachment {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  messageId: string;
+  fileName: string;
+  fileUrl: string;
+  fileType: string;
+  fileSize: number;
+  createdAt: string;
+}
+
+export interface ClassMessage {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  groupId: string;
+  senderId: string;
+  content: string | null;
+  messageType: 'CHAT' | 'ANNOUNCEMENT' | 'SYSTEM';
+  systemNoticeType?: 'HOMEWORK' | 'ASSIGNMENT' | 'EXAM' | 'TIMETABLE' | 'NOTICE' | null;
+  editedAt: string | null;
+  deletedAt: string | null;
+  createdAt: string;
+  senderName?: string;
+  senderAvatar?: string;
+  senderRole?: string;
+  attachments?: ClassMessageAttachment[];
+  reactions?: ClassMessageReaction[];
+  pinnedBy?: string;
+  pinnedAt?: string;
+  replyToMessageId?: string | null;
+  replyToSenderName?: string | null;
+  replyToContent?: string | null;
+}
+
+export interface ClassPinnedMessage {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  groupId: string;
+  messageId: string;
+  pinnedBy: string;
+  pinnedAt: string;
+}
+
+export interface ClassAnnouncement {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  groupId: string;
+  messageId: string;
+  title: string;
+  createdAt: string;
+}

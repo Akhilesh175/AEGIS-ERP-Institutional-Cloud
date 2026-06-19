@@ -4423,6 +4423,16 @@ export const mockApi = {
       ).catch(e => console.error(e));
     });
 
+    // Post to Group Discussion system notice
+    this.postGroupDiscussionSystemNotice(
+      schoolId,
+      academicSessionId,
+      classId,
+      isHomework ? 'HOMEWORK' : 'ASSIGNMENT',
+      title,
+      teacher.userId
+    ).catch(e => console.error('Failed to post system notice to group discussion:', e));
+
     mockDb.addLog(teacher.userId, 'CREATE_ASSIGNMENT', { classId, title });
     mockDb.saveAll();
     return assign;
@@ -4492,6 +4502,16 @@ export const mockApi = {
     } else {
       mockDb.assignments[idx] = ass;
     }
+
+    // Post to Group Discussion system notice
+    this.postGroupDiscussionSystemNotice(
+      schoolId,
+      academicSessionId,
+      classId,
+      'HOMEWORK',
+      title,
+      adminId
+    ).catch(e => console.error('Failed to post system notice to group discussion:', e));
 
     await this.syncAssignmentsData(schoolId);
     mockDb.addLog(adminId, 'CREATE_HOMEWORK_ADMIN', { title, classId });
@@ -5969,6 +5989,16 @@ export const mockApi = {
             academicSessionId: dbTt.academic_session_id || academicSessionId
           };
           mockDb.timetables.push(newTt);
+
+          // Post to Group Discussion system notice
+          this.postGroupDiscussionSystemNotice(
+            schoolId,
+            academicSessionId,
+            classId,
+            'TIMETABLE',
+            `Timetable updated for this class`,
+            adminId
+          ).catch(e => console.error('Failed to post system notice to group discussion:', e));
 
           const activeUser = getActiveUser();
           if (activeUser) {
@@ -8906,6 +8936,17 @@ export const mockApi = {
           academicSessionId: dbTt.academic_session_id || academicSessionId
         };
         mockDb.timetables.push(newEntry);
+
+        // Post to Group Discussion system notice
+        this.postGroupDiscussionSystemNotice(
+          teacher.schoolId,
+          academicSessionId,
+          classId,
+          'TIMETABLE',
+          `Timetable updated for this class`,
+          teacher.userId
+        ).catch(e => console.error('Failed to post system notice to group discussion:', e));
+
         mockDb.addLog(teacher.userId, 'TEACHER_CREATE_TIMETABLE', { classId, timetableId: newEntry.id });
         mockDb.saveAll();
 
@@ -9038,6 +9079,17 @@ export const mockApi = {
           academicSessionId: dbTt.academic_session_id || academicSessionId
         };
         mockDb.timetables.push(newEntry);
+
+        // Post to Group Discussion system notice
+        this.postGroupDiscussionSystemNotice(
+          teacher.schoolId,
+          academicSessionId,
+          classId,
+          'TIMETABLE',
+          `Timetable updated for this class`,
+          teacher.userId
+        ).catch(e => console.error('Failed to post system notice to group discussion:', e));
+
         mockDb.addLog(teacher.userId, 'CLASS_TEACHER_CREATE_TIMETABLE', { classId, timetableId: newEntry.id });
         mockDb.saveAll();
 
@@ -9206,6 +9258,636 @@ export const mockApi = {
     await delay();
     return mockDb.announcements.filter(a => a.targetRoles.includes(role));
   },
+
+  // ==========================================
+  // GROUP DISCUSSION SYSTEM SERVICES
+  // ==========================================
+
+  async ensureClassChatBucketExists(): Promise<void> {
+    try {
+      const { data, error } = await supabaseAdmin.storage.getBucket('class-chat-attachments');
+      if (error || !data) {
+        console.log('Self-healing missing storage bucket: class-chat-attachments');
+        await supabaseAdmin.storage.createBucket('class-chat-attachments', {
+          public: true,
+          fileSizeLimit: 52428800 // 50MB
+        });
+      }
+    } catch (err) {
+      console.error('Error ensuring bucket class-chat-attachments exists:', err);
+    }
+  },
+
+  async uploadClassChatAttachment(schoolId: string, classId: string, file: File): Promise<{ url: string; name: string; type: string; size: number }> {
+    if (file.size > 50 * 1024 * 1024) {
+      throw new Error('File size exceeds the 50MB limit.');
+    }
+    await this.ensureClassChatBucketExists();
+    const cleanFileName = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
+    const filePath = `${schoolId}/group-discussion/${classId}/files/${Date.now()}_${cleanFileName}`;
+    const { error } = await supabaseAdmin.storage
+      .from('class-chat-attachments')
+      .upload(filePath, file, { cacheControl: '3600', upsert: true });
+
+    if (error) {
+      throw new Error('Failed to upload file to storage: ' + error.message);
+    }
+
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('class-chat-attachments')
+      .getPublicUrl(filePath);
+
+    return {
+      url: publicUrl,
+      name: file.name,
+      type: file.type,
+      size: file.size
+    };
+  },
+
+  async getClassChatGroups(schoolId: string, academicSessionId: string, userId: string, role: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'getClassChatGroups');
+    
+    let dbGroups: any[] = [];
+    if (['ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN'].includes(role)) {
+      const { data, error } = await supabaseAdmin
+        .from('class_chat_groups')
+        .select('*')
+        .eq('school_id', schoolId)
+        .eq('academic_session_id', academicSessionId)
+        .eq('is_archived', false);
+      if (error) throw new Error('Failed to fetch chat groups: ' + error.message);
+      dbGroups = data || [];
+    } else {
+      const { data, error } = await supabaseAdmin
+        .from('class_chat_members')
+        .select('group_id, class_chat_groups!inner(*)')
+        .eq('user_id', userId)
+        .eq('school_id', schoolId)
+        .eq('academic_session_id', academicSessionId)
+        .eq('class_chat_groups.is_archived', false);
+      if (error) throw new Error('Failed to fetch chat groups: ' + error.message);
+      dbGroups = (data || []).map((m: any) => m.class_chat_groups);
+    }
+
+    return dbGroups.map((g: any) => ({
+      id: g.id,
+      schoolId: g.school_id,
+      academicSessionId: g.academic_session_id,
+      classId: g.class_id,
+      name: g.name,
+      isArchived: g.is_archived,
+      createdAt: g.created_at
+    }));
+  },
+
+  async getClassChatMembers(schoolId: string, academicSessionId: string, groupId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'getClassChatMembers');
+    const { data, error } = await supabaseAdmin
+      .from('class_chat_members')
+      .select('*, users!inner(first_name, last_name, avatar_url, role)')
+      .eq('group_id', groupId);
+
+    if (error) throw new Error('Failed to fetch chat members: ' + error.message);
+
+    return (data || []).map((m: any) => ({
+      id: m.id,
+      schoolId: m.school_id,
+      academicSessionId: m.academic_session_id,
+      groupId: m.group_id,
+      userId: m.user_id,
+      role: m.role,
+      mutedUntil: m.muted_until,
+      isPermanentlyMuted: m.is_permanently_muted,
+      joinedAt: m.joined_at,
+      userFirst: m.users?.first_name,
+      userLast: m.users?.last_name,
+      avatarUrl: m.users?.avatar_url
+    }));
+  },
+
+  async getClassMessages(schoolId: string, academicSessionId: string, groupId: string, limit = 100, offset = 0): Promise<any[]> {
+    validateSchoolId(schoolId, 'getClassMessages');
+    const { data: messages, error } = await supabaseAdmin
+      .from('class_messages')
+      .select('*, users!inner(first_name, last_name, avatar_url, role)')
+      .eq('group_id', groupId)
+      .is('deleted_at', null)
+      .order('created_at', { ascending: false })
+      .range(offset, offset + limit - 1);
+
+    if (error) throw new Error('Failed to fetch messages: ' + error.message);
+    if (!messages || messages.length === 0) return [];
+
+    const messageIds = messages.map((m: any) => m.id);
+
+    // Fetch reactions
+    const { data: reactions } = await supabaseAdmin
+      .from('class_message_reactions')
+      .select('*, users!inner(first_name, last_name)')
+      .in('message_id', messageIds);
+
+    // Fetch attachments
+    const { data: attachments } = await supabaseAdmin
+      .from('class_message_attachments')
+      .select('*')
+      .in('message_id', messageIds);
+
+    // Fetch replies relation
+    const { data: replies } = await supabaseAdmin
+      .from('class_message_replies')
+      .select('*, parent_message:class_messages!parent_message_id_fkey(id, content, users!inner(first_name, last_name))')
+      .in('reply_message_id', messageIds);
+
+    // Fetch pinned
+    const { data: pinned } = await supabaseAdmin
+      .from('class_pinned_messages')
+      .select('*')
+      .in('message_id', messageIds);
+
+    const reactionsMap = (reactions || []).reduce((acc: any, r: any) => {
+      if (!acc[r.message_id]) acc[r.message_id] = [];
+      acc[r.message_id].push({
+        id: r.id,
+        schoolId: r.school_id,
+        academicSessionId: r.academic_session_id,
+        messageId: r.message_id,
+        userId: r.user_id,
+        reaction: r.reaction,
+        createdAt: r.created_at,
+        userFirst: r.users?.first_name,
+        userLast: r.users?.last_name
+      });
+      return acc;
+    }, {});
+
+    const attachmentsMap = (attachments || []).reduce((acc: any, a: any) => {
+      if (!acc[a.message_id]) acc[a.message_id] = [];
+      acc[a.message_id].push({
+        id: a.id,
+        schoolId: a.school_id,
+        academicSessionId: a.academic_session_id,
+        messageId: a.message_id,
+        fileName: a.file_name,
+        fileUrl: a.file_url,
+        fileType: a.file_type,
+        fileSize: a.file_size,
+        createdAt: a.created_at
+      });
+      return acc;
+    }, {});
+
+    const repliesMap = (replies || []).reduce((acc: any, rep: any) => {
+      acc[rep.reply_message_id] = {
+        replyToMessageId: rep.parent_message_id,
+        replyToSenderName: `${rep.parent_message?.users?.first_name || ''} ${rep.parent_message?.users?.last_name || ''}`.trim(),
+        replyToContent: rep.parent_message?.content || ''
+      };
+      return acc;
+    }, {});
+
+    const pinnedMap = (pinned || []).reduce((acc: any, p: any) => {
+      acc[p.message_id] = p;
+      return acc;
+    }, {});
+
+    // Map everything onto the message object and reverse to chronological order
+    const mapped = messages.map((m: any) => {
+      const pinObj = pinnedMap[m.id];
+      const replyObj = repliesMap[m.id];
+      return {
+        id: m.id,
+        schoolId: m.school_id,
+        academicSessionId: m.academic_session_id,
+        groupId: m.group_id,
+        senderId: m.sender_id,
+        content: m.content,
+        messageType: m.message_type,
+        systemNoticeType: m.system_notice_type,
+        editedAt: m.edited_at,
+        deletedAt: m.deleted_at,
+        createdAt: m.created_at,
+        senderName: `${m.users?.first_name || ''} ${m.users?.last_name || ''}`.trim(),
+        senderAvatar: m.users?.avatar_url,
+        senderRole: m.users?.role,
+        reactions: reactionsMap[m.id] || [],
+        attachments: attachmentsMap[m.id] || [],
+        pinnedBy: pinObj ? pinObj.pinned_by : undefined,
+        pinnedAt: pinObj ? pinObj.pinned_at : undefined,
+        replyToMessageId: replyObj?.replyToMessageId || null,
+        replyToSenderName: replyObj?.replyToSenderName || null,
+        replyToContent: replyObj?.replyToContent || null
+      };
+    });
+
+    return mapped.reverse();
+  },
+
+  async submitClassChatMessage(
+    schoolId: string,
+    academicSessionId: string,
+    groupId: string,
+    senderId: string,
+    content: string | null,
+    attachments: any[] = [],
+    replyToMessageId: string | null = null,
+    messageType: 'CHAT' | 'ANNOUNCEMENT' | 'SYSTEM' = 'CHAT',
+    systemNoticeType: string | null = null
+  ): Promise<any> {
+    validateSchoolId(schoolId, 'submitClassChatMessage');
+
+    // 1. Check mute status
+    const { data: member, error: memErr } = await supabaseAdmin
+      .from('class_chat_members')
+      .select('muted_until, is_permanently_muted')
+      .eq('group_id', groupId)
+      .eq('user_id', senderId)
+      .maybeSingle();
+
+    if (memErr) throw new Error('Failed to verify mute permission: ' + memErr.message);
+
+    if (member) {
+      if (member.is_permanently_muted) {
+        throw new Error('You are permanently muted in this group and cannot send messages.');
+      }
+      if (member.muted_until && new Date(member.muted_until) > new Date()) {
+        throw new Error(`You are muted in this group until ${new Date(member.muted_until).toLocaleString()}.`);
+      }
+    }
+
+    // 2. Insert message
+    const { data: dbMsg, error: msgErr } = await supabaseAdmin
+      .from('class_messages')
+      .insert({
+        school_id: schoolId,
+        academic_session_id: academicSessionId,
+        group_id: groupId,
+        sender_id: senderId,
+        content: content,
+        message_type: messageType,
+        system_notice_type: systemNoticeType
+      })
+      .select('*, users!inner(first_name, last_name, avatar_url, role)')
+      .single();
+
+    if (msgErr || !dbMsg) {
+      throw new Error('Failed to send message: ' + (msgErr?.message || 'Unknown error'));
+    }
+
+    // 3. Handle reply mapping
+    if (replyToMessageId) {
+      const { error: repErr } = await supabaseAdmin
+        .from('class_message_replies')
+        .insert({
+          school_id: schoolId,
+          academic_session_id: academicSessionId,
+          parent_message_id: replyToMessageId,
+          reply_message_id: dbMsg.id
+        });
+      if (repErr) console.error('Failed to save reply mapping:', repErr.message);
+    }
+
+    // 4. Handle attachments mapping
+    const savedAttachments: any[] = [];
+    if (attachments && attachments.length > 0) {
+      for (const att of attachments) {
+        const { data: savedAtt, error: attErr } = await supabaseAdmin
+          .from('class_message_attachments')
+          .insert({
+            school_id: schoolId,
+            academic_session_id: academicSessionId,
+            message_id: dbMsg.id,
+            file_name: att.name || att.fileName,
+            file_url: att.url || att.fileUrl,
+            file_type: att.type || att.fileType,
+            file_size: att.size || att.fileSize
+          })
+          .select()
+          .single();
+        if (attErr) {
+          console.error('Failed to map attachment:', attErr.message);
+        } else {
+          savedAttachments.push({
+            id: savedAtt.id,
+            schoolId: savedAtt.school_id,
+            academicSessionId: savedAtt.academic_session_id,
+            messageId: savedAtt.message_id,
+            fileName: savedAtt.file_name,
+            fileUrl: savedAtt.file_url,
+            fileType: savedAtt.file_type,
+            fileSize: savedAtt.file_size,
+            createdAt: savedAtt.created_at
+          });
+        }
+      }
+    }
+
+    // 5. Audit Log
+    try {
+      await supabaseAdmin.from('class_chat_audit_logs').insert({
+        school_id: schoolId,
+        academic_session_id: academicSessionId,
+        group_id: groupId,
+        user_id: senderId,
+        action: 'SEND_MESSAGE',
+        details: { messageId: dbMsg.id, attachmentCount: savedAttachments.length }
+      });
+    } catch {}
+
+    // Resolve replyTo details for instant frontend injection
+    let replyObj: any = null;
+    if (replyToMessageId) {
+      const { data: parentMsg } = await supabaseAdmin
+        .from('class_messages')
+        .select('content, users!inner(first_name, last_name)')
+        .eq('id', replyToMessageId)
+        .single();
+      if (parentMsg) {
+        const parentUser: any = Array.isArray(parentMsg.users) ? parentMsg.users[0] : parentMsg.users;
+        replyObj = {
+          replyToMessageId,
+          replyToSenderName: `${parentUser?.first_name || ''} ${parentUser?.last_name || ''}`.trim(),
+          replyToContent: parentMsg.content
+        };
+      }
+    }
+
+    return {
+      id: dbMsg.id,
+      schoolId: dbMsg.school_id,
+      academicSessionId: dbMsg.academic_session_id,
+      groupId: dbMsg.group_id,
+      senderId: dbMsg.sender_id,
+      content: dbMsg.content,
+      messageType: dbMsg.message_type,
+      systemNoticeType: dbMsg.system_notice_type,
+      editedAt: dbMsg.edited_at,
+      deletedAt: dbMsg.deleted_at,
+      createdAt: dbMsg.created_at,
+      senderName: `${dbMsg.users?.first_name || ''} ${dbMsg.users?.last_name || ''}`.trim(),
+      senderAvatar: dbMsg.users?.avatar_url,
+      senderRole: dbMsg.users?.role,
+      reactions: [],
+      attachments: savedAttachments,
+      replyToMessageId: replyObj?.replyToMessageId || null,
+      replyToSenderName: replyObj?.replyToSenderName || null,
+      replyToContent: replyObj?.replyToContent || null
+    };
+  },
+
+  async setClassMessageReaction(
+    schoolId: string,
+    academicSessionId: string,
+    messageId: string,
+    userId: string,
+    reaction: string,
+    remove = false
+  ): Promise<void> {
+    validateSchoolId(schoolId, 'setClassMessageReaction');
+    if (remove) {
+      const { error } = await supabaseAdmin
+        .from('class_message_reactions')
+        .delete()
+        .eq('message_id', messageId)
+        .eq('user_id', userId)
+        .eq('reaction', reaction);
+      if (error) throw new Error('Failed to delete reaction: ' + error.message);
+    } else {
+      const { error } = await supabaseAdmin
+        .from('class_message_reactions')
+        .upsert({
+          school_id: schoolId,
+          academic_session_id: academicSessionId,
+          message_id: messageId,
+          user_id: userId,
+          reaction: reaction
+        }, { onConflict: 'message_id,user_id,reaction' });
+      if (error) throw new Error('Failed to save reaction: ' + error.message);
+    }
+  },
+
+  async setClassPinnedMessage(
+    schoolId: string,
+    academicSessionId: string,
+    groupId: string,
+    messageId: string,
+    pinnedBy: string,
+    pin = true
+  ): Promise<void> {
+    validateSchoolId(schoolId, 'setClassPinnedMessage');
+    
+    // Get sender profile for notice
+    const { data: userProfile } = await supabaseAdmin
+      .from('users')
+      .select('first_name, last_name')
+      .eq('id', pinnedBy)
+      .single();
+    
+    const userName = `${userProfile?.first_name || ''} ${userProfile?.last_name || ''}`.trim();
+
+    if (pin) {
+      const { error } = await supabaseAdmin
+        .from('class_pinned_messages')
+        .upsert({
+          school_id: schoolId,
+          academic_session_id: academicSessionId,
+          group_id: groupId,
+          message_id: messageId,
+          pinned_by: pinnedBy
+        }, { onConflict: 'message_id' });
+      if (error) throw new Error('Failed to pin message: ' + error.message);
+
+      // Create a system message notice in the group
+      await this.submitClassChatMessage(
+        schoolId,
+        academicSessionId,
+        groupId,
+        pinnedBy,
+        `pinned a message.`,
+        [],
+        null,
+        'SYSTEM',
+        'NOTICE'
+      );
+    } else {
+      const { error } = await supabaseAdmin
+        .from('class_pinned_messages')
+        .delete()
+        .eq('message_id', messageId);
+      if (error) throw new Error('Failed to unpin message: ' + error.message);
+    }
+  },
+
+  async setClassAnnouncement(
+    schoolId: string,
+    academicSessionId: string,
+    groupId: string,
+    messageId: string,
+    title: string
+  ): Promise<void> {
+    validateSchoolId(schoolId, 'setClassAnnouncement');
+    const { error } = await supabaseAdmin
+      .from('class_announcements')
+      .upsert({
+        school_id: schoolId,
+        academic_session_id: academicSessionId,
+        group_id: groupId,
+        message_id: messageId,
+        title: title
+      }, { onConflict: 'message_id' });
+
+    if (error) throw new Error('Failed to set announcement: ' + error.message);
+  },
+
+  async deleteClassChatMessage(schoolId: string, academicSessionId: string, messageId: string, userId: string, role: string): Promise<void> {
+    validateSchoolId(schoolId, 'deleteClassChatMessage');
+
+    // Fetch message sender
+    const { data: msg } = await supabaseAdmin
+      .from('class_messages')
+      .select('sender_id, group_id')
+      .eq('id', messageId)
+      .single();
+
+    if (!msg) throw new Error('Message not found.');
+
+    const isAuthorized = msg.sender_id === userId || ['ADMIN', 'TEACHER', 'CLASS_TEACHER', 'ACADEMIC_ADMIN', 'SUPER_ADMIN'].includes(role);
+    if (!isAuthorized) throw new Error('Not authorized to delete this message.');
+
+    const { error } = await supabaseAdmin
+      .from('class_messages')
+      .update({ deleted_at: new Date().toISOString() })
+      .eq('id', messageId);
+
+    if (error) throw new Error('Failed to delete message: ' + error.message);
+
+    // Audit log
+    try {
+      await supabaseAdmin.from('class_chat_audit_logs').insert({
+        school_id: schoolId,
+        academic_session_id: academicSessionId,
+        group_id: msg.group_id,
+        user_id: userId,
+        action: 'DELETE_MESSAGE',
+        details: { messageId }
+      });
+    } catch {}
+  },
+
+  async muteStudentInClassGroup(
+    schoolId: string,
+    academicSessionId: string,
+    groupId: string,
+    studentUserId: string,
+    muteMinutes: number,
+    permanent = false
+  ): Promise<void> {
+    validateSchoolId(schoolId, 'muteStudentInClassGroup');
+
+    const mutedUntil = permanent ? null : new Date(Date.now() + muteMinutes * 60 * 1000).toISOString();
+
+    const { error } = await supabaseAdmin
+      .from('class_chat_members')
+      .update({
+        muted_until: mutedUntil,
+        is_permanently_muted: permanent
+      })
+      .eq('group_id', groupId)
+      .eq('user_id', studentUserId);
+
+    if (error) throw new Error('Failed to mute student: ' + error.message);
+
+    // Audit log
+    try {
+      await supabaseAdmin.from('class_chat_audit_logs').insert({
+        school_id: schoolId,
+        academic_session_id: academicSessionId,
+        group_id: groupId,
+        user_id: studentUserId,
+        action: permanent ? 'PERMANENT_MUTE' : 'MUTE',
+        details: { muteMinutes }
+      });
+    } catch {}
+  },
+
+  async postGroupDiscussionSystemNotice(
+    schoolId: string,
+    academicSessionId: string,
+    classId: string,
+    noticeType: 'HOMEWORK' | 'ASSIGNMENT' | 'EXAM' | 'TIMETABLE' | 'NOTICE',
+    title: string,
+    actorUserId: string
+  ): Promise<void> {
+    try {
+      const { data: group } = await supabaseAdmin
+        .from('class_chat_groups')
+        .select('id')
+        .eq('school_id', schoolId)
+        .eq('academic_session_id', academicSessionId)
+        .eq('class_id', classId)
+        .eq('is_archived', false)
+        .maybeSingle();
+
+      if (group) {
+        let content = '';
+        if (noticeType === 'HOMEWORK') {
+          content = `New Homework assigned: "${title}"`;
+        } else if (noticeType === 'ASSIGNMENT') {
+          content = `New Assignment assigned: "${title}"`;
+        } else if (noticeType === 'EXAM') {
+          content = `New Exam Schedule published: "${title}"`;
+        } else if (noticeType === 'TIMETABLE') {
+          content = `Timetable updated: "${title}"`;
+        } else if (noticeType === 'NOTICE') {
+          content = `New Announcement notice: "${title}"`;
+        }
+
+        await supabaseAdmin
+          .from('class_messages')
+          .insert({
+            school_id: schoolId,
+            academic_session_id: academicSessionId,
+            group_id: group.id,
+            sender_id: actorUserId,
+            content: content,
+            message_type: 'SYSTEM',
+            system_notice_type: noticeType
+          });
+      }
+    } catch (err) {
+      console.error('Failed to post group discussion system notice:', err);
+    }
+  },
+
+  async exportClassDiscussionHistory(schoolId: string, academicSessionId: string, groupId: string): Promise<string> {
+    validateSchoolId(schoolId, 'exportClassDiscussionHistory');
+    const messages = await this.getClassMessages(schoolId, academicSessionId, groupId, 2000, 0);
+    
+    // Generate CSV content
+    const headers = ['Date', 'Sender', 'Role', 'Message', 'Message Type', 'Notice Type', 'Attachments'];
+    const rows = messages.map((m: any) => {
+      const date = new Date(m.createdAt).toLocaleString();
+      const sender = m.senderName;
+      const role = m.senderRole || '';
+      const content = (m.content || '').replace(/"/g, '""');
+      const msgType = m.messageType;
+      const noticeType = m.systemNoticeType || '';
+      const attachments = (m.attachments || []).map((a: any) => a.fileUrl).join(' | ');
+      return [
+        `"${date}"`,
+        `"${sender}"`,
+        `"${role}"`,
+        `"${content}"`,
+        `"${msgType}"`,
+        `"${noticeType}"`,
+        `"${attachments}"`
+      ];
+    });
+
+    const csvContent = [headers.join(','), ...rows.map(r => r.join(','))].join('\n');
+    return csvContent;
+  },
+
 
   async getForumCategories(schoolId?: string): Promise<ForumCategory[]> {
     await delay();
