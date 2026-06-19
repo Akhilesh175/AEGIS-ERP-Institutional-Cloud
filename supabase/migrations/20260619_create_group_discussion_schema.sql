@@ -174,6 +174,23 @@ RETURNS BOOLEAN AS $$
   );
 $$ LANGUAGE sql SECURITY DEFINER SET search_path = public;
 
+-- Drop existing policies to make the migration idempotent
+DROP POLICY IF EXISTS "class_chat_groups_select" ON public.class_chat_groups;
+DROP POLICY IF EXISTS "class_chat_groups_all_admin" ON public.class_chat_groups;
+DROP POLICY IF EXISTS "class_chat_members_select" ON public.class_chat_members;
+DROP POLICY IF EXISTS "class_chat_members_write_admin" ON public.class_chat_members;
+DROP POLICY IF EXISTS "class_messages_select" ON public.class_messages;
+DROP POLICY IF EXISTS "class_messages_insert" ON public.class_messages;
+DROP POLICY IF EXISTS "class_messages_update" ON public.class_messages;
+DROP POLICY IF EXISTS "reactions_all" ON public.class_message_reactions;
+DROP POLICY IF EXISTS "replies_all" ON public.class_message_replies;
+DROP POLICY IF EXISTS "attachments_all" ON public.class_message_attachments;
+DROP POLICY IF EXISTS "pinned_all" ON public.class_pinned_messages;
+DROP POLICY IF EXISTS "announcements_all" ON public.class_announcements;
+DROP POLICY IF EXISTS "audit_logs_select" ON public.class_chat_audit_logs;
+DROP POLICY IF EXISTS "typing_status_all" ON public.class_typing_status;
+DROP POLICY IF EXISTS "online_presence_all" ON public.class_online_presence;
+
 -- RLS POLICIES FOR CLASS CHAT GROUPS
 CREATE POLICY "class_chat_groups_select" ON public.class_chat_groups
   FOR SELECT USING (
