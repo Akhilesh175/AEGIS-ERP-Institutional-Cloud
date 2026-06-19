@@ -71,12 +71,24 @@ export default async function handler(req: any, res: any) {
       return res.status(500).json({ error: 'Failed to update credentials. Please try again.' });
     }
 
-    // 4. Log successful change in password_reset_logs
+    // 4. Log successful change in password_reset_logs and role_changes
     const { error: logError } = await supabaseAdmin.from('password_reset_logs').insert({
       user_id: user.id,
       email: user.email,
       action: 'PASSWORD_CHANGE_SUCCESS',
       ip_address: ipAddress
+    });
+
+    const { data: userProfile } = await supabaseAdmin.from('users').select('school_id').eq('id', user.id).single();
+    await supabaseAdmin.from('role_changes').insert({
+      event_type: 'PASSWORD_RESET',
+      user_id: user.id,
+      school_id: userProfile?.school_id || null,
+      old_value: 'PASSWORD_CHANGED',
+      new_value: 'SUCCESS',
+      changed_by: user.id,
+      ip_address: ipAddress || '127.0.0.1',
+      device_id: 'api'
     });
 
     if (logError) {

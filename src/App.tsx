@@ -65,6 +65,152 @@ import { MarksheetVerificationPage } from './components/MarksheetVerificationPag
 import { HelpSupportPage } from './components/HelpSupportPage';
 import { SaaSAuthFlow } from './components/SaaSAuthFlow';
 
+const RoleSelectorOverlay: React.FC<{
+  session: any;
+  setSession: (session: any) => void;
+  theme: string;
+  toggleTheme: () => void;
+}> = ({ session, setSession, theme, toggleTheme }) => {
+  const { switchActiveRole } = useStore();
+  const [selectedRole, setSelectedRole] = useState(session.user.role || session.user.roles?.[0] || 'TEACHER');
+  const [loading, setLoading] = useState(false);
+  const [schoolName, setSchoolName] = useState('Aegis Academy');
+
+  useEffect(() => {
+    if (session.user.schoolId) {
+      import('./services/mockDb').then(({ mockDb }) => {
+        const sch = mockDb.schools.find(s => s.id === session.user.schoolId);
+        if (sch) setSchoolName(sch.name);
+      });
+    }
+  }, [session.user.schoolId]);
+
+  const handleContinue = async () => {
+    try {
+      setLoading(true);
+      await switchActiveRole(selectedRole);
+      const updatedUser = {
+        ...session.user,
+        role: selectedRole,
+        activeRoleSelected: true
+      };
+      const updatedSession = { ...session, user: updatedUser };
+      setSession(updatedSession);
+      localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+    } catch (err) {
+      console.error(err);
+      alert('Failed to select role. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const getRoleLabel = (r: string) => {
+    if (r === 'ADMIN') return 'School Admin';
+    if (r === 'CLASS_TEACHER') return 'Class Teacher';
+    if (r === 'SPORTS_ADMIN') return 'Sports Admin';
+    return r.charAt(0) + r.slice(1).toLowerCase().replace('_', ' ');
+  };
+
+  const getRolePermissions = (r: string) => {
+    switch (r) {
+      case 'SUPER_ADMIN': return 'Global Auditing, SaaS Tenants, Platform Management';
+      case 'ADMIN': return 'Full School Registry, Directories, RBAC, Backups';
+      case 'TEACHER': return 'Class Roster, Attendance Roll, Gradebook, Homework';
+      case 'CLASS_TEACHER': return 'Homeroom Assignment, Report Cards, Parent Comms';
+      case 'COACH': return 'Biometric Check-in, Athletes, Team Training';
+      case 'SPORTS_ADMIN': return 'Manage Coaches & Teams, Training, Equipment Expenses';
+      case 'FINANCE_ADMIN': return 'Payroll, Salary Processing, Invoices, Budget Allocations';
+      case 'ACADEMIC_ADMIN': return 'Classes, Subjects, Timetable Scheduling, Roster';
+      default: return 'Modular Portal View Permissions';
+    }
+  };
+
+  const lastLoginFormatted = session.user.lastLoginAt 
+    ? new Date(session.user.lastLoginAt).toLocaleString() 
+    : new Date().toLocaleString();
+
+  return (
+    <div className="min-h-screen bg-[#070a13] flex flex-col justify-center items-center p-4 relative overflow-hidden font-sans text-slate-200">
+      <div className="absolute top-[-20%] left-[-15%] w-[60%] h-[60%] rounded-full bg-brand-500/10 blur-[130px] pointer-events-none" />
+      <div className="absolute bottom-[-20%] right-[-15%] w-[60%] h-[60%] rounded-full bg-brand-600/10 blur-[130px] pointer-events-none" />
+
+      <GlassCard className="max-w-xl w-full p-8 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-2xl relative overflow-hidden group">
+        <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-brand-600 via-brand-400 to-brand-600 opacity-80" />
+        
+        <div className="space-y-6">
+          <div className="text-center">
+            <h2 className="text-xl font-extrabold text-white tracking-wide">Select Portal Context</h2>
+            <p className="text-xs text-slate-400 mt-1">Choose the active role to load your workspace dashboard.</p>
+          </div>
+
+          <div className="space-y-3">
+            {session.user.roles?.map((roleItem: string) => {
+              const isSelected = selectedRole === roleItem;
+              return (
+                <div
+                  key={roleItem}
+                  onClick={() => setSelectedRole(roleItem)}
+                  className={`p-4 rounded-xl border cursor-pointer transition-all duration-200 flex items-center justify-between gap-4 ${
+                    isSelected 
+                      ? 'bg-brand-600/10 border-brand-500/50 shadow-md shadow-brand-500/5' 
+                      : 'bg-slate-900/40 border-slate-850 hover:bg-[#0a0e1a] hover:border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3 font-sans">
+                    <div className={`w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                      isSelected ? 'border-brand-400' : 'border-slate-650'
+                    }`}>
+                      {isSelected && <div className="w-2 h-2 rounded-full bg-brand-400" />}
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-xs text-slate-200">{getRoleLabel(roleItem)}</h4>
+                      <p className="text-[10px] text-slate-400 mt-0.5">{getRolePermissions(roleItem)}</p>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+
+          <div className="pt-4 border-t border-slate-850/60 text-[10px] text-slate-400 space-y-1.5 font-mono">
+            <div className="flex justify-between">
+              <span>School:</span>
+              <span className="text-slate-200 font-semibold">{schoolName}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Security Access:</span>
+              <span className="text-brand-400">{getRolePermissions(selectedRole).split(',')[0]}</span>
+            </div>
+            <div className="flex justify-between">
+              <span>Last Login:</span>
+              <span className="text-slate-350">{lastLoginFormatted}</span>
+            </div>
+          </div>
+
+          <button
+            onClick={handleContinue}
+            disabled={loading}
+            className="w-full bg-gradient-to-r from-brand-600 via-brand-500 to-brand-600 hover:from-brand-500 hover:to-brand-400 text-white font-bold text-xs py-3 rounded-xl transition-all shadow-lg shadow-brand-500/10 hover:shadow-brand-500/25 disabled:opacity-40 disabled:pointer-events-none active:scale-[0.98] flex items-center justify-center gap-2 border border-brand-400/20"
+          >
+            {loading ? (
+              <span className="flex items-center gap-2">
+                <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
+                Initializing Workspace Context...
+              </span>
+            ) : (
+              <>
+                <span>Continue to Dashboard</span>
+                <ChevronRight size={14} />
+              </>
+            )}
+          </button>
+        </div>
+      </GlassCard>
+    </div>
+  );
+};
+
 export const App: React.FC = () => {
   const { session, theme, toggleTheme, setSession, initializeStore } = useStore();
   
@@ -1060,6 +1206,17 @@ export const App: React.FC = () => {
         </div>
 
       </div>
+    );
+  }
+
+  if (session && !session.user.activeRoleSelected) {
+    return (
+      <RoleSelectorOverlay 
+        session={session} 
+        setSession={setSession} 
+        theme={theme} 
+        toggleTheme={toggleTheme} 
+      />
     );
   }
 

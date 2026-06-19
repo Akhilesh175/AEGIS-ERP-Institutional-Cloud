@@ -1,6 +1,6 @@
 // --- CORE ENUMS ---
 
-export type UserRole = 'STUDENT' | 'PARENT' | 'TEACHER' | 'ADMIN' | 'SUPER_ADMIN' | 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN' | 'SPORTS_ADMIN' | 'CUSTOM_SUB_ADMIN' | 'DRIVER';
+export type UserRole = 'STUDENT' | 'PARENT' | 'TEACHER' | 'ADMIN' | 'SUPER_ADMIN' | 'FINANCE_ADMIN' | 'ACADEMIC_ADMIN' | 'EXAM_CONTROLLER' | 'LIBRARIAN' | 'TRANSPORT_MANAGER' | 'HOSTEL_ADMIN' | 'WARDEN' | 'SPORTS_ADMIN' | 'CUSTOM_SUB_ADMIN' | 'DRIVER' | 'COACH' | 'CLASS_TEACHER';
 
 export type GenderType = 'MALE' | 'FEMALE' | 'OTHER';
 
@@ -31,6 +31,8 @@ export interface User {
   sessionStatus?: string;
   deactivatedAt?: string;
   deactivatedBy?: string;
+  roles?: string[];
+  activeRoleSelected?: boolean;
 }
 
 export interface Role {

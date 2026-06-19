@@ -3103,9 +3103,11 @@ export const SportsManagement: React.FC = () => {
                 { id: 'enrollment', label: 'Sports Participation Report', desc: 'Active student registry per sports and format categories.' },
                 { id: 'attendance', label: 'Daily Coach Attendance Report', desc: 'Hour checkout sessions and daily roster checks.' },
                 { id: 'leaves', label: 'Coach Leaves Report', desc: 'Log book requests for leave or duty allocations.' },
-                { id: 'payroll', label: 'Salary Impact & Payroll Report', desc: 'Base salary calculations incorporating deductions/bonus.' },
-                { id: 'equipment', label: 'Equipment Expenses Report', desc: 'Checkout inventory and procurement purchase orders.' },
-                { id: 'revenue', label: 'Financial Revenue ledger', desc: 'Central sports registry income transaction audits.' }
+                ...(portalRole !== 'SPORTS_ADMIN' ? [
+                  { id: 'payroll', label: 'Salary Impact & Payroll Report', desc: 'Base salary calculations incorporating deductions/bonus.' },
+                  { id: 'revenue', label: 'Financial Revenue ledger', desc: 'Central sports registry income transaction audits.' }
+                ] : []),
+                { id: 'equipment', label: 'Equipment Expenses Report', desc: 'Checkout inventory and procurement purchase orders.' }
               ].map(rep => (
                 <div key={rep.id} className="p-5 bg-slate-900/60 border border-slate-850 rounded-2xl flex flex-col justify-between gap-3">
                   <div>

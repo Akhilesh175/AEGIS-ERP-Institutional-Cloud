@@ -1487,9 +1487,33 @@ export const mockApi = {
       throw new Error('Access Denied: Unauthorized account.');
     }
 
-    if (userProfile.is_active === false) {
+    // Fetch all active roles from user_roles
+    let { data: dbRoles } = await supabaseAdmin
+      .from('user_roles')
+      .select('role_code')
+      .eq('user_id', userProfile.id)
+      .eq('status', 'ACTIVE');
+
+    let activeRoles = (dbRoles || []).map(r => r.role_code);
+    if (activeRoles.length === 0 && userProfile.role) {
+      // Self-heal/backfill role to user_roles
+      const { error: insErr } = await supabaseAdmin
+        .from('user_roles')
+        .insert({
+          user_id: userProfile.id,
+          school_id: userProfile.school_id,
+          role_code: userProfile.role,
+          status: 'ACTIVE'
+        });
+      
+      if (!insErr) {
+        activeRoles = [userProfile.role];
+      }
+    }
+
+    if (userProfile.is_active === false || activeRoles.length === 0) {
       mockDb.addLog(userProfile.id, 'LOGIN_BLOCKED', { email });
-      throw new Error('Your account has been deactivated. Please contact your school administrator.');
+      throw new Error('Your account or assigned roles have been deactivated. Please contact your school administrator.');
     }
 
     const activeSessionId = userProfile.school_id
@@ -1509,7 +1533,9 @@ export const mockApi = {
       schoolId: userProfile.school_id,
       academicSessionId: activeSessionId,
       createdAt: userProfile.created_at || new Date().toISOString(),
-      updatedAt: userProfile.created_at || new Date().toISOString()
+      updatedAt: userProfile.created_at || new Date().toISOString(),
+      roles: activeRoles,
+      activeRoleSelected: activeRoles.length <= 1
     };
 
     // Determine sub-entity IDs from Supabase database tables directly on login
@@ -6134,6 +6160,27 @@ export const mockApi = {
       throw new Error('Failed to create teacher record: ' + (teacherErr?.message || 'Unknown error'));
     }
 
+    // Insert into user_roles table
+    await supabaseAdmin.from('user_roles').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      role_code: 'TEACHER',
+      status: 'ACTIVE',
+      assigned_by: adminId
+    });
+
+    // Log the audit event for role changes
+    await supabaseAdmin.from('role_changes').insert({
+      event_type: 'ROLE_CREATED',
+      user_id: newUserId,
+      school_id: schoolId,
+      old_value: null,
+      new_value: 'TEACHER',
+      changed_by: adminId,
+      ip_address: '127.0.0.1',
+      device_id: 'browser'
+    });
+
     // Sync to local mockDb cache
     const user: User = {
       id: newUserId, email: normalizedEmail, role: 'TEACHER', firstName, lastName,
@@ -6327,6 +6374,27 @@ export const mockApi = {
       await supabaseAdmin.auth.admin.deleteUser(newUserId);
       throw new Error('Failed to create user database profile: ' + dbError.message);
     }
+
+    // Insert into user_roles table
+    await supabaseAdmin.from('user_roles').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      role_code: role,
+      status: 'ACTIVE',
+      assigned_by: adminId
+    });
+
+    // Log the audit event for role changes
+    await supabaseAdmin.from('role_changes').insert({
+      event_type: 'ROLE_CREATED',
+      user_id: newUserId,
+      school_id: schoolId,
+      old_value: null,
+      new_value: role,
+      changed_by: adminId,
+      ip_address: '127.0.0.1',
+      device_id: 'browser'
+    });
 
     // Dynamically insert into matching dedicated sub-admin table with employee_id
     let dedicatedTable = '';
@@ -18574,6 +18642,27 @@ export const mockApi = {
       throw saError;
     }
 
+    // Insert 'SPORTS_ADMIN' role into user_roles
+    await supabaseAdmin.from('user_roles').insert({
+      user_id: newUserId,
+      school_id: schoolId,
+      role_code: 'SPORTS_ADMIN',
+      status: 'ACTIVE',
+      assigned_by: adminId
+    });
+
+    // Log the audit event for role changes
+    await supabaseAdmin.from('role_changes').insert({
+      event_type: 'ROLE_CREATED',
+      user_id: newUserId,
+      school_id: schoolId,
+      old_value: null,
+      new_value: 'SPORTS_ADMIN',
+      changed_by: adminId,
+      ip_address: '127.0.0.1',
+      device_id: 'browser'
+    });
+
     await this.logSportsActivity(schoolId, adminId, 'ADMIN', 'CREATE_SPORTS_ADMIN', `Created Sports Admin ${firstName} ${lastName}`, undefined, undefined, { sportsAdminId: sportsAdmin.id });
     return sportsAdmin;
   },
@@ -18630,7 +18719,55 @@ export const mockApi = {
     
     if (error) throw error;
 
-    await supabaseAdmin.from('users').update({ is_active: isActive }).eq('id', currentAdmin.user_id);
+    // Check if the SPORTS_ADMIN role exists in user_roles
+    const { data: existingRole } = await supabaseAdmin
+      .from('user_roles')
+      .select('id')
+      .eq('user_id', currentAdmin.user_id)
+      .eq('role_code', 'SPORTS_ADMIN')
+      .maybeSingle();
+
+    if (existingRole) {
+      await supabaseAdmin
+        .from('user_roles')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('user_id', currentAdmin.user_id)
+        .eq('role_code', 'SPORTS_ADMIN');
+    } else {
+      await supabaseAdmin
+        .from('user_roles')
+        .insert({
+          user_id: currentAdmin.user_id,
+          school_id: admin.school_id,
+          role_code: 'SPORTS_ADMIN',
+          status: status,
+          assigned_by: adminId
+        });
+    }
+
+    // Log in role_changes audit table
+    await supabaseAdmin.from('role_changes').insert({
+      event_type: status === 'ACTIVE' ? 'ROLE_REACTIVATED' : 'ROLE_DEACTIVATED',
+      user_id: currentAdmin.user_id,
+      school_id: admin.school_id,
+      old_value: status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      new_value: status,
+      changed_by: adminId,
+      ip_address: '127.0.0.1',
+      device_id: 'browser'
+    });
+
+    // Check remaining active roles
+    const { data: activeRoles } = await supabaseAdmin
+      .from('user_roles')
+      .select('role_code')
+      .eq('user_id', currentAdmin.user_id)
+      .eq('status', 'ACTIVE');
+
+    const activeCount = activeRoles?.length || 0;
+    const userIsActive = activeCount > 0;
+
+    await supabaseAdmin.from('users').update({ is_active: userIsActive }).eq('id', currentAdmin.user_id);
     
     await this.logSportsActivity(admin.school_id, adminId, 'ADMIN', isActive ? 'ACTIVATE_SPORTS_ADMIN' : 'DEACTIVATE_SPORTS_ADMIN', `${isActive ? 'Activated' : 'Deactivated'} Sports Admin ${currentAdmin.full_name}`, undefined, undefined, { sportsAdminId });
     return data;
@@ -18704,6 +18841,27 @@ export const mockApi = {
     
     if (error) throw error;
 
+    // Insert 'COACH' role into user_roles
+    await supabaseAdmin.from('user_roles').insert({
+      user_id: newUserId,
+      school_id: user.school_id,
+      role_code: 'COACH',
+      status: 'ACTIVE',
+      assigned_by: adminId
+    });
+
+    // Log the audit event for role changes
+    await supabaseAdmin.from('role_changes').insert({
+      event_type: 'ROLE_CREATED',
+      user_id: newUserId,
+      school_id: user.school_id,
+      old_value: null,
+      new_value: 'COACH',
+      changed_by: adminId,
+      ip_address: '127.0.0.1',
+      device_id: 'browser'
+    });
+
     await this.logSportsActivity(user.school_id, adminId, user.role, 'CREATE_COACH', `Added coach ${coach.name}`, undefined, undefined, { coachId: data.id });
     return data;
   },
@@ -18760,10 +18918,192 @@ export const mockApi = {
     
     if (error) throw error;
 
-    await supabaseAdmin.from('users').update({ is_active: isActive }).eq('id', data.user_id);
+    // Check if the COACH role exists in user_roles
+    const { data: existingRole } = await supabaseAdmin
+      .from('user_roles')
+      .select('id')
+      .eq('user_id', data.user_id)
+      .eq('role_code', 'COACH')
+      .maybeSingle();
+
+    if (existingRole) {
+      await supabaseAdmin
+        .from('user_roles')
+        .update({ status, updated_at: new Date().toISOString() })
+        .eq('user_id', data.user_id)
+        .eq('role_code', 'COACH');
+    } else {
+      await supabaseAdmin
+        .from('user_roles')
+        .insert({
+          user_id: data.user_id,
+          school_id: user.school_id,
+          role_code: 'COACH',
+          status: status,
+          assigned_by: adminId
+        });
+    }
+
+    // Log in role_changes audit table
+    await supabaseAdmin.from('role_changes').insert({
+      event_type: status === 'ACTIVE' ? 'ROLE_REACTIVATED' : 'ROLE_DEACTIVATED',
+      user_id: data.user_id,
+      school_id: user.school_id,
+      old_value: status === 'ACTIVE' ? 'INACTIVE' : 'ACTIVE',
+      new_value: status,
+      changed_by: adminId,
+      ip_address: '127.0.0.1',
+      device_id: 'browser'
+    });
+
+    // Check remaining active roles
+    const { data: activeRoles } = await supabaseAdmin
+      .from('user_roles')
+      .select('role_code')
+      .eq('user_id', data.user_id)
+      .eq('status', 'ACTIVE');
+
+    const activeCount = activeRoles?.length || 0;
+    const userIsActive = activeCount > 0;
+
+    await supabaseAdmin.from('users').update({ is_active: userIsActive }).eq('id', data.user_id);
 
     await this.logSportsActivity(user.school_id, adminId, user.role, isActive ? 'ACTIVATE_COACH' : 'DEACTIVATE_COACH', `${isActive ? 'Activated' : 'Deactivated'} coach`, undefined, undefined, { coachId });
     return data;
+  },
+
+  async switchActiveRole(userId: string, schoolId: string, roleCode: UserRole): Promise<void> {
+    const { data: userProfile } = await supabaseAdmin.from('users').select('role').eq('id', userId).single();
+    const oldRole = userProfile?.role || null;
+
+    // Update users.role to new role (caching the session active role for RLS)
+    await supabaseAdmin
+      .from('users')
+      .update({ role: roleCode })
+      .eq('id', userId);
+
+    // Log event in role_changes audit table
+    await supabaseAdmin
+      .from('role_changes')
+      .insert({
+        event_type: 'ROLE_SWITCHED',
+        user_id: userId,
+        school_id: schoolId || null,
+        old_value: oldRole,
+        new_value: roleCode,
+        changed_by: userId,
+        ip_address: '127.0.0.1',
+        device_id: 'browser'
+      });
+
+    // Update local mockDb user cache
+    const localUserIdx = mockDb.users.findIndex(u => u.id === userId);
+    if (localUserIdx !== -1) {
+      mockDb.users[localUserIdx].role = roleCode;
+      mockDb.saveAll();
+    }
+  },
+
+  async assignUserRole(adminId: string, targetUserId: string, roleCode: UserRole): Promise<void> {
+    const { data: admin } = await supabaseAdmin.from('users').select('school_id, role').eq('id', adminId).single();
+    if (!admin || !['ADMIN', 'SUPER_ADMIN'].includes(admin.role)) throw new Error('Unauthorized');
+
+    const { data: targetUser } = await supabaseAdmin.from('users').select('school_id').eq('id', targetUserId).single();
+    if (!targetUser || (admin.role !== 'SUPER_ADMIN' && targetUser.school_id !== admin.school_id)) {
+      throw new Error('Access Denied: Target user belongs to a different school.');
+    }
+
+    const { data: existingRole } = await supabaseAdmin
+      .from('user_roles')
+      .select('*')
+      .eq('user_id', targetUserId)
+      .eq('role_code', roleCode)
+      .maybeSingle();
+
+    if (existingRole) {
+      if (existingRole.status === 'ACTIVE') {
+        throw new Error('User already has this role active.');
+      }
+      await supabaseAdmin
+        .from('user_roles')
+        .update({ status: 'ACTIVE', updated_at: new Date().toISOString() })
+        .eq('id', existingRole.id);
+
+      await supabaseAdmin.from('role_changes').insert({
+        event_type: 'ROLE_REACTIVATED',
+        user_id: targetUserId,
+        school_id: targetUser.school_id,
+        old_value: 'INACTIVE',
+        new_value: 'ACTIVE',
+        changed_by: adminId,
+        ip_address: '127.0.0.1',
+        device_id: 'browser'
+      });
+    } else {
+      await supabaseAdmin
+        .from('user_roles')
+        .insert({
+          user_id: targetUserId,
+          school_id: targetUser.school_id,
+          role_code: roleCode,
+          status: 'ACTIVE',
+          assigned_by: adminId
+        });
+
+      await supabaseAdmin.from('role_changes').insert({
+        event_type: 'ROLE_CREATED',
+        user_id: targetUserId,
+        school_id: targetUser.school_id,
+        old_value: null,
+        new_value: roleCode,
+        changed_by: adminId,
+        ip_address: '127.0.0.1',
+        device_id: 'browser'
+      });
+    }
+
+    await supabaseAdmin.from('users').update({ is_active: true }).eq('id', targetUserId);
+  },
+
+  async removeUserRole(adminId: string, targetUserId: string, roleCode: UserRole): Promise<void> {
+    const { data: admin } = await supabaseAdmin.from('users').select('school_id, role').eq('id', adminId).single();
+    if (!admin || !['ADMIN', 'SUPER_ADMIN'].includes(admin.role)) throw new Error('Unauthorized');
+
+    const { data: targetUser } = await supabaseAdmin.from('users').select('school_id').eq('id', targetUserId).single();
+    if (!targetUser || (admin.role !== 'SUPER_ADMIN' && targetUser.school_id !== admin.school_id)) {
+      throw new Error('Access Denied: Target user belongs to a different school.');
+    }
+
+    await supabaseAdmin
+      .from('user_roles')
+      .delete()
+      .eq('user_id', targetUserId)
+      .eq('role_code', roleCode);
+
+    await supabaseAdmin.from('role_changes').insert({
+      event_type: 'ROLE_REMOVED',
+      user_id: targetUserId,
+      school_id: targetUser.school_id,
+      old_value: roleCode,
+      new_value: null,
+      changed_by: adminId,
+      ip_address: '127.0.0.1',
+      device_id: 'browser'
+    });
+
+    const { data: activeRoles } = await supabaseAdmin
+      .from('user_roles')
+      .select('role_code')
+      .eq('user_id', targetUserId)
+      .eq('status', 'ACTIVE');
+
+    const activeCount = activeRoles?.length || 0;
+    if (activeCount === 0) {
+      await supabaseAdmin.from('users').update({ is_active: false }).eq('id', targetUserId);
+    } else if (activeRoles && activeRoles.length > 0) {
+      const remainingRole = activeRoles[0].role_code;
+      await supabaseAdmin.from('users').update({ role: remainingRole }).eq('id', targetUserId);
+    }
   },
 
   async fetchBudgets(schoolId: string, academicSessionId: string): Promise<any[]> {

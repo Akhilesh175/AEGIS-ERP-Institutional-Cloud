@@ -77,12 +77,24 @@ export default async function handler(req: any, res: any) {
       return res.status(500).json({ error: 'Failed to securely update authorization credentials: ' + authError.message });
     }
 
-    // 4. Log reset success
+    // 4. Log reset success and role_changes
     await supabaseAdmin.from('password_reset_logs').insert({
       user_id: user.id,
       email: normalizedEmail,
       action: 'PASSWORD_RESET_SUCCESS',
       ip_address: ipAddress
+    });
+
+    const { data: userProfile } = await supabaseAdmin.from('users').select('school_id').eq('id', user.id).single();
+    await supabaseAdmin.from('role_changes').insert({
+      event_type: 'PASSWORD_RESET',
+      user_id: user.id,
+      school_id: userProfile?.school_id || null,
+      old_value: 'PASSWORD_RESET_FLOW',
+      new_value: 'SUCCESS',
+      changed_by: user.id,
+      ip_address: ipAddress || '127.0.0.1',
+      device_id: 'api'
     });
 
     // 5. Invalidate the OTP session entirely to prevent replay attacks

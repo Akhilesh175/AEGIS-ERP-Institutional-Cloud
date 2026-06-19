@@ -17,6 +17,7 @@ interface SchoolERPStore {
   initializeStore: () => void;
   syncSubscriptionPlan: () => Promise<void>;
   syncUserSession: () => Promise<void>;
+  switchActiveRole: (newRole: string) => Promise<void>;
 }
 
 export const useStore = create<SchoolERPStore>((set, get) => ({
@@ -236,6 +237,56 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
       }
     } catch (e) {
       console.error('Error in syncUserSession:', e);
+    }
+  },
+
+  switchActiveRole: async (newRole: string) => {
+    const currentSession = get().session;
+    if (!currentSession) return;
+    
+    try {
+      const { mockApi } = await import('../services/mockApi');
+      const { supabase } = await import('../lib/supabase');
+      
+      // Update session's active role on server (updates users.role in database to cache RLS)
+      await mockApi.switchActiveRole(currentSession.user.id, currentSession.user.schoolId || '', newRole as any);
+
+      // Resolve sub-entity IDs for student, teacher, or parent if the target role requires it
+      let studentId = currentSession.studentId;
+      let teacherId = currentSession.teacherId;
+      let parentId = currentSession.parentId;
+
+      if (newRole === 'STUDENT' && !studentId) {
+        const { data: st } = await supabase.from('students').select('id').eq('user_id', currentSession.user.id).maybeSingle();
+        studentId = st?.id;
+      } else if (newRole === 'TEACHER' && !teacherId) {
+        const { data: tc } = await supabase.from('teachers').select('id').eq('user_id', currentSession.user.id).maybeSingle();
+        teacherId = tc?.id;
+      } else if (newRole === 'PARENT' && !parentId) {
+        const { data: pr } = await supabase.from('parents').select('id').eq('user_id', currentSession.user.id).maybeSingle();
+        parentId = pr?.id;
+      }
+
+      // Create new session object with updated user role
+      const updatedUser = {
+        ...currentSession.user,
+        role: newRole as any
+      };
+      
+      const updatedSession = {
+        ...currentSession,
+        user: updatedUser,
+        studentId,
+        teacherId,
+        parentId
+      };
+
+      set({ session: updatedSession });
+      localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+      console.log(`Zustand store: Successfully switched active role to ${newRole}`);
+    } catch (e) {
+      console.error('Zustand store: Failed to switch active role:', e);
+      throw e;
     }
   }
 }));

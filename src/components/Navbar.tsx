@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
 import type { Notification } from '../types';
-import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, User as UserIcon, Shield, Camera, Upload, Trash2, X, Check, Menu, Settings, Key, Lock, Eye, EyeOff } from 'lucide-react';
+import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, User as UserIcon, Shield, Camera, Upload, Trash2, X, Check, Menu, Settings, Key, Lock, Eye, EyeOff, Layers } from 'lucide-react';
 import { ChatDrawer } from './ChatDrawer';
 
 export const Navbar: React.FC = () => {
@@ -461,6 +461,24 @@ export const Navbar: React.FC = () => {
                     <Key size={14} className="text-brand-400" />
                     <span>Change Password</span>
                   </button>
+                  {session.user.roles && session.user.roles.length > 1 && (
+                    <button 
+                      onClick={() => {
+                        setShowProfileDrop(false);
+                        const updatedUser = {
+                          ...session.user,
+                          activeRoleSelected: false
+                        };
+                        const updatedSession = { ...session, user: updatedUser };
+                        setSession(updatedSession);
+                        localStorage.setItem('aegis_session', JSON.stringify(updatedSession));
+                      }}
+                      className="w-full flex items-center gap-2 text-left text-xs text-slate-300 hover:text-slate-100 hover:bg-slate-800/40 p-2 rounded-xl transition-all duration-200"
+                    >
+                      <Layers size={14} className="text-brand-400" />
+                      <span>Switch Role</span>
+                    </button>
+                  )}
                   <button 
                     onClick={handleLogout}
                     className="w-full flex items-center gap-2 text-left text-xs text-red-400 hover:text-red-300 hover:bg-red-500/5 p-2 rounded-xl transition-all duration-200"
