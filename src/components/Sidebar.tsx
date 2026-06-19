@@ -7,7 +7,7 @@ import {
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare,
   Users, UsersRound, Layers, BookMarked, DollarSign, Activity, Settings, ShieldAlert,
   Key, Eye, EyeOff, Database, Terminal, HardDrive, CheckCircle2, Clock, Shield, AlertTriangle,
-  Mail, X, CreditCard, HelpCircle, Bell, ClipboardList, FileText, Home
+  Mail, X, CreditCard, HelpCircle, Bell, ClipboardList, FileText, Home, Trophy
 } from 'lucide-react';
 
 interface SidebarProps {
@@ -131,6 +131,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'materials', label: 'Materials', icon: BookOpen, locked: lock('materials') },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
           { id: 'library', label: 'Library Books', icon: BookMarked, locked: lock('library') },
+          { id: 'sports', label: 'Sports & Activities', icon: Trophy },
           { id: 'transit', label: 'School Transit', icon: Layers, locked: lock('transit') },
           { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: lock('hostel') },
           { id: 'forums', label: 'Discussion', icon: MessageSquare, locked: lock('forums') },
@@ -151,6 +152,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'materials', label: 'Materials', icon: BookOpen, locked: lock('materials') },
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
           { id: 'library', label: 'Library Books', icon: BookMarked, locked: lock('library') },
+          { id: 'sports', label: 'Sports & Activities', icon: Trophy },
           { id: 'transit', label: 'School Transit', icon: Layers, locked: lock('transit') },
           { id: 'hostel', label: 'Hostel Hub', icon: Home, locked: lock('hostel') },
           { id: 'forums', label: 'Forums', icon: MessageSquare, locked: lock('forums') },
@@ -172,6 +174,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
           { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: lock('materials') },
           { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: lock('forums') },
+          { id: 'sports', label: 'Sports & Activities', icon: Trophy },
           { id: 'paymentsettings', label: 'Payment Settings', icon: DollarSign },
           { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
@@ -191,6 +194,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'attendance', label: 'Student Attendance', icon: Layers, locked: lock('attendance') },
           { id: 'fees', label: 'Invoicing Office', icon: DollarSign, locked: lock('fees') },
           { id: 'hostel', label: 'Hostel Registry', icon: Home, locked: lock('hostel') },
+          { id: 'sports', label: 'Sports & Activities', icon: Trophy },
           { id: 'communications', label: 'Communication Center', icon: Mail, locked: lock('communications') },
           { id: 'analytics', label: 'Institutional Analytics', icon: Activity, locked: lock('analytics') },
           { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: lock('rbac') },
@@ -275,6 +279,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         }
 
         // All sub-admins can access their own payment settings (salary / banking)
+        subAdminTabs.push({ id: 'sports', label: 'Sports & Activities', icon: Trophy });
         subAdminTabs.push({ id: 'paymentsettings', label: 'Payment Settings', icon: DollarSign });
         
         subAdminTabs.push({ id: 'support', label: 'Help & Support', icon: HelpCircle });

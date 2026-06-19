@@ -9,6 +9,7 @@ import { ParentPortal } from './portals/ParentPortal';
 import { TeacherPortal } from './portals/TeacherPortal';
 import { AdminPortal } from './portals/AdminPortal';
 import { SuperAdminPortal } from './portals/SuperAdminPortal';
+import { SportsManagement } from './components/SportsManagement';
 import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff, Building2, GraduationCap, Users, BookOpen, Home, Key, UserCheck, Phone, MessageSquare, Instagram, CheckCircle2, ShieldAlert, Database, Network, Layers, FileText, CheckSquare, HelpCircle, Globe, Laptop, ArrowRight, ShieldCheck, Bell } from 'lucide-react';
 import { GlassCard } from './components/GlassCard';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -23,32 +24,32 @@ const getTabsForRole = (role: string, planName: string): string[] => {
 
   switch (role) {
     case 'STUDENT':
-      return ['dashboard', 'timetable', 'grades', 'materials', 'quizzes', 'library', 'transit', 'forums', 'fees', 'hostel', 'support', 'groupdiscussion'];
+      return ['dashboard', 'timetable', 'grades', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'fees', 'hostel', 'support', 'groupdiscussion'];
     case 'PARENT':
-      return ['dashboard', 'notifications', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'transit', 'forums', 'hostel', 'support'];
+      return ['dashboard', 'notifications', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'hostel', 'support'];
     case 'TEACHER':
     case 'DRIVER':
-      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'analytics', 'paymentsettings', 'support', 'groupdiscussion'];
+      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'sports', 'analytics', 'paymentsettings', 'support', 'groupdiscussion'];
     case 'SUPER_ADMIN':
-      return ['dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'support'];
+      return ['dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'sports', 'support'];
     case 'ADMIN':
       return [
         'dashboard', 'impersonation', 'dangerzone', 'subscriptions',
         'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'groupdiscussion'
+        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'groupdiscussion', 'sports'
       ];
     case 'FINANCE_ADMIN':
       return [
         'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support'
+        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'sports'
       ];
     default: { // Sub-admin roles (Librarian, Warden, Academic Admin, Exam Controller, etc.)
       const tabs = [
         'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'communications', 'rbac', 'backups', 'books', 'transport', 'marksheets', 'quizzes', 
-        'attendance', 'assignments', 'hostel', 'support', 'paymentsettings'
+        'attendance', 'assignments', 'hostel', 'support', 'paymentsettings', 'sports'
       ];
       if (role === 'ACADEMIC_ADMIN') {
         tabs.push('groupdiscussion');
@@ -1139,17 +1140,23 @@ export const App: React.FC = () => {
                   )
                 ) : (
                   <>
-                    {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
-                    {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
-                    {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
-                    {/* Sub-admins: route paymentsettings to TeacherPortal (salary/banking), everything else to AdminPortal */}
-                    {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN', 'DRIVER'].includes(session.user.role) && (
-                      activeTab === 'paymentsettings'
-                        ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
-                        : <AdminPortal activeTab={activeTab} />
+                    {activeTab === 'sports' ? (
+                      <SportsManagement />
+                    ) : (
+                      <>
+                        {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
+                        {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
+                        {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
+                        {/* Sub-admins: route paymentsettings to TeacherPortal (salary/banking), everything else to AdminPortal */}
+                        {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'CUSTOM_SUB_ADMIN', 'DRIVER'].includes(session.user.role) && (
+                          activeTab === 'paymentsettings'
+                            ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
+                            : <AdminPortal activeTab={activeTab} />
+                        )}
+                        {session.user.role === 'ADMIN' && <AdminPortal activeTab={activeTab} />}
+                        {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
+                      </>
                     )}
-                    {session.user.role === 'ADMIN' && <AdminPortal activeTab={activeTab} />}
-                    {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
                   </>
                 )}
               </>

@@ -17346,6 +17346,1105 @@ export const mockApi = {
       utrNumber: r.utr_number,
       createdAt: r.created_at,
     }));
+  },
+
+  // ---------------------------------------------------------------------
+  // SPORTS MODULE DYNAMIC API WRAPPER METHODS (SUPABASE DRIVEN)
+  // ---------------------------------------------------------------------
+  async fetchSportsCategories(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsCategories');
+    const { data, error } = await supabaseAdmin
+      .from('sports_categories')
+      .select('*')
+      .eq('school_id', schoolId)
+      .order('name');
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      name: r.name,
+      description: r.description,
+      createdAt: r.created_at
+    }));
+  },
+
+  async fetchSports(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSports');
+    const { data, error } = await supabaseAdmin
+      .from('sports')
+      .select('*, sports_categories(name)')
+      .eq('school_id', schoolId)
+      .order('name');
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      categoryId: r.category_id,
+      categoryName: r.sports_categories?.name || 'Uncategorized',
+      name: r.name,
+      description: r.description,
+      type: r.type,
+      format: r.format,
+      status: r.status,
+      createdAt: r.created_at
+    }));
+  },
+
+  async addSport(sport: { schoolId: string; categoryId: string; name: string; description?: string; type: 'INDOOR' | 'OUTDOOR'; format: 'INDIVIDUAL' | 'TEAM'; status: string }): Promise<any> {
+    validateSchoolId(sport.schoolId, 'addSport');
+    const { data, error } = await supabaseAdmin
+      .from('sports')
+      .insert({
+        school_id: sport.schoolId,
+        category_id: sport.categoryId,
+        name: sport.name,
+        description: sport.description,
+        type: sport.type,
+        format: sport.format,
+        status: sport.status
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateSport(sportId: string, patch: any): Promise<any> {
+    const dbPatch: any = {};
+    if (patch.name !== undefined) dbPatch.name = patch.name;
+    if (patch.description !== undefined) dbPatch.description = patch.description;
+    if (patch.categoryId !== undefined) dbPatch.category_id = patch.categoryId;
+    if (patch.type !== undefined) dbPatch.type = patch.type;
+    if (patch.format !== undefined) dbPatch.format = patch.format;
+    if (patch.status !== undefined) dbPatch.status = patch.status;
+    dbPatch.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from('sports')
+      .update(dbPatch)
+      .eq('id', sportId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsCoaches(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsCoaches');
+    const { data, error } = await supabaseAdmin
+      .from('sports_coaches')
+      .select('*, users(first_name, last_name, email)')
+      .eq('school_id', schoolId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      userId: r.user_id,
+      specialization: r.specialization,
+      bio: r.bio,
+      status: r.status,
+      coachName: r.users ? `${r.users.first_name} ${r.users.last_name}` : 'Unknown Coach',
+      coachEmail: r.users?.email || '',
+      createdAt: r.created_at
+    }));
+  },
+
+  async fetchSportsEnrollments(schoolId: string, academicSessionId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsEnrollments');
+    const { data, error } = await supabaseAdmin
+      .from('sports_enrollments')
+      .select('*, students(*, users(first_name, last_name)), sports(name)')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      studentId: r.student_id,
+      sportId: r.sport_id,
+      enrollDate: r.enroll_date,
+      status: r.status,
+      rejectionReason: r.rejection_reason,
+      createdAt: r.created_at,
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
+      sportName: r.sports?.name || 'Unknown Sport'
+    }));
+  },
+
+  async submitSportsEnrollment(enrollment: { schoolId: string; academicSessionId: string; studentId: string; sportId: string }): Promise<any> {
+    validateSchoolId(enrollment.schoolId, 'submitSportsEnrollment');
+    const { data, error } = await supabaseAdmin
+      .from('sports_enrollments')
+      .insert({
+        school_id: enrollment.schoolId,
+        academic_session_id: enrollment.academicSessionId,
+        student_id: enrollment.studentId,
+        sport_id: enrollment.sportId,
+        status: 'PENDING'
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateSportsEnrollmentStatus(enrollmentId: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string): Promise<any> {
+    const { data, error } = await supabaseAdmin
+      .from('sports_enrollments')
+      .update({
+        status,
+        rejection_reason: rejectionReason || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', enrollmentId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsTeams(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsTeams');
+    const { data, error } = await supabaseAdmin
+      .from('sports_teams')
+      .select('*, sports(name), sports_coaches(users(first_name, last_name)), students!sports_teams_captain_id_fkey(users(first_name, last_name))')
+      .eq('school_id', schoolId);
+    if (error) throw error;
+
+    // Fetch team member counts
+    const { data: memberCounts, error: cntError } = await supabaseAdmin
+      .from('sports_team_members')
+      .select('team_id');
+    
+    return (data || []).map(r => {
+      const cnt = (memberCounts || []).filter(m => m.team_id === r.id).length;
+      const coachUser = r.sports_coaches?.users;
+      const captUser = r.students?.users;
+      return {
+        id: r.id,
+        schoolId: r.school_id,
+        sportId: r.sport_id,
+        name: r.name,
+        coachId: r.coach_id,
+        captainId: r.captain_id,
+        viceCaptainId: r.vice_captain_id,
+        ageGroup: r.age_group,
+        gender: r.gender,
+        status: r.status,
+        createdAt: r.created_at,
+        sportName: r.sports?.name || 'Unknown',
+        coachName: coachUser ? `${coachUser.first_name} ${coachUser.last_name}` : 'Not Assigned',
+        captainName: captUser ? `${captUser.first_name} ${captUser.last_name}` : 'Not Assigned',
+        memberCount: cnt
+      };
+    });
+  },
+
+  async createSportsTeam(team: any): Promise<any> {
+    validateSchoolId(team.schoolId, 'createSportsTeam');
+    const { data, error } = await supabaseAdmin
+      .from('sports_teams')
+      .insert({
+        school_id: team.schoolId,
+        sport_id: team.sportId,
+        name: team.name,
+        coach_id: team.coachId,
+        captain_id: team.captainId,
+        vice_captain_id: team.viceCaptainId,
+        age_group: team.ageGroup,
+        gender: team.gender,
+        status: team.status || 'ACTIVE'
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateSportsTeam(teamId: string, patch: any): Promise<any> {
+    const dbPatch: any = {};
+    if (patch.name !== undefined) dbPatch.name = patch.name;
+    if (patch.coachId !== undefined) dbPatch.coach_id = patch.coachId;
+    if (patch.captainId !== undefined) dbPatch.captain_id = patch.captainId;
+    if (patch.viceCaptainId !== undefined) dbPatch.vice_captain_id = patch.viceCaptainId;
+    if (patch.ageGroup !== undefined) dbPatch.age_group = patch.ageGroup;
+    if (patch.gender !== undefined) dbPatch.gender = patch.gender;
+    if (patch.status !== undefined) dbPatch.status = patch.status;
+    dbPatch.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_teams')
+      .update(dbPatch)
+      .eq('id', teamId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsTeamMembers(schoolId: string, teamId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsTeamMembers');
+    const { data, error } = await supabaseAdmin
+      .from('sports_team_members')
+      .select('*, students(*, users(first_name, last_name))')
+      .eq('school_id', schoolId)
+      .eq('team_id', teamId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      teamId: r.team_id,
+      studentId: r.student_id,
+      joinedAt: r.joined_at,
+      status: r.status,
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
+      studentRoll: r.students?.roll_number || 0
+    }));
+  },
+
+  async addSportsTeamMember(teamId: string, studentId: string, schoolId: string): Promise<any> {
+    validateSchoolId(schoolId, 'addSportsTeamMember');
+    const { data, error } = await supabaseAdmin
+      .from('sports_team_members')
+      .insert({
+        school_id: schoolId,
+        team_id: teamId,
+        student_id: studentId,
+        status: 'ACTIVE'
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async removeSportsTeamMember(memberId: string): Promise<any> {
+    const { data, error } = await supabaseAdmin
+      .from('sports_team_members')
+      .delete()
+      .eq('id', memberId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsTrainingSessions(schoolId: string, academicSessionId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsTrainingSessions');
+    const { data, error } = await supabaseAdmin
+      .from('sports_training_sessions')
+      .select('*, sports(name), sports_teams(name)')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      sportId: r.sport_id,
+      teamId: r.team_id,
+      coachId: r.coach_id,
+      sessionName: r.session_name,
+      sessionDate: r.session_date,
+      startTime: r.start_time,
+      endTime: r.end_time,
+      venue: r.venue,
+      recurrence: r.recurrence,
+      status: r.status,
+      createdAt: r.created_at,
+      sportName: r.sports?.name || 'Unknown Sport',
+      teamName: r.sports_teams?.name || 'Individual / General'
+    }));
+  },
+
+  async createSportsTrainingSession(session: any): Promise<any> {
+    validateSchoolId(session.schoolId, 'createSportsTrainingSession');
+    const { data, error } = await supabaseAdmin
+      .from('sports_training_sessions')
+      .insert({
+        school_id: session.schoolId,
+        academic_session_id: session.academicSessionId,
+        sport_id: session.sportId,
+        team_id: session.teamId || null,
+        coach_id: session.coachId || null,
+        session_name: session.sessionName,
+        session_date: session.sessionDate,
+        start_time: session.startTime,
+        end_time: session.endTime,
+        venue: session.venue,
+        recurrence: session.recurrence || 'NONE',
+        status: session.status || 'SCHEDULED'
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateSportsTrainingSession(sessionId: string, patch: any): Promise<any> {
+    const dbPatch: any = {};
+    if (patch.sessionName !== undefined) dbPatch.session_name = patch.sessionName;
+    if (patch.sessionDate !== undefined) dbPatch.session_date = patch.sessionDate;
+    if (patch.startTime !== undefined) dbPatch.start_time = patch.startTime;
+    if (patch.endTime !== undefined) dbPatch.end_time = patch.endTime;
+    if (patch.venue !== undefined) dbPatch.venue = patch.venue;
+    if (patch.status !== undefined) dbPatch.status = patch.status;
+    dbPatch.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_training_sessions')
+      .update(dbPatch)
+      .eq('id', sessionId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsAttendance(schoolId: string, sessionId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsAttendance');
+    const { data, error } = await supabaseAdmin
+      .from('sports_attendance')
+      .select('*, students(*, users(first_name, last_name))')
+      .eq('school_id', schoolId)
+      .eq('session_id', sessionId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      sessionId: r.session_id,
+      studentId: r.student_id,
+      date: r.date,
+      status: r.status,
+      remarks: r.remarks,
+      markedBy: r.marked_by,
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student'
+    }));
+  },
+
+  async markSportsAttendance(attendanceList: any[]): Promise<any[]> {
+    if (!attendanceList || attendanceList.length === 0) return [];
+    const schoolId = attendanceList[0].schoolId;
+    validateSchoolId(schoolId, 'markSportsAttendance');
+    
+    const results = [];
+    for (const att of attendanceList) {
+      const { data, error } = await supabaseAdmin
+        .from('sports_attendance')
+        .upsert({
+          school_id: att.schoolId,
+          session_id: att.sessionId,
+          student_id: att.studentId,
+          status: att.status,
+          remarks: att.remarks || null,
+          marked_by: att.markedBy,
+          date: att.date || new Date().toISOString().split('T')[0]
+        }, { onConflict: 'session_id, student_id' })
+        .select()
+        .single();
+      if (error) throw error;
+      results.push(data);
+    }
+    return results;
+  },
+
+  async fetchSportsPerformanceMetrics(schoolId: string, academicSessionId: string, studentId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsPerformanceMetrics');
+    let query = supabaseAdmin
+      .from('sports_performance_metrics')
+      .select('*, students(*, users(first_name, last_name)), sports(name)')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId);
+    
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      studentId: r.student_id,
+      sportId: r.sport_id,
+      recordedDate: r.recorded_date,
+      speed: r.speed,
+      stamina: r.stamina,
+      strength: r.strength,
+      agility: r.agility,
+      skill: r.skill,
+      discipline: r.discipline,
+      teamwork: r.teamwork,
+      fitness: r.fitness,
+      coachRating: r.coach_rating ? Number(r.coach_rating) : undefined,
+      tournamentPerformance: r.tournament_performance,
+      achievementProgress: r.achievement_progress,
+      coachId: r.coach_id,
+      remarks: r.remarks,
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
+      sportName: r.sports?.name || 'Unknown Sport'
+    }));
+  },
+
+  async recordSportsPerformanceMetric(metric: any): Promise<any> {
+    validateSchoolId(metric.schoolId, 'recordSportsPerformanceMetric');
+    const { data, error } = await supabaseAdmin
+      .from('sports_performance_metrics')
+      .insert({
+        school_id: metric.schoolId,
+        academic_session_id: metric.academicSessionId,
+        student_id: metric.studentId,
+        sport_id: metric.sportId,
+        speed: metric.speed,
+        stamina: metric.stamina,
+        strength: metric.strength,
+        agility: metric.agility,
+        skill: metric.skill,
+        discipline: metric.discipline,
+        teamwork: metric.teamwork,
+        fitness: metric.fitness,
+        coach_rating: metric.coachRating,
+        tournament_performance: metric.tournamentPerformance || 70,
+        achievement_progress: metric.achievementProgress || 70,
+        coach_id: metric.coachId,
+        remarks: metric.remarks
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsTournaments(schoolId: string, academicSessionId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsTournaments');
+    const { data, error } = await supabaseAdmin
+      .from('sports_tournaments')
+      .select('*, sports(name)')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      sportId: r.sport_id,
+      name: r.name,
+      format: r.format,
+      startDate: r.start_date,
+      endDate: r.end_date,
+      venue: r.venue,
+      status: r.status,
+      sportName: r.sports?.name || 'Unknown Sport'
+    }));
+  },
+
+  async createSportsTournament(tournament: any): Promise<any> {
+    validateSchoolId(tournament.schoolId, 'createSportsTournament');
+    const { data, error } = await supabaseAdmin
+      .from('sports_tournaments')
+      .insert({
+        school_id: tournament.schoolId,
+        academic_session_id: tournament.academicSessionId,
+        sport_id: tournament.sportId,
+        name: tournament.name,
+        format: tournament.format,
+        start_date: tournament.startDate,
+        end_date: tournament.endDate,
+        venue: tournament.venue,
+        status: tournament.status || 'UPCOMING'
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsFixtures(schoolId: string, tournamentId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsFixtures');
+    const { data, error } = await supabaseAdmin
+      .from('sports_fixtures')
+      .select('*, sports_teams!sports_fixtures_team1_id_fkey(name), sports_teams!sports_fixtures_team2_id_fkey(name), sports_matches(*, sports_results(*))')
+      .eq('school_id', schoolId)
+      .eq('tournament_id', tournamentId);
+    if (error) throw error;
+    return (data || []).map(r => {
+      const match = r.sports_matches?.[0] || r.sports_matches;
+      const res = match?.sports_results?.[0] || match?.sports_results;
+      return {
+        id: r.id,
+        schoolId: r.school_id,
+        tournamentId: r.tournament_id,
+        team1Id: r.team1_id,
+        team2Id: r.team2_id,
+        matchDate: r.match_date,
+        matchTime: r.match_time,
+        venue: r.venue,
+        status: r.status,
+        round: r.round,
+        refereeOfficials: r.referee_officials,
+        team1Name: r.sports_teams_team1_id_fkey?.name || 'Our Team',
+        team2Name: r.sports_teams_team2_id_fkey?.name || 'Opponent School Team',
+        winnerTeamId: match?.winner_team_id || null,
+        team1Score: match?.team1_score || '',
+        team2Score: match?.team2_score || '',
+        summary: match?.summary || ''
+      };
+    });
+  },
+
+  async createSportsFixture(fixture: any): Promise<any> {
+    validateSchoolId(fixture.schoolId, 'createSportsFixture');
+    const { data, error } = await supabaseAdmin
+      .from('sports_fixtures')
+      .insert({
+        school_id: fixture.schoolId,
+        tournament_id: fixture.tournamentId,
+        team1_id: fixture.team1Id,
+        team2_id: fixture.team2Id || null,
+        match_date: fixture.matchDate,
+        match_time: fixture.matchTime,
+        venue: fixture.venue,
+        status: 'SCHEDULED',
+        round: fixture.round,
+        referee_officials: fixture.refereeOfficials
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateSportsFixtureStatus(fixtureId: string, status: string): Promise<any> {
+    const { data, error } = await supabaseAdmin
+      .from('sports_fixtures')
+      .update({ status, updated_at: new Date().toISOString() })
+      .eq('id', fixtureId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async uploadMatchResult(result: { schoolId: string; fixtureId: string; winnerTeamId?: string | null; team1Score: string; team2Score: string; summary?: string }): Promise<any> {
+    validateSchoolId(result.schoolId, 'uploadMatchResult');
+    
+    // First update the fixture status to COMPLETED
+    await supabaseAdmin
+      .from('sports_fixtures')
+      .update({ status: 'COMPLETED' })
+      .eq('id', result.fixtureId);
+
+    // Insert into matches
+    const { data: matchData, error: matchError } = await supabaseAdmin
+      .from('sports_matches')
+      .insert({
+        school_id: result.schoolId,
+        fixture_id: result.fixtureId,
+        winner_team_id: result.winnerTeamId || null,
+        team1_score: result.team1Score,
+        team2_score: result.team2Score,
+        summary: result.summary
+      })
+      .select()
+      .single();
+
+    if (matchError) throw matchError;
+
+    // Insert into results
+    const { data: resData, error: resError } = await supabaseAdmin
+      .from('sports_results')
+      .insert({
+        school_id: result.schoolId,
+        match_id: matchData.id,
+        winner_team_id: result.winnerTeamId || null,
+        team1_score: result.team1Score,
+        team2_score: result.team2Score,
+        summary: result.summary
+      })
+      .select()
+      .single();
+
+    if (resError) throw resError;
+    return matchData;
+  },
+
+  async fetchSportsRankings(schoolId: string, academicSessionId: string, sportId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsRankings');
+    let query = supabaseAdmin
+      .from('sports_rankings')
+      .select('*, sports_teams(name), students(*, users(first_name, last_name))')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId);
+    
+    if (sportId) {
+      query = query.eq('sport_id', sportId);
+    }
+    
+    const { data, error } = await query.order('points', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      sportId: r.sport_id,
+      teamId: r.team_id,
+      studentId: r.student_id,
+      points: r.points,
+      matchesPlayed: r.matches_played,
+      matchesWon: r.matches_won,
+      matchesLost: r.matches_lost,
+      matchesDrawn: r.matches_drawn,
+      rankScore: r.rank_score,
+      rank: r.rank,
+      teamName: r.sports_teams?.name || 'Individual Participant',
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Team Ranking'
+    }));
+  },
+
+  async fetchSportsCertificates(schoolId: string, studentId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsCertificates');
+    let query = supabaseAdmin
+      .from('sports_certificates')
+      .select('*, students(*, users(first_name, last_name)), sports(name), sports_tournaments(name)')
+      .eq('school_id', schoolId);
+    
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      studentId: r.student_id,
+      sportId: r.sport_id,
+      tournamentId: r.tournament_id,
+      category: r.category,
+      certificateNumber: r.certificate_number,
+      issueDate: r.issue_date,
+      fileUrl: r.file_url,
+      verificationQrCode: r.verification_qr_code,
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
+      sportName: r.sports?.name || 'Unknown Sport',
+      tournamentName: r.sports_tournaments?.name || 'General Event'
+    }));
+  },
+
+  async issueSportsCertificate(cert: any): Promise<any> {
+    validateSchoolId(cert.schoolId, 'issueSportsCertificate');
+    const { data, error } = await supabaseAdmin
+      .from('sports_certificates')
+      .insert({
+        school_id: cert.schoolId,
+        academic_session_id: cert.academicSessionId,
+        student_id: cert.studentId,
+        sport_id: cert.sportId,
+        tournament_id: cert.tournamentId || null,
+        category: cert.category,
+        certificate_number: cert.certificateNumber || `AEGIS-SP-${cert.schoolId.substring(0,4)}-${Math.floor(Math.random() * 90000 + 10000)}`,
+        issue_date: cert.issueDate || new Date().toISOString().split('T')[0],
+        file_url: cert.fileUrl || 'https://placeholder.aegis.com/certificates/sample.pdf',
+        verification_qr_code: cert.verificationQrCode || `AEGIS-QR-VERIFY-${cert.studentId}`
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsAchievements(schoolId: string, studentId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsAchievements');
+    let query = supabaseAdmin
+      .from('sports_achievements')
+      .select('*, students(*, users(first_name, last_name)), sports(name)')
+      .eq('school_id', schoolId);
+    
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    }
+
+    const { data, error } = await query.order('date_awarded', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      studentId: r.student_id,
+      sportId: r.sport_id,
+      type: r.type,
+      level: r.level,
+      title: r.title,
+      description: r.description,
+      dateAwarded: r.date_awarded,
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
+      sportName: r.sports?.name || 'Unknown Sport'
+    }));
+  },
+
+  async addSportsAchievement(ach: any): Promise<any> {
+    validateSchoolId(ach.schoolId, 'addSportsAchievement');
+    const { data, error } = await supabaseAdmin
+      .from('sports_achievements')
+      .insert({
+        school_id: ach.schoolId,
+        academic_session_id: ach.academicSessionId,
+        student_id: ach.studentId,
+        sport_id: ach.sportId,
+        type: ach.type,
+        level: ach.level,
+        title: ach.title,
+        description: ach.description,
+        date_awarded: ach.dateAwarded || new Date().toISOString().split('T')[0]
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsMedicalRecords(schoolId: string, studentId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsMedicalRecords');
+    let query = supabaseAdmin
+      .from('sports_medical_records')
+      .select('*, students(*, users(first_name, last_name))')
+      .eq('school_id', schoolId);
+    
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      studentId: r.student_id,
+      bloodGroup: r.blood_group,
+      medicalConditions: r.medical_conditions,
+      emergencyContact: r.emergency_contact,
+      injuryHistory: typeof r.injury_history === 'string' ? JSON.parse(r.injury_history) : r.injury_history,
+      recoveryStatus: r.recovery_status,
+      fitnessExpiryDate: r.fitness_expiry_date,
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student'
+    }));
+  },
+
+  async upsertSportsMedicalRecord(record: any): Promise<any> {
+    validateSchoolId(record.schoolId, 'upsertSportsMedicalRecord');
+    const { data, error } = await supabaseAdmin
+      .from('sports_medical_records')
+      .upsert({
+        school_id: record.schoolId,
+        student_id: record.studentId,
+        blood_group: record.bloodGroup,
+        medical_conditions: record.medicalConditions,
+        emergency_contact: record.emergencyContact,
+        injury_history: record.injuryHistory || [],
+        recovery_status: record.recoveryStatus || 'FIT',
+        fitness_expiry_date: record.fitnessExpiryDate
+      }, { onConflict: 'student_id' })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsEquipment(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsEquipment');
+    const { data, error } = await supabaseAdmin
+      .from('sports_equipment')
+      .select('*')
+      .eq('school_id', schoolId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      name: r.name,
+      category: r.category,
+      totalQuantity: r.total_quantity,
+      availableQuantity: r.available_quantity,
+      condition: r.condition,
+      location: r.location
+    }));
+  },
+
+  async addSportsEquipment(equip: any): Promise<any> {
+    validateSchoolId(equip.schoolId, 'addSportsEquipment');
+    const { data, error } = await supabaseAdmin
+      .from('sports_equipment')
+      .insert({
+        school_id: equip.schoolId,
+        name: equip.name,
+        category: equip.category,
+        total_quantity: equip.totalQuantity,
+        available_quantity: equip.totalQuantity, // initial same
+        condition: equip.condition || 'GOOD',
+        location: equip.location
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateSportsEquipment(equipId: string, patch: any): Promise<any> {
+    const dbPatch: any = {};
+    if (patch.name !== undefined) dbPatch.name = patch.name;
+    if (patch.category !== undefined) dbPatch.category = patch.category;
+    if (patch.totalQuantity !== undefined) {
+      dbPatch.total_quantity = patch.totalQuantity;
+      dbPatch.available_quantity = patch.availableQuantity !== undefined ? patch.availableQuantity : patch.totalQuantity;
+    } else if (patch.availableQuantity !== undefined) {
+      dbPatch.available_quantity = patch.availableQuantity;
+    }
+    if (patch.condition !== undefined) dbPatch.condition = patch.condition;
+    if (patch.location !== undefined) dbPatch.location = patch.location;
+    dbPatch.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_equipment')
+      .update(dbPatch)
+      .eq('id', equipId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsEquipmentLogs(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsEquipmentLogs');
+    const { data, error } = await supabaseAdmin
+      .from('sports_equipment_logs')
+      .select('*, sports_equipment(name), users(first_name, last_name)')
+      .eq('school_id', schoolId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      equipmentId: r.equipment_id,
+      assignedToUserId: r.assigned_to_user_id,
+      quantity: r.quantity,
+      issueDate: r.issue_date,
+      returnDate: r.return_date,
+      status: r.status,
+      damageReport: r.damage_report,
+      equipmentName: r.sports_equipment?.name || 'Unknown Item',
+      assignedUserName: r.users ? `${r.users.first_name} ${r.users.last_name}` : 'Unknown Student/Staff'
+    }));
+  },
+
+  async logSportsEquipmentIssue(log: any): Promise<any> {
+    validateSchoolId(log.schoolId, 'logSportsEquipmentIssue');
+    
+    // Decrement available qty first
+    const { data: equip } = await supabaseAdmin
+      .from('sports_equipment')
+      .select('available_quantity')
+      .eq('id', log.equipmentId)
+      .single();
+    
+    if (equip && equip.available_quantity >= log.quantity) {
+      await supabaseAdmin
+        .from('sports_equipment')
+        .update({ available_quantity: equip.available_quantity - log.quantity })
+        .eq('id', log.equipmentId);
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_equipment_logs')
+      .insert({
+        school_id: log.schoolId,
+        equipment_id: log.equipmentId,
+        assigned_to_user_id: log.assignedToUserId,
+        quantity: log.quantity,
+        status: 'ISSUED'
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async logSportsEquipmentReturn(logId: string, patch: { returnDate?: string; status: 'RETURNED' | 'DAMAGED' | 'LOST'; damageReport?: string }): Promise<any> {
+    const { data: logRecord } = await supabaseAdmin
+      .from('sports_equipment_logs')
+      .select('equipment_id, quantity')
+      .eq('id', logId)
+      .single();
+    
+    if (logRecord && patch.status === 'RETURNED') {
+      const { data: equip } = await supabaseAdmin
+        .from('sports_equipment')
+        .select('available_quantity')
+        .eq('id', logRecord.equipment_id)
+        .single();
+      if (equip) {
+        await supabaseAdmin
+          .from('sports_equipment')
+          .update({ available_quantity: equip.available_quantity + logRecord.quantity })
+          .eq('id', logRecord.equipment_id);
+      }
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_equipment_logs')
+      .update({
+        return_date: patch.returnDate || new Date().toISOString(),
+        status: patch.status,
+        damage_report: patch.damageReport || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', logId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsFees(schoolId: string, academicSessionId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsFees');
+    const { data, error } = await supabaseAdmin
+      .from('sports_fees')
+      .select('*')
+      .eq('school_id', schoolId)
+      .eq('academic_session_id', academicSessionId);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      academicSessionId: r.academic_session_id,
+      feeType: r.fee_type,
+      amount: Number(r.amount),
+      dueDate: r.due_date,
+      description: r.description
+    }));
+  },
+
+  async createSportsFee(fee: any): Promise<any> {
+    validateSchoolId(fee.schoolId, 'createSportsFee');
+    const { data, error } = await supabaseAdmin
+      .from('sports_fees')
+      .insert({
+        school_id: fee.schoolId,
+        academic_session_id: fee.academicSessionId,
+        fee_type: fee.feeType,
+        amount: fee.amount,
+        due_date: fee.dueDate,
+        description: fee.description
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsFeePayments(schoolId: string, sportsFeeId?: string, studentId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsFeePayments');
+    let query = supabaseAdmin
+      .from('sports_fee_payments')
+      .select('*, students(*, users(first_name, last_name)), sports_fees(*)')
+      .eq('school_id', schoolId);
+    
+    if (sportsFeeId) {
+      query = query.eq('sports_fee_id', sportsFeeId);
+    }
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      sportsFeeId: r.sports_fee_id,
+      studentId: r.student_id,
+      amountPaid: Number(r.amount_paid),
+      paymentDate: r.payment_date,
+      paymentMethod: r.payment_method,
+      transactionId: r.transaction_id,
+      status: r.status,
+      paymentScreenshotUrl: r.payment_screenshot_url,
+      utrNumber: r.utr_number,
+      rejectionReason: r.rejection_reason,
+      createdAt: r.created_at,
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
+      feeType: r.sports_fees?.fee_type || 'Sports Fee',
+      feeAmount: r.sports_fees?.amount ? Number(r.sports_fees.amount) : 0
+    }));
+  },
+
+  async submitSportsFeePayment(payment: any): Promise<any> {
+    validateSchoolId(payment.schoolId, 'submitSportsFeePayment');
+    const { data, error } = await supabaseAdmin
+      .from('sports_fee_payments')
+      .insert({
+        school_id: payment.schoolId,
+        sports_fee_id: payment.sportsFeeId,
+        student_id: payment.studentId,
+        amount_paid: payment.amountPaid,
+        payment_method: payment.paymentMethod,
+        transaction_id: payment.transactionId || null,
+        status: 'PENDING',
+        payment_screenshot_url: payment.paymentScreenshotUrl || null,
+        utr_number: payment.utrNumber || null
+      })
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async updateSportsFeePaymentStatus(paymentId: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string): Promise<any> {
+    const { data, error } = await supabaseAdmin
+      .from('sports_fee_payments')
+      .update({
+        status,
+        rejection_reason: rejectionReason || null,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', paymentId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
+  },
+
+  async fetchSportsNotifications(schoolId: string, userId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsNotifications');
+    const { data, error } = await supabaseAdmin
+      .from('sports_notifications')
+      .select('*')
+      .eq('school_id', schoolId)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      userId: r.user_id,
+      title: r.title,
+      message: r.message,
+      channel: r.channel,
+      isRead: r.is_read,
+      createdAt: r.created_at
+    }));
+  },
+
+  async markSportsNotificationRead(notificationId: string): Promise<any> {
+    const { data, error } = await supabaseAdmin
+      .from('sports_notifications')
+      .update({ is_read: true, updated_at: new Date().toISOString() })
+      .eq('id', notificationId)
+      .select()
+      .single();
+    if (error) throw error;
+    return data;
   }
 };
+
 

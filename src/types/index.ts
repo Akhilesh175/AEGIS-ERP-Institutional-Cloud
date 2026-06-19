@@ -1269,3 +1269,306 @@ export interface ClassAnnouncement {
   title: string;
   createdAt: string;
 }
+
+// --- SPORTS MODULE ---
+export interface SportCategory {
+  id: string;
+  schoolId: string;
+  name: string;
+  description?: string;
+  createdAt: string;
+}
+
+export interface Sport {
+  id: string;
+  schoolId: string;
+  categoryId?: string;
+  name: string;
+  description?: string;
+  type: 'INDOOR' | 'OUTDOOR';
+  format: 'INDIVIDUAL' | 'TEAM';
+  status: 'ACTIVE' | 'INACTIVE' | 'ARCHIVED';
+  createdAt: string;
+}
+
+export interface SportCoach {
+  id: string;
+  schoolId: string;
+  userId: string;
+  specialization: string;
+  bio?: string;
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt: string;
+  coachName?: string;
+  coachEmail?: string;
+}
+
+export interface SportEnrollment {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  studentId: string;
+  sportId: string;
+  enrollDate: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  rejectionReason?: string;
+  createdAt: string;
+  studentName?: string;
+  sportName?: string;
+}
+
+export interface SportTeam {
+  id: string;
+  schoolId: string;
+  sportId: string;
+  name: string;
+  coachId?: string | null;
+  captainId?: string | null;
+  viceCaptainId?: string | null;
+  ageGroup?: string;
+  gender?: 'MALE' | 'FEMALE' | 'MIXED';
+  status: 'ACTIVE' | 'INACTIVE';
+  createdAt: string;
+  sportName?: string;
+  coachName?: string;
+  captainName?: string;
+  memberCount?: number;
+}
+
+export interface SportTrainingSession {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  sportId: string;
+  teamId?: string | null;
+  coachId?: string | null;
+  sessionName: string;
+  sessionDate: string;
+  startTime: string;
+  endTime: string;
+  venue: string;
+  recurrence?: string;
+  status: 'SCHEDULED' | 'COMPLETED' | 'CANCELLED';
+  createdAt: string;
+  sportName?: string;
+  teamName?: string;
+}
+
+export interface SportAttendance {
+  id: string;
+  schoolId: string;
+  sessionId?: string | null;
+  studentId: string;
+  date: string;
+  status: 'PRESENT' | 'ABSENT' | 'LATE' | 'EXCUSED' | 'MEDICAL_LEAVE';
+  remarks?: string;
+  markedBy: string;
+  createdAt: string;
+  studentName?: string;
+}
+
+export interface SportPerformanceMetric {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  studentId: string;
+  sportId: string;
+  recordedDate: string;
+  speed: number;
+  stamina: number;
+  strength: number;
+  agility: number;
+  skill: number;
+  discipline: number;
+  teamwork: number;
+  fitness: number;
+  coachRating?: number;
+  tournamentPerformance?: number;
+  achievementProgress?: number;
+  coachId?: string | null;
+  remarks?: string;
+  createdAt: string;
+  studentName?: string;
+  sportName?: string;
+}
+
+export interface SportTournament {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  sportId: string;
+  name: string;
+  format: 'LEAGUE' | 'KNOCKOUT' | 'ROUND_ROBIN' | 'GROUP_STAGE' | 'HYBRID';
+  startDate: string;
+  endDate: string;
+  venue: string;
+  status: 'UPCOMING' | 'ONGOING' | 'COMPLETED' | 'CANCELLED';
+  createdAt: string;
+  sportName?: string;
+}
+
+export interface SportFixture {
+  id: string;
+  schoolId: string;
+  tournamentId: string;
+  team1Id?: string | null;
+  team2Id?: string | null;
+  matchDate: string;
+  matchTime: string;
+  venue: string;
+  status: 'SCHEDULED' | 'LIVE' | 'COMPLETED' | 'CANCELLED';
+  round?: string;
+  refereeOfficials?: string;
+  createdAt: string;
+  tournamentName?: string;
+  team1Name?: string;
+  team2Name?: string;
+  sportName?: string;
+}
+
+export interface SportMatch {
+  id: string;
+  schoolId: string;
+  fixtureId: string;
+  winnerTeamId?: string | null;
+  team1Score?: string;
+  team2Score?: string;
+  summary?: string;
+  createdAt: string;
+  winnerTeamName?: string;
+}
+
+export interface SportRanking {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  sportId: string;
+  teamId?: string | null;
+  studentId?: string | null;
+  points: number;
+  matchesPlayed: number;
+  matchesWon: number;
+  matchesLost: number;
+  matchesDrawn: number;
+  rankScore: number;
+  rank?: number;
+  createdAt: string;
+  teamName?: string;
+  studentName?: string;
+}
+
+export interface SportCertificate {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  studentId: string;
+  sportId: string;
+  tournamentId?: string | null;
+  category: 'PARTICIPATION' | 'WINNER' | 'RUNNER_UP' | 'BEST_PLAYER' | 'SPORTS_EXCELLENCE';
+  certificateNumber: string;
+  issueDate: string;
+  fileUrl: string;
+  verificationQrCode: string;
+  createdAt: string;
+  studentName?: string;
+  sportName?: string;
+}
+
+export interface SportAchievement {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  studentId: string;
+  sportId: string;
+  type: 'GOLD' | 'SILVER' | 'BRONZE' | 'PARTICIPATION' | 'WINNER' | 'RUNNER_UP' | 'BEST_PLAYER' | 'SPORTS_EXCELLENCE';
+  level: 'SCHOOL' | 'DISTRICT' | 'STATE' | 'NATIONAL' | 'INTERNATIONAL';
+  title: string;
+  description?: string;
+  dateAwarded: string;
+  createdAt: string;
+  studentName?: string;
+  sportName?: string;
+}
+
+export interface SportMedicalRecord {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  bloodGroup?: string;
+  medicalConditions?: string;
+  emergencyContact?: string;
+  injuryHistory?: any;
+  recoveryStatus: 'FIT' | 'INJURED' | 'RECOVERING';
+  fitnessExpiryDate?: string;
+  createdAt: string;
+  studentName?: string;
+}
+
+export interface SportEquipment {
+  id: string;
+  schoolId: string;
+  name: string;
+  category: string;
+  totalQuantity: number;
+  availableQuantity: number;
+  condition: 'EXCELLENT' | 'GOOD' | 'FAIR' | 'DAMAGED';
+  location?: string;
+  createdAt: string;
+}
+
+export interface SportEquipmentLog {
+  id: string;
+  schoolId: string;
+  equipmentId: string;
+  assignedToUserId: string;
+  quantity: number;
+  issueDate: string;
+  returnDate?: string | null;
+  status: 'ISSUED' | 'RETURNED' | 'DAMAGED' | 'LOST';
+  damageReport?: string;
+  createdAt: string;
+  equipmentName?: string;
+  assignedUserName?: string;
+}
+
+export interface SportFee {
+  id: string;
+  schoolId: string;
+  academicSessionId: string;
+  feeType: 'REGISTRATION_FEE' | 'TRAINING_FEE' | 'TOURNAMENT_FEE' | 'EQUIPMENT_FEE' | 'UNIFORM_FEE';
+  amount: number;
+  dueDate: string;
+  description?: string;
+  createdAt: string;
+}
+
+export interface SportFeePayment {
+  id: string;
+  schoolId: string;
+  sportsFeeId: string;
+  studentId: string;
+  amountPaid: number;
+  paymentDate: string;
+  paymentMethod: string;
+  transactionId?: string;
+  status: 'PENDING' | 'APPROVED' | 'REJECTED';
+  paymentScreenshotUrl?: string;
+  utrNumber?: string;
+  rejectionReason?: string;
+  createdAt: string;
+  studentName?: string;
+  feeType?: string;
+  feeAmount?: number;
+}
+
+export interface SportNotification {
+  id: string;
+  schoolId: string;
+  userId: string;
+  title: string;
+  message: string;
+  channel: 'IN_APP' | 'EMAIL' | 'SMS';
+  isRead: boolean;
+  createdAt: string;
+}
+
