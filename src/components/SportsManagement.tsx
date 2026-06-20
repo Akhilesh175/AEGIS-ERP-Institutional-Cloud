@@ -14,6 +14,45 @@ import {
 } from 'recharts';
 import jsPDF from 'jspdf';
 
+interface ErrorBoundaryProps {
+  children: React.ReactNode;
+}
+
+interface ErrorBoundaryState {
+  hasError: boolean;
+}
+
+class FinanceErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  constructor(props: ErrorBoundaryProps) {
+    super(props);
+    this.state = { hasError: false };
+  }
+
+  static getDerivedStateFromError(_: any): ErrorBoundaryState {
+    return { hasError: true };
+  }
+
+  componentDidCatch(error: any, errorInfo: any) {
+    console.error("FinanceErrorBoundary caught an error:", error, errorInfo);
+  }
+
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="bg-[#0b101d]/60 border border-red-500/30 rounded-2xl p-6 shadow-xl text-center space-y-3">
+          <AlertTriangle className="text-red-500 mx-auto" size={32} />
+          <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Finance Data Rendering Error</h3>
+          <p className="text-xs text-slate-400 max-w-md mx-auto">
+            The sports finance module failed to render correctly. This may be due to a rendering mismatch or invalid records. Please try reloading the portal or contact your administrator.
+          </p>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
 export const SportsManagement: React.FC = () => {
   const { session } = useStore();
   const schoolId = session?.user?.schoolId || '';
@@ -109,8 +148,8 @@ export const SportsManagement: React.FC = () => {
   const [showPayFine, setShowPayFine] = useState(false);
   const [activeFineId, setActiveFineId] = useState<string | null>(null);
   const [finePaymentForm, setFinePaymentForm] = useState({ utrNumber: '', screenshotUrl: '' });
-
   const [selectedStudentReport, setSelectedStudentReport] = useState<string>('');
+  const [budgetAmounts, setBudgetAmounts] = useState<Record<string, number>>({});
 
   // Active student context (for Student/Parent dashboards)
   const [studentProfileId, setStudentProfileId] = useState<string>('');
@@ -701,6 +740,24 @@ export const SportsManagement: React.FC = () => {
     ];
   };
 
+  // Chart render safety validation booleans
+  const enrollmentGrowthData = getEnrollmentGrowthData();
+  const hasEnrollmentGrowthData = enrollmentGrowthData && enrollmentGrowthData.some(d => d.count > 0);
+
+  const sportsDistributionData = getSportsDistributionData();
+  const hasSportsDistributionData = sportsDistributionData && sportsDistributionData.some(d => d.value > 0);
+
+  const budgetVSExpenseData = getBudgetVSExpenseData();
+  const hasBudgetVSExpenseData = budgetVSExpenseData && budgetVSExpenseData.some(d => d.Budget > 0 || d.Spent > 0);
+
+  const attendanceTrendData = getAttendanceTrendData();
+  const hasAttendanceTrendData = coachAttendance && coachAttendance.length > 0;
+
+  const radarChartData = getRadarChartData();
+  const hasRadarChartData = performance && performance.length > 0;
+
+  const hasRevenueData = totalRevenue > 0 || pendingRevenue > 0 || totalOutstanding > 0;
+
   // Live reporting files builder / exporter
   const generateReportString = (type: string, format: 'CSV' | 'EXCEL'): string => {
     let headers: string[] = [];
@@ -732,13 +789,12 @@ export const SportsManagement: React.FC = () => {
         rows = feePayments.map(p => ['REVENUE', p.feeType || 'FEE_PAYMENT', String(p.amountPaid), p.paymentDate, p.status, p.utrNumber || '']);
         break;
     }
-
     if (format === 'CSV') {
-      const csvContent = [headers.join(','), ...rows.map(r => r.map(v => `"${v.replace(/"/g, '""')}"`).join(','))].join('\n');
+      const csvContent = [headers.join(','), ...rows.map(r => r.map(v => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))].join('\n');
       return csvContent;
     } else {
       // Basic Excel XML Spreadsheet structure or Tab separated
-      const tsvContent = [headers.join('\t'), ...rows.map(r => r.join('\t'))].join('\n');
+      const tsvContent = [headers.join('\t'), ...rows.map(r => r.map(v => String(v ?? '')).join('\t'))].join('\n');
       return tsvContent;
     }
   };
@@ -864,7 +920,7 @@ export const SportsManagement: React.FC = () => {
               { id: 'performance', label: 'Athlete Performance', icon: BarChart3, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'medical', label: 'Medical Fitness', icon: Heart, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'equipment', label: 'Equipment Inventory', icon: Package, roles: ['COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
-              { id: 'finance', label: 'Finance Control', icon: DollarSign, roles: ['FINANCE_ADMIN', 'SUPER_ADMIN'] },
+              { id: 'finance', label: 'Finance Control', icon: DollarSign, roles: ['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN'] },
               { id: 'fees', label: 'Sports Invoices', icon: DollarSign, roles: ['STUDENT', 'PARENT', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'reports', label: 'Reports & Analytics', icon: FileText, roles: ['SCHOOL_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'audit-logs', label: 'Audit Logs', icon: ShieldCheck, roles: ['SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] }
@@ -1071,15 +1127,22 @@ export const SportsManagement: React.FC = () => {
                   <span className="text-[10px] font-bold text-brand-400 bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded-full uppercase tracking-wider">Live SQL records</span>
                 </div>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <LineChart data={getEnrollmentGrowthData()}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} />
-                      <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
-                      <Tooltip contentStyle={{ backgroundColor: '#070a13', border: '1px solid #1e293b', borderRadius: '12px' }} labelStyle={{ fontSize: '11px', color: '#fff' }} itemStyle={{ fontSize: '11px' }} />
-                      <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} activeDot={{ r: 6 }} dot={{ stroke: '#3b82f6', strokeWidth: 2 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                  {hasEnrollmentGrowthData ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={enrollmentGrowthData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={10} tickLine={false} />
+                        <YAxis stroke="#94a3b8" fontSize={10} tickLine={false} />
+                        <Tooltip contentStyle={{ backgroundColor: '#070a13', border: '1px solid #1e293b', borderRadius: '12px' }} labelStyle={{ fontSize: '11px', color: '#fff' }} itemStyle={{ fontSize: '11px' }} />
+                        <Line type="monotone" dataKey="count" stroke="#3b82f6" strokeWidth={3} activeDot={{ r: 6 }} dot={{ stroke: '#3b82f6', strokeWidth: 2 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs gap-2">
+                      <BarChart3 size={24} className="text-slate-600 animate-pulse" />
+                      <span>No Student Enrollments Available</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1087,26 +1150,33 @@ export const SportsManagement: React.FC = () => {
               <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
                 <h3 className="text-xs font-bold text-slate-100 uppercase tracking-wider font-mono">Sports Distribution</h3>
                 <div className="h-64 flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <PieChart>
-                      <Pie
-                        data={getSportsDistributionData()}
-                        cx="50%"
-                        cy="50%"
-                        innerRadius={50}
-                        outerRadius={75}
-                        paddingAngle={5}
-                        dataKey="value"
-                      >
-                        <Cell fill="#3b82f6" />
-                        <Cell fill="#10b981" />
-                        <Cell fill="#f59e0b" />
-                        <Cell fill="#ef4444" />
-                      </Pie>
-                      <Tooltip contentStyle={{ backgroundColor: '#070a13', border: '1px solid #1e293b', borderRadius: '12px' }} />
-                      <Legend wrapperStyle={{ fontSize: '9px' }} />
-                    </PieChart>
-                  </ResponsiveContainer>
+                  {hasSportsDistributionData ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <PieChart>
+                        <Pie
+                          data={sportsDistributionData}
+                          cx="50%"
+                          cy="50%"
+                          innerRadius={50}
+                          outerRadius={75}
+                          paddingAngle={5}
+                          dataKey="value"
+                        >
+                          <Cell fill="#3b82f6" />
+                          <Cell fill="#10b981" />
+                          <Cell fill="#f59e0b" />
+                          <Cell fill="#ef4444" />
+                        </Pie>
+                        <Tooltip contentStyle={{ backgroundColor: '#070a13', border: '1px solid #1e293b', borderRadius: '12px' }} />
+                        <Legend wrapperStyle={{ fontSize: '9px' }} />
+                      </PieChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs gap-2">
+                      <BarChart3 size={24} className="text-slate-600 animate-pulse" />
+                      <span>No Sports Distribution Records Available</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1114,17 +1184,24 @@ export const SportsManagement: React.FC = () => {
               <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
                 <h3 className="text-xs font-bold text-slate-100 uppercase tracking-wider font-mono">Category Budget vs Real Expense</h3>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <BarChart data={getBudgetVSExpenseData()}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} />
-                      <YAxis stroke="#94a3b8" fontSize={9} />
-                      <Tooltip contentStyle={{ backgroundColor: '#070a13', border: '1px solid #1e293b' }} />
-                      <Legend wrapperStyle={{ fontSize: '9px' }} />
-                      <Bar dataKey="Budget" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-                      <Bar dataKey="Spent" fill="#10b981" radius={[4, 4, 0, 0]} />
-                    </BarChart>
-                  </ResponsiveContainer>
+                  {hasBudgetVSExpenseData ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <BarChart data={budgetVSExpenseData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} />
+                        <YAxis stroke="#94a3b8" fontSize={9} />
+                        <Tooltip contentStyle={{ backgroundColor: '#070a13', border: '1px solid #1e293b' }} />
+                        <Legend wrapperStyle={{ fontSize: '9px' }} />
+                        <Bar dataKey="Budget" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                        <Bar dataKey="Spent" fill="#10b981" radius={[4, 4, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs gap-2">
+                      <BarChart3 size={24} className="text-slate-600 animate-pulse" />
+                      <span>No Financial Records Available</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1132,15 +1209,22 @@ export const SportsManagement: React.FC = () => {
               <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
                 <h3 className="text-xs font-bold text-slate-100 uppercase tracking-wider font-mono">Monthly Coach Attendance Rate</h3>
                 <div className="h-64">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <AreaChart data={getAttendanceTrendData()}>
-                      <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
-                      <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} />
-                      <YAxis stroke="#94a3b8" fontSize={9} domain={[0, 100]} />
-                      <Tooltip contentStyle={{ backgroundColor: '#070a13', border: '1px solid #1e293b' }} />
-                      <Area type="monotone" dataKey="rate" stroke="#10b981" fill="#10b981" fillOpacity={0.15} />
-                    </AreaChart>
-                  </ResponsiveContainer>
+                  {hasAttendanceTrendData ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <AreaChart data={attendanceTrendData}>
+                        <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" />
+                        <XAxis dataKey="name" stroke="#94a3b8" fontSize={9} />
+                        <YAxis stroke="#94a3b8" fontSize={9} domain={[0, 100]} />
+                        <Tooltip contentStyle={{ backgroundColor: '#070a13', border: '1px solid #1e293b' }} />
+                        <Area type="monotone" dataKey="rate" stroke="#10b981" fill="#10b981" fillOpacity={0.15} />
+                      </AreaChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs gap-2">
+                      <BarChart3 size={24} className="text-slate-600 animate-pulse" />
+                      <span>No Coach Attendance Records Available</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1148,15 +1232,22 @@ export const SportsManagement: React.FC = () => {
               <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-4">
                 <h3 className="text-xs font-bold text-slate-100 uppercase tracking-wider font-mono">Athletic Ability Profile</h3>
                 <div className="h-64 flex items-center justify-center">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <RadarChart cx="50%" cy="50%" outerRadius="70%" data={getRadarChartData()}>
-                      <PolarGrid stroke="#1e293b" />
-                      <PolarAngleAxis dataKey="subject" stroke="#94a3b8" fontSize={10} />
-                      <PolarRadiusAxis stroke="#1e293b" fontSize={8} />
-                      <Radar name="Student Fitness" dataKey="A" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.4} />
-                      <Tooltip contentStyle={{ backgroundColor: '#070a13', border: '1px solid #1e293b' }} />
-                    </RadarChart>
-                  </ResponsiveContainer>
+                  {hasRadarChartData ? (
+                    <ResponsiveContainer width="100%" height="100%">
+                      <RadarChart cx="50%" cy="50%" outerRadius="70%" data={radarChartData}>
+                        <PolarGrid stroke="#1e293b" />
+                        <PolarAngleAxis dataKey="subject" stroke="#94a3b8" fontSize={10} />
+                        <PolarRadiusAxis stroke="#1e293b" fontSize={8} />
+                        <Radar name="Student Fitness" dataKey="A" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.4} />
+                        <Tooltip contentStyle={{ backgroundColor: '#070a13', border: '1px solid #1e293b' }} />
+                      </RadarChart>
+                    </ResponsiveContainer>
+                  ) : (
+                    <div className="h-full flex flex-col items-center justify-center text-slate-500 text-xs gap-2">
+                      <BarChart3 size={24} className="text-slate-600 animate-pulse" />
+                      <span>No Athletic Ability Profile Available</span>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -1194,28 +1285,33 @@ export const SportsManagement: React.FC = () => {
                 <h3 className="text-xs font-bold text-slate-100 uppercase tracking-wider font-mono">Sports Invoices & Dues</h3>
                 <div className="flex items-center gap-6 p-4 bg-slate-900/60 border border-slate-850 rounded-xl">
                   <div className="w-24 h-24 flex items-center justify-center">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <PieChart>
-                        <Pie
-                          data={[
-                            { name: 'Collected', value: totalRevenue },
-                            { name: 'Pending Approval', value: pendingRevenue },
-                            { name: 'Outstanding', value: totalOutstanding }
-                          ]}
-                          cx="50%"
-                          cy="50%"
-                          innerRadius={25}
-                          outerRadius={35}
-                          dataKey="value"
-                        >
-                          <Cell fill="#10b981" />
-                          <Cell fill="#f59e0b" />
-                          <Cell fill="#ef4444" />
-                        </Pie>
-                      </PieChart>
-                    </ResponsiveContainer>
+                    {hasRevenueData ? (
+                      <ResponsiveContainer width="100%" height="100%">
+                        <PieChart>
+                          <Pie
+                            data={[
+                              { name: 'Collected', value: totalRevenue },
+                              { name: 'Pending Approval', value: pendingRevenue },
+                              { name: 'Outstanding', value: totalOutstanding }
+                            ]}
+                            cx="50%"
+                            cy="50%"
+                            innerRadius={25}
+                            outerRadius={35}
+                            dataKey="value"
+                          >
+                            <Cell fill="#10b981" />
+                            <Cell fill="#f59e0b" />
+                            <Cell fill="#ef4444" />
+                          </Pie>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    ) : (
+                      <div className="h-full flex items-center justify-center text-slate-600 text-[10px] text-center font-bold font-mono">
+                        NO DATA
+                      </div>
+                    )}
                   </div>
-
                   <div className="flex-1 space-y-2">
                     <div className="flex justify-between text-xs">
                       <span className="text-slate-400">Total Collected:</span>
@@ -2014,9 +2110,8 @@ export const SportsManagement: React.FC = () => {
 
               </div>
             )}
-
-            {/* Finance Admin Payroll view ONLY */}
-            {portalRole === 'FINANCE_ADMIN' && (
+            {/* Finance Admin / School Admin Payroll view */}
+            {['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(portalRole) && (
               <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Coach Attendance Audit Log (For Payroll Verification)</h3>
                 <div className="overflow-x-auto">
@@ -2686,8 +2781,9 @@ export const SportsManagement: React.FC = () => {
         {/* ─────────────────────────────────────────────────────────────────
             15. FINANCE MODULE SUB-VIEWS (EXCLUSIVE TO FINANCE ADMIN)
             ───────────────────────────────────────────────────────────────── */}
-        {activeSubTab === 'finance' && portalRole === 'FINANCE_ADMIN' && (
-          <div className="space-y-6">
+        {activeSubTab === 'finance' && ['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(portalRole) && (
+          <FinanceErrorBoundary>
+            <div className="space-y-6">
             
             {/* Budget allocation controller */}
             <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
@@ -2695,7 +2791,7 @@ export const SportsManagement: React.FC = () => {
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                 {['EQUIPMENT', 'TOURNAMENT', 'SALARY', 'TRAVEL', 'OTHER'].map(cat => {
                   const existingB = budgets.find(b => b.category === cat);
-                  const [amount, setAmount] = useState(existingB?.allocatedAmount || 10000);
+                  const amount = budgetAmounts[cat] ?? existingB?.allocatedAmount ?? 10000;
                   
                   return (
                     <div key={cat} className="p-4 bg-slate-900/60 border border-slate-850 rounded-xl space-y-2">
@@ -2703,7 +2799,10 @@ export const SportsManagement: React.FC = () => {
                       <input 
                         type="number"
                         value={amount}
-                        onChange={(e) => setAmount(Number(e.target.value))}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setBudgetAmounts(prev => ({ ...prev, [cat]: val }));
+                        }}
                         className="w-full px-2 py-1.5 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white"
                       />
                       <p className="text-[10px] text-slate-500">Spent: ₹{(existingB?.spentAmount || 0).toLocaleString()}</p>
@@ -2723,8 +2822,7 @@ export const SportsManagement: React.FC = () => {
                       </button>
                     </div>
                   );
-                })}
-              </div>
+                })}              </div>
             </div>
 
             {/* Invoices verifications */}
@@ -3012,7 +3110,8 @@ export const SportsManagement: React.FC = () => {
               </div>
             </div>
 
-          </div>
+            </div>
+          </FinanceErrorBoundary>
         )}
 
         {/* ─────────────────────────────────────────────────────────────────
