@@ -90,6 +90,10 @@ export const SportsManagement: React.FC = () => {
   const [budgets, setBudgets] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
   const [fines, setFines] = useState<any[]>([]);
+  const [finePayments, setFinePayments] = useState<any[]>([]);
+  const [budgetHistory, setBudgetHistory] = useState<any[]>([]);
+  const [schoolPaymentSettings, setSchoolPaymentSettings] = useState<any>(null);
+  const [uploading, setUploading] = useState<boolean>(false);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [coachAttendance, setCoachAttendance] = useState<any[]>([]);
   const [coachLeaves, setCoachLeaves] = useState<any[]>([]);
@@ -173,7 +177,8 @@ export const SportsManagement: React.FC = () => {
 
       const [
         catsRes, sportsRes, coachesRes, enrollsRes, teamsRes, schedsRes, perfRes, tournsRes, ranksRes, certsRes, achsRes, medRes, equipRes, equipLogRes, feesRes, pmtsRes, notifRes,
-        adminsRes, salaryRes, budgetsRes, expensesRes, finesRes, logsRes, coachAttRes, leavesRes, workLogsRes, correctionsRes, schoolsRes, historyRes
+        adminsRes, salaryRes, budgetsRes, expensesRes, finesRes, logsRes, coachAttRes, leavesRes, workLogsRes, correctionsRes, schoolsRes, historyRes,
+        finePmtsRes, budgetHistoryRes, paymentSettingsRes
       ] = await Promise.all([
         safeFetch(() => mockApi.fetchSportsCategories(schoolId)),
         safeFetch(() => mockApi.fetchSports(schoolId)),
@@ -204,7 +209,10 @@ export const SportsManagement: React.FC = () => {
         safeFetch(() => mockApi.fetchCoachWorkLogs(schoolId)),
         safeFetch(() => mockApi.fetchCoachAttendanceCorrections(schoolId)),
         safeFetch(() => mockApi.fetchSchools(), []),
-        safeFetch(() => mockApi.fetchCoachAttendanceHistory(schoolId), [])
+        safeFetch(() => mockApi.fetchCoachAttendanceHistory(schoolId), []),
+        safeFetch(() => mockApi.fetchFinePayments(schoolId), []),
+        safeFetch(() => mockApi.fetchBudgetHistory(schoolId), []),
+        safeFetch(() => mockApi.fetchSchoolPaymentSettings(schoolId, userRole), null)
       ]);
 
       setCategories(catsRes);
@@ -230,6 +238,9 @@ export const SportsManagement: React.FC = () => {
       setBudgets(budgetsRes);
       setExpenses(expensesRes);
       setFines(finesRes);
+      setFinePayments(finePmtsRes);
+      setBudgetHistory(budgetHistoryRes);
+      setSchoolPaymentSettings(paymentSettingsRes);
       setActivityLogs(logsRes);
       setCoachAttendance(coachAttRes);
       setCoachLeaves(leavesRes);
@@ -290,8 +301,10 @@ export const SportsManagement: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_finance_transactions' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_salary_records' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_budget_allocations' }, () => { loadData(true); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_expenses' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_budget_history' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_expense_requests' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_fines' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_fine_payments' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coach_attendance' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coach_leaves' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coach_work_logs' }, () => { loadData(true); })
@@ -424,7 +437,7 @@ export const SportsManagement: React.FC = () => {
         paymentMethod: paymentForm.paymentMethod,
         transactionId: paymentForm.transactionId,
         utrNumber: paymentForm.utrNumber,
-        paymentScreenshotUrl: paymentForm.screenshotUrl || 'https://placeholder.aegis.com/screenshots/payment.jpg'
+        paymentScreenshotUrl: paymentForm.screenshotUrl
       });
       setShowFeePayment(false);
       setPaymentForm({ sportsFeeId: '', paymentMethod: 'UPI', transactionId: '', utrNumber: '', screenshotUrl: '' });
@@ -432,6 +445,30 @@ export const SportsManagement: React.FC = () => {
       alert('Payment submitted for verification!');
     } catch (err: any) {
       alert(`Error submitting payment: ${err.message}`);
+    }
+  };
+
+  const handleScreenshotUpload = async (e: React.ChangeEvent<HTMLInputElement>, isFine = false) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const publicUrl = await mockApi.uploadPaymentAsset(
+        'sports-payment-proofs',
+        isFine ? 'fines' : 'invoices',
+        file.name,
+        file
+      );
+      if (isFine) {
+        setFinePaymentForm(prev => ({ ...prev, screenshotUrl: publicUrl }));
+      } else {
+        setPaymentForm(prev => ({ ...prev, screenshotUrl: publicUrl }));
+      }
+      alert('Proof of payment uploaded successfully!');
+    } catch (err: any) {
+      alert(`Upload failed: ${err.message}`);
+    } finally {
+      setUploading(false);
     }
   };
 
@@ -3079,6 +3116,40 @@ export const SportsManagement: React.FC = () => {
                 })}              </div>
             </div>
 
+            {/* Budget allocation history */}
+            <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Budget History (Last 20 changes)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                      <th className="py-3 px-4 font-bold">Category</th>
+                      <th className="py-3 px-4 font-bold">Old Amount</th>
+                      <th className="py-3 px-4 font-bold">New Amount</th>
+                      <th className="py-3 px-4 font-bold">Updated By</th>
+                      <th className="py-3 px-4 font-bold">Date & Time</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850">
+                    {budgetHistory.slice(0, 20).map(hist => (
+                      <tr key={hist.id} className="hover:bg-slate-900/40">
+                        <td className="py-3 px-4 font-semibold text-slate-100">{hist.category}</td>
+                        <td className="py-3 px-4 text-slate-400">₹{hist.oldAmount.toLocaleString()}</td>
+                        <td className="py-3 px-4 text-emerald-400 font-semibold">₹{hist.newAmount.toLocaleString()}</td>
+                        <td className="py-3 px-4 text-slate-400">{hist.updatedByName}</td>
+                        <td className="py-3 px-4 text-slate-500 font-mono">{new Date(hist.updatedAt).toLocaleString()}</td>
+                      </tr>
+                    ))}
+                    {budgetHistory.length === 0 && (
+                      <tr>
+                        <td colSpan={5} className="py-6 text-center text-slate-500">No budget allocation history.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* Invoices verifications */}
             <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Sports Fee Payments Queue</h3>
@@ -3142,6 +3213,46 @@ export const SportsManagement: React.FC = () => {
                     {feePayments.filter(p => p.status === 'PENDING').length === 0 && (
                       <tr>
                         <td colSpan={7} className="py-6 text-center text-slate-500">No pending fee payments.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Sports Fee Payments History */}
+            <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Sports Fee Payments History (Last 20 transactions)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                      <th className="py-3 px-4 font-bold">Student Name</th>
+                      <th className="py-3 px-4 font-bold">Fee Description</th>
+                      <th className="py-3 px-4 font-bold">Amount Paid</th>
+                      <th className="py-3 px-4 font-bold">UTR / Ref</th>
+                      <th className="py-3 px-4 font-bold">Date</th>
+                      <th className="py-3 px-4 font-bold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850">
+                    {feePayments.filter(p => p.status !== 'PENDING').slice(0, 20).map(pmt => (
+                      <tr key={pmt.id} className="hover:bg-slate-900/40">
+                        <td className="py-3 px-4 font-semibold text-slate-100">{pmt.studentName}</td>
+                        <td className="py-3 px-4 text-slate-400">{pmt.feeType?.replace('_', ' ') || 'TUTION'}</td>
+                        <td className="py-3 px-4 text-slate-400">₹{pmt.amountPaid}</td>
+                        <td className="py-3 px-4 font-mono text-slate-350">{pmt.utrNumber || 'N/A'}</td>
+                        <td className="py-3 px-4 text-slate-500 font-mono">{pmt.paymentDate ? new Date(pmt.paymentDate).toLocaleDateString() : 'N/A'}</td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            pmt.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                          }`}>{pmt.status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                    {feePayments.filter(p => p.status !== 'PENDING').length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-6 text-center text-slate-500">No payment transaction history.</td>
                       </tr>
                     )}
                   </tbody>
@@ -3245,6 +3356,50 @@ export const SportsManagement: React.FC = () => {
                         </td>
                       </tr>
                     ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Equipment Expense Requests History */}
+            <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Expense Requests History (Last 20 requests)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                      <th className="py-3 px-4 font-bold">Requested By</th>
+                      <th className="py-3 px-4 font-bold">Item Detail</th>
+                      <th className="py-3 px-4 font-bold">Vendor</th>
+                      <th className="py-3 px-4 font-bold">Amount</th>
+                      <th className="py-3 px-4 font-bold">Status</th>
+                      <th className="py-3 px-4 font-bold">Payment Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850">
+                    {expenses.filter(e => e.status !== 'PENDING').slice(0, 20).map(exp => (
+                      <tr key={exp.id} className="hover:bg-slate-900/40">
+                        <td className="py-3 px-4 text-slate-100 font-semibold">{exp.requestedByName}</td>
+                        <td className="py-3 px-4 text-slate-400">{exp.title}</td>
+                        <td className="py-3 px-4 text-slate-400">{exp.vendor || 'N/A'}</td>
+                        <td className="py-3 px-4 text-slate-400">₹{exp.amountRequested.toLocaleString()}</td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            exp.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                          }`}>{exp.status}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            exp.paymentStatus === 'RELEASED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-slate-800 text-slate-400'
+                          }`}>{exp.paymentStatus}</span>
+                        </td>
+                      </tr>
+                    ))}
+                    {expenses.filter(e => e.status !== 'PENDING').length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-6 text-center text-slate-500">No expense history records.</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -3355,6 +3510,45 @@ export const SportsManagement: React.FC = () => {
               </div>
             </div>
 
+            {/* Sports Payroll History */}
+            <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Salary Payout History (Last 20 records)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                      <th className="py-3 px-4 font-bold">Employee</th>
+                      <th className="py-3 px-4 font-bold">Role</th>
+                      <th className="py-3 px-4 font-bold">Month</th>
+                      <th className="py-3 px-4 font-bold">Net Salary Paid</th>
+                      <th className="py-3 px-4 font-bold">Transaction ID</th>
+                      <th className="py-3 px-4 font-bold">Payment Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850">
+                    {salaryRecords.filter(s => s.status === 'PAID').slice(0, 20).map(sal => {
+                      const net = sal.amount + sal.bonus - sal.deductions;
+                      return (
+                        <tr key={sal.id} className="hover:bg-slate-900/40">
+                          <td className="py-3 px-4 font-semibold text-slate-100">{sal.employeeName}</td>
+                          <td className="py-3 px-4 text-slate-400 font-mono text-[10px]">{sal.employeeRole}</td>
+                          <td className="py-3 px-4 text-slate-450">{sal.month}</td>
+                          <td className="py-3 px-4 text-emerald-450 font-bold">₹{net.toLocaleString()}</td>
+                          <td className="py-3 px-4 font-mono text-slate-350">{sal.transactionId}</td>
+                          <td className="py-3 px-4 text-slate-500 font-mono">{sal.paymentDate ? new Date(sal.paymentDate).toLocaleDateString() : 'N/A'}</td>
+                        </tr>
+                      );
+                    })}
+                    {salaryRecords.filter(s => s.status === 'PAID').length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-6 text-center text-slate-500">No payroll payment history.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* Fines verifications */}
             <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Fine Payment Queue</h3>
@@ -3371,7 +3565,7 @@ export const SportsManagement: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
-                    {fines.filter(f => f.status === 'UNPAID' && f.utrNumber).map(fine => (
+                    {finePayments.filter(f => f.status === 'PENDING').map(fine => (
                       <tr key={fine.id} className="hover:bg-slate-900/40">
                         <td className="py-3 px-4 font-semibold text-slate-100">{fine.studentName}</td>
                         <td className="py-3 px-4 text-slate-400">{fine.reason}</td>
@@ -3382,26 +3576,77 @@ export const SportsManagement: React.FC = () => {
                             <a href={fine.paymentScreenshotUrl} target="_blank" rel="noreferrer" className="text-brand-400 font-bold hover:underline">View File</a>
                           ) : 'No file'}
                         </td>
-                         <td className="py-3 px-4 flex gap-1">
+                         <td className="py-3 px-4 flex gap-1.5">
                           {portalRole === 'FINANCE_ADMIN' ? (
-                            <button 
-                              onClick={async () => {
-                                await mockApi.approveFinePayment(userId, fine.id, 'PAID');
-                                loadData(true);
-                              }}
-                              className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded text-[9px] font-bold"
-                            >
-                              Verify
-                            </button>
+                            <>
+                              <button 
+                                onClick={async () => {
+                                  await mockApi.approveFinePayment(userId, fine.id, 'APPROVED');
+                                  loadData(true);
+                                }}
+                                className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded text-[9px] font-bold hover:bg-emerald-500 hover:text-white transition-all"
+                              >
+                                Approve
+                              </button>
+                              <button 
+                                onClick={async () => {
+                                  await mockApi.approveFinePayment(userId, fine.id, 'REJECTED');
+                                  loadData(true);
+                                }}
+                                className="px-2 py-1 bg-red-500/10 text-red-400 rounded text-[9px] font-bold hover:bg-red-500 hover:text-white transition-all"
+                              >
+                                Reject
+                              </button>
+                            </>
                           ) : (
                             <span className="text-[10px] text-slate-500 font-mono">No Actions Available</span>
                           )}
                         </td>
                       </tr>
                     ))}
-                    {fines.filter(f => f.status === 'UNPAID' && f.utrNumber).length === 0 && (
+                    {finePayments.filter(f => f.status === 'PENDING').length === 0 && (
                       <tr>
                         <td colSpan={6} className="py-6 text-center text-slate-500">No fine verification records.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Sports Fines Payments History */}
+            <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Fine Payments History (Last 20 records)</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                      <th className="py-3 px-4 font-bold">Student Name</th>
+                      <th className="py-3 px-4 font-bold">Reason</th>
+                      <th className="py-3 px-4 font-bold">Amount</th>
+                      <th className="py-3 px-4 font-bold">UTR Reference</th>
+                      <th className="py-3 px-4 font-bold">Submitted Date</th>
+                      <th className="py-3 px-4 font-bold">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850">
+                    {finePayments.filter(f => f.status !== 'PENDING').slice(0, 20).map(fine => (
+                      <tr key={fine.id} className="hover:bg-slate-900/40">
+                        <td className="py-3 px-4 font-semibold text-slate-100">{fine.studentName}</td>
+                        <td className="py-3 px-4 text-slate-400">{fine.reason}</td>
+                        <td className="py-3 px-4 text-slate-400">₹{fine.amount}</td>
+                        <td className="py-3 px-4 font-mono text-slate-350">{fine.utrNumber || 'N/A'}</td>
+                        <td className="py-3 px-4 text-slate-500 font-mono">{fine.submittedAt ? new Date(fine.submittedAt).toLocaleDateString() : 'N/A'}</td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            fine.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                          }`}>{fine.status}</span>
+                        </td>
+                      </tr>
+                    ))}
+                    {finePayments.filter(f => f.status !== 'PENDING').length === 0 && (
+                      <tr>
+                        <td colSpan={6} className="py-6 text-center text-slate-500">No fine payment history.</td>
                       </tr>
                     )}
                   </tbody>
@@ -4012,6 +4257,54 @@ export const SportsManagement: React.FC = () => {
               <button onClick={() => setShowFeePayment(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
             </div>
             
+            {schoolPaymentSettings ? (
+              <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-xl space-y-2">
+                <p className="text-[10px] font-bold text-slate-350 uppercase font-mono tracking-wider">School Payment Account Details</p>
+                
+                {schoolPaymentSettings.qrPaymentEnabled && schoolPaymentSettings.qrCodeUrl && (
+                  <div className="flex flex-col items-center justify-center border-b border-slate-800 pb-2 mb-2">
+                    <img 
+                      src={schoolPaymentSettings.qrCodeUrl} 
+                      alt="Payment QR" 
+                      className="w-24 h-24 object-contain rounded-lg border border-slate-850 bg-white p-1" 
+                    />
+                    <p className="text-[10px] font-mono text-slate-400 mt-1.5">UPI ID: {schoolPaymentSettings.upiId || 'N/A'}</p>
+                  </div>
+                )}
+
+                {schoolPaymentSettings.bankTransferEnabled && (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[10px] text-slate-400">
+                    <div>
+                      <span className="text-[9px] font-semibold text-slate-500 uppercase block font-mono">Account Holder</span>
+                      <span className="text-slate-200 font-semibold">{schoolPaymentSettings.accountHolderName || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-semibold text-slate-500 uppercase block font-mono">Bank Name</span>
+                      <span className="text-slate-200 font-semibold">{schoolPaymentSettings.bankName || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-semibold text-slate-500 uppercase block font-mono">Account Number</span>
+                      <span className="text-slate-200 font-mono font-semibold">{schoolPaymentSettings.accountNumber || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-semibold text-slate-500 uppercase block font-mono">IFSC Code</span>
+                      <span className="text-slate-200 font-mono font-semibold">{schoolPaymentSettings.ifscCode || 'N/A'}</span>
+                    </div>
+                  </div>
+                )}
+
+                {schoolPaymentSettings.paymentInstructions && (
+                  <p className="text-[9px] text-slate-400 italic border-t border-slate-800 pt-1.5 mt-1.5">
+                    Instructions: {schoolPaymentSettings.paymentInstructions}
+                  </p>
+                )}
+              </div>
+            ) : (
+              <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl text-center text-slate-500 text-[10px]">
+                Loading school payment credentials...
+              </div>
+            )}
+
             <form onSubmit={handleFeePayment} className="space-y-4 text-xs">
               <div className="space-y-1">
                 <label className="block text-slate-400 font-semibold">Payment Method</label>
@@ -4039,19 +4332,26 @@ export const SportsManagement: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className="block text-slate-400 font-semibold">Payment Screenshot Link</label>
+                <label className="block text-slate-400 font-semibold">Upload Payment Receipt Screenshot</label>
                 <input 
-                  type="text" 
-                  value={paymentForm.screenshotUrl}
-                  onChange={(e) => setPaymentForm(prev => ({ ...prev, screenshotUrl: e.target.value }))}
-                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
-                  placeholder="https://imgur.com/screenshot.jpg"
+                  type="file" 
+                  accept="image/*"
+                  onChange={(e) => handleScreenshotUpload(e, false)}
+                  required={!paymentForm.screenshotUrl}
+                  className="w-full text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-brand-600/20 file:text-brand-400 hover:file:bg-brand-600/30 bg-slate-900 border border-slate-800 rounded-xl px-2 py-2"
                 />
+                {uploading && <p className="text-[10px] text-amber-500 animate-pulse mt-1">Uploading file to Supabase storage...</p>}
+                {paymentForm.screenshotUrl && (
+                  <p className="text-[10px] text-emerald-400 mt-1 flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Proof uploaded successfully.
+                  </p>
+                )}
               </div>
 
               <button 
                 type="submit" 
-                className="w-full py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl border border-brand-400/25"
+                disabled={uploading || !paymentForm.screenshotUrl}
+                className={`w-full py-3 text-white font-bold rounded-xl border border-brand-400/25 ${uploading || !paymentForm.screenshotUrl ? 'bg-slate-800 text-slate-500 cursor-not-allowed border-none' : 'bg-gradient-to-r from-brand-600 to-brand-500'}`}
               >
                 Submit Payment For Verification
               </button>
@@ -4068,16 +4368,76 @@ export const SportsManagement: React.FC = () => {
               <button onClick={() => { setShowPayFine(false); setActiveFineId(null); }} className="text-slate-400 hover:text-white"><X size={18} /></button>
             </div>
             
+            {schoolPaymentSettings ? (
+              <div className="p-3 bg-slate-900/60 border border-slate-800/80 rounded-xl space-y-2">
+                <p className="text-[10px] font-bold text-slate-350 uppercase font-mono tracking-wider">School Payment Account Details</p>
+                
+                {schoolPaymentSettings.qrPaymentEnabled && schoolPaymentSettings.qrCodeUrl && (
+                  <div className="flex flex-col items-center justify-center border-b border-slate-800 pb-2 mb-2">
+                    <img 
+                      src={schoolPaymentSettings.qrCodeUrl} 
+                      alt="Payment QR" 
+                      className="w-24 h-24 object-contain rounded-lg border border-slate-850 bg-white p-1" 
+                    />
+                    <p className="text-[10px] font-mono text-slate-400 mt-1.5">UPI ID: {schoolPaymentSettings.upiId || 'N/A'}</p>
+                  </div>
+                )}
+
+                {schoolPaymentSettings.bankTransferEnabled && (
+                  <div className="grid grid-cols-2 gap-x-2 gap-y-1.5 text-[10px] text-slate-400">
+                    <div>
+                      <span className="text-[9px] font-semibold text-slate-500 uppercase block font-mono">Account Holder</span>
+                      <span className="text-slate-200 font-semibold">{schoolPaymentSettings.accountHolderName || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-semibold text-slate-500 uppercase block font-mono">Bank Name</span>
+                      <span className="text-slate-200 font-semibold">{schoolPaymentSettings.bankName || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-semibold text-slate-500 uppercase block font-mono">Account Number</span>
+                      <span className="text-slate-200 font-mono font-semibold">{schoolPaymentSettings.accountNumber || 'N/A'}</span>
+                    </div>
+                    <div>
+                      <span className="text-[9px] font-semibold text-slate-500 uppercase block font-mono">IFSC Code</span>
+                      <span className="text-slate-200 font-mono font-semibold">{schoolPaymentSettings.ifscCode || 'N/A'}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="p-3 bg-slate-900/60 border border-slate-800 rounded-xl text-center text-slate-500 text-[10px]">
+                Loading school payment credentials...
+              </div>
+            )}
+
             <form onSubmit={handlePayFine} className="space-y-4 text-xs">
               <div className="space-y-1">
-                <label className="text-slate-400">UTR / Reference Number</label>
-                <input type="text" value={finePaymentForm.utrNumber} onChange={(e) => setFinePaymentForm(prev => ({ ...prev, utrNumber: e.target.value }))} required className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl" placeholder="UTR Reference ID" />
+                <label className="text-slate-400 block font-semibold">UTR / Reference Number</label>
+                <input type="text" value={finePaymentForm.utrNumber} onChange={(e) => setFinePaymentForm(prev => ({ ...prev, utrNumber: e.target.value }))} required className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none" placeholder="UTR Reference ID" />
               </div>
               <div className="space-y-1">
-                <label className="text-slate-400">Payment Screenshot Link</label>
-                <input type="text" value={finePaymentForm.screenshotUrl} onChange={(e) => setFinePaymentForm(prev => ({ ...prev, screenshotUrl: e.target.value }))} className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl" placeholder="https://imgur.com/screenshot.jpg" />
+                <label className="block text-slate-400 font-semibold">Upload Payment Receipt Screenshot</label>
+                <input 
+                  type="file" 
+                  accept="image/*"
+                  onChange={(e) => handleScreenshotUpload(e, true)}
+                  required={!finePaymentForm.screenshotUrl}
+                  className="w-full text-xs text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-brand-600/20 file:text-brand-400 hover:file:bg-brand-600/30 bg-slate-900 border border-slate-800 rounded-xl px-2 py-2"
+                />
+                {uploading && <p className="text-[10px] text-amber-500 animate-pulse mt-1">Uploading file to Supabase storage...</p>}
+                {finePaymentForm.screenshotUrl && (
+                  <p className="text-[10px] text-emerald-400 mt-1 flex items-center gap-1">
+                    <CheckCircle2 size={12} /> Proof uploaded successfully.
+                  </p>
+                )}
               </div>
-              <button type="submit" className="w-full py-3 bg-red-600 text-white font-bold rounded-xl">Submit Fine Payment</button>
+              <button 
+                type="submit" 
+                disabled={uploading || !finePaymentForm.screenshotUrl}
+                className={`w-full py-3 text-white font-bold rounded-xl ${uploading || !finePaymentForm.screenshotUrl ? 'bg-slate-800 text-slate-500 cursor-not-allowed border-none' : 'bg-red-650 hover:bg-red-500'}`}
+              >
+                Submit Fine Payment
+              </button>
             </form>
           </div>
         </div>

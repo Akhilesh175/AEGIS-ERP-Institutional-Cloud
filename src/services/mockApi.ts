@@ -18554,7 +18554,8 @@ export const mockApi = {
         transaction_id: payment.transactionId || null,
         status: 'PENDING',
         payment_screenshot_url: payment.paymentScreenshotUrl || null,
-        utr_number: payment.utrNumber || null
+        utr_number: payment.utrNumber || null,
+        parent_id: parentId
       })
       .select()
       .single();
@@ -18578,6 +18579,8 @@ export const mockApi = {
       .update({
         status,
         rejection_reason: rejectionReason || null,
+        approved_by: status === 'APPROVED' ? userId : null,
+        approved_at: status === 'APPROVED' ? new Date().toISOString() : null,
         updated_at: new Date().toISOString()
       })
       .eq('id', paymentId)
@@ -19319,19 +19322,46 @@ export const mockApi = {
     const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
     if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
 
+    // 1. Fetch old amount to record in history
+    const { data: existing } = await supabaseAdmin
+      .from('sports_budget_allocations')
+      .select('id, allocated_amount')
+      .eq('school_id', user.school_id)
+      .eq('academic_session_id', budget.academicSessionId)
+      .eq('category', budget.category)
+      .maybeSingle();
+
+    const oldAmount = existing ? Number(existing.allocated_amount) : 0;
+    const newAmount = Number(budget.allocatedAmount);
+
+    // 2. Upsert
     const { data, error } = await supabaseAdmin
       .from('sports_budget_allocations')
       .upsert({
         school_id: user.school_id,
         academic_session_id: budget.academicSessionId,
-        allocated_amount: Number(budget.allocatedAmount),
-        category: budget.category
+        allocated_amount: newAmount,
+        category: budget.category,
+        created_by: userId
       }, { onConflict: 'school_id,academic_session_id,category' })
       .select()
       .single();
     
     if (error) throw error;
     
+    // 3. Log to budget history
+    if (oldAmount !== newAmount) {
+      await supabaseAdmin
+        .from('sports_budget_history')
+        .insert({
+          school_id: user.school_id,
+          budget_id: data.id,
+          old_amount: oldAmount,
+          new_amount: newAmount,
+          updated_by: userId
+        });
+    }
+
     await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'ALLOCATE_BUDGET', `Allocated ₹${budget.allocatedAmount} budget for ${budget.category}`, undefined, undefined, { budgetId: data.id });
     return data;
   },
@@ -19339,32 +19369,31 @@ export const mockApi = {
   async fetchExpenses(schoolId: string, academicSessionId: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchExpenses');
     const { data, error } = await supabaseAdmin
-      .from('sports_expenses')
-      .select('*, requested:users!requested_by(first_name, last_name), approved:users!approved_by(first_name, last_name)')
+      .from('sports_expense_requests')
+      .select('*, requester:users!requester_id(first_name, last_name)')
       .eq('school_id', schoolId)
-      .eq('academic_session_id', academicSessionId)
       .order('created_at', { ascending: false });
     if (error) throw error;
     return (data || []).map(r => ({
       id: r.id,
       schoolId: r.school_id,
-      academicSessionId: r.academic_session_id,
-      category: r.category,
-      title: r.title,
-      description: r.description,
-      amountRequested: Number(r.amount_requested),
-      amountApproved: r.amount_approved ? Number(r.amount_approved) : null,
-      requestedBy: r.requested_by,
-      approvedBy: r.approved_by,
+      academicSessionId: academicSessionId,
+      category: 'EQUIPMENT_PURCHASE',
+      title: r.item_name,
+      description: '',
+      amountRequested: Number(r.amount),
+      amountApproved: r.status === 'APPROVED' ? Number(r.amount) : null,
+      requestedBy: r.requester_id,
+      approvedBy: null,
       status: r.status,
-      vendor: r.vendor,
+      vendor: r.vendor_name,
       invoiceNumber: r.invoice_number,
       paymentStatus: r.payment_status,
-      referenceId: r.reference_id,
+      referenceId: null,
       createdAt: r.created_at,
-      updatedAt: r.updated_at,
-      requestedByName: r.requested ? `${r.requested.first_name} ${r.requested.last_name}` : 'Unknown',
-      approvedByName: r.approved ? `${r.approved.first_name} ${r.approved.last_name}` : null
+      updatedAt: r.created_at,
+      requestedByName: r.requester ? `${r.requester.first_name} ${r.requester.last_name}` : 'Unknown',
+      approvedByName: null
     }));
   },
 
@@ -19373,19 +19402,16 @@ export const mockApi = {
     if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
 
     const { data, error } = await supabaseAdmin
-      .from('sports_expenses')
+      .from('sports_expense_requests')
       .insert({
         school_id: user.school_id,
-        academic_session_id: expense.academicSessionId,
-        category: expense.category,
-        title: expense.title,
-        description: expense.description || null,
-        amount_requested: Number(expense.amountRequested),
-        requested_by: userId,
-        vendor: expense.vendor || null,
+        item_name: expense.title,
+        vendor_name: expense.vendor || null,
         invoice_number: expense.invoiceNumber || null,
-        reference_id: expense.referenceId || null,
-        status: 'PENDING'
+        amount: Number(expense.amountRequested),
+        requester_id: userId,
+        status: 'PENDING',
+        payment_status: 'PENDING'
       })
       .select()
       .single();
@@ -19400,15 +19426,10 @@ export const mockApi = {
     const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
     if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
 
-    const amountApproved = approveData.status === 'APPROVED' ? Number(approveData.amountApproved || 0) : null;
-
     const { data, error } = await supabaseAdmin
-      .from('sports_expenses')
+      .from('sports_expense_requests')
       .update({
-        status: approveData.status,
-        amount_approved: amountApproved,
-        approved_by: userId,
-        updated_at: new Date().toISOString()
+        status: approveData.status
       })
       .eq('id', expenseId)
       .select()
@@ -19417,34 +19438,24 @@ export const mockApi = {
     if (error) throw error;
 
     if (approveData.status === 'APPROVED') {
-      const budgetCategoryMap: Record<string, string> = {
-        'EQUIPMENT_PURCHASE': 'EQUIPMENT',
-        'TOURNAMENT_EXPENSE': 'TOURNAMENT',
-        'OTHER': 'OTHER'
-      };
-      const budgetCategory = budgetCategoryMap[data.category] || 'OTHER';
-      
       const { data: budget } = await supabaseAdmin
         .from('sports_budget_allocations')
-        .select('spent_amount')
+        .select('id, spent_amount')
         .eq('school_id', user.school_id)
-        .eq('academic_session_id', data.academic_session_id)
-        .eq('category', budgetCategory)
+        .eq('category', 'EQUIPMENT')
         .maybeSingle();
       
       if (budget) {
         await supabaseAdmin
           .from('sports_budget_allocations')
           .update({
-            spent_amount: Number(budget.spent_amount) + Number(amountApproved)
+            spent_amount: Number(budget.spent_amount) + Number(data.amount)
           })
-          .eq('school_id', user.school_id)
-          .eq('academic_session_id', data.academic_session_id)
-          .eq('category', budgetCategory);
+          .eq('id', budget.id);
       }
     }
 
-    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', approveData.status === 'APPROVED' ? 'APPROVE_EXPENSE' : 'REJECT_EXPENSE', `${approveData.status === 'APPROVED' ? 'Approved' : 'Rejected'} expense of ₹${data.amount_requested}`, undefined, undefined, { expenseId });
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', approveData.status === 'APPROVED' ? 'APPROVE_EXPENSE' : 'REJECT_EXPENSE', `${approveData.status === 'APPROVED' ? 'Approved' : 'Rejected'} expense of ₹${data.amount}`, undefined, undefined, { expenseId });
     return data;
   },
 
@@ -19453,10 +19464,9 @@ export const mockApi = {
     if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
 
     const { data, error } = await supabaseAdmin
-      .from('sports_expenses')
+      .from('sports_expense_requests')
       .update({
-        payment_status: 'RELEASED',
-        updated_at: new Date().toISOString()
+        payment_status: 'RELEASED'
       })
       .eq('id', expenseId)
       .select()
@@ -19464,18 +19474,22 @@ export const mockApi = {
     
     if (error) throw error;
 
-    await supabaseAdmin.from('sports_finance_transactions').insert({
-      school_id: user.school_id,
-      academic_session_id: data.academic_session_id,
-      type: 'EXPENSE',
-      category: data.category === 'EQUIPMENT_PURCHASE' ? 'EQUIPMENT_PURCHASE' : (data.category === 'TOURNAMENT_EXPENSE' ? 'TOURNAMENT_EXPENSE' : 'OTHER'),
-      amount: Number(data.amount_approved),
-      reference_id: expenseId,
-      status: 'APPROVED',
-      remarks: `Payment released for expense: ${data.title}`
-    });
+    try {
+      await supabaseAdmin.from('sports_finance_transactions').insert({
+        school_id: user.school_id,
+        academic_session_id: null,
+        type: 'EXPENSE',
+        category: 'EQUIPMENT_PURCHASE',
+        amount: Number(data.amount),
+        reference_id: expenseId,
+        status: 'APPROVED',
+        remarks: `Payment released for expense: ${data.item_name}`
+      });
+    } catch (e) {
+      console.warn("Failed to write to sports_finance_transactions:", e);
+    }
 
-    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'RELEASE_EXPENSE_PAYMENT', `Released payment for expense ${data.title}`, undefined, undefined, { expenseId });
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'RELEASE_EXPENSE_PAYMENT', `Released payment for expense ${data.item_name}`, undefined, undefined, { expenseId });
     return data;
   },
 
@@ -19769,54 +19783,151 @@ export const mockApi = {
   },
 
   async submitFinePayment(fineId: string, payData: { utrNumber: string; screenshotUrl?: string }): Promise<any> {
+    const { data: fine } = await supabaseAdmin
+      .from('sports_fines')
+      .select('*')
+      .eq('id', fineId)
+      .single();
+    if (!fine) throw new Error('Fine record not found');
+
     const { data, error } = await supabaseAdmin
+      .from('sports_fine_payments')
+      .insert({
+        school_id: fine.school_id,
+        student_id: fine.student_id,
+        amount: Number(fine.amount),
+        reason: fine.reason,
+        utr_number: payData.utrNumber,
+        proof_image_url: payData.screenshotUrl || null,
+        status: 'PENDING'
+      })
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    await supabaseAdmin
       .from('sports_fines')
       .update({
         utr_number: payData.utrNumber,
         payment_screenshot_url: payData.screenshotUrl || null,
-        payment_date: new Date().toISOString(),
         updated_at: new Date().toISOString()
       })
-      .eq('id', fineId)
-      .select()
-      .single();
-    
-    if (error) throw error;
+      .eq('id', fineId);
+
     return data;
   },
 
-  async approveFinePayment(userId: string, fineId: string, status: 'PAID' | 'UNPAID'): Promise<any> {
+  async approveFinePayment(userId: string, paymentId: string, status: 'APPROVED' | 'REJECTED'): Promise<any> {
     const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
     if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
 
-    const { data, error } = await supabaseAdmin
-      .from('sports_fines')
+    const { data: payment, error } = await supabaseAdmin
+      .from('sports_fine_payments')
       .update({
-        status: status,
-        updated_at: new Date().toISOString()
+        status: status
       })
-      .eq('id', fineId)
+      .eq('id', paymentId)
       .select()
       .single();
     
     if (error) throw error;
 
-    if (status === 'PAID') {
-      await supabaseAdmin.from('sports_finance_transactions').insert({
-        school_id: user.school_id,
-        academic_session_id: data.academic_session_id,
-        type: 'REVENUE',
-        category: 'FINE',
-        amount: Number(data.amount),
-        reference_id: fineId,
-        status: 'APPROVED',
-        remarks: `Fine paid by student: ${data.reason}`
-      });
+    const { data: matchingFines } = await supabaseAdmin
+      .from('sports_fines')
+      .select('id')
+      .eq('student_id', payment.student_id)
+      .eq('amount', payment.amount)
+      .eq('status', 'UNPAID');
+
+    if (matchingFines && matchingFines.length > 0) {
+      const targetFineId = matchingFines[0].id;
+      if (status === 'APPROVED') {
+        await supabaseAdmin
+          .from('sports_fines')
+          .update({
+            status: 'PAID',
+            payment_date: new Date().toISOString(),
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', targetFineId);
+      } else {
+        await supabaseAdmin
+          .from('sports_fines')
+          .update({
+            utr_number: null,
+            payment_screenshot_url: null,
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', targetFineId);
+      }
     }
 
-    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', status === 'PAID' ? 'APPROVE_FINE_PAYMENT' : 'REJECT_FINE_PAYMENT', `${status === 'PAID' ? 'Approved' : 'Rejected'} fine payment`, undefined, undefined, { fineId });
-    return data;
+    if (status === 'APPROVED') {
+      try {
+        await supabaseAdmin.from('sports_finance_transactions').insert({
+          school_id: user.school_id,
+          academic_session_id: null,
+          type: 'REVENUE',
+          category: 'FINE',
+          amount: Number(payment.amount),
+          reference_id: paymentId,
+          status: 'APPROVED',
+          remarks: `Fine payment approved: ${payment.reason}`
+        });
+      } catch (e) {
+        console.warn("Failed to write fine to sports_finance_transactions:", e);
+      }
+    }
+
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', status === 'APPROVED' ? 'APPROVE_FINE_PAYMENT' : 'REJECT_FINE_PAYMENT', `${status === 'APPROVED' ? 'Approved' : 'Rejected'} fine payment`, undefined, undefined, { paymentId });
+    return payment;
   },
+
+  async fetchBudgetHistory(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchBudgetHistory');
+    const { data, error } = await supabaseAdmin
+      .from('sports_budget_history')
+      .select('*, updater:users!updated_by(first_name, last_name), budget:sports_budget_allocations(category)')
+      .eq('school_id', schoolId)
+      .order('updated_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      budgetId: r.budget_id,
+      oldAmount: Number(r.old_amount),
+      newAmount: Number(r.new_amount),
+      updatedBy: r.updated_by,
+      updatedAt: r.updated_at,
+      category: r.budget?.category || 'General',
+      updatedByName: r.updater ? `${r.updater.first_name} ${r.updater.last_name}` : 'Unknown Admin'
+    }));
+  },
+
+  async fetchFinePayments(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchFinePayments');
+    const { data, error } = await supabaseAdmin
+      .from('sports_fine_payments')
+      .select('*, students(*, users(first_name, last_name))')
+      .eq('school_id', schoolId)
+      .order('submitted_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      schoolId: r.school_id,
+      studentId: r.student_id,
+      amount: Number(r.amount),
+      reason: r.reason,
+      utrNumber: r.utr_number,
+      paymentScreenshotUrl: r.proof_image_url,
+      status: r.status,
+      submittedAt: r.submitted_at,
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student'
+    }));
+  },
+
 
   async fetchFinanceTransactions(schoolId: string, academicSessionId: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchFinanceTransactions');
@@ -20639,7 +20750,7 @@ export const mockApi = {
   },
 
   async deleteSportsExpense(expenseId: string): Promise<void> {
-    const { data: expense } = await supabaseAdmin.from('sports_expenses').select('status, payment_status').eq('id', expenseId).maybeSingle();
+    const { data: expense } = await supabaseAdmin.from('sports_expense_requests').select('status, payment_status').eq('id', expenseId).maybeSingle();
     if (!expense) return;
 
     if (expense.status === 'APPROVED' || expense.payment_status === 'RELEASED') {
@@ -20649,7 +20760,7 @@ export const mockApi = {
     const { count: txCount } = await supabaseAdmin.from('sports_finance_transactions').select('*', { count: 'exact', head: true }).eq('reference_id', expenseId);
     if (txCount && txCount > 0) throw new Error("Cannot delete this record because related records exist.");
 
-    const { error } = await supabaseAdmin.from('sports_expenses').delete().eq('id', expenseId);
+    const { error } = await supabaseAdmin.from('sports_expense_requests').delete().eq('id', expenseId);
     if (error) throw error;
   },
 
