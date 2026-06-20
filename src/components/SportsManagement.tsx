@@ -94,6 +94,10 @@ export const SportsManagement: React.FC = () => {
   const [budgetHistory, setBudgetHistory] = useState<any[]>([]);
   const [schoolPaymentSettings, setSchoolPaymentSettings] = useState<any>(null);
   const [uploading, setUploading] = useState<boolean>(false);
+  const [showCreateEnrollment, setShowCreateEnrollment] = useState<boolean>(false);
+  const [enrollmentStudentId, setEnrollmentStudentId] = useState<string>('');
+  const [enrollmentSportId, setEnrollmentSportId] = useState<string>('');
+  const [allStudents, setAllStudents] = useState<any[]>([]);
   const [activityLogs, setActivityLogs] = useState<any[]>([]);
   const [coachAttendance, setCoachAttendance] = useState<any[]>([]);
   const [coachLeaves, setCoachLeaves] = useState<any[]>([]);
@@ -101,6 +105,7 @@ export const SportsManagement: React.FC = () => {
   const [attendanceCorrections, setAttendanceCorrections] = useState<any[]>([]);
   const [schools, setSchools] = useState<any[]>([]);
   const [attendanceHistory, setAttendanceHistory] = useState<any[]>([]);
+  const [athleteAttendanceHistory, setAthleteAttendanceHistory] = useState<any[]>([]);
   const [attendanceEdits, setAttendanceEdits] = useState<Record<string, { status: string; checkIn: string; checkOut: string; remarks: string; editReason?: string }>>({});
   const [showCheckInSimulator, setShowCheckInSimulator] = useState(false);
   const [simulatedCheckIn, setSimulatedCheckIn] = useState({ coachId: '', sessionName: 'Cricket Training', durationMinutes: 120, deviceId: 'DEV-IPHONE-726', ipAddress: '192.168.1.5', latitude: 12.9716, longitude: 77.5946, attendanceSource: 'MOBILE_GPS' });
@@ -170,7 +175,7 @@ export const SportsManagement: React.FC = () => {
     }
   };
 
-  const loadData = async (silent = false) => {
+  const loadData = async (silent = false, overrideStudentId?: string) => {
     if (!silent) setLoading(true);
     try {
       if (!schoolId) return;
@@ -250,10 +255,12 @@ export const SportsManagement: React.FC = () => {
       setAttendanceHistory(historyRes);
 
       // Resolve student profile mapping for Student/Parent
+      let activeStudentId = '';
       if (userRole === 'STUDENT') {
         const { data: std } = await supabase.from('students').select('id').eq('user_id', userId).maybeSingle();
         if (std) {
           setStudentProfileId(std.id);
+          activeStudentId = std.id;
           const { data: mapping } = await supabase.from('parent_student_mapping').select('parent_id').eq('student_id', std.id).maybeSingle();
           if (mapping) {
             setParentProfileId(mapping.parent_id);
@@ -269,9 +276,35 @@ export const SportsManagement: React.FC = () => {
             const { data: stdProfiles } = await supabase.from('students').select('*, users(first_name, last_name)').in('id', mappedIds);
             setParentLinkedStudents(stdProfiles || []);
             if (stdProfiles && stdProfiles.length > 0) {
-              setStudentProfileId(stdProfiles[0].id);
+              const initialStudentId = studentProfileId || stdProfiles[0].id;
+              setStudentProfileId(initialStudentId);
+              activeStudentId = initialStudentId;
             }
           }
+        }
+      }
+
+      // Fetch athlete attendance for Student/Parent
+      const currentStudentId = overrideStudentId || activeStudentId || studentProfileId;
+      if (['STUDENT', 'PARENT'].includes(userRole) && currentStudentId) {
+        const attHistory = await mockApi.fetchStudentAttendance(schoolId, currentStudentId);
+        setAthleteAttendanceHistory(attHistory);
+      }
+
+      // Load all students for the school if Admin or Sports Admin
+      if (['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN', 'ADMIN'].includes(userRole)) {
+        const { data: stds, error: stdsErr } = await supabase
+          .from('students')
+          .select('id, users(first_name, last_name)')
+          .eq('school_id', schoolId);
+        if (!stdsErr && stds) {
+          setAllStudents(stds.map(s => {
+            const userObj: any = Array.isArray(s.users) ? s.users[0] : s.users;
+            return {
+              id: s.id,
+              name: userObj ? `${userObj.first_name || ''} ${userObj.last_name || ''}`.trim() : 'Unknown student'
+            };
+          }));
         }
       }
     } catch (e) {
@@ -1039,7 +1072,11 @@ export const SportsManagement: React.FC = () => {
                 <label className="text-xs font-semibold text-slate-400 font-mono">Linked Student:</label>
                 <select
                   value={studentProfileId}
-                  onChange={(e) => setStudentProfileId(e.target.value)}
+                  onChange={(e) => {
+                    const newId = e.target.value;
+                    setStudentProfileId(newId);
+                    loadData(true, newId);
+                  }}
                   style={{ backgroundColor: '#0b101d', color: '#ffffff', borderColor: '#1e293b' }}
                   className="px-3 py-2 border rounded-xl text-xs text-white focus:outline-none focus:border-brand-500 [&>option]:bg-[#0b101d] [&>option]:text-white"
                 >
@@ -2233,178 +2270,274 @@ export const SportsManagement: React.FC = () => {
         {activeSubTab === 'enrollment' && (
           <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
             
-            {portalRole === 'STUDENT' ? (
+            {['STUDENT', 'PARENT'].includes(portalRole) ? (
               <div className="space-y-6">
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                  {sports
-                    .filter(s => s.status === 'ACTIVE' && !studentSports.includes(s.id))
-                    .map(sport => {
-                      const isPending = enrollments.some(e => e.studentId === studentProfileId && e.sportId === sport.id && e.status === 'PENDING');
-                      return (
-                        <div key={sport.id} className="bg-slate-900/60 border border-slate-850 p-5 rounded-2xl flex flex-col justify-between gap-4">
-                          <div>
-                            <h4 className="font-bold text-slate-100">{sport.name}</h4>
-                            <p className="text-[11px] text-slate-400 mt-1">{sport.categoryName} • {sport.type}</p>
-                            <p className="text-xs text-slate-500 mt-3 leading-relaxed">{sport.description || 'Join training sessions and compete in upcoming matches.'}</p>
-                          </div>
-                          
-                          {isPending ? (
-                            <button disabled className="w-full py-2 bg-amber-500/10 border border-amber-500/20 text-amber-500 font-bold text-xs rounded-xl cursor-not-allowed">
-                              Request Pending Approval
-                            </button>
-                          ) : (
-                            <button 
-                              onClick={async () => {
-                                await mockApi.submitSportsEnrollment({
-                                  schoolId,
-                                  academicSessionId,
-                                  studentId: studentProfileId,
-                                  sportId: sport.id
-                                });
-                                loadData(true);
-                              }}
-                              className="w-full py-2 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold text-xs rounded-xl hover:from-brand-500 hover:to-brand-400 transition-all border border-brand-400/25"
-                            >
-                              Enroll in Sport
-                            </button>
-                          )}
-                        </div>
-                      );
-                    })}
-                </div>
-              </div>
-            ) : (
-              <>
-                <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border-collapse">
-                  <thead>
-                    <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
-                      <th className="py-3 px-4 font-bold">Student Name</th>
-                      <th className="py-3 px-4 font-bold">Requested Sport</th>
-                      <th className="py-3 px-4 font-bold">Request Date</th>
-                      <th className="py-3 px-4 font-bold">Status</th>
-                      <th className="py-3 px-4 font-bold">Action</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-850">
-                    {enrollments
-                      .filter(e => e.status === 'PENDING')
-                      .map(enroll => (
-                        <tr key={enroll.id} className="hover:bg-slate-900/40 transition-colors">
-                          <td className="py-3 px-4 font-semibold text-slate-100">{enroll.studentName}</td>
-                          <td className="py-3 px-4 text-slate-400">{enroll.sportName}</td>
-                          <td className="py-3 px-4 text-slate-500">{enroll.enrollDate}</td>
-                          <td className="py-3 px-4">
-                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 border border-amber-500/20 text-amber-500">
-                              PENDING
-                            </span>
-                          </td>
-                          <td className="py-3 px-4 flex gap-2">
-                            <button 
-                              onClick={async () => {
-                                await mockApi.updateSportsEnrollmentStatus(enroll.id, 'APPROVED');
-                                loadData(true);
-                              }}
-                              className="p-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-lg transition-all"
-                            >
-                              <Check size={14} />
-                            </button>
-                            <button 
-                              onClick={async () => {
-                                const reason = prompt('Rejection reason:') || 'Criteria not met';
-                                await mockApi.updateSportsEnrollmentStatus(enroll.id, 'REJECTED', reason);
-                                loadData(true);
-                              }}
-                              className="p-1 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-all"
-                            >
-                              <X size={14} />
-                            </button>
-                            <button 
-                              onClick={async () => {
-                                try {
-                                  if (confirm("Are you sure you want to delete this enrollment request?")) {
-                                    await mockApi.deleteSportsEnrollment(enroll.id);
-                                    loadData(true);
-                                  }
-                                } catch (err: any) {
-                                  alert(err.message || "Cannot delete this record because related records exist.");
-                                }
-                              }}
-                              className="p-1 bg-red-600/10 border border-red-500/20 text-red-400 hover:bg-red-600 hover:text-white rounded-lg transition-all"
-                              title="Delete Request"
-                            >
-                              <Trash size={14} />
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
-                    {enrollments.filter(e => e.status === 'PENDING').length === 0 && (
-                      <tr>
-                        <td colSpan={5} className="py-6 text-center text-slate-500">No pending enrollment requests.</td>
-                      </tr>
-                    )}
-                  </tbody>
-                </table>
-              </div>
-
-              {/* Approved Student Roster Table */}
-              <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 mt-6">
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Approved Student Roster (Athletes)</h3>
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">My Sports Enrollments</h3>
                 <div className="overflow-x-auto">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
-                        <th className="py-3 px-4 font-bold">Student Name</th>
-                        <th className="py-3 px-4 font-bold">Registered Sport</th>
-                        <th className="py-3 px-4 font-bold">Enroll Date</th>
+                        <th className="py-3 px-4 font-bold">Sport Name</th>
+                        <th className="py-3 px-4 font-bold">Category</th>
+                        <th className="py-3 px-4 font-bold">Type</th>
+                        <th className="py-3 px-4 font-bold">Enrollment Date</th>
                         <th className="py-3 px-4 font-bold">Status</th>
-                        <th className="py-3 px-4 font-bold">Action</th>
+                        <th className="py-3 px-4 font-bold">Remarks</th>
                       </tr>
                     </thead>
-                    <tbody className="divide-y divide-slate-850">
-                      {enrollments
-                        .filter(e => e.status === 'APPROVED')
-                        .map(enroll => (
-                          <tr key={enroll.id} className="hover:bg-slate-900/40 transition-colors">
-                            <td className="py-3 px-4 font-semibold text-slate-100">{enroll.studentName}</td>
-                            <td className="py-3 px-4 text-slate-400">{enroll.sportName}</td>
-                            <td className="py-3 px-4 text-slate-500">{enroll.enrollDate}</td>
-                            <td className="py-3 px-4">
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
-                                APPROVED
-                              </span>
-                            </td>
-                            <td className="py-3 px-4">
-                              <button 
-                                onClick={async () => {
-                                  try {
-                                    if (confirm("Are you sure you want to delete this student enrollment?")) {
-                                      await mockApi.deleteSportsEnrollment(enroll.id);
-                                      loadData(true);
-                                    }
-                                  } catch (err: any) {
-                                    alert(err.message || "Cannot delete this record because related records exist.");
-                                  }
-                                }}
-                                className="p-1 bg-red-650 text-white rounded hover:bg-red-500 transition-all flex items-center gap-1 text-[10px] font-bold px-2 py-1"
-                              >
-                                <Trash size={12} />
-                                Delete Athlete
-                              </button>
-                            </td>
-                          </tr>
-                        ))}
-                      {enrollments.filter(e => e.status === 'APPROVED').length === 0 && (
+                    <tbody className="divide-y divide-slate-850 text-slate-300">
+                      {studentEnrollments.map(enroll => (
+                        <tr key={enroll.id} className="hover:bg-slate-900/40">
+                          <td className="py-3 px-4 font-semibold text-slate-100">{enroll.sportName}</td>
+                          <td className="py-3 px-4 text-slate-400">{enroll.categoryName || 'General'}</td>
+                          <td className="py-3 px-4 text-slate-400">{enroll.sportType || 'Team'}</td>
+                          <td className="py-3 px-4 text-slate-500">{enroll.enrollDate}</td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              enroll.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' :
+                              enroll.status === 'PENDING' ? 'bg-amber-500/10 text-amber-500' :
+                              'bg-red-500/10 text-red-450'
+                            }`}>{enroll.status}</span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-450 italic">{enroll.rejectionReason || 'No remarks'}</td>
+                        </tr>
+                      ))}
+                      {studentEnrollments.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="py-6 text-center text-slate-500">No active student roster found.</td>
+                          <td colSpan={6} className="py-6 text-center text-slate-500">Not enrolled in any sports.</td>
                         </tr>
                       )}
                     </tbody>
                   </table>
                 </div>
               </div>
-            </>
-          )}
+            ) : (
+              <>
+                <div className="flex justify-between items-center pb-4 border-b border-slate-800">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Pending Enrollment Requests</h3>
+                  {['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN'].includes(portalRole) && (
+                    <button 
+                      onClick={() => {
+                        setEnrollmentStudentId('');
+                        setEnrollmentSportId('');
+                        setShowCreateEnrollment(true);
+                      }}
+                      className="px-4 py-2 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold text-xs rounded-xl hover:from-brand-500 hover:to-brand-400 transition-all border border-brand-400/25"
+                    >
+                      Create Enrollment
+                    </button>
+                  )}
+                </div>
+
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                        <th className="py-3 px-4 font-bold">Student Name</th>
+                        <th className="py-3 px-4 font-bold">Requested Sport</th>
+                        <th className="py-3 px-4 font-bold">Request Date</th>
+                        <th className="py-3 px-4 font-bold">Status</th>
+                        <th className="py-3 px-4 font-bold">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850">
+                      {enrollments
+                        .filter(e => e.status === 'PENDING')
+                        .map(enroll => (
+                          <tr key={enroll.id} className="hover:bg-slate-900/40 transition-colors">
+                            <td className="py-3 px-4 font-semibold text-slate-100">{enroll.studentName}</td>
+                            <td className="py-3 px-4 text-slate-400">{enroll.sportName}</td>
+                            <td className="py-3 px-4 text-slate-500">{enroll.enrollDate}</td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 border border-amber-500/20 text-amber-500">
+                                PENDING
+                              </span>
+                            </td>
+                            <td className="py-3 px-4 flex gap-2">
+                              <button 
+                                onClick={async () => {
+                                  await mockApi.updateSportsEnrollmentStatus(userId, enroll.id, 'APPROVED');
+                                  loadData(true);
+                                }}
+                                className="p-1 bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 hover:bg-emerald-500 hover:text-white rounded-lg transition-all"
+                              >
+                                <Check size={14} />
+                              </button>
+                              <button 
+                                onClick={async () => {
+                                  const reason = prompt('Rejection reason:') || 'Criteria not met';
+                                  await mockApi.updateSportsEnrollmentStatus(userId, enroll.id, 'REJECTED', reason);
+                                  loadData(true);
+                                }}
+                                className="p-1 bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white rounded-lg transition-all"
+                              >
+                                <X size={14} />
+                              </button>
+                              <button 
+                                onClick={async () => {
+                                  try {
+                                    if (confirm("Are you sure you want to delete this enrollment request?")) {
+                                      await mockApi.deleteSportsEnrollment(userId, enroll.id);
+                                      loadData(true);
+                                    }
+                                  } catch (err: any) {
+                                    alert(err.message || "Cannot delete this record because related records exist.");
+                                  }
+                                }}
+                                className="p-1 bg-red-600/10 border border-red-500/20 text-red-400 hover:bg-red-600 hover:text-white rounded-lg transition-all"
+                                title="Delete Request"
+                              >
+                                <Trash size={14} />
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      {enrollments.filter(e => e.status === 'PENDING').length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-6 text-center text-slate-500">No pending enrollment requests.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Approved Student Roster Table */}
+                <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 mt-6">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Approved Student Roster (Athletes)</h3>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                          <th className="py-3 px-4 font-bold">Student Name</th>
+                          <th className="py-3 px-4 font-bold">Registered Sport</th>
+                          <th className="py-3 px-4 font-bold">Enroll Date</th>
+                          <th className="py-3 px-4 font-bold">Status</th>
+                          <th className="py-3 px-4 font-bold">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-850">
+                        {enrollments
+                          .filter(e => e.status === 'APPROVED')
+                          .map(enroll => (
+                            <tr key={enroll.id} className="hover:bg-slate-900/40 transition-colors">
+                              <td className="py-3 px-4 font-semibold text-slate-100">{enroll.studentName}</td>
+                              <td className="py-3 px-4 text-slate-400">{enroll.sportName}</td>
+                              <td className="py-3 px-4 text-slate-500">{enroll.enrollDate}</td>
+                              <td className="py-3 px-4">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                                  APPROVED
+                                </span>
+                              </td>
+                              <td className="py-3 px-4">
+                                <button 
+                                  onClick={async () => {
+                                    try {
+                                      if (confirm("Are you sure you want to delete this student enrollment?")) {
+                                        await mockApi.deleteSportsEnrollment(userId, enroll.id);
+                                        loadData(true);
+                                      }
+                                    } catch (err: any) {
+                                      alert(err.message || "Cannot delete this record because related records exist.");
+                                    }
+                                  }}
+                                  className="p-1 bg-red-650 text-white rounded hover:bg-red-500 transition-all flex items-center gap-1 text-[10px] font-bold px-2 py-1"
+                                >
+                                  <Trash size={12} />
+                                  Delete Athlete
+                                </button>
+                              </td>
+                            </tr>
+                          ))}
+                        {enrollments.filter(e => e.status === 'APPROVED').length === 0 && (
+                          <tr>
+                            <td colSpan={5} className="py-6 text-center text-slate-500">No active student roster found.</td>
+                          </tr>
+                        )}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Create Enrollment Modal Dialog */}
+            {showCreateEnrollment && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-md">
+                <div className="w-full max-w-md bg-[#0b101d] border border-slate-800 rounded-2xl p-6 shadow-2xl space-y-4 animate-scale-up">
+                  <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+                    <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Create Student Enrollment</h3>
+                    <button 
+                      onClick={() => setShowCreateEnrollment(false)}
+                      className="p-1 text-slate-400 hover:text-white hover:bg-slate-800 rounded-full transition-all"
+                    >
+                      <X size={16} />
+                    </button>
+                  </div>
+                  
+                  <div className="space-y-4 text-xs">
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase font-mono">1. Select Athlete</label>
+                      <select 
+                        value={enrollmentStudentId}
+                        onChange={(e) => setEnrollmentStudentId(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none"
+                      >
+                        <option value="">-- Choose student --</option>
+                        {allStudents.map(s => (
+                          <option key={s.id} value={s.id}>{s.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase font-mono">2. Select Sport</label>
+                      <select 
+                        value={enrollmentSportId}
+                        onChange={(e) => setEnrollmentSportId(e.target.value)}
+                        className="w-full px-3 py-2 bg-slate-900 border border-slate-800 rounded-xl text-xs text-slate-200 focus:outline-none"
+                      >
+                        <option value="">-- Choose sport --</option>
+                        {sports.filter(s => s.status === 'ACTIVE').map(s => (
+                          <option key={s.id} value={s.id}>{s.name} ({s.type})</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-3 border-t border-slate-800">
+                    <button 
+                      onClick={() => setShowCreateEnrollment(false)}
+                      className="px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-slate-400 hover:text-white text-xs font-semibold"
+                    >
+                      Cancel
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        if (!enrollmentStudentId || !enrollmentSportId) {
+                          alert("Please choose both student and sport.");
+                          return;
+                        }
+                        try {
+                          await mockApi.submitSportsEnrollment(userId, {
+                            schoolId,
+                            academicSessionId,
+                            studentId: enrollmentStudentId,
+                            sportId: enrollmentSportId
+                          });
+                          setShowCreateEnrollment(false);
+                          loadData(true);
+                        } catch (err: any) {
+                          alert(err.message || "Failed to create enrollment.");
+                        }
+                      }}
+                      className="px-4 py-2 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold text-xs rounded-xl hover:from-brand-500 hover:to-brand-400 transition-all border border-brand-400/25"
+                    >
+                      Submit
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
           </div>
         )}
@@ -2650,7 +2783,42 @@ export const SportsManagement: React.FC = () => {
                 )}
               </div>
             ) : (
-              <p className="text-xs text-slate-500 py-6 text-center">Your attendance details are synced directly. Check individual metrics below.</p>
+              <div className="space-y-6">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Athlete Practice Attendance Logs</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                        <th className="py-3 px-4 font-bold">Session Name</th>
+                        <th className="py-3 px-4 font-bold">Date</th>
+                        <th className="py-3 px-4 font-bold">Status</th>
+                        <th className="py-3 px-4 font-bold">Remarks</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850 text-slate-300">
+                      {athleteAttendanceHistory.map(log => (
+                        <tr key={log.id} className="hover:bg-slate-900/40">
+                          <td className="py-3 px-4 font-semibold text-slate-100">{log.sessionName}</td>
+                          <td className="py-3 px-4 text-slate-400 font-mono">{log.date}</td>
+                          <td className="py-3 px-4">
+                            <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              log.status === 'PRESENT' ? 'bg-emerald-500/10 text-emerald-400' :
+                              log.status === 'LATE' ? 'bg-amber-500/10 text-amber-500' :
+                              'bg-red-500/10 text-red-400'
+                            }`}>{log.status}</span>
+                          </td>
+                          <td className="py-3 px-4 text-slate-400 italic">{log.remarks || 'No remarks'}</td>
+                        </tr>
+                      ))}
+                      {athleteAttendanceHistory.length === 0 && (
+                        <tr>
+                          <td colSpan={4} className="py-6 text-center text-slate-500">No attendance logs recorded.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             )}
 
           </div>

@@ -17624,8 +17624,13 @@ export const mockApi = {
     }));
   },
 
-  async submitSportsEnrollment(enrollment: { schoolId: string; academicSessionId: string; studentId: string; sportId: string }): Promise<any> {
+  async submitSportsEnrollment(userId: string, enrollment: { schoolId: string; academicSessionId: string; studentId: string; sportId: string }): Promise<any> {
     validateSchoolId(enrollment.schoolId, 'submitSportsEnrollment');
+    const { data: user } = await supabaseAdmin.from('users').select('role').eq('id', userId).single();
+    if (!user || !['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized');
+    }
+
     const { data, error } = await supabaseAdmin
       .from('sports_enrollments')
       .insert({
@@ -17641,7 +17646,12 @@ export const mockApi = {
     return data;
   },
 
-  async updateSportsEnrollmentStatus(enrollmentId: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string): Promise<any> {
+  async updateSportsEnrollmentStatus(userId: string, enrollmentId: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('role').eq('id', userId).single();
+    if (!user || !['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized');
+    }
+
     const { data, error } = await supabaseAdmin
       .from('sports_enrollments')
       .update({
@@ -17872,6 +17882,24 @@ export const mockApi = {
       remarks: r.remarks,
       markedBy: r.marked_by,
       studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student'
+    }));
+  },
+
+  async fetchStudentAttendance(schoolId: string, studentId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchStudentAttendance');
+    const { data, error } = await supabaseAdmin
+      .from('sports_attendance')
+      .select('*, sports_training_sessions(session_name)')
+      .eq('school_id', schoolId)
+      .eq('student_id', studentId)
+      .order('date', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      date: r.date,
+      status: r.status,
+      remarks: r.remarks,
+      sessionName: r.sports_training_sessions?.session_name || 'General Session'
     }));
   },
 
@@ -20661,7 +20689,12 @@ export const mockApi = {
     if (error) throw error;
   },
 
-  async deleteSportsEnrollment(enrollmentId: string): Promise<void> {
+  async deleteSportsEnrollment(userId: string, enrollmentId: string): Promise<void> {
+    const { data: user } = await supabaseAdmin.from('users').select('role').eq('id', userId).single();
+    if (!user || !['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized');
+    }
+
     const { data: enrollment } = await supabaseAdmin.from('sports_enrollments').select('student_id, sport_id').eq('id', enrollmentId).maybeSingle();
     if (!enrollment) return;
 
