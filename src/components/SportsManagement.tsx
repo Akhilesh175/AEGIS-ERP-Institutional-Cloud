@@ -1003,10 +1003,11 @@ export const SportsManagement: React.FC = () => {
                 <select
                   value={studentProfileId}
                   onChange={(e) => setStudentProfileId(e.target.value)}
-                  className="px-3 py-2 bg-slate-905 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-brand-500"
+                  style={{ backgroundColor: '#0b101d', color: '#ffffff', borderColor: '#1e293b' }}
+                  className="px-3 py-2 border rounded-xl text-xs text-white focus:outline-none focus:border-brand-500 [&>option]:bg-[#0b101d] [&>option]:text-white"
                 >
                   {parentLinkedStudents.map(std => (
-                    <option key={std.id} value={std.id}>
+                    <option key={std.id} value={std.id} style={{ backgroundColor: '#0b101d', color: '#ffffff' }}>
                       {std.users ? `${std.users.first_name} ${std.users.last_name}` : 'Unknown student'}
                     </option>
                   ))}
@@ -3110,7 +3111,7 @@ export const SportsManagement: React.FC = () => {
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-500">PENDING</span>
                         </td>
                          <td className="py-3 px-4 flex gap-2">
-                          {portalRole === 'FINANCE_ADMIN' ? (
+                          {['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SCHOOL_ADMIN'].includes(portalRole) ? (
                             <>
                               <button 
                                 onClick={async () => {
@@ -3430,8 +3431,15 @@ export const SportsManagement: React.FC = () => {
                         <div className="flex justify-between items-start">
                           <h4 className="font-bold text-slate-100 text-sm">{fee.description}</h4>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            pmt?.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-amber-500/10 text-amber-550'
-                          }`}>{pmt?.status || 'UNPAID'}</span>
+                            pmt?.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' :
+                            pmt?.status === 'PENDING' ? 'bg-amber-500/10 text-amber-500' :
+                            pmt?.status === 'REJECTED' ? 'bg-red-500/10 text-red-400' :
+                            'bg-slate-800 text-slate-400'
+                          }`}>{
+                            pmt?.status === 'APPROVED' ? 'PAID' :
+                            pmt?.status === 'PENDING' ? 'PENDING_VERIFICATION' :
+                            pmt?.status || 'UNPAID'
+                          }</span>
                         </div>
                         <p className="text-xs text-slate-400 mt-2">Due Date: {fee.dueDate}</p>
                         <p className="text-2xl font-extrabold text-white mt-4">₹{fee.amount}</p>
