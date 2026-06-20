@@ -3445,6 +3445,33 @@ export const SportsManagement: React.FC = () => {
                           Pay & Upload Screenshot
                         </button>
                       )}
+
+                      {pmt?.status === 'PENDING' && (
+                        <button 
+                          disabled
+                          className="w-full py-2 bg-slate-850 text-slate-405 font-bold text-xs rounded-xl cursor-not-allowed border border-slate-800"
+                        >
+                          Payment Pending Verification
+                        </button>
+                      )}
+
+                      {pmt?.status === 'APPROVED' && (
+                        <button 
+                          disabled
+                          className="w-full py-2 bg-emerald-950/20 text-emerald-400 font-bold text-xs rounded-xl cursor-not-allowed border border-emerald-900/30"
+                        >
+                          Payment Approved
+                        </button>
+                      )}
+
+                      {pmt?.status === 'REJECTED' && (
+                        <button 
+                          onClick={() => { setPaymentForm(prev => ({ ...prev, sportsFeeId: fee.id })); setShowFeePayment(true); }}
+                          className="w-full py-2 bg-gradient-to-r from-amber-600 to-amber-500 text-white font-bold text-xs rounded-xl"
+                        >
+                          Resubmit Payment
+                        </button>
+                      )}
                     </div>
                   );
                 })}
