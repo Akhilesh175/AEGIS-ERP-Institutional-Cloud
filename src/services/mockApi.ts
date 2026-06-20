@@ -18532,12 +18532,23 @@ export const mockApi = {
 
   async submitSportsFeePayment(payment: any): Promise<any> {
     validateSchoolId(payment.schoolId, 'submitSportsFeePayment');
+    
+    const invoiceId = payment.sportsFeeId;
+    const studentId = payment.studentId;
+    const parentId = payment.parentId;
+    const schoolId = payment.schoolId;
+
+    if (!invoiceId) throw Error("Invoice ID missing");
+    if (!studentId) throw Error("Student ID missing");
+    if (!parentId) throw Error("Parent ID missing");
+    if (!schoolId) throw Error("School ID missing");
+
     const { data, error } = await supabaseAdmin
       .from('sports_fee_payments')
       .insert({
-        school_id: payment.schoolId,
-        sports_fee_id: payment.sportsFeeId,
-        student_id: payment.studentId,
+        school_id: schoolId,
+        sports_fee_id: invoiceId,
+        student_id: studentId,
         amount_paid: payment.amountPaid,
         payment_method: payment.paymentMethod,
         transaction_id: payment.transactionId || null,
@@ -20517,6 +20528,129 @@ export const mockApi = {
 
     await this.logSportsActivity(targetSchoolId, adminId, user.role, 'TRANSFER_SPORTS_ADMIN', `Transferred Sports Admin to school ${targetSchoolId}`, undefined, undefined, { sportsAdminUserId });
     return updatedUser;
+  },
+
+  async deleteSportsCoach(coachId: string): Promise<void> {
+    const { data: coach } = await supabaseAdmin.from('sports_coaches').select('user_id').eq('id', coachId).maybeSingle();
+    if (!coach) return;
+
+    const { count: teamCount } = await supabaseAdmin.from('sports_teams').select('*', { count: 'exact', head: true }).eq('coach_id', coachId);
+    if (teamCount && teamCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { count: sessionCount } = await supabaseAdmin.from('sports_training_sessions').select('*', { count: 'exact', head: true }).eq('coach_id', coachId);
+    if (sessionCount && sessionCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { count: attCount } = await supabaseAdmin.from('sports_coach_attendance').select('*', { count: 'exact', head: true }).eq('coach_id', coachId);
+    if (attCount && attCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { count: salaryCount } = await supabaseAdmin.from('sports_salary_records').select('*', { count: 'exact', head: true }).eq('user_id', coach.user_id);
+    if (salaryCount && salaryCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { error } = await supabaseAdmin.from('sports_coaches').delete().eq('id', coachId);
+    if (error) throw error;
+  },
+
+  async deleteSportsEnrollment(enrollmentId: string): Promise<void> {
+    const { data: enrollment } = await supabaseAdmin.from('sports_enrollments').select('student_id, sport_id').eq('id', enrollmentId).maybeSingle();
+    if (!enrollment) return;
+
+    const { count: perfCount } = await supabaseAdmin.from('sports_performance_metrics').select('*', { count: 'exact', head: true }).eq('student_id', enrollment.student_id).eq('sport_id', enrollment.sport_id);
+    if (perfCount && perfCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { count: memberCount } = await supabaseAdmin.from('sports_team_members').select('*', { count: 'exact', head: true }).eq('student_id', enrollment.student_id);
+    if (memberCount && memberCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { count: certCount } = await supabaseAdmin.from('sports_certificates').select('*', { count: 'exact', head: true }).eq('student_id', enrollment.student_id).eq('sport_id', enrollment.sport_id);
+    if (certCount && certCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { count: achCount } = await supabaseAdmin.from('sports_achievements').select('*', { count: 'exact', head: true }).eq('student_id', enrollment.student_id).eq('sport_id', enrollment.sport_id);
+    if (achCount && achCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { count: fineCount } = await supabaseAdmin.from('sports_fines').select('*', { count: 'exact', head: true }).eq('student_id', enrollment.student_id);
+    if (fineCount && fineCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { error } = await supabaseAdmin.from('sports_enrollments').delete().eq('id', enrollmentId);
+    if (error) throw error;
+  },
+
+  async deleteSportsTeam(teamId: string): Promise<void> {
+    const { count: memberCount } = await supabaseAdmin.from('sports_team_members').select('*', { count: 'exact', head: true }).eq('team_id', teamId);
+    if (memberCount && memberCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { count: sessCount } = await supabaseAdmin.from('sports_training_sessions').select('*', { count: 'exact', head: true }).eq('team_id', teamId);
+    if (sessCount && sessCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { count: fix1Count } = await supabaseAdmin.from('sports_fixtures').select('*', { count: 'exact', head: true }).eq('team1_id', teamId);
+    if (fix1Count && fix1Count > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { count: fix2Count } = await supabaseAdmin.from('sports_fixtures').select('*', { count: 'exact', head: true }).eq('team2_id', teamId);
+    if (fix2Count && fix2Count > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { error } = await supabaseAdmin.from('sports_teams').delete().eq('id', teamId);
+    if (error) throw error;
+  },
+
+  async deleteSportsTrainingSession(sessionId: string): Promise<void> {
+    const { count: attCount } = await supabaseAdmin.from('sports_attendance').select('*', { count: 'exact', head: true }).eq('session_id', sessionId);
+    if (attCount && attCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { error } = await supabaseAdmin.from('sports_training_sessions').delete().eq('id', sessionId);
+    if (error) throw error;
+  },
+
+  async deleteSportsTournament(tournamentId: string): Promise<void> {
+    const { count: fixCount } = await supabaseAdmin.from('sports_fixtures').select('*', { count: 'exact', head: true }).eq('tournament_id', tournamentId);
+    if (fixCount && fixCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { error } = await supabaseAdmin.from('sports_tournaments').delete().eq('id', tournamentId);
+    if (error) throw error;
+  },
+
+  async deleteSportsEquipment(equipmentId: string): Promise<void> {
+    const { count: issuedCount } = await supabaseAdmin.from('sports_equipment_logs').select('*', { count: 'exact', head: true }).eq('equipment_id', equipmentId).eq('status', 'ISSUED');
+    if (issuedCount && issuedCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    await supabaseAdmin.from('sports_equipment_logs').delete().eq('equipment_id', equipmentId);
+
+    const { error } = await supabaseAdmin.from('sports_equipment').delete().eq('id', equipmentId);
+    if (error) throw error;
+  },
+
+  async deleteSportsCertificate(certificateId: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('sports_certificates').delete().eq('id', certificateId);
+    if (error) throw error;
+  },
+
+  async deleteSportsAchievement(achievementId: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('sports_achievements').delete().eq('id', achievementId);
+    if (error) throw error;
+  },
+
+  async deleteSportsBudget(budgetId: string): Promise<void> {
+    const { data: budget } = await supabaseAdmin.from('sports_budget_allocations').select('spent_amount').eq('id', budgetId).maybeSingle();
+    if (!budget) return;
+
+    if (budget.spent_amount && Number(budget.spent_amount) > 0) {
+      throw new Error("Cannot delete this record because related records exist.");
+    }
+
+    const { error } = await supabaseAdmin.from('sports_budget_allocations').delete().eq('id', budgetId);
+    if (error) throw error;
+  },
+
+  async deleteSportsExpense(expenseId: string): Promise<void> {
+    const { data: expense } = await supabaseAdmin.from('sports_expenses').select('status, payment_status').eq('id', expenseId).maybeSingle();
+    if (!expense) return;
+
+    if (expense.status === 'APPROVED' || expense.payment_status === 'RELEASED') {
+      throw new Error("Cannot delete this record because related records exist.");
+    }
+
+    const { count: txCount } = await supabaseAdmin.from('sports_finance_transactions').select('*', { count: 'exact', head: true }).eq('reference_id', expenseId);
+    if (txCount && txCount > 0) throw new Error("Cannot delete this record because related records exist.");
+
+    const { error } = await supabaseAdmin.from('sports_expenses').delete().eq('id', expenseId);
+    if (error) throw error;
   },
 
   async fetchSchools(): Promise<any[]> {

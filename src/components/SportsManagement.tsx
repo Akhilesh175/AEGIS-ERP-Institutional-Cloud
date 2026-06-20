@@ -154,6 +154,7 @@ export const SportsManagement: React.FC = () => {
   // Active student context (for Student/Parent dashboards)
   const [studentProfileId, setStudentProfileId] = useState<string>('');
   const [parentLinkedStudents, setParentLinkedStudents] = useState<any[]>([]);
+  const [parentProfileId, setParentProfileId] = useState<string>('');
 
   // Safety wrapper to suppress RLS access restrictions on load
   const safeFetch = async (apiCall: () => Promise<any>, fallback: any = []) => {
@@ -240,11 +241,18 @@ export const SportsManagement: React.FC = () => {
       // Resolve student profile mapping for Student/Parent
       if (userRole === 'STUDENT') {
         const { data: std } = await supabase.from('students').select('id').eq('user_id', userId).maybeSingle();
-        if (std) setStudentProfileId(std.id);
+        if (std) {
+          setStudentProfileId(std.id);
+          const { data: mapping } = await supabase.from('parent_student_mapping').select('parent_id').eq('student_id', std.id).maybeSingle();
+          if (mapping) {
+            setParentProfileId(mapping.parent_id);
+          }
+        }
       } else if (userRole === 'PARENT') {
         const { data: parent } = await supabase.from('parents').select('id').eq('user_id', userId).maybeSingle();
         if (parent) {
-          const { data: mappings } = await supabase.from('parent_student_mappings').select('student_id').eq('parent_id', parent.id);
+          setParentProfileId(parent.id);
+          const { data: mappings } = await supabase.from('parent_student_mapping').select('student_id').eq('parent_id', parent.id);
           if (mappings && mappings.length > 0) {
             const mappedIds = mappings.map(m => m.student_id);
             const { data: stdProfiles } = await supabase.from('students').select('*, users(first_name, last_name)').in('id', mappedIds);
@@ -411,6 +419,7 @@ export const SportsManagement: React.FC = () => {
         schoolId,
         sportsFeeId: paymentForm.sportsFeeId,
         studentId: studentProfileId,
+        parentId: parentProfileId,
         amountPaid: fees.find(f => f.id === paymentForm.sportsFeeId)?.amount || 0,
         paymentMethod: paymentForm.paymentMethod,
         transactionId: paymentForm.transactionId,
@@ -988,6 +997,23 @@ export const SportsManagement: React.FC = () => {
           </div>
           
           <div className="flex gap-3">
+            {portalRole === 'PARENT' && parentLinkedStudents.length > 0 && (
+              <div className="flex items-center gap-2">
+                <label className="text-xs font-semibold text-slate-400 font-mono">Linked Student:</label>
+                <select
+                  value={studentProfileId}
+                  onChange={(e) => setStudentProfileId(e.target.value)}
+                  className="px-3 py-2 bg-slate-905 border border-slate-800 rounded-xl text-xs text-white focus:outline-none focus:border-brand-500"
+                >
+                  {parentLinkedStudents.map(std => (
+                    <option key={std.id} value={std.id}>
+                      {std.users ? `${std.users.first_name} ${std.users.last_name}` : 'Unknown student'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+
             <button 
               onClick={() => { setRefreshing(true); loadData(); }} 
               className="p-2.5 bg-slate-900 border border-slate-800 rounded-xl hover:bg-slate-800 transition-all text-slate-400 hover:text-white"
@@ -1481,6 +1507,21 @@ export const SportsManagement: React.FC = () => {
                       className="text-[10px] font-bold bg-slate-800 px-3 py-1.5 rounded border border-slate-700 text-slate-300"
                     >
                       Toggle Active
+                    </button>
+                    <button 
+                      onClick={async () => {
+                        try {
+                          if (confirm("Are you sure you want to delete this coach?")) {
+                            await mockApi.deleteSportsCoach(coach.id);
+                            loadData(true);
+                          }
+                        } catch (err: any) {
+                          alert(err.message || "Cannot delete this record because related records exist.");
+                        }
+                      }}
+                      className="text-[10px] font-bold bg-red-600/10 text-red-400 px-3 py-1.5 rounded border border-red-500/25 hover:bg-red-500 hover:text-white"
+                    >
+                      Delete
                     </button>
                   </div>
                 </div>
@@ -2195,7 +2236,8 @@ export const SportsManagement: React.FC = () => {
                 </div>
               </div>
             ) : (
-              <div className="overflow-x-auto">
+              <>
+                <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs border-collapse">
                   <thead>
                     <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
@@ -2239,6 +2281,22 @@ export const SportsManagement: React.FC = () => {
                             >
                               <X size={14} />
                             </button>
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  if (confirm("Are you sure you want to delete this enrollment request?")) {
+                                    await mockApi.deleteSportsEnrollment(enroll.id);
+                                    loadData(true);
+                                  }
+                                } catch (err: any) {
+                                  alert(err.message || "Cannot delete this record because related records exist.");
+                                }
+                              }}
+                              className="p-1 bg-red-600/10 border border-red-500/20 text-red-400 hover:bg-red-600 hover:text-white rounded-lg transition-all"
+                              title="Delete Request"
+                            >
+                              <Trash size={14} />
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -2250,7 +2308,65 @@ export const SportsManagement: React.FC = () => {
                   </tbody>
                 </table>
               </div>
-            )}
+
+              {/* Approved Student Roster Table */}
+              <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4 mt-6">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Approved Student Roster (Athletes)</h3>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                        <th className="py-3 px-4 font-bold">Student Name</th>
+                        <th className="py-3 px-4 font-bold">Registered Sport</th>
+                        <th className="py-3 px-4 font-bold">Enroll Date</th>
+                        <th className="py-3 px-4 font-bold">Status</th>
+                        <th className="py-3 px-4 font-bold">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850">
+                      {enrollments
+                        .filter(e => e.status === 'APPROVED')
+                        .map(enroll => (
+                          <tr key={enroll.id} className="hover:bg-slate-900/40 transition-colors">
+                            <td className="py-3 px-4 font-semibold text-slate-100">{enroll.studentName}</td>
+                            <td className="py-3 px-4 text-slate-400">{enroll.sportName}</td>
+                            <td className="py-3 px-4 text-slate-500">{enroll.enrollDate}</td>
+                            <td className="py-3 px-4">
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
+                                APPROVED
+                              </span>
+                            </td>
+                            <td className="py-3 px-4">
+                              <button 
+                                onClick={async () => {
+                                  try {
+                                    if (confirm("Are you sure you want to delete this student enrollment?")) {
+                                      await mockApi.deleteSportsEnrollment(enroll.id);
+                                      loadData(true);
+                                    }
+                                  } catch (err: any) {
+                                    alert(err.message || "Cannot delete this record because related records exist.");
+                                  }
+                                }}
+                                className="p-1 bg-red-650 text-white rounded hover:bg-red-500 transition-all flex items-center gap-1 text-[10px] font-bold px-2 py-1"
+                              >
+                                <Trash size={12} />
+                                Delete Athlete
+                              </button>
+                            </td>
+                          </tr>
+                        ))}
+                      {enrollments.filter(e => e.status === 'APPROVED').length === 0 && (
+                        <tr>
+                          <td colSpan={5} className="py-6 text-center text-slate-500">No active student roster found.</td>
+                        </tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </>
+          )}
 
           </div>
         )}
@@ -2293,6 +2409,23 @@ export const SportsManagement: React.FC = () => {
 
                   {['SCHOOL_ADMIN', 'COACH', 'SPORTS_ADMIN'].includes(portalRole) && (
                     <div className="pt-2 border-t border-slate-800 flex justify-end gap-2">
+                      {['SCHOOL_ADMIN', 'SPORTS_ADMIN'].includes(portalRole) && (
+                        <button 
+                          onClick={async () => {
+                            try {
+                              if (confirm("Are you sure you want to delete this team?")) {
+                                await mockApi.deleteSportsTeam(team.id);
+                                loadData(true);
+                              }
+                            } catch (err: any) {
+                              alert(err.message || "Cannot delete this record because related records exist.");
+                            }
+                          }}
+                          className="text-[10px] font-bold bg-red-600/10 text-red-400 px-3 py-1.5 rounded-lg border border-red-500/25 hover:bg-red-500 hover:text-white transition-all"
+                        >
+                          Delete Team
+                        </button>
+                      )}
                       <button 
                         onClick={async () => {
                           const stdId = prompt('Enter Student ID to enroll:');
@@ -2328,6 +2461,7 @@ export const SportsManagement: React.FC = () => {
                     <th className="py-3 px-4 font-bold">Time</th>
                     <th className="py-3 px-4 font-bold">Venue</th>
                     <th className="py-3 px-4 font-bold">Status</th>
+                    {['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'COACH'].includes(portalRole) && <th className="py-3 px-4 font-bold text-right">Actions</th>}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-850">
@@ -2347,6 +2481,25 @@ export const SportsManagement: React.FC = () => {
                           {sess.status}
                         </span>
                       </td>
+                      {['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'COACH'].includes(portalRole) && (
+                        <td className="py-3 px-4 text-right">
+                          <button
+                            onClick={async () => {
+                              try {
+                                if (confirm("Are you sure you want to delete this session?")) {
+                                  await mockApi.deleteSportsTrainingSession(sess.id);
+                                  loadData(true);
+                                }
+                              } catch (err: any) {
+                                alert(err.message || "Cannot delete this record because related records exist.");
+                              }
+                            }}
+                            className="text-[10px] font-bold bg-red-600/10 text-red-400 px-3 py-1.5 rounded-lg border border-red-500/25 hover:bg-red-500 hover:text-white transition-all"
+                          >
+                            Delete
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -2490,6 +2643,25 @@ export const SportsManagement: React.FC = () => {
                       </div>
                       <p className="text-[10px] text-slate-500 text-center">Venue: {t.venue} • Timeline: {t.startDate} to {t.endDate}</p>
                     </div>
+                    {['SCHOOL_ADMIN', 'SPORTS_ADMIN'].includes(portalRole) && (
+                      <div className="flex justify-end pt-2 border-t border-slate-800/40">
+                        <button
+                          onClick={async () => {
+                            try {
+                              if (confirm("Are you sure you want to delete this tournament?")) {
+                                await mockApi.deleteSportsTournament(t.id);
+                                loadData(true);
+                              }
+                            } catch (err: any) {
+                              alert(err.message || "Cannot delete this record because related records exist.");
+                            }
+                          }}
+                          className="text-[10px] font-bold bg-red-600/10 text-red-400 px-3 py-1.5 rounded-lg border border-red-500/25 hover:bg-red-500 hover:text-white transition-all"
+                        >
+                          Delete Tournament
+                        </button>
+                      </div>
+                    )}
                   </div>
                 ))}
               </div>
@@ -2538,6 +2710,25 @@ export const SportsManagement: React.FC = () => {
                     <span>Level: {ach.level}</span>
                     <span>Date: {ach.dateAwarded}</span>
                   </div>
+                  {['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'COACH'].includes(portalRole) && (
+                    <div className="flex justify-end pt-2 border-t border-slate-800/40">
+                      <button
+                        onClick={async () => {
+                          try {
+                            if (confirm("Are you sure you want to delete this achievement?")) {
+                              await mockApi.deleteSportsAchievement(ach.id);
+                              loadData(true);
+                            }
+                          } catch (err: any) {
+                            alert(err.message || "Cannot delete this record because related records exist.");
+                          }
+                        }}
+                        className="text-[10px] font-bold bg-red-600/10 text-red-400 px-3 py-1.5 rounded-lg border border-red-500/25 hover:bg-red-500 hover:text-white transition-all"
+                      >
+                        Delete Achievement
+                      </button>
+                    </div>
+                  )}
                 </div>
               ))}
               {achievements.length === 0 && <p className="col-span-3 text-xs text-slate-500 py-6 text-center">No achievements recorded in database.</p>}
@@ -2559,13 +2750,33 @@ export const SportsManagement: React.FC = () => {
                     <p className="text-[10px] text-brand-400 mt-2 font-mono">{cert.certificateNumber}</p>
                   </div>
 
-                  <button 
-                    onClick={() => downloadCertificate(cert)}
-                    className="p-2.5 bg-brand-500/10 border border-brand-500/20 text-brand-400 hover:bg-brand-500 hover:text-white rounded-xl transition-all"
-                    title="Download PDF"
-                  >
-                    <Download size={16} />
-                  </button>
+                  <div className="flex gap-2">
+                    <button 
+                      onClick={() => downloadCertificate(cert)}
+                      className="p-2.5 bg-brand-500/10 border border-brand-500/20 text-brand-400 hover:bg-brand-500 hover:text-white rounded-xl transition-all"
+                      title="Download PDF"
+                    >
+                      <Download size={16} />
+                    </button>
+                    {['SCHOOL_ADMIN', 'SPORTS_ADMIN'].includes(portalRole) && (
+                      <button 
+                        onClick={async () => {
+                          try {
+                            if (confirm("Are you sure you want to delete this certificate?")) {
+                              await mockApi.deleteSportsCertificate(cert.id);
+                              loadData(true);
+                            }
+                          } catch (err: any) {
+                            alert(err.message || "Cannot delete this record because related records exist.");
+                          }
+                        }}
+                        className="p-2.5 bg-red-600/10 border border-red-500/20 text-red-400 hover:bg-red-500 hover:text-white rounded-xl transition-all"
+                        title="Delete Certificate"
+                      >
+                        <Trash size={16} />
+                      </button>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -2756,6 +2967,7 @@ export const SportsManagement: React.FC = () => {
                       <th className="py-3 px-4 font-bold">Total Stock</th>
                       <th className="py-3 px-4 font-bold">Available Stock</th>
                       <th className="py-3 px-4 font-bold">Stock Condition</th>
+                      {['SCHOOL_ADMIN', 'SPORTS_ADMIN'].includes(portalRole) && <th className="py-3 px-4 font-bold text-right">Actions</th>}
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
@@ -2768,6 +2980,25 @@ export const SportsManagement: React.FC = () => {
                         <td className="py-3 px-4">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">{item.condition}</span>
                         </td>
+                        {['SCHOOL_ADMIN', 'SPORTS_ADMIN'].includes(portalRole) && (
+                          <td className="py-3 px-4 text-right">
+                            <button
+                              onClick={async () => {
+                                try {
+                                  if (confirm("Are you sure you want to delete this equipment item?")) {
+                                    await mockApi.deleteSportsEquipment(item.id);
+                                    loadData(true);
+                                  }
+                                } catch (err: any) {
+                                  alert(err.message || "Cannot delete this record because related records exist.");
+                                }
+                              }}
+                              className="text-[10px] font-bold bg-red-600/10 text-red-400 px-3 py-1.5 rounded-lg border border-red-500/25 hover:bg-red-500 hover:text-white transition-all"
+                            >
+                              Delete
+                            </button>
+                          </td>
+                        )}
                       </tr>
                     ))}
                   </tbody>
@@ -2808,20 +3039,39 @@ export const SportsManagement: React.FC = () => {
                       />
                       <p className="text-[10px] text-slate-500">Spent: ₹{(existingB?.spentAmount || 0).toLocaleString()}</p>
                       {portalRole === 'FINANCE_ADMIN' && (
-                        <button 
-                          onClick={async () => {
-                            await mockApi.allocateBudget(userId, {
-                              academicSessionId,
-                              allocatedAmount: amount,
-                              category: cat
-                            });
-                            alert(`Budget updated for ${cat}`);
-                            loadData(true);
-                          }}
-                          className="w-full py-1 bg-brand-600 text-white text-[10px] font-bold rounded-lg"
-                        >
-                          Set Budget
-                        </button>
+                        <div className="space-y-1.5">
+                          <button 
+                            onClick={async () => {
+                              await mockApi.allocateBudget(userId, {
+                                academicSessionId,
+                                allocatedAmount: amount,
+                                category: cat
+                              });
+                              alert(`Budget updated for ${cat}`);
+                              loadData(true);
+                            }}
+                            className="w-full py-1 bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold rounded-lg transition-all"
+                          >
+                            Set Budget
+                          </button>
+                          {existingB && (
+                            <button 
+                              onClick={async () => {
+                                try {
+                                  if (confirm(`Are you sure you want to delete the budget for ${cat}?`)) {
+                                    await mockApi.deleteSportsBudget(existingB.id);
+                                    loadData(true);
+                                  }
+                                } catch (err: any) {
+                                  alert(err.message || "Cannot delete this record because related records exist.");
+                                }
+                              }}
+                              className="w-full py-1 bg-red-600/10 text-red-400 hover:bg-red-500 hover:text-white text-[10px] font-bold rounded-lg border border-red-500/25 transition-all"
+                            >
+                              Delete Budget
+                            </button>
+                          )}
+                        </div>
                       )}
                     </div>
                   );
@@ -2955,6 +3205,21 @@ export const SportsManagement: React.FC = () => {
                                     className="px-2 py-1 bg-red-500/10 text-red-400 rounded text-[9px]"
                                   >
                                     Reject
+                                  </button>
+                                  <button 
+                                    onClick={async () => {
+                                      try {
+                                        if (confirm("Are you sure you want to delete this expense request?")) {
+                                          await mockApi.deleteSportsExpense(exp.id);
+                                          loadData(true);
+                                        }
+                                      } catch (err: any) {
+                                        alert(err.message || "Cannot delete this record because related records exist.");
+                                      }
+                                    }}
+                                    className="px-2 py-1 bg-red-650 text-white rounded text-[9px] hover:bg-red-500 transition-all font-semibold"
+                                  >
+                                    Delete
                                   </button>
                                 </div>
                               )}
