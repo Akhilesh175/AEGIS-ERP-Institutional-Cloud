@@ -2799,27 +2799,30 @@ export const SportsManagement: React.FC = () => {
                       <input 
                         type="number"
                         value={amount}
+                        disabled={portalRole !== 'FINANCE_ADMIN'}
                         onChange={(e) => {
                           const val = Number(e.target.value);
                           setBudgetAmounts(prev => ({ ...prev, [cat]: val }));
                         }}
-                        className="w-full px-2 py-1.5 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white"
+                        className={`w-full px-2 py-1.5 text-xs bg-slate-950 border border-slate-800 rounded-lg text-white ${portalRole !== 'FINANCE_ADMIN' ? 'opacity-60 cursor-not-allowed' : ''}`}
                       />
                       <p className="text-[10px] text-slate-500">Spent: ₹{(existingB?.spentAmount || 0).toLocaleString()}</p>
-                      <button 
-                        onClick={async () => {
-                          await mockApi.allocateBudget(userId, {
-                            academicSessionId,
-                            allocatedAmount: amount,
-                            category: cat
-                          });
-                          alert(`Budget updated for ${cat}`);
-                          loadData(true);
-                        }}
-                        className="w-full py-1 bg-brand-600 text-white text-[10px] font-bold rounded-lg"
-                      >
-                        Set Budget
-                      </button>
+                      {portalRole === 'FINANCE_ADMIN' && (
+                        <button 
+                          onClick={async () => {
+                            await mockApi.allocateBudget(userId, {
+                              academicSessionId,
+                              allocatedAmount: amount,
+                              category: cat
+                            });
+                            alert(`Budget updated for ${cat}`);
+                            loadData(true);
+                          }}
+                          className="w-full py-1 bg-brand-600 text-white text-[10px] font-bold rounded-lg"
+                        >
+                          Set Budget
+                        </button>
+                      )}
                     </div>
                   );
                 })}              </div>
@@ -2856,26 +2859,32 @@ export const SportsManagement: React.FC = () => {
                         <td className="py-3 px-4">
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-500">PENDING</span>
                         </td>
-                        <td className="py-3 px-4 flex gap-2">
-                          <button 
-                            onClick={async () => {
-                              await mockApi.updateSportsFeePaymentStatus(pmt.id, 'APPROVED');
-                              loadData(true);
-                            }}
-                            className="p-1 bg-emerald-500/10 text-emerald-400 rounded hover:bg-emerald-500 hover:text-white"
-                          >
-                            <Check size={14} />
-                          </button>
-                          <button 
-                            onClick={async () => {
-                              const reason = prompt('Rejection reason:') || 'UTR mismatch';
-                              await mockApi.updateSportsFeePaymentStatus(pmt.id, 'REJECTED', reason);
-                              loadData(true);
-                            }}
-                            className="p-1 bg-red-500/10 text-red-400 rounded hover:bg-red-500 hover:text-white"
-                          >
-                            <X size={14} />
-                          </button>
+                         <td className="py-3 px-4 flex gap-2">
+                          {portalRole === 'FINANCE_ADMIN' ? (
+                            <>
+                              <button 
+                                onClick={async () => {
+                                  await mockApi.updateSportsFeePaymentStatus(userId, pmt.id, 'APPROVED');
+                                  loadData(true);
+                                }}
+                                className="p-1 bg-emerald-500/10 text-emerald-400 rounded hover:bg-emerald-500 hover:text-white"
+                              >
+                                <Check size={14} />
+                              </button>
+                              <button 
+                                onClick={async () => {
+                                  const reason = prompt('Rejection reason:') || 'UTR mismatch';
+                                  await mockApi.updateSportsFeePaymentStatus(userId, pmt.id, 'REJECTED', reason);
+                                  loadData(true);
+                                }}
+                                className="p-1 bg-red-500/10 text-red-400 rounded hover:bg-red-500 hover:text-white"
+                              >
+                                <X size={14} />
+                              </button>
+                            </>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-mono">No Actions Available</span>
+                          )}
                         </td>
                       </tr>
                     ))}
@@ -2925,38 +2934,47 @@ export const SportsManagement: React.FC = () => {
                           }`}>{exp.paymentStatus}</span>
                         </td>
                         <td className="py-3 px-4">
-                          {exp.status === 'PENDING' && (
-                            <div className="flex gap-1">
-                              <button 
-                                onClick={async () => {
-                                  await mockApi.approveExpense(userId, exp.id, { status: 'APPROVED', amountApproved: exp.amountRequested });
-                                  loadData(true);
-                                }}
-                                className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded text-[9px]"
-                              >
-                                Approve
-                              </button>
-                              <button 
-                                onClick={async () => {
-                                  await mockApi.approveExpense(userId, exp.id, { status: 'REJECTED' });
-                                  loadData(true);
-                                }}
-                                className="px-2 py-1 bg-red-500/10 text-red-400 rounded text-[9px]"
-                              >
-                                Reject
-                              </button>
-                            </div>
-                          )}
-                          {exp.status === 'APPROVED' && exp.paymentStatus === 'PENDING' && (
-                            <button 
-                              onClick={async () => {
-                                await mockApi.releaseExpensePayment(userId, exp.id);
-                                loadData(true);
-                              }}
-                              className="px-2.5 py-1 bg-brand-600 text-white rounded text-[9px] font-bold"
-                            >
-                              Release Payout
-                            </button>
+                          {portalRole === 'FINANCE_ADMIN' ? (
+                            <>
+                              {exp.status === 'PENDING' && (
+                                <div className="flex gap-1">
+                                  <button 
+                                    onClick={async () => {
+                                      await mockApi.approveExpense(userId, exp.id, { status: 'APPROVED', amountApproved: exp.amountRequested });
+                                      loadData(true);
+                                    }}
+                                    className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded text-[9px]"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button 
+                                    onClick={async () => {
+                                      await mockApi.approveExpense(userId, exp.id, { status: 'REJECTED' });
+                                      loadData(true);
+                                    }}
+                                    className="px-2 py-1 bg-red-500/10 text-red-400 rounded text-[9px]"
+                                  >
+                                    Reject
+                                  </button>
+                                </div>
+                              )}
+                              {exp.status === 'APPROVED' && exp.paymentStatus === 'PENDING' && (
+                                <button 
+                                  onClick={async () => {
+                                    await mockApi.releaseExpensePayment(userId, exp.id);
+                                    loadData(true);
+                                  }}
+                                  className="px-2.5 py-1 bg-brand-600 text-white rounded text-[9px] font-bold"
+                                >
+                                  Release Payout
+                                </button>
+                              )}
+                              {exp.status !== 'PENDING' && exp.paymentStatus !== 'PENDING' && (
+                                <span className="text-[10px] text-slate-500 font-mono">No Actions Available</span>
+                              )}
+                            </>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-mono">No Actions Available</span>
                           )}
                         </td>
                       </tr>
@@ -2977,16 +2995,18 @@ export const SportsManagement: React.FC = () => {
                     onChange={(e) => setSelectedMonth(e.target.value)}
                     className="px-3 py-1.5 text-xs bg-slate-900 border border-slate-850 rounded-xl"
                   />
-                  <button 
-                    onClick={async () => {
-                      await mockApi.generateMonthlyPayroll(userId, academicSessionId, selectedMonth);
-                      alert(`Monthly Payroll generated for month: ${selectedMonth}`);
-                      loadData(true);
-                    }}
-                    className="px-4 py-2 bg-gradient-to-r from-brand-600 to-brand-500 text-white text-xs font-bold rounded-xl"
-                  >
-                    Generate Month Payroll
-                  </button>
+                  {portalRole === 'FINANCE_ADMIN' && (
+                    <button 
+                      onClick={async () => {
+                        await mockApi.generateMonthlyPayroll(userId, academicSessionId, selectedMonth);
+                        alert(`Monthly Payroll generated for month: ${selectedMonth}`);
+                        loadData(true);
+                      }}
+                      className="px-4 py-2 bg-gradient-to-r from-brand-600 to-brand-500 text-white text-xs font-bold rounded-xl"
+                    >
+                      Generate Month Payroll
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -3023,28 +3043,37 @@ export const SportsManagement: React.FC = () => {
                             }`}>{sal.status}</span>
                           </td>
                           <td className="py-3 px-4">
-                            {sal.status === 'GENERATED' && (
-                              <button 
-                                onClick={async () => {
-                                  await mockApi.approveSalaryRecord(userId, sal.id);
-                                  loadData(true);
-                                }}
-                                className="px-2.5 py-1 bg-brand-600/10 text-brand-400 border border-brand-500/25 text-[9px] font-bold rounded"
-                              >
-                                Approve
-                              </button>
-                            )}
-                            {sal.status === 'APPROVED' && (
-                              <button 
-                                onClick={async () => {
-                                  const txn = prompt('Enter Bank Transaction ID / Ref:') || '';
-                                  await mockApi.paySalaryRecord(userId, sal.id, { transactionId: txn });
-                                  loadData(true);
-                                }}
-                                className="px-2.5 py-1 bg-emerald-500 text-white text-[9px] font-bold rounded"
-                              >
-                                Release Cash
-                              </button>
+                            {portalRole === 'FINANCE_ADMIN' ? (
+                              <>
+                                {sal.status === 'GENERATED' && (
+                                  <button 
+                                    onClick={async () => {
+                                      await mockApi.approveSalaryRecord(userId, sal.id);
+                                      loadData(true);
+                                    }}
+                                    className="px-2.5 py-1 bg-brand-600/10 text-brand-400 border border-brand-500/25 text-[9px] font-bold rounded"
+                                  >
+                                    Approve
+                                  </button>
+                                )}
+                                {sal.status === 'APPROVED' && (
+                                  <button 
+                                    onClick={async () => {
+                                      const txn = prompt('Enter Bank Transaction ID / Ref:') || '';
+                                      await mockApi.paySalaryRecord(userId, sal.id, { transactionId: txn });
+                                      loadData(true);
+                                    }}
+                                    className="px-2.5 py-1 bg-emerald-500 text-white text-[9px] font-bold rounded"
+                                  >
+                                    Release Cash
+                                  </button>
+                                )}
+                                {sal.status === 'PAID' && (
+                                  <span className="text-[10px] text-slate-500 font-mono">No Actions Available</span>
+                                )}
+                              </>
+                            ) : (
+                              <span className="text-[10px] text-slate-500 font-mono">No Actions Available</span>
                             )}
                           </td>
                         </tr>
@@ -3087,16 +3116,20 @@ export const SportsManagement: React.FC = () => {
                             <a href={fine.paymentScreenshotUrl} target="_blank" rel="noreferrer" className="text-brand-400 font-bold hover:underline">View File</a>
                           ) : 'No file'}
                         </td>
-                        <td className="py-3 px-4 flex gap-1">
-                          <button 
-                            onClick={async () => {
-                              await mockApi.approveFinePayment(userId, fine.id, 'PAID');
-                              loadData(true);
-                            }}
-                            className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded text-[9px] font-bold"
-                          >
-                            Verify
-                          </button>
+                         <td className="py-3 px-4 flex gap-1">
+                          {portalRole === 'FINANCE_ADMIN' ? (
+                            <button 
+                              onClick={async () => {
+                                await mockApi.approveFinePayment(userId, fine.id, 'PAID');
+                                loadData(true);
+                              }}
+                              className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded text-[9px] font-bold"
+                            >
+                              Verify
+                            </button>
+                          ) : (
+                            <span className="text-[10px] text-slate-500 font-mono">No Actions Available</span>
+                          )}
                         </td>
                       </tr>
                     ))}

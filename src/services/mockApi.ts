@@ -18551,7 +18551,10 @@ export const mockApi = {
     return data;
   },
 
-  async updateSportsFeePaymentStatus(paymentId: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string): Promise<any> {
+  async updateSportsFeePaymentStatus(userId: string, paymentId: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
+
     const { data: currentPayment } = await supabaseAdmin.from('sports_fee_payments').select('school_id, amount_paid, sports_fee_id').eq('id', paymentId).single();
     if (!currentPayment) throw new Error('Payment not found');
     

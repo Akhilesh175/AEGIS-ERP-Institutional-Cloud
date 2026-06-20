@@ -20,13 +20,22 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 async function run() {
-  const tables = ['sports', 'sports_enrollments', 'sports_coaches'];
+  const tables = [
+    'sports_coaches',
+    'sports_admins',
+    'sports_finance_transactions',
+    'sports_salary_records',
+    'sports_budget_allocations',
+    'sports_expenses',
+    'sports_fines',
+    'sports_fee_payments'
+  ];
   for (const table of tables) {
-    const { data, error } = await supabaseAdmin.from(table).select('count', { count: 'exact', head: true });
+    const { count, error } = await supabaseAdmin.from(table).select('*', { count: 'exact', head: true });
     if (error) {
       console.log(`Table "${table}" existence: ❌ ERROR: ${error.message} (${error.code})`);
     } else {
-      console.log(`Table "${table}" existence:  EXIST (count: ${data})`);
+      console.log(`Table "${table}" existence:  EXIST (count: ${count})`);
     }
   }
 }
