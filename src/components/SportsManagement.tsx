@@ -135,6 +135,9 @@ export const SportsManagement: React.FC = () => {
 
   const [showFeePayment, setShowFeePayment] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ sportsFeeId: '', paymentMethod: 'UPI', transactionId: '', utrNumber: '', screenshotUrl: '' });
+  const [showAddInvoice, setShowAddInvoice] = useState(false);
+  const [newInvoice, setNewInvoice] = useState({ studentId: '', invoiceTitle: '', invoiceDescription: '', invoiceCategory: 'Quarterly Coaching Fee', amount: 0, dueDate: '', lateFee: 0, remarks: '' });
+  const [submittingInvoice, setSubmittingInvoice] = useState(false);
   
   const [showAddPerformance, setShowAddPerformance] = useState(false);
   const [perfForm, setPerfForm] = useState({ studentId: '', sportId: '', speed: 80, stamina: 80, strength: 80, agility: 80, teamwork: 80, fitness: 80, coachRating: 8.0, remarks: '' });
@@ -460,12 +463,20 @@ export const SportsManagement: React.FC = () => {
 
   const handleFeePayment = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!paymentForm.screenshotUrl) {
+      alert("Payment screenshot proof is required.");
+      return;
+    }
+    if (!paymentForm.utrNumber) {
+      alert("UTR Number is required.");
+      return;
+    }
     try {
       await mockApi.submitSportsFeePayment({
         schoolId,
         sportsFeeId: paymentForm.sportsFeeId,
         studentId: studentProfileId,
-        parentId: parentProfileId,
+        parentId: parentProfileId || userId,
         amountPaid: fees.find(f => f.id === paymentForm.sportsFeeId)?.amount || 0,
         paymentMethod: paymentForm.paymentMethod,
         transactionId: paymentForm.transactionId,
@@ -475,7 +486,7 @@ export const SportsManagement: React.FC = () => {
       setShowFeePayment(false);
       setPaymentForm({ sportsFeeId: '', paymentMethod: 'UPI', transactionId: '', utrNumber: '', screenshotUrl: '' });
       loadData(true);
-      alert('Payment submitted for verification!');
+      alert('Payment submitted for verification successfully!');
     } catch (err: any) {
       alert(`Error submitting payment: ${err.message}`);
     }
@@ -486,12 +497,7 @@ export const SportsManagement: React.FC = () => {
     if (!file) return;
     setUploading(true);
     try {
-      const publicUrl = await mockApi.uploadPaymentAsset(
-        'sports-payment-proofs',
-        isFine ? 'fines' : 'invoices',
-        file.name,
-        file
-      );
+      const publicUrl = await mockApi.uploadSportsPaymentProof(schoolId, file);
       if (isFine) {
         setFinePaymentForm(prev => ({ ...prev, screenshotUrl: publicUrl }));
       } else {
@@ -502,6 +508,50 @@ export const SportsManagement: React.FC = () => {
       alert(`Upload failed: ${err.message}`);
     } finally {
       setUploading(false);
+    }
+  };
+
+  const handleCreateSportsInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newInvoice.studentId) {
+      alert('Please select a student.');
+      return;
+    }
+    if (!newInvoice.invoiceTitle) {
+      alert('Please enter an invoice title.');
+      return;
+    }
+    if (newInvoice.amount <= 0) {
+      alert('Amount must be greater than 0.');
+      return;
+    }
+    if (!newInvoice.dueDate) {
+      alert('Please select a due date.');
+      return;
+    }
+
+    setSubmittingInvoice(true);
+    try {
+      await mockApi.createSportsInvoice({
+        schoolId,
+        studentId: newInvoice.studentId,
+        invoiceTitle: newInvoice.invoiceTitle,
+        invoiceDescription: newInvoice.invoiceDescription,
+        invoiceCategory: newInvoice.invoiceCategory,
+        amount: newInvoice.amount,
+        dueDate: newInvoice.dueDate,
+        lateFee: newInvoice.lateFee,
+        remarks: newInvoice.remarks,
+        createdBy: userId
+      });
+      setShowAddInvoice(false);
+      setNewInvoice({ studentId: '', invoiceTitle: '', invoiceDescription: '', invoiceCategory: 'Quarterly Coaching Fee', amount: 0, dueDate: '', lateFee: 0, remarks: '' });
+      loadData(true);
+      alert('Sports invoice created successfully!');
+    } catch (err: any) {
+      alert(`Error creating sports invoice: ${err.message}`);
+    } finally {
+      setSubmittingInvoice(false);
     }
   };
 
@@ -3318,6 +3368,97 @@ export const SportsManagement: React.FC = () => {
               </div>
             </div>
 
+            {/* Create Sports Invoice Control Banner */}
+            <div className="flex justify-between items-center bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Invoice Control Center</h3>
+                <p className="text-xs text-slate-400 mt-1">Generate fee invoices, track students due states, and handle payment verifications.</p>
+              </div>
+              {['FINANCE_ADMIN', 'SCHOOL_ADMIN', 'SUPER_ADMIN'].includes(portalRole) && (
+                <button
+                  onClick={() => {
+                    setNewInvoice({
+                      studentId: '',
+                      invoiceTitle: '',
+                      invoiceDescription: '',
+                      invoiceCategory: 'Quarterly Coaching Fee',
+                      amount: 0,
+                      dueDate: new Date(Date.now() + 86400000 * 7).toISOString().split('T')[0],
+                      lateFee: 0,
+                      remarks: ''
+                    });
+                    setShowAddInvoice(true);
+                  }}
+                  className="flex items-center gap-2 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl border border-brand-400/20 shadow-md shadow-brand-500/10 hover:brightness-110 active:scale-95 transition-all"
+                >
+                  <Plus size={15} /> Create Sports Invoice
+                </button>
+              )}
+            </div>
+
+            {/* Invoice History Grid */}
+            <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Invoice History</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                      <th className="py-3 px-4 font-bold">Invoice Number</th>
+                      <th className="py-3 px-4 font-bold">Student</th>
+                      <th className="py-3 px-4 font-bold">Title</th>
+                      <th className="py-3 px-4 font-bold">Category</th>
+                      <th className="py-3 px-4 font-bold">Amount</th>
+                      <th className="py-3 px-4 font-bold">Status</th>
+                      <th className="py-3 px-4 font-bold">Created Date</th>
+                      <th className="py-3 px-4 font-bold">Created By</th>
+                      <th className="py-3 px-4 font-bold">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850">
+                    {fees.map(inv => (
+                      <tr key={inv.id} className="hover:bg-slate-900/40">
+                        <td className="py-3 px-4 font-mono text-brand-400">{inv.invoiceNumber}</td>
+                        <td className="py-3 px-4 font-semibold text-slate-100">{inv.studentName}</td>
+                        <td className="py-3 px-4 text-slate-300">{inv.invoiceTitle}</td>
+                        <td className="py-3 px-4 text-slate-400">{inv.invoiceCategory}</td>
+                        <td className="py-3 px-4 text-slate-200">₹{inv.amount.toLocaleString()}</td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            inv.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' :
+                            inv.status === 'PENDING_VERIFICATION' ? 'bg-amber-500/10 text-amber-500' :
+                            inv.status === 'REJECTED' ? 'bg-red-500/10 text-red-400' :
+                            'bg-slate-800 text-slate-400'
+                          }`}>{inv.status}</span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-500 font-mono">{new Date(inv.createdAt).toLocaleDateString()}</td>
+                        <td className="py-3 px-4 text-slate-400">{inv.createdByName}</td>
+                        <td className="py-3 px-4">
+                          {['FINANCE_ADMIN', 'SCHOOL_ADMIN', 'SUPER_ADMIN'].includes(portalRole) && (
+                            <button
+                              onClick={async () => {
+                                if (confirm('Are you sure you want to delete this invoice?')) {
+                                  await mockApi.deleteSportsInvoice(userId, inv.id);
+                                  loadData(true);
+                                }
+                              }}
+                              className="text-[10px] font-bold bg-red-600/10 text-red-400 px-3 py-1.5 rounded-lg border border-red-500/25 hover:bg-red-500 hover:text-white transition-all"
+                            >
+                              Delete
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    ))}
+                    {fees.length === 0 && (
+                      <tr>
+                        <td colSpan={9} className="py-6 text-center text-slate-500">No invoice records found.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
             {/* Invoices verifications */}
             <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Sports Fee Payments Queue</h3>
@@ -3326,38 +3467,42 @@ export const SportsManagement: React.FC = () => {
                   <thead>
                     <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
                       <th className="py-3 px-4 font-bold">Student Name</th>
-                      <th className="py-3 px-4 font-bold">Fee Description</th>
+                      <th className="py-3 px-4 font-bold">Invoice</th>
                       <th className="py-3 px-4 font-bold">Amount</th>
-                      <th className="py-3 px-4 font-bold">UTR Number</th>
+                      <th className="py-3 px-4 font-bold">UTR</th>
                       <th className="py-3 px-4 font-bold">Screenshot</th>
+                      <th className="py-3 px-4 font-bold">Submitted Time</th>
                       <th className="py-3 px-4 font-bold">Status</th>
                       <th className="py-3 px-4 font-bold">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
-                    {feePayments.filter(p => p.status === 'PENDING').map(pmt => (
+                    {feePayments.filter(p => p.status === 'PENDING_VERIFICATION').map(pmt => (
                       <tr key={pmt.id} className="hover:bg-slate-900/40">
                         <td className="py-3 px-4 font-semibold text-slate-100">{pmt.studentName}</td>
-                        <td className="py-3 px-4 text-slate-400">{pmt.feeType?.replace('_', ' ') || 'TUTION'}</td>
-                        <td className="py-3 px-4 text-slate-400">₹{pmt.amountPaid}</td>
-                        <td className="py-3 px-4 font-mono text-slate-350">{pmt.utrNumber || 'N/A'}</td>
+                        <td className="py-3 px-4 text-slate-400">{pmt.invoiceTitle}</td>
+                        <td className="py-3 px-4 text-slate-400">₹{pmt.amountPaid.toLocaleString()}</td>
+                        <td className="py-3 px-4 font-mono text-slate-350">{pmt.utrNumber}</td>
                         <td className="py-3 px-4">
                           {pmt.paymentScreenshotUrl ? (
                             <a href={pmt.paymentScreenshotUrl} target="_blank" rel="noreferrer" className="text-brand-400 font-bold hover:underline">View File</a>
                           ) : 'No file'}
                         </td>
+                        <td className="py-3 px-4 text-slate-500 font-mono">{new Date(pmt.submittedAt || pmt.paymentDate).toLocaleString()}</td>
                         <td className="py-3 px-4">
-                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-500">PENDING</span>
+                          <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-500">PENDING_VERIFICATION</span>
                         </td>
-                         <td className="py-3 px-4 flex gap-2">
-                          {['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SCHOOL_ADMIN'].includes(portalRole) ? (
+                        <td className="py-3 px-4 flex gap-2">
+                          {['FINANCE_ADMIN', 'SCHOOL_ADMIN', 'SUPER_ADMIN'].includes(portalRole) ? (
                             <>
                               <button 
                                 onClick={async () => {
-                                  await mockApi.updateSportsFeePaymentStatus(userId, pmt.id, 'APPROVED');
+                                  const remarks = prompt('Approval remarks (optional):') || 'Approved';
+                                  await mockApi.updateSportsFeePaymentStatus(userId, pmt.id, 'APPROVED', remarks);
                                   loadData(true);
                                 }}
-                                className="p-1 bg-emerald-500/10 text-emerald-400 rounded hover:bg-emerald-500 hover:text-white"
+                                className="p-1.5 bg-emerald-500/10 text-emerald-400 rounded hover:bg-emerald-500 hover:text-white transition-all"
+                                title="Approve Payment"
                               >
                                 <Check size={14} />
                               </button>
@@ -3367,7 +3512,8 @@ export const SportsManagement: React.FC = () => {
                                   await mockApi.updateSportsFeePaymentStatus(userId, pmt.id, 'REJECTED', reason);
                                   loadData(true);
                                 }}
-                                className="p-1 bg-red-500/10 text-red-400 rounded hover:bg-red-500 hover:text-white"
+                                className="p-1.5 bg-red-500/10 text-red-400 rounded hover:bg-red-500 hover:text-white transition-all"
+                                title="Reject Payment"
                               >
                                 <X size={14} />
                               </button>
@@ -3378,9 +3524,9 @@ export const SportsManagement: React.FC = () => {
                         </td>
                       </tr>
                     ))}
-                    {feePayments.filter(p => p.status === 'PENDING').length === 0 && (
+                    {feePayments.filter(p => p.status === 'PENDING_VERIFICATION').length === 0 && (
                       <tr>
-                        <td colSpan={7} className="py-6 text-center text-slate-500">No pending fee payments.</td>
+                        <td colSpan={8} className="py-6 text-center text-slate-500">No pending fee payments queue.</td>
                       </tr>
                     )}
                   </tbody>
@@ -3404,13 +3550,13 @@ export const SportsManagement: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
-                    {feePayments.filter(p => p.status !== 'PENDING').slice(0, 20).map(pmt => (
+                    {feePayments.filter(p => p.status !== 'PENDING_VERIFICATION').slice(0, 20).map(pmt => (
                       <tr key={pmt.id} className="hover:bg-slate-900/40">
                         <td className="py-3 px-4 font-semibold text-slate-100">{pmt.studentName}</td>
-                        <td className="py-3 px-4 text-slate-400">{pmt.feeType?.replace('_', ' ') || 'TUTION'}</td>
-                        <td className="py-3 px-4 text-slate-400">₹{pmt.amountPaid}</td>
+                        <td className="py-3 px-4 text-slate-400">{pmt.invoiceTitle}</td>
+                        <td className="py-3 px-4 text-slate-400">₹{pmt.amountPaid.toLocaleString()}</td>
                         <td className="py-3 px-4 font-mono text-slate-350">{pmt.utrNumber || 'N/A'}</td>
-                        <td className="py-3 px-4 text-slate-500 font-mono">{pmt.paymentDate ? new Date(pmt.paymentDate).toLocaleDateString() : 'N/A'}</td>
+                        <td className="py-3 px-4 text-slate-500 font-mono">{new Date(pmt.submittedAt || pmt.paymentDate).toLocaleDateString()}</td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
                             pmt.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
@@ -3418,7 +3564,7 @@ export const SportsManagement: React.FC = () => {
                         </td>
                       </tr>
                     ))}
-                    {feePayments.filter(p => p.status !== 'PENDING').length === 0 && (
+                    {feePayments.filter(p => p.status !== 'PENDING_VERIFICATION').length === 0 && (
                       <tr>
                         <td colSpan={6} className="py-6 text-center text-slate-500">No payment transaction history.</td>
                       </tr>
@@ -3836,47 +3982,43 @@ export const SportsManagement: React.FC = () => {
             <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Invoice Dues</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {fees.map(fee => {
-                  const pmt = feePayments.find(p => p.sportsFeeId === fee.id && p.studentId === studentProfileId);
+                {fees.filter(fee => fee.studentId === studentProfileId).map(fee => {
                   return (
                     <div key={fee.id} className="bg-slate-900/60 border border-slate-850 p-5 rounded-2xl flex flex-col justify-between gap-4">
                       <div>
                         <div className="flex justify-between items-start">
-                          <h4 className="font-bold text-slate-100 text-sm">{fee.description}</h4>
+                          <h4 className="font-bold text-slate-100 text-sm">{fee.invoiceTitle}</h4>
                           <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                            pmt?.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' :
-                            pmt?.status === 'PENDING' ? 'bg-amber-500/10 text-amber-500' :
-                            pmt?.status === 'REJECTED' ? 'bg-red-500/10 text-red-400' :
+                            fee.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' :
+                            fee.status === 'PENDING_VERIFICATION' ? 'bg-amber-500/10 text-amber-500' :
+                            fee.status === 'REJECTED' ? 'bg-red-500/10 text-red-400' :
                             'bg-slate-800 text-slate-400'
-                          }`}>{
-                            pmt?.status === 'APPROVED' ? 'PAID' :
-                            pmt?.status === 'PENDING' ? 'PENDING_VERIFICATION' :
-                            pmt?.status || 'UNPAID'
-                          }</span>
+                          }`}>{fee.status}</span>
                         </div>
+                        {fee.invoiceDescription && <p className="text-xs text-slate-400 mt-1">{fee.invoiceDescription}</p>}
                         <p className="text-xs text-slate-400 mt-2">Due Date: {fee.dueDate}</p>
                         <p className="text-2xl font-extrabold text-white mt-4">₹{fee.amount}</p>
                       </div>
 
-                      {!pmt && (
+                      {fee.status === 'UNPAID' && (
                         <button 
                           onClick={() => { setPaymentForm(prev => ({ ...prev, sportsFeeId: fee.id })); setShowFeePayment(true); }}
-                          className="w-full py-2 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold text-xs rounded-xl"
+                          className="w-full py-2 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold text-xs rounded-xl hover:brightness-110 active:scale-98 transition-all"
                         >
                           Pay & Upload Screenshot
                         </button>
                       )}
 
-                      {pmt?.status === 'PENDING' && (
+                      {fee.status === 'PENDING_VERIFICATION' && (
                         <button 
                           disabled
-                          className="w-full py-2 bg-slate-850 text-slate-405 font-bold text-xs rounded-xl cursor-not-allowed border border-slate-800"
+                          className="w-full py-2 bg-slate-850 text-slate-400 font-bold text-xs rounded-xl cursor-not-allowed border border-slate-800"
                         >
                           Payment Pending Verification
                         </button>
                       )}
 
-                      {pmt?.status === 'APPROVED' && (
+                      {fee.status === 'APPROVED' && (
                         <button 
                           disabled
                           className="w-full py-2 bg-emerald-950/20 text-emerald-400 font-bold text-xs rounded-xl cursor-not-allowed border border-emerald-900/30"
@@ -3885,17 +4027,58 @@ export const SportsManagement: React.FC = () => {
                         </button>
                       )}
 
-                      {pmt?.status === 'REJECTED' && (
+                      {fee.status === 'REJECTED' && (
                         <button 
                           onClick={() => { setPaymentForm(prev => ({ ...prev, sportsFeeId: fee.id })); setShowFeePayment(true); }}
-                          className="w-full py-2 bg-gradient-to-r from-amber-600 to-amber-500 text-white font-bold text-xs rounded-xl"
+                          className="w-full py-2 bg-gradient-to-r from-amber-600 to-amber-500 text-white font-bold text-xs rounded-xl hover:brightness-110 active:scale-98 transition-all"
                         >
-                          Resubmit Payment
+                          Resubmit Payment Proof
                         </button>
                       )}
                     </div>
                   );
                 })}
+                {fees.filter(fee => fee.studentId === studentProfileId).length === 0 && (
+                  <div className="col-span-2 py-6 text-center text-slate-500">No sports invoices issued for this student.</div>
+                )}
+              </div>
+            </div>
+
+            {/* Payment Submission History */}
+            <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+              <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Payment History</h3>
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                      <th className="py-3 px-4 font-bold">Amount</th>
+                      <th className="py-3 px-4 font-bold">UTR</th>
+                      <th className="py-3 px-4 font-bold">Status</th>
+                      <th className="py-3 px-4 font-bold">Submission Date</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-850">
+                    {feePayments.filter(p => p.studentId === studentProfileId).map(pmt => (
+                      <tr key={pmt.id} className="hover:bg-slate-900/40">
+                        <td className="py-3 px-4 text-slate-200 font-semibold">₹{pmt.amountPaid.toLocaleString()}</td>
+                        <td className="py-3 px-4 font-mono text-slate-350">{pmt.utrNumber}</td>
+                        <td className="py-3 px-4">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            pmt.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' :
+                            pmt.status === 'PENDING_VERIFICATION' ? 'bg-amber-500/10 text-amber-500' :
+                            'bg-red-500/10 text-red-400'
+                          }`}>{pmt.status}</span>
+                        </td>
+                        <td className="py-3 px-4 text-slate-500 font-mono">{new Date(pmt.submittedAt || pmt.paymentDate).toLocaleDateString()}</td>
+                      </tr>
+                    ))}
+                    {feePayments.filter(p => p.studentId === studentProfileId).length === 0 && (
+                      <tr>
+                        <td colSpan={4} className="py-6 text-center text-slate-500">No payment transaction records found.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
               </div>
             </div>
 
@@ -4604,14 +4787,136 @@ export const SportsManagement: React.FC = () => {
                 disabled={uploading || !finePaymentForm.screenshotUrl}
                 className={`w-full py-3 text-white font-bold rounded-xl ${uploading || !finePaymentForm.screenshotUrl ? 'bg-slate-800 text-slate-500 cursor-not-allowed border-none' : 'bg-red-650 hover:bg-red-500'}`}
               >
-                Submit Fine Payment
-              </button>
-            </form>
-          </div>
+              Submit Fine Payment
+            </button>
+          </form>
         </div>
-      )}
+      </div>
+    )}
 
-      {showIssueFine && (
+    {showAddInvoice && (
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
+        <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+          <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+            <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Create Sports Invoice</h3>
+            <button onClick={() => setShowAddInvoice(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+          </div>
+          
+          <form onSubmit={handleCreateSportsInvoice} className="space-y-4 text-xs">
+            <div className="space-y-1">
+              <label className="block text-slate-400 font-semibold">Select Student</label>
+              <select
+                value={newInvoice.studentId}
+                onChange={(e) => setNewInvoice(prev => ({ ...prev, studentId: e.target.value }))}
+                required
+                className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+              >
+                <option value="">-- Choose Student --</option>
+                {allStudents.map(s => (
+                  <option key={s.id} value={s.id}>{s.name}</option>
+                ))}
+              </select>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-slate-400 font-semibold">Invoice Title</label>
+              <input 
+                type="text"
+                value={newInvoice.invoiceTitle}
+                onChange={(e) => setNewInvoice(prev => ({ ...prev, invoiceTitle: e.target.value }))}
+                required
+                placeholder="e.g. Q3 Football Coaching Fee"
+                className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+              />
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-slate-400 font-semibold">Description</label>
+              <textarea 
+                value={newInvoice.invoiceDescription}
+                onChange={(e) => setNewInvoice(prev => ({ ...prev, invoiceDescription: e.target.value }))}
+                placeholder="Details about this invoice..."
+                className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                rows={2}
+              />
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Category</label>
+                <select
+                  value={newInvoice.invoiceCategory}
+                  onChange={(e) => setNewInvoice(prev => ({ ...prev, invoiceCategory: e.target.value }))}
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                >
+                  <option value="Quarterly Coaching Fee">Quarterly Coaching Fee</option>
+                  <option value="Uniform & Gear">Uniform & Gear</option>
+                  <option value="Tournament Fee">Tournament Fee</option>
+                  <option value="Other Sports Fee">Other Sports Fee</option>
+                </select>
+              </div>
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Amount (₹)</label>
+                <input 
+                  type="number"
+                  value={newInvoice.amount || ''}
+                  onChange={(e) => setNewInvoice(prev => ({ ...prev, amount: Number(e.target.value) }))}
+                  required
+                  placeholder="0"
+                  min="1"
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Due Date</label>
+                <input 
+                  type="date"
+                  value={newInvoice.dueDate}
+                  onChange={(e) => setNewInvoice(prev => ({ ...prev, dueDate: e.target.value }))}
+                  required
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                />
+              </div>
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Late Fee (₹)</label>
+                <input 
+                  type="number"
+                  value={newInvoice.lateFee || ''}
+                  onChange={(e) => setNewInvoice(prev => ({ ...prev, lateFee: Number(e.target.value) }))}
+                  placeholder="0"
+                  min="0"
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="space-y-1">
+              <label className="block text-slate-400 font-semibold">Remarks</label>
+              <input 
+                type="text"
+                value={newInvoice.remarks}
+                onChange={(e) => setNewInvoice(prev => ({ ...prev, remarks: e.target.value }))}
+                placeholder="Additional terms or notes"
+                className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+              />
+            </div>
+
+            <button 
+              type="submit" 
+              disabled={submittingInvoice}
+              className="w-full py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl border border-brand-400/25 disabled:bg-slate-800 disabled:text-slate-500 disabled:border-none transition-all"
+            >
+              {submittingInvoice ? 'Generating Invoice...' : 'Generate Invoice'}
+            </button>
+          </form>
+        </div>
+      </div>
+    )}
+
+    {showIssueFine && (
         <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
             <div className="flex justify-between items-center border-b border-slate-800 pb-3">

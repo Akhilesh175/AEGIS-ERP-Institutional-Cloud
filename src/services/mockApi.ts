@@ -18485,52 +18485,199 @@ export const mockApi = {
     return data;
   },
 
-  async fetchSportsFees(schoolId: string, academicSessionId: string): Promise<any[]> {
-    validateSchoolId(schoolId, 'fetchSportsFees');
-    const { data, error } = await supabaseAdmin
-      .from('sports_fees')
-      .select('*')
-      .eq('school_id', schoolId)
-      .eq('academic_session_id', academicSessionId);
+  async fetchSportsInvoices(schoolId: string, studentId?: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsInvoices');
+    let query = supabaseAdmin
+      .from('sports_invoices')
+      .select('*, students(*, users(first_name, last_name)), created_by_user:users!created_by(first_name, last_name)')
+      .eq('school_id', schoolId);
+    
+    if (studentId) {
+      query = query.eq('student_id', studentId);
+    }
+
+    const { data, error } = await query;
     if (error) throw error;
+
     return (data || []).map(r => ({
       id: r.id,
       schoolId: r.school_id,
-      academicSessionId: r.academic_session_id,
-      feeType: r.fee_type,
+      studentId: r.student_id,
+      invoiceNumber: r.invoice_number,
+      invoiceTitle: r.invoice_title,
+      invoiceDescription: r.invoice_description,
+      invoiceCategory: r.invoice_category,
       amount: Number(r.amount),
       dueDate: r.due_date,
-      description: r.description
+      lateFee: r.late_fee ? Number(r.late_fee) : 0,
+      remarks: r.remarks,
+      status: r.status,
+      createdBy: r.created_by,
+      createdByName: r.created_by_user ? `${r.created_by_user.first_name} ${r.created_by_user.last_name}` : 'System',
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
+      createdAt: r.created_at,
+      updatedAt: r.updated_at
     }));
   },
 
-  async createSportsFee(fee: any): Promise<any> {
-    validateSchoolId(fee.schoolId, 'createSportsFee');
+  async fetchSportsFees(schoolId: string, academicSessionId: string): Promise<any[]> {
+    return this.fetchSportsInvoices(schoolId);
+  },
+
+  async createSportsInvoice(invoice: any): Promise<any> {
+    validateSchoolId(invoice.schoolId, 'createSportsInvoice');
+    const invoiceNumber = `INV-SP-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
+
     const { data, error } = await supabaseAdmin
-      .from('sports_fees')
+      .from('sports_invoices')
       .insert({
-        school_id: fee.schoolId,
-        academic_session_id: fee.academicSessionId,
-        fee_type: fee.feeType,
-        amount: fee.amount,
-        due_date: fee.dueDate,
-        description: fee.description
+        school_id: invoice.schoolId,
+        student_id: invoice.studentId,
+        invoice_number: invoiceNumber,
+        invoice_title: invoice.invoiceTitle,
+        invoice_description: invoice.invoiceDescription || '',
+        invoice_category: invoice.invoiceCategory,
+        amount: invoice.amount,
+        due_date: invoice.dueDate,
+        late_fee: invoice.lateFee || 0,
+        remarks: invoice.remarks || '',
+        status: 'UNPAID',
+        created_by: invoice.createdBy
       })
-      .select()
+      .select('*, students(*, users(first_name, last_name))')
       .single();
+
     if (error) throw error;
+
+    // Log Sports Activity
+    try {
+      const { data: userProfile } = await supabaseAdmin
+        .from('users')
+        .select('role')
+        .eq('id', invoice.createdBy)
+        .single();
+      
+      const creatorRole = userProfile?.role || 'FINANCE_ADMIN';
+      await this.logSportsActivity(
+        invoice.schoolId,
+        invoice.createdBy,
+        creatorRole,
+        'Invoice Created',
+        `Invoice ${invoiceNumber} created for student ${data.students?.users ? `${data.students.users.first_name} ${data.students.users.last_name}` : data.student_id}`,
+        '127.0.0.1',
+        'Vite Client',
+        { invoiceId: data.id, amount: invoice.amount }
+      );
+    } catch (logErr) {
+      console.warn('Audit logging failed for invoice creation:', logErr);
+    }
+
     return data;
   },
 
-  async fetchSportsFeePayments(schoolId: string, sportsFeeId?: string, studentId?: string): Promise<any[]> {
+  async createSportsFee(fee: any): Promise<any> {
+    return this.createSportsInvoice(fee);
+  },
+
+  async updateSportsInvoice(userId: string, invoiceId: string, updates: any): Promise<any> {
+    const { data: userProfile } = await supabaseAdmin
+      .from('users')
+      .select('school_id, role')
+      .eq('id', userId)
+      .single();
+    if (!userProfile || !['FINANCE_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(userProfile.role)) {
+      throw new Error('Unauthorized');
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_invoices')
+      .update({
+        invoice_title: updates.invoiceTitle,
+        invoice_description: updates.invoiceDescription,
+        invoice_category: updates.invoiceCategory,
+        amount: updates.amount,
+        due_date: updates.dueDate,
+        late_fee: updates.lateFee,
+        remarks: updates.remarks,
+        status: updates.status,
+        updated_at: new Date().toISOString()
+      })
+      .eq('id', invoiceId)
+      .select('*, students(*, users(first_name, last_name))')
+      .single();
+
+    if (error) throw error;
+
+    // Log Sports Activity
+    try {
+      await this.logSportsActivity(
+        data.school_id,
+        userId,
+        userProfile.role,
+        'Invoice Updated',
+        `Invoice ${data.invoice_number} updated`,
+        '127.0.0.1',
+        'Vite Client',
+        { invoiceId, updates }
+      );
+    } catch (logErr) {
+      console.warn('Audit logging failed for invoice update:', logErr);
+    }
+
+    return data;
+  },
+
+  async deleteSportsInvoice(userId: string, invoiceId: string): Promise<void> {
+    const { data: userProfile } = await supabaseAdmin
+      .from('users')
+      .select('school_id, role')
+      .eq('id', userId)
+      .single();
+    if (!userProfile || !['FINANCE_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(userProfile.role)) {
+      throw new Error('Unauthorized');
+    }
+
+    const { data: invoice } = await supabaseAdmin
+      .from('sports_invoices')
+      .select('invoice_number, school_id')
+      .eq('id', invoiceId)
+      .single();
+
+    const { error } = await supabaseAdmin
+      .from('sports_invoices')
+      .delete()
+      .eq('id', invoiceId);
+
+    if (error) throw error;
+
+    // Log Sports Activity
+    if (invoice) {
+      try {
+        await this.logSportsActivity(
+          invoice.school_id,
+          userId,
+          userProfile.role,
+          'Invoice Deleted',
+          `Invoice ${invoice.invoice_number} deleted`,
+          '127.0.0.1',
+          'Vite Client',
+          { invoiceId }
+        );
+      } catch (logErr) {
+        console.warn('Audit logging failed for invoice deletion:', logErr);
+      }
+    }
+  },
+
+  async fetchSportsFeePayments(schoolId: string, invoiceId?: string, studentId?: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchSportsFeePayments');
     let query = supabaseAdmin
       .from('sports_fee_payments')
-      .select('*, students(*, users(first_name, last_name)), sports_fees(*)')
+      .select('*, students(*, users(first_name, last_name)), sports_invoices(*)')
       .eq('school_id', schoolId);
     
-    if (sportsFeeId) {
-      query = query.eq('sports_fee_id', sportsFeeId);
+    if (invoiceId) {
+      query = query.eq('invoice_id', invoiceId);
     }
     if (studentId) {
       query = query.eq('student_id', studentId);
@@ -18541,20 +18688,24 @@ export const mockApi = {
     return (data || []).map(r => ({
       id: r.id,
       schoolId: r.school_id,
-      sportsFeeId: r.sports_fee_id,
+      invoiceId: r.invoice_id,
       studentId: r.student_id,
-      amountPaid: Number(r.amount_paid),
-      paymentDate: r.payment_date,
-      paymentMethod: r.payment_method,
-      transactionId: r.transaction_id,
-      status: r.status,
-      paymentScreenshotUrl: r.payment_screenshot_url,
+      parentId: r.parent_id,
+      amountPaid: Number(r.amount),
       utrNumber: r.utr_number,
+      paymentScreenshotUrl: r.proof_image_url,
+      status: r.status,
+      submittedAt: r.submitted_at,
+      approvedBy: r.approved_by,
+      approvedAt: r.approved_at,
+      rejectedBy: r.rejected_by,
+      rejectedAt: r.rejected_at,
+      remarks: r.remarks,
       rejectionReason: r.rejection_reason,
-      createdAt: r.created_at,
       studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
-      feeType: r.sports_fees?.fee_type || 'Sports Fee',
-      feeAmount: r.sports_fees?.amount ? Number(r.sports_fees.amount) : 0
+      feeType: r.sports_invoices?.invoice_category || 'Sports Invoice',
+      feeAmount: r.sports_invoices?.amount ? Number(r.sports_invoices.amount) : 0,
+      invoiceTitle: r.sports_invoices?.invoice_title || 'Invoice Title'
     }));
   },
 
@@ -18566,70 +18717,147 @@ export const mockApi = {
     const parentId = payment.parentId;
     const schoolId = payment.schoolId;
 
-    if (!invoiceId) throw Error("Invoice ID missing");
-    if (!studentId) throw Error("Student ID missing");
-    if (!parentId) throw Error("Parent ID missing");
-    if (!schoolId) throw Error("School ID missing");
+    if (!invoiceId) throw new Error("Invoice ID missing");
+    if (!studentId) throw new Error("Student ID missing");
+    if (!parentId) throw new Error("Parent ID missing");
+    if (!schoolId) throw new Error("School ID missing");
 
     const { data, error } = await supabaseAdmin
       .from('sports_fee_payments')
       .insert({
         school_id: schoolId,
-        sports_fee_id: invoiceId,
+        invoice_id: invoiceId,
         student_id: studentId,
-        amount_paid: payment.amountPaid,
-        payment_method: payment.paymentMethod,
-        transaction_id: payment.transactionId || null,
-        status: 'PENDING',
-        payment_screenshot_url: payment.paymentScreenshotUrl || null,
-        utr_number: payment.utrNumber || null,
-        parent_id: parentId
+        parent_id: parentId,
+        amount: payment.amountPaid,
+        utr_number: payment.utrNumber,
+        proof_image_url: payment.paymentScreenshotUrl,
+        status: 'PENDING_VERIFICATION'
       })
-      .select()
+      .select('*, sports_invoices(*)')
       .single();
+
     if (error) throw error;
-    return data;
-  },
 
-  async updateSportsFeePaymentStatus(userId: string, paymentId: string, status: 'APPROVED' | 'REJECTED', rejectionReason?: string): Promise<any> {
-    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
-    if (!user || !['FINANCE_ADMIN', 'SPORTS_ADMIN', 'ADMIN'].includes(user.role)) throw new Error('Unauthorized');
-
-    const { data: currentPayment } = await supabaseAdmin.from('sports_fee_payments').select('school_id, amount_paid, sports_fee_id').eq('id', paymentId).single();
-    if (!currentPayment) throw new Error('Payment not found');
+    // Update invoice status to PENDING_VERIFICATION
+    const { error: invoiceErr } = await supabaseAdmin
+      .from('sports_invoices')
+      .update({ status: 'PENDING_VERIFICATION' })
+      .eq('id', invoiceId);
     
-    // Get academic session
-    const { data: fee } = await supabaseAdmin.from('sports_fees').select('academic_session_id, fee_type').eq('id', currentPayment.sports_fee_id).single();
-    const sessionId = fee?.academic_session_id || '';
+    if (invoiceErr) throw invoiceErr;
 
-    const { data, error } = await supabaseAdmin
-      .from('sports_fee_payments')
-      .update({
-        status,
-        rejection_reason: rejectionReason || null,
-        approved_by: status === 'APPROVED' ? userId : null,
-        approved_at: status === 'APPROVED' ? new Date().toISOString() : null,
-        updated_at: new Date().toISOString()
-      })
-      .eq('id', paymentId)
-      .select()
-      .single();
-    if (error) throw error;
-
-    if (status === 'APPROVED' && sessionId) {
-      await supabaseAdmin.from('sports_finance_transactions').insert({
-        school_id: currentPayment.school_id,
-        academic_session_id: sessionId,
-        type: 'REVENUE',
-        category: 'FEE_PAYMENT',
-        amount: Number(currentPayment.amount_paid),
-        reference_id: paymentId,
-        status: 'APPROVED',
-        remarks: `Sports Fee Payment approved: ${fee?.fee_type || 'Sports Fee'}`
-      });
+    // Log Sports Activity
+    try {
+      const { data: user } = await supabaseAdmin.from('users').select('role').eq('id', parentId).single();
+      await this.logSportsActivity(
+        schoolId,
+        parentId,
+        user?.role || 'PARENT',
+        'Payment Submitted',
+        `Payment of ₹${payment.amountPaid} submitted for invoice ${data.sports_invoices?.invoice_number}`,
+        '127.0.0.1',
+        'Vite Client',
+        { paymentId: data.id, invoiceId }
+      );
+    } catch (logErr) {
+      console.warn('Audit logging failed for payment submission:', logErr);
     }
 
     return data;
+  },
+
+  async updateSportsFeePaymentStatus(
+    userId: string, 
+    paymentId: string, 
+    status: 'APPROVED' | 'REJECTED', 
+    remarksOrReason?: string
+  ): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['FINANCE_ADMIN', 'SPORTS_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized');
+    }
+
+    const { data: currentPayment } = await supabaseAdmin
+      .from('sports_fee_payments')
+      .select('*, sports_invoices(*)')
+      .eq('id', paymentId)
+      .single();
+    if (!currentPayment) throw new Error('Payment not found');
+
+    const updateFields: any = {
+      status,
+      updated_at: new Date().toISOString()
+    };
+
+    if (status === 'APPROVED') {
+      updateFields.approved_by = userId;
+      updateFields.approved_at = new Date().toISOString();
+      updateFields.remarks = remarksOrReason || 'Payment Approved';
+    } else {
+      updateFields.rejected_by = userId;
+      updateFields.rejected_at = new Date().toISOString();
+      updateFields.rejection_reason = remarksOrReason || 'Payment Rejected';
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_fee_payments')
+      .update(updateFields)
+      .eq('id', paymentId)
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    // Update sports_invoices status to APPROVED or REJECTED
+    const { error: invoiceErr } = await supabaseAdmin
+      .from('sports_invoices')
+      .update({ status: status })
+      .eq('id', currentPayment.invoice_id);
+
+    if (invoiceErr) throw invoiceErr;
+
+    // Log Sports Activity
+    try {
+      await this.logSportsActivity(
+        currentPayment.school_id,
+        userId,
+        user.role,
+        status === 'APPROVED' ? 'Payment Approved' : 'Payment Rejected',
+        `Payment of ₹${currentPayment.amount} for invoice ${currentPayment.sports_invoices?.invoice_number} ${status.toLowerCase()}`,
+        '127.0.0.1',
+        'Vite Client',
+        { paymentId, invoiceId: currentPayment.invoice_id, remarksOrReason }
+      );
+    } catch (logErr) {
+      console.warn('Audit logging failed for payment status update:', logErr);
+    }
+
+    return data;
+  },
+
+  async uploadSportsPaymentProof(schoolId: string, file: File): Promise<string> {
+    validateSchoolId(schoolId, 'uploadSportsPaymentProof');
+    const extension = file.name.split('.').pop() || 'png';
+    const uniqueName = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}.${extension}`;
+    const filePath = `payment-proofs/${schoolId}/${uniqueName}`;
+
+    const { error: uploadError } = await supabaseAdmin.storage
+      .from('sports-payment-proofs')
+      .upload(filePath, file, {
+        cacheControl: '3600',
+        upsert: true
+      });
+
+    if (uploadError) {
+      throw new Error('Failed to upload payment proof: ' + uploadError.message);
+    }
+
+    const { data: { publicUrl } } = supabaseAdmin.storage
+      .from('sports-payment-proofs')
+      .getPublicUrl(filePath);
+
+    return publicUrl;
   },
 
   async fetchAllSportsAttendance(schoolId: string): Promise<any[]> {
