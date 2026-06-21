@@ -89,6 +89,7 @@ export const SportsManagement: React.FC = () => {
   const [salaryRecords, setSalaryRecords] = useState<any[]>([]);
   const [budgets, setBudgets] = useState<any[]>([]);
   const [expenses, setExpenses] = useState<any[]>([]);
+  const [expenseHistory, setExpenseHistory] = useState<any[]>([]);
   const [fines, setFines] = useState<any[]>([]);
   const [finePayments, setFinePayments] = useState<any[]>([]);
   const [budgetHistory, setBudgetHistory] = useState<any[]>([]);
@@ -212,7 +213,7 @@ export const SportsManagement: React.FC = () => {
       const [
         catsRes, sportsRes, coachesRes, enrollsRes, teamsRes, schedsRes, perfRes, tournsRes, ranksRes, certsRes, achsRes, medRes, equipRes, equipLogRes, feesRes, pmtsRes, notifRes,
         adminsRes, salaryRes, budgetsRes, expensesRes, finesRes, logsRes, coachAttRes, leavesRes, workLogsRes, correctionsRes, schoolsRes, historyRes,
-        finePmtsRes, budgetHistoryRes, paymentSettingsRes
+        finePmtsRes, budgetHistoryRes, paymentSettingsRes, expenseHistoryRes
       ] = await Promise.all([
         safeFetch(() => mockApi.fetchSportsCategories(schoolId)),
         safeFetch(() => mockApi.fetchSports(schoolId)),
@@ -235,8 +236,8 @@ export const SportsManagement: React.FC = () => {
         safeFetch(() => mockApi.fetchSportsAdmins(schoolId)),
         safeFetch(() => mockApi.fetchSalaryRequests(schoolId)),
         safeFetch(() => academicSessionId ? mockApi.fetchBudgets(schoolId, academicSessionId) : Promise.resolve([])),
-        safeFetch(() => academicSessionId ? mockApi.fetchExpenses(schoolId, academicSessionId) : Promise.resolve([])),
-        safeFetch(() => academicSessionId ? mockApi.fetchFines(schoolId, academicSessionId) : Promise.resolve([])),
+        safeFetch(() => mockApi.fetchExpenses(schoolId, academicSessionId)),
+        safeFetch(() => mockApi.fetchFines(schoolId, academicSessionId)),
         safeFetch(() => mockApi.fetchSportsActivityLogs(schoolId)),
         safeFetch(() => mockApi.fetchCoachAttendance(schoolId)),
         safeFetch(() => mockApi.fetchCoachLeaves(schoolId)),
@@ -246,7 +247,8 @@ export const SportsManagement: React.FC = () => {
         safeFetch(() => mockApi.fetchCoachAttendanceHistory(schoolId), []),
         safeFetch(() => mockApi.fetchFinePayments(schoolId), []),
         safeFetch(() => mockApi.fetchBudgetHistory(schoolId), []),
-        safeFetch(() => mockApi.fetchSchoolPaymentSettings(schoolId, userRole), null)
+        safeFetch(() => mockApi.fetchSchoolPaymentSettings(schoolId, userRole), null),
+        safeFetch(() => mockApi.fetchExpenseHistory(schoolId), [])
       ]);
 
       setCategories(catsRes);
@@ -271,6 +273,7 @@ export const SportsManagement: React.FC = () => {
       setSalaryRecords(salaryRes);
       setBudgets(budgetsRes);
       setExpenses(expensesRes);
+      setExpenseHistory(expenseHistoryRes);
       setFines(finesRes);
       setFinePayments(finePmtsRes);
       setBudgetHistory(budgetHistoryRes);
@@ -377,6 +380,7 @@ export const SportsManagement: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coach_leaves' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coach_work_logs' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coach_attendance_corrections' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_expense_history' }, () => { loadData(true); })
       .subscribe();
 
     return () => {
@@ -4156,7 +4160,7 @@ export const SportsManagement: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
-                    {expenses.filter(e => e.status !== 'PENDING').slice(0, 20).map(exp => (
+                    {expenseHistory.slice(0, 20).map(exp => (
                       <tr key={exp.id} className="hover:bg-slate-900/40">
                         <td className="py-3 px-4 text-slate-100 font-semibold">{exp.requestedByName}</td>
                         <td className="py-3 px-4 text-slate-400">{exp.title}</td>
@@ -4174,7 +4178,7 @@ export const SportsManagement: React.FC = () => {
                         </td>
                       </tr>
                     ))}
-                    {expenses.filter(e => e.status !== 'PENDING').length === 0 && (
+                    {expenseHistory.length === 0 && (
                       <tr>
                         <td colSpan={6} className="py-6 text-center text-slate-500">No expense history records.</td>
                       </tr>
@@ -4437,7 +4441,7 @@ export const SportsManagement: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
-                    {finePayments.slice(0, 20).map(fine => (
+                    {finePayments.filter(f => f.status !== 'PENDING').slice(0, 20).map(fine => (
                       <tr key={fine.id} className="hover:bg-slate-900/40">
                         <td className="py-3 px-4 font-semibold text-slate-100">{fine.studentName}</td>
                         <td className="py-3 px-4 text-slate-400">{fine.reason}</td>
@@ -4467,7 +4471,7 @@ export const SportsManagement: React.FC = () => {
                         </td>
                       </tr>
                     ))}
-                    {finePayments.length === 0 && (
+                    {finePayments.filter(f => f.status !== 'PENDING').length === 0 && (
                       <tr>
                         <td colSpan={7} className="py-6 text-center text-slate-500">No fine payment history.</td>
                       </tr>

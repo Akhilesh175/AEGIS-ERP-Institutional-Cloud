@@ -19829,6 +19829,30 @@ export const mockApi = {
     }));
   },
 
+  async fetchExpenseHistory(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchExpenseHistory');
+    const { data, error } = await supabaseAdmin
+      .from('sports_expense_history')
+      .select('*, requester:users!requested_by(first_name, last_name)')
+      .eq('school_id', schoolId)
+      .order('created_at', { ascending: false })
+      .limit(50);
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      requestId: r.request_id,
+      schoolId: r.school_id,
+      requestedBy: r.requested_by,
+      title: r.item_name,
+      vendor: r.vendor,
+      amountRequested: Number(r.amount),
+      status: r.status,
+      paymentStatus: r.payment_status,
+      createdAt: r.created_at,
+      requestedByName: r.requester ? `${r.requester.first_name} ${r.requester.last_name}` : 'Unknown'
+    }));
+  },
+
   async requestExpense(userId: string, expense: any): Promise<any> {
     const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
     if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
@@ -19851,6 +19875,19 @@ export const mockApi = {
     
     if (error) throw error;
 
+    await supabaseAdmin
+      .from('sports_expense_history')
+      .insert({
+        request_id: data.id,
+        school_id: user.school_id,
+        requested_by: userId,
+        item_name: expense.title,
+        vendor: expense.vendor,
+        amount: Number(expense.amountRequested),
+        status: 'PENDING',
+        payment_status: 'PENDING'
+      });
+
     await this.logSportsActivity(user.school_id, userId, user.role, 'REQUEST_EXPENSE', `Requested expense ₹${expense.amountRequested} for ${expense.title}`, undefined, undefined, { expenseId: data.id });
     return data;
   },
@@ -19870,6 +19907,13 @@ export const mockApi = {
       .single();
     
     if (error) throw error;
+
+    await supabaseAdmin
+      .from('sports_expense_history')
+      .update({
+        status: approveData.status
+      })
+      .eq('request_id', expenseId);
 
     if (approveData.status === 'APPROVED') {
       const { data: budget } = await supabaseAdmin
@@ -19907,6 +19951,13 @@ export const mockApi = {
       .single();
     
     if (error) throw error;
+
+    await supabaseAdmin
+      .from('sports_expense_history')
+      .update({
+        payment_status: 'RELEASED'
+      })
+      .eq('request_id', expenseId);
 
     try {
       await supabaseAdmin.from('sports_finance_transactions').insert({
@@ -20193,6 +20244,18 @@ export const mockApi = {
     
     if (error) throw error;
 
+    await supabaseAdmin
+      .from('sports_fine_payments')
+      .insert({
+        school_id: user.school_id,
+        student_id: fine.studentId,
+        amount: Number(fine.amount),
+        reason: fine.reason,
+        status: 'PENDING',
+        utr_reference: null,
+        proof_image_url: null
+      });
+
     await this.logSportsActivity(user.school_id, userId, user.role, 'ISSUE_FINE', `Issued fine of ₹${fine.amount} to student`, undefined, undefined, { fineId: data.id });
     return data;
   },
@@ -20205,19 +20268,48 @@ export const mockApi = {
       .single();
     if (!fine) throw new Error('Fine record not found');
 
-    const { data, error } = await supabaseAdmin
+    const { data: existingPayment } = await supabaseAdmin
       .from('sports_fine_payments')
-      .insert({
-        school_id: fine.school_id,
-        student_id: fine.student_id,
-        amount: Number(fine.amount),
-        reason: fine.reason,
-        utr_reference: payData.utrNumber,
-        proof_image_url: payData.screenshotUrl || null,
-        status: 'PENDING'
-      })
-      .select()
-      .single();
+      .select('id')
+      .eq('student_id', fine.student_id)
+      .eq('amount', Number(fine.amount))
+      .eq('reason', fine.reason)
+      .eq('status', 'PENDING')
+      .order('submitted_at', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    let data, error;
+    if (existingPayment) {
+      const res = await supabaseAdmin
+        .from('sports_fine_payments')
+        .update({
+          utr_reference: payData.utrNumber,
+          proof_image_url: payData.screenshotUrl || null,
+          submitted_at: new Date().toISOString()
+        })
+        .eq('id', existingPayment.id)
+        .select()
+        .single();
+      data = res.data;
+      error = res.error;
+    } else {
+      const res = await supabaseAdmin
+        .from('sports_fine_payments')
+        .insert({
+          school_id: fine.school_id,
+          student_id: fine.student_id,
+          amount: Number(fine.amount),
+          reason: fine.reason,
+          utr_reference: payData.utrNumber,
+          proof_image_url: payData.screenshotUrl || null,
+          status: 'PENDING'
+        })
+        .select()
+        .single();
+      data = res.data;
+      error = res.error;
+    }
     
     if (error) throw error;
 
@@ -20335,7 +20427,7 @@ export const mockApi = {
       studentId: r.student_id,
       amount: Number(r.amount),
       reason: r.reason,
-      utrNumber: r.utr_number,
+      utrNumber: r.utr_reference,
       paymentScreenshotUrl: r.proof_image_url,
       status: r.status,
       submittedAt: r.submitted_at,
@@ -21069,7 +21161,7 @@ export const mockApi = {
     const { count: attCount } = await supabaseAdmin.from('sports_coach_attendance').select('*', { count: 'exact', head: true }).eq('coach_id', coachId);
     if (attCount && attCount > 0) throw new Error("Cannot delete this record because related records exist.");
 
-    const { count: salaryCount } = await supabaseAdmin.from('sports_salary_records').select('*', { count: 'exact', head: true }).eq('user_id', coach.user_id);
+    const { count: salaryCount } = await supabaseAdmin.from('sports_salary_requests').select('*', { count: 'exact', head: true }).eq('employee_id', coach.user_id);
     if (salaryCount && salaryCount > 0) throw new Error("Cannot delete this record because related records exist.");
 
     const { error } = await supabaseAdmin.from('sports_coaches').delete().eq('id', coachId);
