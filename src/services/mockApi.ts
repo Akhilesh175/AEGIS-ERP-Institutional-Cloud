@@ -18488,8 +18488,8 @@ export const mockApi = {
   async fetchSportsInvoices(schoolId: string, studentId?: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchSportsInvoices');
     let query = supabaseAdmin
-      .from('sports_invoices')
-      .select('*, students(*, users(first_name, last_name)), created_by_user:users!created_by(first_name, last_name)')
+      .from('sports_fee_invoices')
+      .select('*, students(*, users(first_name, last_name)), sports(*), created_by_user:users!created_by(first_name, last_name)')
       .eq('school_id', schoolId);
     
     if (studentId) {
@@ -18503,20 +18503,22 @@ export const mockApi = {
       id: r.id,
       schoolId: r.school_id,
       studentId: r.student_id,
+      sportId: r.sport_id,
+      sportName: r.sports?.name || 'N/A',
       invoiceNumber: r.invoice_number,
-      invoiceTitle: r.title,
+      invoiceTitle: r.invoice_title,
       invoiceDescription: r.description,
       invoiceCategory: r.category,
       amount: Number(r.amount),
       dueDate: r.due_date,
-      lateFee: r.late_fee ? Number(r.late_fee) : 0,
-      remarks: r.remarks,
+      lateFee: 0,
+      remarks: '',
       status: r.status,
       createdBy: r.created_by,
       createdByName: r.created_by_user ? `${r.created_by_user.first_name} ${r.created_by_user.last_name}` : 'System',
       studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
       createdAt: r.created_at,
-      updatedAt: r.updated_at
+      updatedAt: r.created_at
     }));
   },
 
@@ -18529,18 +18531,17 @@ export const mockApi = {
     const invoiceNumber = `INV-SP-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 
     const { data, error } = await supabaseAdmin
-      .from('sports_invoices')
+      .from('sports_fee_invoices')
       .insert({
         school_id: invoice.schoolId,
         student_id: invoice.studentId,
+        sport_id: invoice.sportId || null,
         invoice_number: invoiceNumber,
-        title: invoice.invoiceTitle,
+        invoice_title: invoice.invoiceTitle,
         description: invoice.invoiceDescription || '',
         category: invoice.invoiceCategory,
         amount: invoice.amount,
         due_date: invoice.dueDate,
-        late_fee: invoice.lateFee || 0,
-        remarks: invoice.remarks || '',
         status: 'UNPAID',
         created_by: invoice.createdBy
       })
@@ -18590,17 +18591,15 @@ export const mockApi = {
     }
 
     const { data, error } = await supabaseAdmin
-      .from('sports_invoices')
+      .from('sports_fee_invoices')
       .update({
-        title: updates.invoiceTitle,
+        invoice_title: updates.invoiceTitle,
         description: updates.invoiceDescription,
         category: updates.invoiceCategory,
         amount: Number(updates.amount),
         due_date: updates.dueDate,
-        late_fee: updates.lateFee,
-        remarks: updates.remarks,
-        status: updates.status,
-        updated_at: new Date().toISOString()
+        sport_id: updates.sportId || null,
+        status: updates.status
       })
       .eq('id', invoiceId)
       .select('*, students(*, users(first_name, last_name))')
@@ -18638,13 +18637,13 @@ export const mockApi = {
     }
 
     const { data: invoice } = await supabaseAdmin
-      .from('sports_invoices')
+      .from('sports_fee_invoices')
       .select('invoice_number, school_id')
       .eq('id', invoiceId)
       .single();
 
     const { error } = await supabaseAdmin
-      .from('sports_invoices')
+      .from('sports_fee_invoices')
       .delete()
       .eq('id', invoiceId);
 
@@ -18673,7 +18672,7 @@ export const mockApi = {
     validateSchoolId(schoolId, 'fetchSportsFeePayments');
     let query = supabaseAdmin
       .from('sports_fee_payments')
-      .select('*, students(*, users(first_name, last_name)), sports_invoices(*)')
+      .select('*, students(*, users(first_name, last_name)), sports_fee_invoices(*), parent_user:users!parent_id(first_name, last_name), approved_by_user:users!approved_by(first_name, last_name)')
       .eq('school_id', schoolId);
     
     if (invoiceId) {
@@ -18690,18 +18689,22 @@ export const mockApi = {
       schoolId: r.school_id,
       invoiceId: r.invoice_id,
       studentId: r.student_id,
-      parentId: r.submitted_by,
+      parentId: r.parent_id,
       amountPaid: Number(r.amount),
       utrNumber: r.utr_number,
       paymentScreenshotUrl: r.proof_image_url,
+      remarks: r.remarks,
       status: r.status,
       submittedAt: r.submitted_at,
       approvedBy: r.approved_by,
       approvedAt: r.approved_at,
+      rejectionReason: r.rejection_reason,
+      submittedByName: r.parent_user ? `${r.parent_user.first_name} ${r.parent_user.last_name}`.trim() : 'Parent/Student',
+      approvedByName: r.approved_by_user ? `${r.approved_by_user.first_name} ${r.approved_by_user.last_name}`.trim() : 'N/A',
       studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
-      feeType: r.sports_invoices?.category || 'Sports Invoice',
-      feeAmount: r.sports_invoices?.amount ? Number(r.sports_invoices.amount) : 0,
-      invoiceTitle: r.sports_invoices?.title || 'Invoice Title'
+      feeType: r.sports_fee_invoices?.category || 'Sports Invoice',
+      feeAmount: r.sports_fee_invoices?.amount ? Number(r.sports_fee_invoices.amount) : 0,
+      invoiceTitle: r.sports_fee_invoices?.invoice_title || 'Invoice Title'
     }));
   },
 
@@ -18744,20 +18747,21 @@ export const mockApi = {
         school_id: schoolId,
         invoice_id: invoiceId,
         student_id: studentId,
-        submitted_by: finalSubmittedBy,
+        parent_id: finalSubmittedBy,
         amount: payment.amountPaid,
         utr_number: payment.utrNumber,
         proof_image_url: payment.paymentScreenshotUrl,
+        remarks: payment.remarks || '',
         status: 'PENDING_VERIFICATION'
       })
-      .select('*, sports_invoices(*)')
+      .select('*, sports_fee_invoices(*)')
       .single();
 
     if (error) throw error;
 
     // Update invoice status to PENDING_VERIFICATION
     const { error: invoiceErr } = await supabaseAdmin
-      .from('sports_invoices')
+      .from('sports_fee_invoices')
       .update({ status: 'PENDING_VERIFICATION' })
       .eq('id', invoiceId);
     
@@ -18771,7 +18775,7 @@ export const mockApi = {
         parentId,
         user?.role || 'PARENT',
         'Payment Submitted',
-        `Payment of ₹${payment.amountPaid} submitted for invoice ${data.sports_invoices?.invoice_number}`,
+        `Payment of ₹${payment.amountPaid} submitted for invoice ${data.sports_fee_invoices?.invoice_number}`,
         '127.0.0.1',
         'Vite Client',
         { paymentId: data.id, invoiceId }
@@ -18817,24 +18821,23 @@ export const mockApi = {
         utr_number: payload.utrNumber,
         proof_image_url: payload.screenshotUrl || 'https://placeholder.co/100',
         status: payload.status || 'PENDING_VERIFICATION',
-        submitted_by: submittedBy,
+        parent_id: submittedBy,
         approved_by: payload.status === 'APPROVED' ? userId : null,
         approved_at: payload.status === 'APPROVED' ? new Date().toISOString() : null
       })
-      .select('*, sports_invoices(*)')
+      .select('*, sports_fee_invoices(*)')
       .single();
 
     if (error) throw error;
 
     await supabaseAdmin
-      .from('sports_invoices')
+      .from('sports_fee_invoices')
       .update({ 
-        status: payload.status === 'APPROVED' ? 'APPROVED' : payload.status === 'REJECTED' ? 'REJECTED' : 'PENDING_VERIFICATION',
-        updated_at: new Date().toISOString() 
+        status: payload.status === 'APPROVED' ? 'APPROVED' : payload.status === 'REJECTED' ? 'REJECTED' : 'PENDING_VERIFICATION'
       })
       .eq('id', payload.invoiceId);
 
-    await this.logSportsActivity(user.school_id, userId, user.role, 'CREATE_FEE_PAYMENT', `Admin recorded payment of ₹${payload.amount} for invoice ${data.sports_invoices?.invoice_number || payload.invoiceId}`);
+    await this.logSportsActivity(user.school_id, userId, user.role, 'CREATE_FEE_PAYMENT', `Admin recorded payment of ₹${payload.amount} for invoice ${data.sports_fee_invoices?.invoice_number || payload.invoiceId}`);
     return data;
   },
 
@@ -18912,7 +18915,7 @@ export const mockApi = {
     }
 
     const { data: invoice } = await supabaseAdmin
-      .from('sports_invoices')
+      .from('sports_fee_invoices')
       .select('*, students(*)')
       .eq('id', invoiceId)
       .single();
@@ -18925,7 +18928,7 @@ export const mockApi = {
         school_id: invoice.school_id,
         user_id: invoice.students.user_id,
         title: 'New Sports Invoice Generated',
-        message: `A new sports invoice ${invoice.invoice_number} of ₹${invoice.amount} for '${invoice.title}' has been generated. Due date: ${invoice.due_date}.`,
+        message: `A new sports invoice ${invoice.invoice_number} of ₹${invoice.amount} for '${invoice.invoice_title}' has been generated. Due date: ${invoice.due_date}.`,
         status: 'UNREAD'
       });
 
@@ -18964,7 +18967,7 @@ export const mockApi = {
 
     const { data: currentPayment } = await supabaseAdmin
       .from('sports_fee_payments')
-      .select('*, sports_invoices(*)')
+      .select('*, sports_fee_invoices(*)')
       .eq('id', paymentId)
       .single();
     if (!currentPayment) throw new Error('Payment not found');
@@ -18976,6 +18979,8 @@ export const mockApi = {
     if (status === 'APPROVED') {
       updateFields.approved_by = userId;
       updateFields.approved_at = new Date().toISOString();
+    } else if (status === 'REJECTED') {
+      updateFields.rejection_reason = remarksOrReason || null;
     }
 
     const { data, error } = await supabaseAdmin
@@ -18987,10 +18992,10 @@ export const mockApi = {
 
     if (error) throw error;
 
-    // Update sports_invoices status to APPROVED or REJECTED
+    // Update sports_fee_invoices status to PAID or REJECTED
     const { error: invoiceErr } = await supabaseAdmin
-      .from('sports_invoices')
-      .update({ status: status })
+      .from('sports_fee_invoices')
+      .update({ status: status === 'APPROVED' ? 'PAID' : 'REJECTED' })
       .eq('id', currentPayment.invoice_id);
 
     if (invoiceErr) throw invoiceErr;
@@ -19002,7 +19007,7 @@ export const mockApi = {
         userId,
         user.role,
         status === 'APPROVED' ? 'Payment Approved' : 'Payment Rejected',
-        `Payment of ₹${currentPayment.amount} for invoice ${currentPayment.sports_invoices?.invoice_number} ${status.toLowerCase()}`,
+        `Payment of ₹${currentPayment.amount} for invoice ${currentPayment.sports_fee_invoices?.invoice_number} ${status.toLowerCase()}`,
         '127.0.0.1',
         'Vite Client',
         { paymentId, invoiceId: currentPayment.invoice_id, remarksOrReason }
