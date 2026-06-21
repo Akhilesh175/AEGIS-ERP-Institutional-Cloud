@@ -125,6 +125,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         return [
           { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
           { id: 'timetable', label: 'Schedule', icon: Calendar },
+          { id: 'ptm', label: 'PTM Meetings', icon: Calendar },
           { id: 'grades', label: 'Report Cards', icon: Award },
           { id: 'documents', label: 'Documents Center', icon: FileText },
           { id: 'groupdiscussion', label: 'Group Discussion', icon: MessageSquare },
@@ -144,6 +145,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         return [
           { id: 'dashboard', label: 'Child Tracker', icon: Eye },
           { id: 'notifications', label: 'Notifications Center', icon: Bell },
+          { id: 'ptm', label: 'PTM Meetings', icon: Calendar },
           { id: 'homework', label: 'Homework', icon: BookMarked, locked: lock('homework') },
           { id: 'timetable', label: 'Class Schedule', icon: Calendar },
           { id: 'grades', label: 'Grades Progress', icon: Award },
@@ -164,6 +166,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         return [
           { id: 'dashboard', label: 'Classes Taught', icon: LayoutDashboard },
           { id: 'timetable', label: 'Teaching Schedule', icon: Calendar },
+          { id: 'ptm', label: 'PTM Meetings', icon: Calendar },
           { id: 'groupdiscussion', label: 'Group Discussion', icon: MessageSquare },
           { id: 'classroster', label: 'Class Roster', icon: Users, locked: lock('classroster') },
           { id: 'attendance', label: 'Attendance Roll', icon: Layers, locked: lock('attendance') },
@@ -189,6 +192,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'classes', label: 'Classes & Sections', icon: Layers },
           { id: 'subjects', label: 'Subject Catalog', icon: BookMarked },
           { id: 'academicsessions', label: 'Academic Sessions', icon: Calendar },
+          { id: 'ptm', label: 'PTM Management', icon: Calendar },
           { id: 'documents', label: 'Documents Center', icon: FileText },
           { id: 'groupdiscussion', label: 'Group Discussion', icon: MessageSquare },
           { id: 'attendance', label: 'Student Attendance', icon: Layers, locked: lock('attendance') },

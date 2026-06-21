@@ -11,7 +11,8 @@ import {
   HostelFee, HostelPayment, HostelMessMenu,
   SystemStatus, KnowledgeBaseArticle, SupportTicket, BugReport,
   SupportTicketMessage, SupportTicketStatusLog, SupportNotification, SupportInternalNote,
-  SchoolPaymentSettings, FacultyPaymentSettings, SalaryPayment, EmployeeSalaryLedger, PaymentAuditLog
+  SchoolPaymentSettings, FacultyPaymentSettings, SalaryPayment, EmployeeSalaryLedger, PaymentAuditLog,
+  PTMMeeting, PTMAttendance, PTMFeedback, PTMParentFeedback, PTMFollowup, PTMNotification, PTMRecording, PTMDocument, PTMChatMessage
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
@@ -21285,6 +21286,692 @@ export const mockApi = {
     const { data, error } = await supabaseAdmin.from('schools').select('id, name');
     if (error) throw error;
     return data || [];
+  },
+
+  // ==========================================
+  // PTM MODULE API METHODS
+  // ==========================================
+  async fetchPTMMeetings(schoolId: string, options?: { teacherId?: string, parentId?: string, studentId?: string, classId?: string }): Promise<PTMMeeting[]> {
+    let query = supabaseAdmin
+      .from('ptm_meetings')
+      .select(`
+        *,
+        students (
+          id,
+          users (
+            first_name,
+            last_name
+          )
+        ),
+        parent:users!parent_id (
+          id,
+          first_name,
+          last_name
+        ),
+        teachers (
+          id,
+          users (
+            first_name,
+            last_name
+          )
+        ),
+        classes (
+          id,
+          name
+        ),
+        sections (
+          id,
+          name
+        )
+      `)
+      .eq('school_id', schoolId);
+
+    if (options?.teacherId) {
+      query = query.eq('teacher_id', options.teacherId);
+    }
+    if (options?.parentId) {
+      query = query.eq('parent_id', options.parentId);
+    }
+    if (options?.studentId) {
+      query = query.eq('student_id', options.studentId);
+    }
+    if (options?.classId) {
+      query = query.eq('class_id', options.classId);
+    }
+
+    const { data, error } = await query.order('scheduled_date', { ascending: false }).order('start_time', { ascending: false });
+    if (error) throw error;
+
+    return (data || []).map((row: any) => {
+      const studentName = row.students?.users ? `${row.students.users.first_name || ''} ${row.students.users.last_name || ''}`.trim() : 'Unknown Student';
+      const parentName = row.parent ? `${row.parent.first_name || ''} ${row.parent.last_name || ''}`.trim() : 'Unknown Parent';
+      const teacherName = row.teachers?.users ? `${row.teachers.users.first_name || ''} ${row.teachers.users.last_name || ''}`.trim() : 'Unknown Teacher';
+      
+      return {
+        id: row.id,
+        schoolId: row.school_id,
+        classId: row.class_id,
+        sectionId: row.section_id,
+        studentId: row.student_id,
+        parentId: row.parent_id,
+        teacherId: row.teacher_id,
+        title: row.title,
+        description: row.description,
+        meetingMode: row.meeting_mode,
+        venue: row.venue,
+        meetingLink: row.meeting_link,
+        meetingPassword: row.meeting_password,
+        scheduledDate: row.scheduled_date,
+        startTime: row.start_time,
+        endTime: row.end_time,
+        status: row.status,
+        rescheduleReason: row.reschedule_reason,
+        rescheduleSuggestedDate: row.reschedule_suggested_date,
+        rescheduleSuggestedTime: row.reschedule_suggested_time,
+        parentConfirmedAttendance: row.parent_confirmed_attendance,
+        parentPreQuestions: row.parent_pre_questions,
+        createdBy: row.created_by,
+        createdAt: row.created_at,
+        updatedAt: row.updated_at,
+        studentName,
+        parentName,
+        teacherName,
+        className: row.classes?.name || 'Unknown Class',
+        sectionName: row.sections?.name || 'No Section'
+      };
+    });
+  },
+
+  async createPTMMeeting(meeting: Omit<PTMMeeting, 'id' | 'createdAt' | 'updatedAt'>): Promise<PTMMeeting> {
+    const dbRow = {
+      school_id: meeting.schoolId,
+      class_id: meeting.classId,
+      section_id: meeting.sectionId || null,
+      student_id: meeting.studentId,
+      parent_id: meeting.parentId,
+      teacher_id: meeting.teacherId,
+      title: meeting.title,
+      description: meeting.description || null,
+      meeting_mode: meeting.meetingMode,
+      venue: meeting.venue || null,
+      meeting_link: meeting.meetingLink || null,
+      meeting_password: meeting.meetingPassword || null,
+      scheduled_date: meeting.scheduledDate,
+      start_time: meeting.startTime,
+      end_time: meeting.endTime,
+      status: meeting.status || 'SCHEDULED',
+      reschedule_reason: meeting.rescheduleReason || null,
+      reschedule_suggested_date: meeting.rescheduleSuggestedDate || null,
+      reschedule_suggested_time: meeting.rescheduleSuggestedTime || null,
+      parent_confirmed_attendance: meeting.parentConfirmedAttendance || false,
+      parent_pre_questions: meeting.parentPreQuestions || null,
+      created_by: meeting.createdBy || null
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('ptm_meetings')
+      .insert(dbRow)
+      .select(`
+        *,
+        students (
+          id,
+          users (
+            first_name,
+            last_name
+          )
+        ),
+        parent:users!parent_id (
+          id,
+          first_name,
+          last_name
+        ),
+        teachers (
+          id,
+          users (
+            first_name,
+            last_name
+          )
+        ),
+        classes (
+          id,
+          name
+        ),
+        sections (
+          id,
+          name
+        )
+      `)
+      .single();
+
+    if (error) throw error;
+    
+    // Auto-create blank attendance record for the meeting
+    await supabaseAdmin.from('ptm_attendance').insert({ meeting_id: data.id }).maybeSingle();
+
+    const studentName = data.students?.users ? `${data.students.users.first_name || ''} ${data.students.users.last_name || ''}`.trim() : 'Unknown Student';
+    const parentName = data.parent ? `${data.parent.first_name || ''} ${data.parent.last_name || ''}`.trim() : 'Unknown Parent';
+    const teacherName = data.teachers?.users ? `${data.teachers.users.first_name || ''} ${data.teachers.users.last_name || ''}`.trim() : 'Unknown Teacher';
+
+    return {
+      id: data.id,
+      schoolId: data.school_id,
+      classId: data.class_id,
+      sectionId: data.section_id,
+      studentId: data.student_id,
+      parentId: data.parent_id,
+      teacherId: data.teacher_id,
+      title: data.title,
+      description: data.description,
+      meetingMode: data.meeting_mode,
+      venue: data.venue,
+      meetingLink: data.meeting_link,
+      meetingPassword: data.meeting_password,
+      scheduledDate: data.scheduled_date,
+      startTime: data.start_time,
+      endTime: data.end_time,
+      status: data.status,
+      rescheduleReason: data.reschedule_reason,
+      rescheduleSuggestedDate: data.reschedule_suggested_date,
+      rescheduleSuggestedTime: data.reschedule_suggested_time,
+      parentConfirmedAttendance: data.parent_confirmed_attendance,
+      parentPreQuestions: data.parent_pre_questions,
+      createdBy: data.created_by,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      studentName,
+      parentName,
+      teacherName,
+      className: data.classes?.name || 'Unknown Class',
+      sectionName: data.sections?.name || 'No Section'
+    };
+  },
+
+  async updatePTMMeeting(meetingId: string, updates: Partial<PTMMeeting>): Promise<PTMMeeting> {
+    const dbUpdates: any = {};
+    if (updates.classId !== undefined) dbUpdates.class_id = updates.classId;
+    if (updates.sectionId !== undefined) dbUpdates.section_id = updates.sectionId;
+    if (updates.studentId !== undefined) dbUpdates.student_id = updates.studentId;
+    if (updates.parentId !== undefined) dbUpdates.parent_id = updates.parentId;
+    if (updates.teacherId !== undefined) dbUpdates.teacher_id = updates.teacherId;
+    if (updates.title !== undefined) dbUpdates.title = updates.title;
+    if (updates.description !== undefined) dbUpdates.description = updates.description;
+    if (updates.meetingMode !== undefined) dbUpdates.meeting_mode = updates.meetingMode;
+    if (updates.venue !== undefined) dbUpdates.venue = updates.venue;
+    if (updates.meetingLink !== undefined) dbUpdates.meeting_link = updates.meetingLink;
+    if (updates.meetingPassword !== undefined) dbUpdates.meeting_password = updates.meetingPassword;
+    if (updates.scheduledDate !== undefined) dbUpdates.scheduled_date = updates.scheduledDate;
+    if (updates.startTime !== undefined) dbUpdates.start_time = updates.startTime;
+    if (updates.endTime !== undefined) dbUpdates.end_time = updates.endTime;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.rescheduleReason !== undefined) dbUpdates.reschedule_reason = updates.rescheduleReason;
+    if (updates.rescheduleSuggestedDate !== undefined) dbUpdates.reschedule_suggested_date = updates.rescheduleSuggestedDate;
+    if (updates.rescheduleSuggestedTime !== undefined) dbUpdates.reschedule_suggested_time = updates.rescheduleSuggestedTime;
+    if (updates.parentConfirmedAttendance !== undefined) dbUpdates.parent_confirmed_attendance = updates.parentConfirmedAttendance;
+    if (updates.parentPreQuestions !== undefined) dbUpdates.parent_pre_questions = updates.parentPreQuestions;
+    
+    dbUpdates.updated_at = new Date().toISOString();
+
+    const { data, error } = await supabaseAdmin
+      .from('ptm_meetings')
+      .update(dbUpdates)
+      .eq('id', meetingId)
+      .select(`
+        *,
+        students (
+          id,
+          users (
+            first_name,
+            last_name
+          )
+        ),
+        parent:users!parent_id (
+          id,
+          first_name,
+          last_name
+        ),
+        teachers (
+          id,
+          users (
+            first_name,
+            last_name
+          )
+        ),
+        classes (
+          id,
+          name
+        ),
+        sections (
+          id,
+          name
+        )
+      `)
+      .single();
+
+    if (error) throw error;
+
+    const studentName = data.students?.users ? `${data.students.users.first_name || ''} ${data.students.users.last_name || ''}`.trim() : 'Unknown Student';
+    const parentName = data.parent ? `${data.parent.first_name || ''} ${data.parent.last_name || ''}`.trim() : 'Unknown Parent';
+    const teacherName = data.teachers?.users ? `${data.teachers.users.first_name || ''} ${data.teachers.users.last_name || ''}`.trim() : 'Unknown Teacher';
+
+    return {
+      id: data.id,
+      schoolId: data.school_id,
+      classId: data.class_id,
+      sectionId: data.section_id,
+      studentId: data.student_id,
+      parentId: data.parent_id,
+      teacherId: data.teacher_id,
+      title: data.title,
+      description: data.description,
+      meetingMode: data.meeting_mode,
+      venue: data.venue,
+      meetingLink: data.meeting_link,
+      meetingPassword: data.meeting_password,
+      scheduledDate: data.scheduled_date,
+      startTime: data.start_time,
+      endTime: data.end_time,
+      status: data.status,
+      rescheduleReason: data.reschedule_reason,
+      rescheduleSuggestedDate: data.reschedule_suggested_date,
+      rescheduleSuggestedTime: data.reschedule_suggested_time,
+      parentConfirmedAttendance: data.parent_confirmed_attendance,
+      parentPreQuestions: data.parent_pre_questions,
+      createdBy: data.created_by,
+      createdAt: data.created_at,
+      updatedAt: data.updated_at,
+      studentName,
+      parentName,
+      teacherName,
+      className: data.classes?.name || 'Unknown Class',
+      sectionName: data.sections?.name || 'No Section'
+    };
+  },
+
+  async deletePTMMeeting(meetingId: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('ptm_meetings').delete().eq('id', meetingId);
+    if (error) throw error;
+  },
+
+  async fetchPTMAttendance(meetingId: string): Promise<PTMAttendance | null> {
+    const { data, error } = await supabaseAdmin
+      .from('ptm_attendance')
+      .select('*')
+      .eq('meeting_id', meetingId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      meetingId: data.meeting_id,
+      teacherJoinTime: data.teacher_join_time,
+      teacherLeaveTime: data.teacher_leave_time,
+      parentJoinTime: data.parent_join_time,
+      parentLeaveTime: data.parent_leave_time,
+      studentJoinTime: data.student_join_time,
+      studentLeaveTime: data.student_leave_time,
+      attendanceStatus: data.attendance_status
+    };
+  },
+
+  async updatePTMAttendance(meetingId: string, attendance: Partial<PTMAttendance>): Promise<PTMAttendance> {
+    const dbUpdates: any = {};
+    if (attendance.teacherJoinTime !== undefined) dbUpdates.teacher_join_time = attendance.teacherJoinTime;
+    if (attendance.teacherLeaveTime !== undefined) dbUpdates.teacher_leave_time = attendance.teacherLeaveTime;
+    if (attendance.parentJoinTime !== undefined) dbUpdates.parent_join_time = attendance.parentJoinTime;
+    if (attendance.parentLeaveTime !== undefined) dbUpdates.parent_leave_time = attendance.parentLeaveTime;
+    if (attendance.studentJoinTime !== undefined) dbUpdates.student_join_time = attendance.studentJoinTime;
+    if (attendance.studentLeaveTime !== undefined) dbUpdates.student_leave_time = attendance.studentLeaveTime;
+    if (attendance.attendanceStatus !== undefined) dbUpdates.attendance_status = attendance.attendanceStatus;
+
+    const { data, error } = await supabaseAdmin
+      .from('ptm_attendance')
+      .update(dbUpdates)
+      .eq('meeting_id', meetingId)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      meetingId: data.meeting_id,
+      teacherJoinTime: data.teacher_join_time,
+      teacherLeaveTime: data.teacher_leave_time,
+      parentJoinTime: data.parent_join_time,
+      parentLeaveTime: data.parent_leave_time,
+      studentJoinTime: data.student_join_time,
+      studentLeaveTime: data.student_leave_time,
+      attendanceStatus: data.attendance_status
+    };
+  },
+
+  async fetchPTMFeedback(meetingId: string): Promise<PTMFeedback | null> {
+    const { data, error } = await supabaseAdmin
+      .from('ptm_feedback')
+      .select('*')
+      .eq('meeting_id', meetingId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      meetingId: data.meeting_id,
+      strengths: data.strengths,
+      weaknesses: data.weaknesses,
+      recommendations: data.recommendations,
+      behaviouralNotes: data.behavioural_notes,
+      actionPlan: data.action_plan,
+      assignments: data.assignments,
+      studyPlan: data.study_plan,
+      remarks: data.remarks,
+      createdAt: data.created_at
+    };
+  },
+
+  async submitPTMFeedback(meetingId: string, feedback: Omit<PTMFeedback, 'id' | 'createdAt'>): Promise<PTMFeedback> {
+    const dbRow = {
+      meeting_id: meetingId,
+      strengths: feedback.strengths || null,
+      weaknesses: feedback.weaknesses || null,
+      recommendations: feedback.recommendations || null,
+      behavioural_notes: feedback.behaviouralNotes || null,
+      action_plan: feedback.actionPlan || null,
+      assignments: feedback.assignments || null,
+      study_plan: feedback.studyPlan || null,
+      remarks: feedback.remarks || null
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('ptm_feedback')
+      .upsert(dbRow, { onConflict: 'meeting_id' })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      meetingId: data.meeting_id,
+      strengths: data.strengths,
+      weaknesses: data.weaknesses,
+      recommendations: data.recommendations,
+      behaviouralNotes: data.behavioural_notes,
+      actionPlan: data.action_plan,
+      assignments: data.assignments,
+      studyPlan: data.study_plan,
+      remarks: data.remarks,
+      createdAt: data.created_at
+    };
+  },
+
+  async fetchPTMParentFeedback(meetingId: string): Promise<PTMParentFeedback | null> {
+    const { data, error } = await supabaseAdmin
+      .from('ptm_parent_feedback')
+      .select('*')
+      .eq('meeting_id', meetingId)
+      .maybeSingle();
+
+    if (error) throw error;
+    if (!data) return null;
+
+    return {
+      id: data.id,
+      meetingId: data.meeting_id,
+      questions: data.questions,
+      concerns: data.concerns,
+      suggestions: data.suggestions,
+      comments: data.comments,
+      createdAt: data.created_at
+    };
+  },
+
+  async submitPTMParentFeedback(meetingId: string, feedback: Omit<PTMParentFeedback, 'id' | 'createdAt'>): Promise<PTMParentFeedback> {
+    const dbRow = {
+      meeting_id: meetingId,
+      questions: feedback.questions || null,
+      concerns: feedback.concerns || null,
+      suggestions: feedback.suggestions || null,
+      comments: feedback.comments || null
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('ptm_parent_feedback')
+      .upsert(dbRow, { onConflict: 'meeting_id' })
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      meetingId: data.meeting_id,
+      questions: data.questions,
+      concerns: data.concerns,
+      suggestions: data.suggestions,
+      comments: data.comments,
+      createdAt: data.created_at
+    };
+  },
+
+  async fetchPTMFollowups(meetingId: string): Promise<PTMFollowup[]> {
+    const { data, error } = await supabaseAdmin
+      .from('ptm_followups')
+      .select('*')
+      .eq('meeting_id', meetingId)
+      .order('due_date', { ascending: true });
+
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      meetingId: row.meeting_id,
+      task: row.task,
+      assignedTo: row.assigned_to,
+      dueDate: row.due_date,
+      priority: row.priority,
+      status: row.status,
+      completionStatus: row.completion_status,
+      createdAt: row.created_at
+    }));
+  },
+
+  async createPTMFollowup(followup: Omit<PTMFollowup, 'id' | 'createdAt'>): Promise<PTMFollowup> {
+    const dbRow = {
+      meeting_id: followup.meetingId,
+      task: followup.task,
+      assigned_to: followup.assignedTo,
+      due_date: followup.dueDate,
+      priority: followup.priority || 'MEDIUM',
+      status: followup.status || 'PENDING',
+      completion_status: followup.completionStatus || false
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('ptm_followups')
+      .insert(dbRow)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      meetingId: data.meeting_id,
+      task: data.task,
+      assignedTo: data.assigned_to,
+      dueDate: data.due_date,
+      priority: data.priority,
+      status: data.status,
+      completionStatus: data.completion_status,
+      createdAt: data.created_at
+    };
+  },
+
+  async updatePTMFollowup(followupId: string, updates: Partial<PTMFollowup>): Promise<PTMFollowup> {
+    const dbUpdates: any = {};
+    if (updates.task !== undefined) dbUpdates.task = updates.task;
+    if (updates.assignedTo !== undefined) dbUpdates.assigned_to = updates.assignedTo;
+    if (updates.dueDate !== undefined) dbUpdates.due_date = updates.dueDate;
+    if (updates.priority !== undefined) dbUpdates.priority = updates.priority;
+    if (updates.status !== undefined) dbUpdates.status = updates.status;
+    if (updates.completionStatus !== undefined) {
+      dbUpdates.completion_status = updates.completionStatus;
+      dbUpdates.status = updates.completionStatus ? 'COMPLETED' : 'PENDING';
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('ptm_followups')
+      .update(dbUpdates)
+      .eq('id', followupId)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      meetingId: data.meeting_id,
+      task: data.task,
+      assignedTo: data.assigned_to,
+      dueDate: data.due_date,
+      priority: data.priority,
+      status: data.status,
+      completionStatus: data.completion_status,
+      createdAt: data.created_at
+    };
+  },
+
+  async deletePTMFollowup(followupId: string): Promise<void> {
+    const { error } = await supabaseAdmin.from('ptm_followups').delete().eq('id', followupId);
+    if (error) throw error;
+  },
+
+  async fetchPTMNotifications(userId: string): Promise<PTMNotification[]> {
+    const { data, error } = await supabaseAdmin
+      .from('ptm_notifications')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      userId: row.user_id,
+      meetingId: row.meeting_id,
+      title: row.title,
+      message: row.message,
+      status: row.status,
+      createdAt: row.created_at
+    }));
+  },
+
+  async markPTMNotificationRead(notificationId: string): Promise<void> {
+    const { error } = await supabaseAdmin
+      .from('ptm_notifications')
+      .update({ status: 'READ' })
+      .eq('id', notificationId);
+    if (error) throw error;
+  },
+
+  async fetchPTMChatMessages(meetingId: string): Promise<PTMChatMessage[]> {
+    const { data, error } = await supabaseAdmin
+      .from('ptm_chat_messages')
+      .select('*')
+      .eq('meeting_id', meetingId)
+      .order('created_at', { ascending: true });
+
+    if (error) throw error;
+
+    return (data || []).map((row: any) => ({
+      id: row.id,
+      meetingId: row.meeting_id,
+      senderId: row.sender_id,
+      senderName: row.sender_name,
+      messageText: row.message_text,
+      createdAt: row.created_at
+    }));
+  },
+
+  async sendPTMChatMessage(message: Omit<PTMChatMessage, 'id' | 'createdAt'>): Promise<PTMChatMessage> {
+    const dbRow = {
+      meeting_id: message.meetingId,
+      sender_id: message.senderId,
+      sender_name: message.senderName,
+      message_text: message.messageText
+    };
+
+    const { data, error } = await supabaseAdmin
+      .from('ptm_chat_messages')
+      .insert(dbRow)
+      .select('*')
+      .single();
+
+    if (error) throw error;
+
+    return {
+      id: data.id,
+      meetingId: data.meeting_id,
+      senderId: data.sender_id,
+      senderName: data.sender_name,
+      messageText: data.message_text,
+      createdAt: data.created_at
+    };
+  },
+
+  async fetchPTMAnalytics(schoolId: string): Promise<any> {
+    const { data: meetings, error: mError } = await supabaseAdmin
+      .from('ptm_meetings')
+      .select('id, status, scheduled_date, meeting_mode')
+      .eq('school_id', schoolId);
+
+    if (mError) throw mError;
+
+    const totalMeetings = meetings?.length || 0;
+    const completedMeetings = meetings?.filter(m => m.status === 'COMPLETED').length || 0;
+    const cancelledMeetings = meetings?.filter(m => m.status === 'CANCELLED').length || 0;
+    const scheduledMeetings = meetings?.filter(m => m.status === 'SCHEDULED' || m.status === 'CONFIRMED').length || 0;
+
+    const modeCounts = { ONLINE: 0, OFFLINE: 0, HYBRID: 0 };
+    meetings?.forEach(m => {
+      if (m.meeting_mode === 'ONLINE') modeCounts.ONLINE++;
+      else if (m.meeting_mode === 'OFFLINE') modeCounts.OFFLINE++;
+      else if (m.meeting_mode === 'HYBRID') modeCounts.HYBRID++;
+    });
+
+    // Fetch attendance to calculate attendance rates
+    const meetingIds = meetings?.map(m => m.id) || [];
+    let parentAttendanceRate = 0;
+    let teacherAttendanceRate = 0;
+
+    if (meetingIds.length > 0) {
+      const { data: attendance, error: aError } = await supabaseAdmin
+        .from('ptm_attendance')
+        .select('parent_join_time, teacher_join_time')
+        .in('meeting_id', meetingIds);
+
+      if (!aError && attendance) {
+        const parentPresent = attendance.filter(a => a.parent_join_time).length;
+        const teacherPresent = attendance.filter(a => a.teacher_join_time).length;
+        parentAttendanceRate = attendance.length ? Math.round((parentPresent / attendance.length) * 100) : 0;
+        teacherAttendanceRate = attendance.length ? Math.round((teacherPresent / attendance.length) * 100) : 0;
+      }
+    }
+
+    return {
+      totalMeetings,
+      completedMeetings,
+      cancelledMeetings,
+      scheduledMeetings,
+      completionRate: totalMeetings ? Math.round((completedMeetings / totalMeetings) * 100) : 0,
+      modeCounts,
+      parentAttendanceRate,
+      teacherAttendanceRate
+    };
   }
 };
 

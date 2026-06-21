@@ -1778,5 +1778,120 @@ export interface SportCoachAttendanceHistory {
   editReason?: string | null;
   editorName?: string;
 }
+export interface PTMMeeting {
+  id: string;
+  schoolId: string;
+  classId: string;
+  sectionId?: string | null;
+  studentId: string;
+  parentId: string;
+  teacherId: string;
+  title: string;
+  description?: string;
+  meetingMode: 'OFFLINE' | 'ONLINE' | 'HYBRID';
+  venue?: string;
+  meetingLink?: string;
+  meetingPassword?: string;
+  scheduledDate: string;
+  startTime: string;
+  endTime: string;
+  status: 'SCHEDULED' | 'CONFIRMED' | 'CANCELLED' | 'COMPLETED' | 'RESCHEDULE_REQUESTED';
+  rescheduleReason?: string;
+  rescheduleSuggestedDate?: string;
+  rescheduleSuggestedTime?: string;
+  parentConfirmedAttendance?: boolean;
+  parentPreQuestions?: string;
+  createdBy?: string;
+  createdAt: string;
+  updatedAt: string;
+  // UI helper fields mapped on fetch
+  studentName?: string;
+  parentName?: string;
+  teacherName?: string;
+  className?: string;
+  sectionName?: string;
+}
 
+export interface PTMAttendance {
+  id: string;
+  meetingId: string;
+  teacherJoinTime?: string | null;
+  teacherLeaveTime?: string | null;
+  parentJoinTime?: string | null;
+  parentLeaveTime?: string | null;
+  studentJoinTime?: string | null;
+  studentLeaveTime?: string | null;
+  attendanceStatus?: 'PRESENT' | 'ABSENT' | 'LATE' | 'PARTIAL';
+}
 
+export interface PTMFeedback {
+  id: string;
+  meetingId: string;
+  strengths?: string;
+  weaknesses?: string;
+  recommendations?: string;
+  behaviouralNotes?: string;
+  actionPlan?: string;
+  assignments?: string;
+  studyPlan?: string;
+  remarks?: string;
+  createdAt: string;
+}
+
+export interface PTMParentFeedback {
+  id: string;
+  meetingId: string;
+  questions?: string;
+  concerns?: string;
+  suggestions?: string;
+  comments?: string;
+  createdAt: string;
+}
+
+export interface PTMFollowup {
+  id: string;
+  meetingId: string;
+  task: string;
+  assignedTo: 'STUDENT' | 'PARENT' | 'TEACHER';
+  dueDate: string;
+  priority: 'LOW' | 'MEDIUM' | 'HIGH';
+  status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
+  completionStatus: boolean;
+  createdAt: string;
+}
+
+export interface PTMNotification {
+  id: string;
+  userId: string;
+  meetingId: string;
+  title: string;
+  message: string;
+  status: 'UNREAD' | 'READ';
+  createdAt: string;
+}
+
+export interface PTMRecording {
+  id: string;
+  meetingId: string;
+  recordingUrl: string;
+  durationSeconds?: number | null;
+  createdAt: string;
+}
+
+export interface PTMDocument {
+  id: string;
+  meetingId: string;
+  documentName: string;
+  documentUrl: string;
+  fileSize?: number | null;
+  createdAt: string;
+}
+
+export interface PTMChatMessage {
+  id: string;
+  meetingId: string;
+  senderId: string;
+  senderName: string;
+  messageText: string;
+  createdAt: string;
+}

@@ -10,6 +10,8 @@ import { TeacherPortal } from './portals/TeacherPortal';
 import { AdminPortal } from './portals/AdminPortal';
 import { SuperAdminPortal } from './portals/SuperAdminPortal';
 import { SportsManagement } from './components/SportsManagement';
+import { PTMManagement } from './components/PTMManagement';
+import { AegisMeet } from './components/AegisMeet';
 import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff, Building2, GraduationCap, Users, BookOpen, Home, Key, UserCheck, Phone, MessageSquare, Instagram, CheckCircle2, ShieldAlert, Database, Network, Layers, FileText, CheckSquare, HelpCircle, Globe, Laptop, ArrowRight, ShieldCheck, Bell } from 'lucide-react';
 import { GlassCard } from './components/GlassCard';
 import { ErrorBoundary } from './components/ErrorBoundary';
@@ -584,6 +586,19 @@ export const App: React.FC = () => {
   if (activeTab.startsWith('verify/marksheet/')) {
     const code = activeTab.replace('verify/marksheet/', '');
     return <MarksheetVerificationPage code={code} onBack={() => { window.location.hash = 'dashboard'; setActiveTab('dashboard'); }} />;
+  }
+
+  // Intercept meet page URLs: /meet/{meeting_id}
+  if (window.location.pathname.startsWith('/meet/')) {
+    const meetingId = window.location.pathname.substring(6);
+    return (
+      <AegisMeet 
+        meetingId={meetingId} 
+        onLeave={() => {
+          window.location.href = '/';
+        }} 
+      />
+    );
   }
 
   if (!session) {
@@ -1301,6 +1316,8 @@ export const App: React.FC = () => {
                   <>
                     {activeTab === 'sports' ? (
                       <SportsManagement />
+                    ) : activeTab === 'ptm' ? (
+                      <PTMManagement />
                     ) : (
                       <>
                         {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
