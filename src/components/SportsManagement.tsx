@@ -170,6 +170,25 @@ export const SportsManagement: React.FC = () => {
   const [selectedStudentReport, setSelectedStudentReport] = useState<string>('');
   const [budgetAmounts, setBudgetAmounts] = useState<Record<string, number>>({});
 
+  const [showCreateFeePayment, setShowCreateFeePayment] = useState(false);
+  const [newFeePayment, setNewFeePayment] = useState({ studentId: '', invoiceId: '', amount: '', utrNumber: '', screenshotUrl: '', status: 'PENDING_VERIFICATION' });
+  const [feePaymentStudentSearch, setFeePaymentStudentSearch] = useState('');
+  const [showFeePaymentStudentDropdown, setShowFeePaymentStudentDropdown] = useState(false);
+  const [submittingFeePayment, setSubmittingFeePayment] = useState(false);
+
+  const [showCreateFinePayment, setShowCreateFinePayment] = useState(false);
+  const [newFinePayment, setNewFinePayment] = useState({ studentId: '', reason: '', amount: '', utrNumber: '', screenshotUrl: '', status: 'PENDING' });
+  const [finePaymentStudentSearch, setFinePaymentStudentSearch] = useState('');
+  const [showFinePaymentStudentDropdown, setShowFinePaymentStudentDropdown] = useState(false);
+  const [submittingFinePayment, setSubmittingFinePayment] = useState(false);
+
+  const [showEditInvoice, setShowEditInvoice] = useState(false);
+  const [editInvoiceForm, setEditInvoiceForm] = useState({ id: '', invoiceTitle: '', invoiceDescription: '', invoiceCategory: 'Quarterly Coaching Fee', amount: '', dueDate: '', remarks: '' });
+  const [updatingInvoice, setUpdatingInvoice] = useState(false);
+
+  const [showViewInvoice, setShowViewInvoice] = useState(false);
+  const [selectedViewInvoice, setSelectedViewInvoice] = useState<any>(null);
+
   // Active student context (for Student/Parent dashboards)
   const [studentProfileId, setStudentProfileId] = useState<string>('');
   const [parentLinkedStudents, setParentLinkedStudents] = useState<any[]>([]);
@@ -708,6 +727,90 @@ export const SportsManagement: React.FC = () => {
     }
   };
 
+  const handleCreateFeePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFeePayment.studentId) return alert('Please select a student.');
+    if (!newFeePayment.invoiceId) return alert('Please select an invoice.');
+    if (!newFeePayment.amount) return alert('Please enter the paid amount.');
+    if (!newFeePayment.utrNumber) return alert('UTR number is required.');
+
+    setSubmittingFeePayment(true);
+    try {
+      await mockApi.adminCreateSportsFeePayment(userId, {
+        studentId: newFeePayment.studentId,
+        invoiceId: newFeePayment.invoiceId,
+        amount: Number(newFeePayment.amount),
+        utrNumber: newFeePayment.utrNumber,
+        screenshotUrl: newFeePayment.screenshotUrl,
+        status: newFeePayment.status
+      });
+      setShowCreateFeePayment(false);
+      setNewFeePayment({ studentId: '', invoiceId: '', amount: '', utrNumber: '', screenshotUrl: '', status: 'PENDING_VERIFICATION' });
+      setFeePaymentStudentSearch('');
+      loadData(true);
+      alert('Fee payment record successfully created!');
+    } catch (err: any) {
+      alert(`Error creating fee payment: ${err.message}`);
+    } finally {
+      setSubmittingFeePayment(false);
+    }
+  };
+
+  const handleCreateFinePayment = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newFinePayment.studentId) return alert('Please select a student.');
+    if (!newFinePayment.reason) return alert('Please specify fine reason.');
+    if (!newFinePayment.amount) return alert('Please enter amount.');
+    if (!newFinePayment.utrNumber) return alert('UTR Reference is required.');
+
+    setSubmittingFinePayment(true);
+    try {
+      await mockApi.adminCreateSportsFinePayment(userId, {
+        studentId: newFinePayment.studentId,
+        reason: newFinePayment.reason,
+        amount: Number(newFinePayment.amount),
+        utrNumber: newFinePayment.utrNumber,
+        screenshotUrl: newFinePayment.screenshotUrl,
+        status: newFinePayment.status
+      });
+      setShowCreateFinePayment(false);
+      setNewFinePayment({ studentId: '', reason: '', amount: '', utrNumber: '', screenshotUrl: '', status: 'PENDING' });
+      setFinePaymentStudentSearch('');
+      loadData(true);
+      alert('Fine payment record successfully created!');
+    } catch (err: any) {
+      alert(`Error creating fine payment: ${err.message}`);
+    } finally {
+      setSubmittingFinePayment(false);
+    }
+  };
+
+  const handleEditInvoice = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editInvoiceForm.invoiceTitle) return alert('Title is required.');
+    if (!editInvoiceForm.amount) return alert('Amount is required.');
+    if (!editInvoiceForm.dueDate) return alert('Due Date is required.');
+
+    setUpdatingInvoice(true);
+    try {
+      await mockApi.updateSportsInvoice(userId, editInvoiceForm.id, {
+        invoiceTitle: editInvoiceForm.invoiceTitle,
+        invoiceDescription: editInvoiceForm.invoiceDescription,
+        invoiceCategory: editInvoiceForm.invoiceCategory,
+        amount: Number(editInvoiceForm.amount),
+        dueDate: editInvoiceForm.dueDate,
+        remarks: editInvoiceForm.remarks
+      });
+      setShowEditInvoice(false);
+      loadData(true);
+      alert('Invoice updated successfully!');
+    } catch (err: any) {
+      alert(`Error updating invoice: ${err.message}`);
+    } finally {
+      setUpdatingInvoice(false);
+    }
+  };
+
   const handleApplyLeave = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -1112,7 +1215,7 @@ export const SportsManagement: React.FC = () => {
               { id: 'medical', label: 'Medical Fitness', icon: Heart, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'equipment', label: 'Equipment Inventory', icon: Package, roles: ['COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'finance', label: 'Finance Control', icon: DollarSign, roles: ['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN', 'SPORTS_ADMIN'] },
-              { id: 'fees', label: 'Sports Invoices', icon: DollarSign, roles: ['STUDENT', 'PARENT', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+              { id: 'fees', label: 'Sports Invoices', icon: DollarSign, roles: ['STUDENT', 'PARENT'] },
               { id: 'reports', label: 'Reports & Analytics', icon: FileText, roles: ['SCHOOL_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'audit-logs', label: 'Audit Logs', icon: ShieldCheck, roles: ['SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] }
             ].map(tab => {
@@ -3511,6 +3614,44 @@ export const SportsManagement: React.FC = () => {
                     >
                       <Plus size={16} /> Create Fine
                     </button>
+
+                    {/* Create Fee Payment Record */}
+                    <button 
+                      onClick={() => {
+                        setNewFeePayment({
+                          studentId: '',
+                          invoiceId: '',
+                          amount: '',
+                          utrNumber: '',
+                          screenshotUrl: '',
+                          status: 'PENDING_VERIFICATION'
+                        });
+                        setFeePaymentStudentSearch('');
+                        setShowCreateFeePayment(true);
+                      }}
+                      className="flex items-center justify-center gap-2 py-3 px-4 bg-cyan-600/10 text-cyan-400 border border-cyan-500/25 hover:bg-cyan-600 hover:text-white rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                    >
+                      <Plus size={16} /> Record Fee Payment
+                    </button>
+
+                    {/* Create Fine Payment Record */}
+                    <button 
+                      onClick={() => {
+                        setNewFinePayment({
+                          studentId: '',
+                          reason: '',
+                          amount: '',
+                          utrNumber: '',
+                          screenshotUrl: '',
+                          status: 'PENDING'
+                        });
+                        setFinePaymentStudentSearch('');
+                        setShowCreateFinePayment(true);
+                      }}
+                      className="flex items-center justify-center gap-2 py-3 px-4 bg-rose-600/10 text-rose-400 border border-rose-500/25 hover:bg-rose-600 hover:text-white rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                    >
+                      <Plus size={16} /> Record Fine Payment
+                    </button>
                   </div>
                 </div>
               )}
@@ -3675,19 +3816,66 @@ export const SportsManagement: React.FC = () => {
                         </td>
                         <td className="py-3 px-4 text-slate-500 font-mono">{new Date(inv.createdAt).toLocaleDateString()}</td>
                         <td className="py-3 px-4 text-slate-400">{inv.createdByName}</td>
-                        <td className="py-3 px-4">
-                          {['FINANCE_ADMIN', 'SCHOOL_ADMIN', 'SUPER_ADMIN'].includes(portalRole) && (
-                            <button
-                              onClick={async () => {
-                                if (confirm('Are you sure you want to delete this invoice?')) {
-                                  await mockApi.deleteSportsInvoice(userId, inv.id);
-                                  loadData(true);
-                                }
-                              }}
-                              className="text-[10px] font-bold bg-red-600/10 text-red-400 px-3 py-1.5 rounded-lg border border-red-500/25 hover:bg-red-500 hover:text-white transition-all"
-                            >
-                              Delete
-                            </button>
+                        <td className="py-3 px-4 flex gap-1 items-center">
+                          {/* View Details - Visible to all roles including School Admin */}
+                          <button
+                            onClick={() => {
+                              setSelectedViewInvoice(inv);
+                              setShowViewInvoice(true);
+                            }}
+                            className="text-[10px] font-bold bg-slate-800 text-slate-300 px-2 py-1 rounded border border-slate-700 hover:bg-slate-700 hover:text-white transition-all font-mono"
+                          >
+                            View
+                          </button>
+
+                          {/* Mutating actions: only for FINANCE_ADMIN, SPORTS_ADMIN, SUPER_ADMIN */}
+                          {['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN'].includes(portalRole) && (
+                            <>
+                              <button
+                                onClick={() => {
+                                  setEditInvoiceForm({
+                                    id: inv.id,
+                                    invoiceTitle: inv.invoiceTitle,
+                                    invoiceDescription: inv.invoiceDescription || '',
+                                    invoiceCategory: inv.invoiceCategory,
+                                    amount: String(inv.amount),
+                                    dueDate: inv.dueDate,
+                                    remarks: inv.remarks || ''
+                                  });
+                                  setShowEditInvoice(true);
+                                }}
+                                className="text-[10px] font-bold bg-blue-500/10 text-blue-400 px-2 py-1 rounded border border-blue-500/25 hover:bg-blue-600 hover:text-white transition-all font-mono"
+                              >
+                                Edit
+                              </button>
+
+                              <button
+                                onClick={async () => {
+                                  try {
+                                    await mockApi.sendSportsInvoiceNotification(userId, inv.id);
+                                    alert('Notification dispatched successfully!');
+                                  } catch (err: any) {
+                                    alert(`Failed to send notification: ${err.message}`);
+                                  }
+                                }}
+                                className="text-[10px] font-bold bg-purple-500/10 text-purple-400 px-2 py-1 rounded border border-purple-500/25 hover:bg-purple-600 hover:text-white transition-all font-mono"
+                                title="Send reminder to student/parent"
+                              >
+                                Notify
+                              </button>
+
+                              <button
+                                onClick={async () => {
+                                  if (confirm('Are you sure you want to delete this invoice?')) {
+                                    await mockApi.deleteSportsInvoice(userId, inv.id);
+                                    loadData(true);
+                                  }
+                                }}
+                                className="text-[10px] font-bold bg-red-500/10 text-red-400 px-2 py-1 rounded border border-red-500/25 hover:bg-red-650 hover:text-white transition-all font-mono"
+                              >
+                                Delete
+                              </button>
+                            </>
                           )}
                         </td>
                       </tr>
@@ -3760,6 +3948,18 @@ export const SportsManagement: React.FC = () => {
                               >
                                 <X size={14} />
                               </button>
+                              <button 
+                                onClick={async () => {
+                                  if (confirm('Are you sure you want to delete this payment record?')) {
+                                    await mockApi.deleteSportsFeePayment(userId, pmt.id);
+                                    loadData(true);
+                                  }
+                                }}
+                                className="p-1.5 bg-red-500/10 text-red-400 rounded hover:bg-red-500 hover:text-white transition-all"
+                                title="Delete Payment"
+                              >
+                                <Trash2 size={14} />
+                              </button>
                             </>
                           ) : (
                             <span className="text-[10px] text-slate-500 font-mono">No Actions Available</span>
@@ -3790,6 +3990,7 @@ export const SportsManagement: React.FC = () => {
                       <th className="py-3 px-4 font-bold">UTR / Ref</th>
                       <th className="py-3 px-4 font-bold">Date</th>
                       <th className="py-3 px-4 font-bold">Status</th>
+                      <th className="py-3 px-4 font-bold">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
@@ -3805,11 +4006,27 @@ export const SportsManagement: React.FC = () => {
                             pmt.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
                           }`}>{pmt.status}</span>
                         </td>
+                        <td className="py-3 px-4">
+                          {['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN'].includes(portalRole) && (
+                            <button 
+                              onClick={async () => {
+                                if (confirm('Are you sure you want to delete this payment record?')) {
+                                  await mockApi.deleteSportsFeePayment(userId, pmt.id);
+                                  loadData(true);
+                                }
+                              }}
+                              className="text-red-400 hover:text-red-600 transition-all"
+                              title="Delete Record"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
+                        </td>
                       </tr>
                     ))}
                     {feePayments.filter(p => p.status !== 'PENDING_VERIFICATION').length === 0 && (
                       <tr>
-                        <td colSpan={6} className="py-6 text-center text-slate-500">No payment transaction history.</td>
+                        <td colSpan={7} className="py-6 text-center text-slate-500">No payment transaction history.</td>
                       </tr>
                     )}
                   </tbody>
@@ -3835,7 +4052,7 @@ export const SportsManagement: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
-                    {expenses.map(exp => (
+                    {expenses.filter(exp => exp.status === 'PENDING').map(exp => (
                       <tr key={exp.id} className="hover:bg-slate-900/40">
                         <td className="py-3 px-4 text-slate-100 font-semibold">{exp.requestedByName}</td>
                         <td className="py-3 px-4 text-slate-400">{exp.title}</td>
@@ -3913,6 +4130,11 @@ export const SportsManagement: React.FC = () => {
                         </td>
                       </tr>
                     ))}
+                    {expenses.filter(exp => exp.status === 'PENDING').length === 0 && (
+                      <tr>
+                        <td colSpan={8} className="py-6 text-center text-slate-500">No pending expense requests queue.</td>
+                      </tr>
+                    )}
                   </tbody>
                 </table>
               </div>
@@ -4145,26 +4367,41 @@ export const SportsManagement: React.FC = () => {
                             <a href={fine.paymentScreenshotUrl} target="_blank" rel="noreferrer" className="text-brand-400 font-bold hover:underline">View File</a>
                           ) : 'No file'}
                         </td>
-                         <td className="py-3 px-4 flex gap-1.5">
-                          {portalRole === 'FINANCE_ADMIN' ? (
+                        <td className="py-3 px-4 flex gap-1.5">
+                          {['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN'].includes(portalRole) ? (
                             <>
+                              {fine.status === 'PENDING' && ['FINANCE_ADMIN', 'SUPER_ADMIN'].includes(portalRole) && (
+                                <>
+                                  <button 
+                                    onClick={async () => {
+                                      await mockApi.approveFinePayment(userId, fine.id, 'APPROVED');
+                                      loadData(true);
+                                    }}
+                                    className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded text-[9px] font-bold hover:bg-emerald-500 hover:text-white transition-all"
+                                  >
+                                    Approve
+                                  </button>
+                                  <button 
+                                    onClick={async () => {
+                                      await mockApi.approveFinePayment(userId, fine.id, 'REJECTED');
+                                      loadData(true);
+                                    }}
+                                    className="px-2 py-1 bg-red-500/10 text-red-400 rounded text-[9px] font-bold hover:bg-red-500 hover:text-white transition-all"
+                                  >
+                                    Reject
+                                  </button>
+                                </>
+                              )}
                               <button 
                                 onClick={async () => {
-                                  await mockApi.approveFinePayment(userId, fine.id, 'APPROVED');
-                                  loadData(true);
-                                }}
-                                className="px-2 py-1 bg-emerald-500/10 text-emerald-400 rounded text-[9px] font-bold hover:bg-emerald-500 hover:text-white transition-all"
-                              >
-                                Approve
-                              </button>
-                              <button 
-                                onClick={async () => {
-                                  await mockApi.approveFinePayment(userId, fine.id, 'REJECTED');
-                                  loadData(true);
+                                  if (confirm('Are you sure you want to delete this fine payment record?')) {
+                                    await mockApi.deleteSportsFinePayment(userId, fine.id);
+                                    loadData(true);
+                                  }
                                 }}
                                 className="px-2 py-1 bg-red-500/10 text-red-400 rounded text-[9px] font-bold hover:bg-red-500 hover:text-white transition-all"
                               >
-                                Reject
+                                Delete
                               </button>
                             </>
                           ) : (
@@ -4196,10 +4433,11 @@ export const SportsManagement: React.FC = () => {
                       <th className="py-3 px-4 font-bold">UTR Reference</th>
                       <th className="py-3 px-4 font-bold">Submitted Date</th>
                       <th className="py-3 px-4 font-bold">Status</th>
+                      <th className="py-3 px-4 font-bold">Actions</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
-                    {finePayments.filter(f => f.status !== 'PENDING').slice(0, 20).map(fine => (
+                    {finePayments.slice(0, 20).map(fine => (
                       <tr key={fine.id} className="hover:bg-slate-900/40">
                         <td className="py-3 px-4 font-semibold text-slate-100">{fine.studentName}</td>
                         <td className="py-3 px-4 text-slate-400">{fine.reason}</td>
@@ -4208,14 +4446,30 @@ export const SportsManagement: React.FC = () => {
                         <td className="py-3 px-4 text-slate-500 font-mono">{fine.submittedAt ? new Date(fine.submittedAt).toLocaleDateString() : 'N/A'}</td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            fine.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-red-500/10 text-red-400'
+                            fine.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' : fine.status === 'REJECTED' ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-505'
                           }`}>{fine.status}</span>
+                        </td>
+                        <td className="py-3 px-4">
+                          {['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN'].includes(portalRole) && (
+                            <button 
+                              onClick={async () => {
+                                if (confirm('Are you sure you want to delete this fine payment record?')) {
+                                  await mockApi.deleteSportsFinePayment(userId, fine.id);
+                                  loadData(true);
+                                }
+                              }}
+                              className="text-red-400 hover:text-red-650 transition-all"
+                              title="Delete Record"
+                            >
+                              <Trash2 size={14} />
+                            </button>
+                          )}
                         </td>
                       </tr>
                     ))}
-                    {finePayments.filter(f => f.status !== 'PENDING').length === 0 && (
+                    {finePayments.length === 0 && (
                       <tr>
-                        <td colSpan={6} className="py-6 text-center text-slate-500">No fine payment history.</td>
+                        <td colSpan={7} className="py-6 text-center text-slate-500">No fine payment history.</td>
                       </tr>
                     )}
                   </tbody>
@@ -5449,6 +5703,508 @@ export const SportsManagement: React.FC = () => {
                 {submittingSalaryRequest ? 'Submitting Payroll Request...' : 'Submit Payroll Request'}
               </button>
             </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────
+          MODAL: RECORD FEE PAYMENT
+          ───────────────────────────────────────────────────────────────── */}
+      {showCreateFeePayment && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Record Fee Payment</h3>
+              <button onClick={() => setShowCreateFeePayment(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleCreateFeePayment} className="space-y-4 text-xs">
+              <div className="space-y-1 relative">
+                <label className="block text-slate-400 font-semibold">Select Student</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search student by name, admission no, or class..."
+                    value={feePaymentStudentSearch}
+                    onChange={(e) => {
+                      setFeePaymentStudentSearch(e.target.value);
+                      setShowFeePaymentStudentDropdown(true);
+                    }}
+                    onFocus={() => setShowFeePaymentStudentDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowFeePaymentStudentDropdown(false), 250)}
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none text-xs"
+                  />
+                  {feePaymentStudentSearch && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewFeePayment(prev => ({ ...prev, studentId: '', invoiceId: '' }));
+                        setFeePaymentStudentSearch('');
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  {showFeePaymentStudentDropdown && (
+                    <div className="absolute left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-slate-950 border border-slate-800 rounded-xl shadow-2xl z-50 divide-y divide-slate-900">
+                      {allStudents
+                        .filter((s: any) => {
+                          const q = feePaymentStudentSearch.toLowerCase();
+                          return (
+                            s.name.toLowerCase().includes(q) || 
+                            s.admissionNumber.toLowerCase().includes(q) ||
+                            (s.className || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map((student: any) => (
+                          <div
+                            key={student.id}
+                            onMouseDown={() => {
+                              setNewFeePayment(prev => ({ ...prev, studentId: student.id, invoiceId: '' }));
+                              setFeePaymentStudentSearch(`${student.name} (${student.admissionNumber}) - Class ${student.className || 'N/A'}`);
+                              setShowFeePaymentStudentDropdown(false);
+                            }}
+                            className="px-4 py-2.5 hover:bg-slate-900 cursor-pointer text-left transition-all"
+                          >
+                            <p className="font-bold text-slate-200">{student.name}</p>
+                            <p className="text-[10px] text-slate-500">ADM: {student.admissionNumber} | Class: {student.className || 'N/A'}</p>
+                          </div>
+                        ))}
+                      {allStudents.filter((s: any) => {
+                        const q = feePaymentStudentSearch.toLowerCase();
+                        return (
+                          s.name.toLowerCase().includes(q) || 
+                          s.admissionNumber.toLowerCase().includes(q) ||
+                          (s.className || '').toLowerCase().includes(q)
+                        );
+                      }).length === 0 && (
+                        <div className="px-4 py-3 text-slate-500 text-center">No students found.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Select Sports Invoice</label>
+                <select
+                  value={newFeePayment.invoiceId}
+                  onChange={(e) => {
+                    const targetInv = fees.find(f => f.id === e.target.value);
+                    setNewFeePayment(prev => ({ 
+                      ...prev, 
+                      invoiceId: e.target.value,
+                      amount: targetInv ? String(targetInv.amount) : ''
+                    }));
+                  }}
+                  required
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                >
+                  <option value="">-- Choose Invoice --</option>
+                  {fees
+                    .filter(f => f.studentId === newFeePayment.studentId)
+                    .map(inv => (
+                      <option key={inv.id} value={inv.id}>
+                        {inv.invoiceTitle} - ₹{inv.amount} ({inv.status})
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Paid Amount (₹)</label>
+                  <input 
+                    type="number"
+                    value={newFeePayment.amount}
+                    onChange={(e) => setNewFeePayment(prev => ({ ...prev, amount: e.target.value }))}
+                    required
+                    placeholder="Enter amount"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">UTR Reference Number</label>
+                  <input 
+                    type="text"
+                    value={newFeePayment.utrNumber}
+                    onChange={(e) => setNewFeePayment(prev => ({ ...prev, utrNumber: e.target.value }))}
+                    required
+                    placeholder="UTR-123456"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Screenshot / Receipt URL</label>
+                  <input 
+                    type="text"
+                    value={newFeePayment.screenshotUrl}
+                    onChange={(e) => setNewFeePayment(prev => ({ ...prev, screenshotUrl: e.target.value }))}
+                    placeholder="https://imgur.com/image.png"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Verification Status</label>
+                  <select
+                    value={newFeePayment.status}
+                    onChange={(e) => setNewFeePayment(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="PENDING_VERIFICATION">Pending Verification</option>
+                    <option value="APPROVED">Approved (Mark Paid)</option>
+                    <option value="REJECTED">Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={submittingFeePayment}
+                className="w-full py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl border border-brand-400/25 disabled:bg-slate-800 disabled:text-slate-500 disabled:border-none transition-all"
+              >
+                {submittingFeePayment ? 'Recording Payment...' : 'Record Payment'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────
+          MODAL: RECORD FINE PAYMENT
+          ───────────────────────────────────────────────────────────────── */}
+      {showCreateFinePayment && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Record Fine Payment</h3>
+              <button onClick={() => setShowCreateFinePayment(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleCreateFinePayment} className="space-y-4 text-xs">
+              <div className="space-y-1 relative">
+                <label className="block text-slate-400 font-semibold">Select Student</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search student by name, admission no, or class..."
+                    value={finePaymentStudentSearch}
+                    onChange={(e) => {
+                      setFinePaymentStudentSearch(e.target.value);
+                      setShowFinePaymentStudentDropdown(true);
+                    }}
+                    onFocus={() => setShowFinePaymentStudentDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowFinePaymentStudentDropdown(false), 250)}
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none text-xs"
+                  />
+                  {finePaymentStudentSearch && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setNewFinePayment(prev => ({ ...prev, studentId: '' }));
+                        setFinePaymentStudentSearch('');
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs"
+                    >
+                      Clear
+                    </button>
+                  )}
+                  {showFinePaymentStudentDropdown && (
+                    <div className="absolute left-0 right-0 top-full mt-1 max-h-48 overflow-y-auto bg-slate-950 border border-slate-800 rounded-xl shadow-2xl z-50 divide-y divide-slate-900">
+                      {allStudents
+                        .filter((s: any) => {
+                          const q = finePaymentStudentSearch.toLowerCase();
+                          return (
+                            s.name.toLowerCase().includes(q) || 
+                            s.admissionNumber.toLowerCase().includes(q) ||
+                            (s.className || '').toLowerCase().includes(q)
+                          );
+                        })
+                        .map((student: any) => (
+                          <div
+                            key={student.id}
+                            onMouseDown={() => {
+                              setNewFinePayment(prev => ({ ...prev, studentId: student.id }));
+                              setFinePaymentStudentSearch(`${student.name} (${student.admissionNumber}) - Class ${student.className || 'N/A'}`);
+                              setShowFinePaymentStudentDropdown(false);
+                            }}
+                            className="px-4 py-2.5 hover:bg-slate-900 cursor-pointer text-left transition-all"
+                          >
+                            <p className="font-bold text-slate-200">{student.name}</p>
+                            <p className="text-[10px] text-slate-500">ADM: {student.admissionNumber} | Class: {student.className || 'N/A'}</p>
+                          </div>
+                        ))}
+                      {allStudents.filter((s: any) => {
+                        const q = finePaymentStudentSearch.toLowerCase();
+                        return (
+                          s.name.toLowerCase().includes(q) || 
+                          s.admissionNumber.toLowerCase().includes(q) ||
+                          (s.className || '').toLowerCase().includes(q)
+                        );
+                      }).length === 0 && (
+                        <div className="px-4 py-3 text-slate-500 text-center">No students found.</div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Fine Reason / Charge Details</label>
+                <input 
+                  type="text"
+                  value={newFinePayment.reason}
+                  onChange={(e) => setNewFinePayment(prev => ({ ...prev, reason: e.target.value }))}
+                  required
+                  placeholder="e.g. Damage to gym equipment"
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Fine Amount (₹)</label>
+                  <input 
+                    type="number"
+                    value={newFinePayment.amount}
+                    onChange={(e) => setNewFinePayment(prev => ({ ...prev, amount: e.target.value }))}
+                    required
+                    placeholder="Enter amount"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">UTR Reference ID</label>
+                  <input 
+                    type="text"
+                    value={newFinePayment.utrNumber}
+                    onChange={(e) => setNewFinePayment(prev => ({ ...prev, utrNumber: e.target.value }))}
+                    required
+                    placeholder="UTR-99999"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Proof Image URL</label>
+                  <input 
+                    type="text"
+                    value={newFinePayment.screenshotUrl}
+                    onChange={(e) => setNewFinePayment(prev => ({ ...prev, screenshotUrl: e.target.value }))}
+                    placeholder="https://imgur.com/image.png"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Status</label>
+                  <select
+                    value={newFinePayment.status}
+                    onChange={(e) => setNewFinePayment(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="PENDING">Pending Approval</option>
+                    <option value="APPROVED">Approved (Settled)</option>
+                    <option value="REJECTED">Rejected</option>
+                  </select>
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={submittingFinePayment}
+                className="w-full py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl border border-brand-400/25 disabled:bg-slate-800 disabled:text-slate-500 disabled:border-none transition-all"
+              >
+                {submittingFinePayment ? 'Recording Fine Payout...' : 'Record Fine Payout'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────
+          MODAL: EDIT INVOICE
+          ───────────────────────────────────────────────────────────────── */}
+      {showEditInvoice && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Modify Sports Invoice</h3>
+              <button onClick={() => setShowEditInvoice(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+
+            <form onSubmit={handleEditInvoice} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Invoice Title</label>
+                <input 
+                  type="text"
+                  value={editInvoiceForm.invoiceTitle}
+                  onChange={(e) => setEditInvoiceForm(prev => ({ ...prev, invoiceTitle: e.target.value }))}
+                  required
+                  placeholder="e.g. Q3 Elite Tennis Coaching"
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Description</label>
+                <textarea 
+                  value={editInvoiceForm.invoiceDescription}
+                  onChange={(e) => setEditInvoiceForm(prev => ({ ...prev, invoiceDescription: e.target.value }))}
+                  placeholder="Brief details about sports item or program dues..."
+                  rows={2}
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Category</label>
+                  <select
+                    value={editInvoiceForm.invoiceCategory}
+                    onChange={(e) => setEditInvoiceForm(prev => ({ ...prev, invoiceCategory: e.target.value }))}
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="Quarterly Coaching Fee">Quarterly Coaching Fee</option>
+                    <option value="Uniform & Gear">Uniform & Gear</option>
+                    <option value="Tournament Fee">Tournament Fee</option>
+                    <option value="Other Sports Fee">Other Sports Fee</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Amount (₹)</label>
+                  <input 
+                    type="number"
+                    value={editInvoiceForm.amount}
+                    onChange={(e) => setEditInvoiceForm(prev => ({ ...prev, amount: e.target.value }))}
+                    required
+                    placeholder="0"
+                    min="1"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Due Date</label>
+                  <input 
+                    type="date"
+                    value={editInvoiceForm.dueDate}
+                    onChange={(e) => setEditInvoiceForm(prev => ({ ...prev, dueDate: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Remarks</label>
+                  <input 
+                    type="text"
+                    value={editInvoiceForm.remarks}
+                    onChange={(e) => setEditInvoiceForm(prev => ({ ...prev, remarks: e.target.value }))}
+                    placeholder="e.g. Approved by VC"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  />
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={updatingInvoice}
+                className="w-full py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl border border-brand-400/25 disabled:bg-slate-800 disabled:text-slate-500 disabled:border-none transition-all"
+              >
+                {updatingInvoice ? 'Saving Changes...' : 'Save Changes'}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ─────────────────────────────────────────────────────────────────
+          MODAL: VIEW INVOICE DETAILS
+          ───────────────────────────────────────────────────────────────── */}
+      {showViewInvoice && selectedViewInvoice && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in zoom-in-95 duration-200">
+          <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <div>
+                <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Invoice Details</h3>
+                <p className="text-[10px] text-slate-500 font-mono mt-0.5">{selectedViewInvoice.invoiceNumber}</p>
+              </div>
+              <button onClick={() => { setShowViewInvoice(false); setSelectedViewInvoice(null); }} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+
+            <div className="space-y-3.5 text-xs">
+              <div className="p-3 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1.5">
+                <p className="text-[10px] uppercase font-bold text-slate-400 font-mono">Assigned Student</p>
+                <p className="text-slate-200 font-semibold">{selectedViewInvoice.studentName}</p>
+                <p className="text-[10px] text-slate-500">Class: {selectedViewInvoice.className || 'N/A'}</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 font-mono">Title</p>
+                  <p className="text-slate-200 font-medium">{selectedViewInvoice.invoiceTitle}</p>
+                </div>
+                <div className="p-3 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 font-mono">Category</p>
+                  <p className="text-slate-350">{selectedViewInvoice.invoiceCategory}</p>
+                </div>
+              </div>
+
+              {selectedViewInvoice.invoiceDescription && (
+                <div className="p-3 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 font-mono">Description</p>
+                  <p className="text-slate-400 leading-relaxed">{selectedViewInvoice.invoiceDescription}</p>
+                </div>
+              )}
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 font-mono">Total Amount</p>
+                  <p className="text-lg font-extrabold text-white">₹{selectedViewInvoice.amount.toLocaleString()}</p>
+                </div>
+                <div className="p-3 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 font-mono">Due Date</p>
+                  <p className="text-slate-300 font-mono font-medium">{selectedViewInvoice.dueDate}</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="p-3 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 font-mono">Status</p>
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                    selectedViewInvoice.status === 'APPROVED' ? 'bg-emerald-500/10 text-emerald-400' :
+                    selectedViewInvoice.status === 'PENDING_VERIFICATION' ? 'bg-amber-500/10 text-amber-500' :
+                    selectedViewInvoice.status === 'REJECTED' ? 'bg-red-500/10 text-red-400' :
+                    'bg-slate-800 text-slate-400'
+                  }`}>{selectedViewInvoice.status}</span>
+                </div>
+                <div className="p-3 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 font-mono">Created By</p>
+                  <p className="text-slate-300">{selectedViewInvoice.createdByName} on {new Date(selectedViewInvoice.createdAt).toLocaleDateString()}</p>
+                </div>
+              </div>
+
+              {selectedViewInvoice.remarks && (
+                <div className="p-3 bg-slate-900/60 border border-slate-850 rounded-xl space-y-1">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 font-mono">Remarks</p>
+                  <p className="text-slate-400 italic">"{selectedViewInvoice.remarks}"</p>
+                </div>
+              )}
+
+              <button 
+                onClick={() => { setShowViewInvoice(false); setSelectedViewInvoice(null); }}
+                className="w-full py-2.5 bg-slate-800 text-slate-200 font-bold rounded-xl border border-slate-700 hover:bg-slate-700 transition-all text-center"
+              >
+                Close View
+              </button>
+            </div>
           </div>
         </div>
       )}

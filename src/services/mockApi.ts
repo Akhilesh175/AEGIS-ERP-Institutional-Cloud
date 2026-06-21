@@ -18585,7 +18585,7 @@ export const mockApi = {
       .select('school_id, role')
       .eq('id', userId)
       .single();
-    if (!userProfile || !['FINANCE_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(userProfile.role)) {
+    if (!userProfile || !['FINANCE_ADMIN', 'SPORTS_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(userProfile.role)) {
       throw new Error('Unauthorized');
     }
 
@@ -18595,7 +18595,7 @@ export const mockApi = {
         title: updates.invoiceTitle,
         description: updates.invoiceDescription,
         category: updates.invoiceCategory,
-        amount: updates.amount,
+        amount: Number(updates.amount),
         due_date: updates.dueDate,
         late_fee: updates.lateFee,
         remarks: updates.remarks,
@@ -18718,13 +18718,33 @@ export const mockApi = {
     if (!parentId) throw new Error("Parent ID missing");
     if (!schoolId) throw new Error("School ID missing");
 
+    let finalSubmittedBy: string | null = null;
+    const { data: userCheck } = await supabaseAdmin.from('users').select('id').eq('id', parentId).maybeSingle();
+    if (userCheck) {
+      finalSubmittedBy = userCheck.id;
+    } else {
+      const { data: parentCheck } = await supabaseAdmin.from('parents').select('user_id').eq('id', parentId).maybeSingle();
+      if (parentCheck?.user_id) {
+        finalSubmittedBy = parentCheck.user_id;
+      }
+    }
+    if (!finalSubmittedBy) {
+      if (payment.userId) {
+        const { data: fbUserCheck } = await supabaseAdmin.from('users').select('id').eq('id', payment.userId).maybeSingle();
+        if (fbUserCheck) finalSubmittedBy = fbUserCheck.id;
+      }
+    }
+    if (!finalSubmittedBy) {
+      throw new Error(`Failed to submit payment: Parent/User identifier ${parentId} does not resolve to a valid system user ID.`);
+    }
+
     const { data, error } = await supabaseAdmin
       .from('sports_fee_payments')
       .insert({
         school_id: schoolId,
         invoice_id: invoiceId,
         student_id: studentId,
-        submitted_by: parentId,
+        submitted_by: finalSubmittedBy,
         amount: payment.amountPaid,
         utr_number: payment.utrNumber,
         proof_image_url: payment.paymentScreenshotUrl,
@@ -18761,6 +18781,174 @@ export const mockApi = {
     }
 
     return data;
+  },
+
+  async adminCreateSportsFeePayment(userId: string, payload: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized');
+    }
+
+    const { data: mapping } = await supabaseAdmin
+      .from('parent_student_mapping')
+      .select('parents(user_id)')
+      .eq('student_id', payload.studentId)
+      .limit(1)
+      .maybeSingle();
+
+    let submittedBy = (mapping?.parents as any)?.user_id;
+
+    if (!submittedBy) {
+      const { data: student } = await supabaseAdmin
+        .from('students')
+        .select('user_id')
+        .eq('id', payload.studentId)
+        .single();
+      submittedBy = student?.user_id || userId;
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_fee_payments')
+      .insert({
+        school_id: user.school_id,
+        invoice_id: payload.invoiceId,
+        student_id: payload.studentId,
+        amount: Number(payload.amount),
+        utr_number: payload.utrNumber,
+        proof_image_url: payload.screenshotUrl || 'https://placeholder.co/100',
+        status: payload.status || 'PENDING_VERIFICATION',
+        submitted_by: submittedBy,
+        approved_by: payload.status === 'APPROVED' ? userId : null,
+        approved_at: payload.status === 'APPROVED' ? new Date().toISOString() : null
+      })
+      .select('*, sports_invoices(*)')
+      .single();
+
+    if (error) throw error;
+
+    await supabaseAdmin
+      .from('sports_invoices')
+      .update({ 
+        status: payload.status === 'APPROVED' ? 'APPROVED' : payload.status === 'REJECTED' ? 'REJECTED' : 'PENDING_VERIFICATION',
+        updated_at: new Date().toISOString() 
+      })
+      .eq('id', payload.invoiceId);
+
+    await this.logSportsActivity(user.school_id, userId, user.role, 'CREATE_FEE_PAYMENT', `Admin recorded payment of ₹${payload.amount} for invoice ${data.sports_invoices?.invoice_number || payload.invoiceId}`);
+    return data;
+  },
+
+  async deleteSportsFeePayment(userId: string, paymentId: string): Promise<void> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized');
+    }
+
+    const { error } = await supabaseAdmin
+      .from('sports_fee_payments')
+      .delete()
+      .eq('id', paymentId);
+    
+    if (error) throw error;
+    await this.logSportsActivity(user.school_id, userId, user.role, 'DELETE_FEE_PAYMENT', `Deleted fee payment record: ${paymentId}`);
+  },
+
+  async adminCreateSportsFinePayment(userId: string, payload: any): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized');
+    }
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_fine_payments')
+      .insert({
+        school_id: user.school_id,
+        student_id: payload.studentId,
+        amount: Number(payload.amount),
+        reason: payload.reason,
+        utr_reference: payload.utrNumber,
+        proof_image_url: payload.screenshotUrl || 'https://placeholder.co/100',
+        status: payload.status || 'PENDING',
+        approved_at: payload.status === 'APPROVED' ? new Date().toISOString() : null
+      })
+      .select()
+      .single();
+
+    if (error) throw error;
+
+    if (payload.status === 'APPROVED') {
+      await supabaseAdmin
+        .from('sports_fines')
+        .update({ status: 'PAID', payment_date: new Date().toISOString() })
+        .eq('student_id', payload.studentId)
+        .eq('status', 'UNPAID')
+        .eq('amount', Number(payload.amount));
+    }
+
+    await this.logSportsActivity(user.school_id, userId, user.role, 'CREATE_FINE_PAYMENT', `Admin recorded fine payment of ₹${payload.amount} for reason: ${payload.reason}`);
+    return data;
+  },
+
+  async deleteSportsFinePayment(userId: string, paymentId: string): Promise<void> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized');
+    }
+
+    const { error } = await supabaseAdmin
+      .from('sports_fine_payments')
+      .delete()
+      .eq('id', paymentId);
+    
+    if (error) throw error;
+    await this.logSportsActivity(user.school_id, userId, user.role, 'DELETE_FINE_PAYMENT', `Deleted fine payment record: ${paymentId}`);
+  },
+
+
+  async sendSportsInvoiceNotification(userId: string, invoiceId: string): Promise<void> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || !['FINANCE_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized');
+    }
+
+    const { data: invoice } = await supabaseAdmin
+      .from('sports_invoices')
+      .select('*, students(*)')
+      .eq('id', invoiceId)
+      .single();
+
+    if (!invoice) throw new Error('Invoice not found');
+
+    await supabaseAdmin
+      .from('sports_notifications')
+      .insert({
+        school_id: invoice.school_id,
+        user_id: invoice.students.user_id,
+        title: 'New Sports Invoice Generated',
+        message: `A new sports invoice ${invoice.invoice_number} of ₹${invoice.amount} for '${invoice.title}' has been generated. Due date: ${invoice.due_date}.`,
+        status: 'UNREAD'
+      });
+
+    const { data: mapping } = await supabaseAdmin
+      .from('parent_student_mapping')
+      .select('parents(user_id)')
+      .eq('student_id', invoice.student_id)
+      .limit(1)
+      .maybeSingle();
+
+    if (mapping?.parents) {
+      await supabaseAdmin
+        .from('sports_notifications')
+        .insert({
+          school_id: invoice.school_id,
+          user_id: (mapping.parents as any).user_id,
+          title: 'New Sports Invoice Generated',
+          message: `A new sports invoice ${invoice.invoice_number} of ₹${invoice.amount} for your child has been generated. Due date: ${invoice.due_date}.`,
+          status: 'UNREAD'
+        });
+    }
+
+    await this.logSportsActivity(invoice.school_id, userId, user.role, 'SEND_INVOICE_NOTIFICATION', `Dispatched notification for invoice ${invoice.invoice_number}`);
   },
 
   async updateSportsFeePaymentStatus(
@@ -19596,17 +19784,15 @@ export const mockApi = {
     if (error) throw error;
     
     // 3. Log to budget history
-    if (oldAmount !== newAmount) {
-      await supabaseAdmin
-        .from('sports_budget_history')
-        .insert({
-          school_id: user.school_id,
-          category: budget.category,
-          old_amount: oldAmount,
-          new_amount: newAmount,
-          updated_by: userId
-        });
-    }
+    await supabaseAdmin
+      .from('sports_budget_history')
+      .insert({
+        school_id: user.school_id,
+        category: budget.category,
+        old_amount: oldAmount,
+        new_amount: newAmount,
+        updated_by: userId
+      });
 
     await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'ALLOCATE_BUDGET', `Allocated ₹${budget.allocatedAmount} budget for ${budget.category}`, undefined, undefined, { budgetId: data.id });
     return data;
