@@ -138,6 +138,13 @@ export const SportsManagement: React.FC = () => {
   const [showAddInvoice, setShowAddInvoice] = useState(false);
   const [newInvoice, setNewInvoice] = useState({ studentId: '', invoiceTitle: '', invoiceDescription: '', invoiceCategory: 'Quarterly Coaching Fee', amount: 0, dueDate: '', lateFee: 0, remarks: '' });
   const [submittingInvoice, setSubmittingInvoice] = useState(false);
+  const [studentSearch, setStudentSearch] = useState('');
+  const [showStudentDropdown, setShowStudentDropdown] = useState(false);
+  const [fineStudentSearch, setFineStudentSearch] = useState('');
+  const [showFineStudentDropdown, setShowFineStudentDropdown] = useState(false);
+  const [showCreateSalaryRequest, setShowCreateSalaryRequest] = useState(false);
+  const [newSalaryRequest, setNewSalaryRequest] = useState({ employeeId: '', employeeType: 'COACH' as 'COACH' | 'ADMIN', salaryMonth: '', grossSalary: 0, bonus: 0, deductions: 0 });
+  const [submittingSalaryRequest, setSubmittingSalaryRequest] = useState(false);
   
   const [showAddPerformance, setShowAddPerformance] = useState(false);
   const [perfForm, setPerfForm] = useState({ studentId: '', sportId: '', speed: 80, stamina: 80, strength: 80, agility: 80, teamwork: 80, fitness: 80, coachRating: 8.0, remarks: '' });
@@ -207,7 +214,7 @@ export const SportsManagement: React.FC = () => {
         safeFetch(() => mockApi.fetchSportsNotifications(schoolId, userId)),
         
         safeFetch(() => mockApi.fetchSportsAdmins(schoolId)),
-        safeFetch(() => academicSessionId ? mockApi.fetchSalaryRecords(schoolId, academicSessionId) : Promise.resolve([])),
+        safeFetch(() => mockApi.fetchSalaryRequests(schoolId)),
         safeFetch(() => academicSessionId ? mockApi.fetchBudgets(schoolId, academicSessionId) : Promise.resolve([])),
         safeFetch(() => academicSessionId ? mockApi.fetchExpenses(schoolId, academicSessionId) : Promise.resolve([])),
         safeFetch(() => academicSessionId ? mockApi.fetchFines(schoolId, academicSessionId) : Promise.resolve([])),
@@ -294,18 +301,23 @@ export const SportsManagement: React.FC = () => {
         setAthleteAttendanceHistory(attHistory);
       }
 
-      // Load all students for the school if Admin or Sports Admin
-      if (['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN', 'ADMIN'].includes(userRole)) {
+      // Load all students for the school if Admin, Sports Admin, or Finance Admin
+      if (['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'FINANCE_ADMIN'].includes(userRole)) {
         const { data: stds, error: stdsErr } = await supabase
           .from('students')
-          .select('id, users(first_name, last_name)')
+          .select('id, admission_number, users(first_name, last_name), classes(name), sections(name)')
           .eq('school_id', schoolId);
         if (!stdsErr && stds) {
           setAllStudents(stds.map(s => {
             const userObj: any = Array.isArray(s.users) ? s.users[0] : s.users;
+            const classObj: any = Array.isArray(s.classes) ? s.classes[0] : s.classes;
+            const sectionObj: any = Array.isArray(s.sections) ? s.sections[0] : s.sections;
+            const className = classObj ? `${classObj.name || ''}${sectionObj ? ' ' + (sectionObj.name || '') : ''}`.trim() : 'N/A';
             return {
               id: s.id,
-              name: userObj ? `${userObj.first_name || ''} ${userObj.last_name || ''}`.trim() : 'Unknown student'
+              name: userObj ? `${userObj.first_name || ''} ${userObj.last_name || ''}`.trim() : 'Unknown Student',
+              admissionNumber: s.admission_number || 'N/A',
+              className: className
             };
           }));
         }
@@ -335,7 +347,8 @@ export const SportsManagement: React.FC = () => {
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_admins' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coaches' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_finance_transactions' }, () => { loadData(true); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_salary_records' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_invoices' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_salary_requests' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_budget_allocations' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_budget_history' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_expense_requests' }, () => { loadData(true); })
@@ -555,6 +568,42 @@ export const SportsManagement: React.FC = () => {
     }
   };
 
+  const handleCreateSalaryRequest = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newSalaryRequest.employeeId) {
+      alert('Please select an employee.');
+      return;
+    }
+    if (!newSalaryRequest.salaryMonth) {
+      alert('Please enter a salary month.');
+      return;
+    }
+    if (newSalaryRequest.grossSalary <= 0) {
+      alert('Gross salary must be greater than 0.');
+      return;
+    }
+
+    setSubmittingSalaryRequest(true);
+    try {
+      await mockApi.createSalaryRequest(userId, {
+        employeeId: newSalaryRequest.employeeId,
+        employeeType: newSalaryRequest.employeeType,
+        salaryMonth: newSalaryRequest.salaryMonth,
+        grossSalary: newSalaryRequest.grossSalary,
+        bonus: newSalaryRequest.bonus,
+        deductions: newSalaryRequest.deductions
+      });
+      setShowCreateSalaryRequest(false);
+      setNewSalaryRequest({ employeeId: '', employeeType: 'COACH', salaryMonth: '', grossSalary: 0, bonus: 0, deductions: 0 });
+      loadData(true);
+      alert('Salary request submitted successfully!');
+    } catch (err: any) {
+      alert(`Error creating payroll request: ${err.message}`);
+    } finally {
+      setSubmittingSalaryRequest(false);
+    }
+  };
+
   const handleAddPerformance = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -767,6 +816,19 @@ export const SportsManagement: React.FC = () => {
 
   const totalOutstanding = Math.max(0, outstandingRevenue);
 
+  // Sports Finance Dashboard computed metrics
+  const totalInvoicesAmount = fees.reduce((sum, f) => sum + f.amount, 0);
+  const unpaidInvoicesCount = fees.filter(f => f.status === 'UNPAID').length;
+  const paymentsQueueCount = feePayments.filter(p => p.status === 'PENDING_VERIFICATION').length;
+  const totalCollectionsAmount = feePayments.filter(p => p.status === 'APPROVED').reduce((sum, p) => sum + p.amountPaid, 0) + finePayments.filter(f => f.status === 'APPROVED').reduce((sum, f) => sum + f.amount, 0);
+  const pendingExpensesCount = expenses.filter(e => e.status === 'PENDING').length;
+  const pendingPayrollCount = salaryRecords.filter(s => s.status === 'PENDING').length;
+  const pendingFinesCount = finePayments.filter(f => f.status === 'PENDING').length;
+  const totalAllocatedBudget = budgets.reduce((sum, b) => sum + b.allocatedAmount, 0);
+  const totalExpensesSpent = expenses.filter(e => e.status === 'APPROVED').reduce((sum, e) => sum + e.amountRequested, 0);
+  const payrollThisMonth = salaryRecords.filter(s => s.salaryMonth === selectedMonth && s.status === 'PAID').reduce((sum, s) => sum + s.netSalary, 0);
+  const fineCollectionsAmount = finePayments.filter(f => f.status === 'APPROVED').reduce((sum, f) => sum + f.amount, 0);
+
   // Coach attendance dashboard stats
   const coachesCount = coaches.length;
   const todayAtt = coachAttendance.filter(a => a.attendanceDate === attendanceDate);
@@ -907,7 +969,7 @@ export const SportsManagement: React.FC = () => {
         break;
       case 'payroll':
         headers = ['Employee Name', 'Role', 'Month', 'Base Amount', 'Bonus', 'Deductions', 'Status', 'Transaction ID'];
-        rows = salaryRecords.map(s => [s.employeeName || '', s.employeeRole || '', s.month || '', String(s.amount), String(s.bonus), String(s.deductions), s.status, s.transactionId || '']);
+        rows = salaryRecords.map(s => [s.employeeName || '', s.employeeType || '', s.salaryMonth || '', String(s.grossSalary), String(s.bonus), String(s.deductions), s.status, s.transactionId || '']);
         break;
       case 'equipment':
         headers = ['Category', 'Title', 'Amount Requested', 'Amount Approved', 'Status', 'Vendor', 'Invoice Number', 'Payment Status'];
@@ -1049,7 +1111,7 @@ export const SportsManagement: React.FC = () => {
               { id: 'performance', label: 'Athlete Performance', icon: BarChart3, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'medical', label: 'Medical Fitness', icon: Heart, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'equipment', label: 'Equipment Inventory', icon: Package, roles: ['COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
-              { id: 'finance', label: 'Finance Control', icon: DollarSign, roles: ['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN'] },
+              { id: 'finance', label: 'Finance Control', icon: DollarSign, roles: ['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'fees', label: 'Sports Invoices', icon: DollarSign, roles: ['STUDENT', 'PARENT', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'reports', label: 'Reports & Analytics', icon: FileText, roles: ['SCHOOL_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'audit-logs', label: 'Audit Logs', icon: ShieldCheck, roles: ['SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] }
@@ -3268,11 +3330,192 @@ export const SportsManagement: React.FC = () => {
         {/* ─────────────────────────────────────────────────────────────────
             15. FINANCE MODULE SUB-VIEWS (EXCLUSIVE TO FINANCE ADMIN)
             ───────────────────────────────────────────────────────────────── */}
-        {activeSubTab === 'finance' && ['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN'].includes(portalRole) && (
+        {activeSubTab === 'finance' && ['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN', 'SPORTS_ADMIN'].includes(portalRole) && (
           <FinanceErrorBoundary>
             <div className="space-y-6">
+
+              {/* Sports Admin Dashboard (KPI Grid) */}
+              <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-2">
+                  <h2 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Sports Finance Dashboard</h2>
+                  <span className="text-[10px] text-slate-500 font-mono">Academic Session Sync</span>
+                </div>
+                
+                <div className="grid grid-cols-2 lg:grid-cols-6 gap-4">
+                  {/* Total Invoices */}
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition-colors">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Total Invoices</p>
+                      <p className="text-lg font-extrabold text-white mt-1">₹{totalInvoicesAmount.toLocaleString()}</p>
+                    </div>
+                    <p className="text-[10px] text-brand-400 font-bold mt-2">{unpaidInvoicesCount} Unpaid</p>
+                  </div>
+
+                  {/* Payments Queue */}
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition-colors">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Payments Queue</p>
+                      <p className="text-lg font-extrabold text-amber-500 mt-1">{paymentsQueueCount}</p>
+                    </div>
+                    <p className="text-[10px] text-slate-400 font-semibold mt-2">To Verify</p>
+                  </div>
+
+                  {/* Total Collections */}
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition-colors">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Total Collections</p>
+                      <p className="text-lg font-extrabold text-emerald-450 mt-1">₹{totalCollectionsAmount.toLocaleString()}</p>
+                    </div>
+                    <p className="text-[10px] text-emerald-450 font-bold mt-2">Collected</p>
+                  </div>
+
+                  {/* Expense Requests */}
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition-colors">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Expense Requests</p>
+                      <p className="text-lg font-extrabold text-red-455 mt-1">{pendingExpensesCount}</p>
+                    </div>
+                    <p className="text-[10px] text-red-400 font-semibold mt-2">Pending</p>
+                  </div>
+
+                  {/* Payroll Requests */}
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition-colors">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Payroll Requests</p>
+                      <p className="text-lg font-extrabold text-purple-400 mt-1">{pendingPayrollCount}</p>
+                    </div>
+                    <p className="text-[10px] text-purple-400 font-semibold mt-2">Pending</p>
+                  </div>
+
+                  {/* Fine Payments */}
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4 flex flex-col justify-between hover:border-slate-700 transition-colors">
+                    <div>
+                      <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Fine Payments</p>
+                      <p className="text-lg font-extrabold text-yellow-500 mt-1">{pendingFinesCount}</p>
+                    </div>
+                    <p className="text-[10px] text-yellow-500 font-semibold mt-2">Pending</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Finance Overview */}
+              <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Finance Overview</h3>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Budget Allocated */}
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4">
+                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Budget Allocated</p>
+                    <p className="text-xl font-extrabold text-white mt-1">₹{totalAllocatedBudget.toLocaleString()}</p>
+                    <p className="text-[10px] text-brand-400 mt-1 font-semibold">Allocations total</p>
+                  </div>
+
+                  {/* Total Expenses */}
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4">
+                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Total Expenses</p>
+                    <p className="text-xl font-extrabold text-white mt-1">₹{totalExpensesSpent.toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-400 mt-1 font-semibold">Approved procurement</p>
+                  </div>
+
+                  {/* Payroll This Month */}
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4">
+                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Payroll This Month</p>
+                    <p className="text-xl font-extrabold text-white mt-1">₹{payrollThisMonth.toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-450 mt-1 font-mono font-semibold">{selectedMonth}</p>
+                  </div>
+
+                  {/* Fine Collections */}
+                  <div className="bg-slate-900/60 border border-slate-850 rounded-xl p-4">
+                    <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider font-mono">Fine Collections</p>
+                    <p className="text-xl font-extrabold text-emerald-400 mt-1">₹{fineCollectionsAmount.toLocaleString()}</p>
+                    <p className="text-[10px] text-slate-400 mt-1 font-semibold">Total approved fines</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Actions (Write Roles ONLY - Sports Admin & Finance Admin. School Admin is view-only) */}
+              {portalRole !== 'SCHOOL_ADMIN' && (
+                <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
+                  <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Quick Actions</h3>
+                  <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                    {/* Create Sports Invoice */}
+                    <button 
+                      onClick={() => {
+                        setNewInvoice({
+                          studentId: '',
+                          invoiceTitle: '',
+                          invoiceDescription: '',
+                          invoiceCategory: 'Quarterly Coaching Fee',
+                          amount: 0,
+                          dueDate: new Date(Date.now() + 86400000 * 7).toISOString().split('T')[0],
+                          lateFee: 0,
+                          remarks: ''
+                        });
+                        setStudentSearch('');
+                        setShowAddInvoice(true);
+                      }}
+                      className="flex items-center justify-center gap-2 py-3 px-4 bg-blue-600/10 text-blue-400 border border-blue-500/25 hover:bg-blue-600 hover:text-white rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                    >
+                      <Plus size={16} /> Create Sports Invoice
+                    </button>
+
+                    {/* Create Expense Request */}
+                    <button 
+                      onClick={() => {
+                        setExpenseForm({
+                          category: 'EQUIPMENT_PURCHASE',
+                          title: '',
+                          amountRequested: 1000,
+                          description: '',
+                          vendor: '',
+                          invoiceNumber: '',
+                          referenceId: ''
+                        });
+                        setShowRequestExpense(true);
+                      }}
+                      className="flex items-center justify-center gap-2 py-3 px-4 bg-emerald-600/10 text-emerald-400 border border-emerald-500/25 hover:bg-emerald-600 hover:text-white rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                    >
+                      <Plus size={16} /> Create Expense Request
+                    </button>
+
+                    {/* Create Payroll Request */}
+                    <button 
+                      onClick={() => {
+                        setNewSalaryRequest({
+                          employeeId: '',
+                          employeeType: 'COACH',
+                          salaryMonth: new Date().toISOString().substring(0, 7),
+                          grossSalary: 0,
+                          bonus: 0,
+                          deductions: 0
+                        });
+                        setShowCreateSalaryRequest(true);
+                      }}
+                      className="flex items-center justify-center gap-2 py-3 px-4 bg-purple-600/10 text-purple-400 border border-purple-500/25 hover:bg-purple-600 hover:text-white rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                    >
+                      <Plus size={16} /> Create Payroll Request
+                    </button>
+
+                    {/* Create Fine */}
+                    <button 
+                      onClick={() => {
+                        setFineForm({
+                          studentId: '',
+                          amount: 500,
+                          reason: '',
+                          dueDate: new Date(Date.now() + 86400000 * 7).toISOString().split('T')[0]
+                        });
+                        setFineStudentSearch('');
+                        setShowIssueFine(true);
+                      }}
+                      className="flex items-center justify-center gap-2 py-3 px-4 bg-amber-600/10 text-amber-400 border border-amber-500/25 hover:bg-amber-600 hover:text-white rounded-xl text-xs font-bold transition-all active:scale-[0.98]"
+                    >
+                      <Plus size={16} /> Create Fine
+                    </button>
+                  </div>
+                </div>
+              )}
             
-            {/* Budget allocation controller */}
+             {/* Budget allocation controller */}
             <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-4">
               <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Budget Allocation Controller</h3>
               <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
@@ -3493,7 +3736,7 @@ export const SportsManagement: React.FC = () => {
                           <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-500">PENDING_VERIFICATION</span>
                         </td>
                         <td className="py-3 px-4 flex gap-2">
-                          {['FINANCE_ADMIN', 'SCHOOL_ADMIN', 'SUPER_ADMIN'].includes(portalRole) ? (
+                          {['FINANCE_ADMIN', 'SUPER_ADMIN'].includes(portalRole) ? (
                             <>
                               <button 
                                 onClick={async () => {
@@ -3761,35 +4004,48 @@ export const SportsManagement: React.FC = () => {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-850">
-                    {salaryRecords.filter(s => s.month === selectedMonth).map(sal => {
-                      const net = sal.amount + sal.bonus - sal.deductions;
+                    {salaryRecords.filter(s => s.salaryMonth === selectedMonth).map(sal => {
                       return (
                         <tr key={sal.id} className="hover:bg-slate-900/40">
                           <td className="py-3 px-4 font-semibold text-slate-100">{sal.employeeName}</td>
-                          <td className="py-3 px-4 text-slate-400 font-mono text-[10px]">{sal.employeeRole}</td>
-                          <td className="py-3 px-4 text-slate-450">{sal.month}</td>
-                          <td className="py-3 px-4 text-slate-400">₹{sal.amount.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-emerald-400">+₹{sal.bonus.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-red-400">-₹{sal.deductions.toLocaleString()}</td>
-                          <td className="py-3 px-4 text-slate-100 font-bold">₹{net.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-slate-400 font-mono text-[10px]">{sal.employeeType}</td>
+                          <td className="py-3 px-4 text-slate-450">{sal.salaryMonth}</td>
+                          <td className="py-3 px-4 text-slate-400">₹{sal.grossSalary.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-emerald-400 font-semibold font-mono">+₹{sal.bonus.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-red-400 font-semibold font-mono">-₹{sal.deductions.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-slate-100 font-bold">₹{sal.netSalary.toLocaleString()}</td>
                           <td className="py-3 px-4">
                             <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                              sal.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-400' : sal.status === 'APPROVED' ? 'bg-brand-500/10 text-brand-400' : 'bg-amber-500/10 text-amber-550'
+                              sal.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-400' : 
+                              sal.status === 'APPROVED' ? 'bg-brand-500/10 text-brand-400' : 
+                              sal.status === 'REJECTED' ? 'bg-red-500/10 text-red-400' : 
+                              'bg-amber-500/10 text-amber-500'
                             }`}>{sal.status}</span>
                           </td>
                           <td className="py-3 px-4">
                             {portalRole === 'FINANCE_ADMIN' ? (
                               <>
-                                {sal.status === 'GENERATED' && (
-                                  <button 
-                                    onClick={async () => {
-                                      await mockApi.approveSalaryRecord(userId, sal.id);
-                                      loadData(true);
-                                    }}
-                                    className="px-2.5 py-1 bg-brand-600/10 text-brand-400 border border-brand-500/25 text-[9px] font-bold rounded"
-                                  >
-                                    Approve
-                                  </button>
+                                {sal.status === 'PENDING' && (
+                                  <div className="flex gap-1">
+                                    <button 
+                                      onClick={async () => {
+                                        await mockApi.approveSalaryRecord(userId, sal.id);
+                                        loadData(true);
+                                      }}
+                                      className="px-2.5 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/25 text-[9px] font-bold rounded hover:bg-emerald-500 hover:text-white transition-all"
+                                    >
+                                      Approve
+                                    </button>
+                                    <button 
+                                      onClick={async () => {
+                                        await mockApi.rejectSalaryRecord(userId, sal.id);
+                                        loadData(true);
+                                      }}
+                                      className="px-2.5 py-1 bg-red-500/10 text-red-400 border border-red-500/25 text-[9px] font-bold rounded hover:bg-red-500 hover:text-white transition-all"
+                                    >
+                                      Reject
+                                    </button>
+                                  </div>
                                 )}
                                 {sal.status === 'APPROVED' && (
                                   <button 
@@ -3798,23 +4054,23 @@ export const SportsManagement: React.FC = () => {
                                       await mockApi.paySalaryRecord(userId, sal.id, { transactionId: txn });
                                       loadData(true);
                                     }}
-                                    className="px-2.5 py-1 bg-emerald-500 text-white text-[9px] font-bold rounded"
+                                    className="px-2.5 py-1 bg-emerald-500 text-white text-[9px] font-bold rounded hover:brightness-110 active:scale-95 transition-all"
                                   >
                                     Release Cash
                                   </button>
                                 )}
-                                {sal.status === 'PAID' && (
-                                  <span className="text-[10px] text-slate-500 font-mono">No Actions Available</span>
+                                {(sal.status === 'PAID' || sal.status === 'REJECTED') && (
+                                  <span className="text-[10px] text-slate-500 font-mono">No Actions</span>
                                 )}
                               </>
                             ) : (
-                              <span className="text-[10px] text-slate-500 font-mono">No Actions Available</span>
+                              <span className="text-[10px] text-slate-500 font-mono">No Actions</span>
                             )}
                           </td>
                         </tr>
                       );
                     })}
-                    {salaryRecords.filter(s => s.month === selectedMonth).length === 0 && (
+                    {salaryRecords.filter(s => s.salaryMonth === selectedMonth).length === 0 && (
                       <tr>
                         <td colSpan={9} className="py-6 text-center text-slate-500">No payroll records computed for selected month.</td>
                       </tr>
@@ -3841,13 +4097,12 @@ export const SportsManagement: React.FC = () => {
                   </thead>
                   <tbody className="divide-y divide-slate-850">
                     {salaryRecords.filter(s => s.status === 'PAID').slice(0, 20).map(sal => {
-                      const net = sal.amount + sal.bonus - sal.deductions;
                       return (
                         <tr key={sal.id} className="hover:bg-slate-900/40">
                           <td className="py-3 px-4 font-semibold text-slate-100">{sal.employeeName}</td>
-                          <td className="py-3 px-4 text-slate-400 font-mono text-[10px]">{sal.employeeRole}</td>
-                          <td className="py-3 px-4 text-slate-450">{sal.month}</td>
-                          <td className="py-3 px-4 text-emerald-450 font-bold">₹{net.toLocaleString()}</td>
+                          <td className="py-3 px-4 text-slate-400 font-mono text-[10px]">{sal.employeeType}</td>
+                          <td className="py-3 px-4 text-slate-450">{sal.salaryMonth}</td>
+                          <td className="py-3 px-4 text-emerald-450 font-bold font-mono">₹{sal.netSalary.toLocaleString()}</td>
                           <td className="py-3 px-4 font-mono text-slate-350">{sal.transactionId}</td>
                           <td className="py-3 px-4 text-slate-500 font-mono">{sal.paymentDate ? new Date(sal.paymentDate).toLocaleDateString() : 'N/A'}</td>
                         </tr>
@@ -4803,19 +5058,64 @@ export const SportsManagement: React.FC = () => {
           </div>
           
           <form onSubmit={handleCreateSportsInvoice} className="space-y-4 text-xs">
-            <div className="space-y-1">
+            <div className="space-y-1 relative">
               <label className="block text-slate-400 font-semibold">Select Student</label>
-              <select
-                value={newInvoice.studentId}
-                onChange={(e) => setNewInvoice(prev => ({ ...prev, studentId: e.target.value }))}
-                required
-                className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
-              >
-                <option value="">-- Choose Student --</option>
-                {allStudents.map(s => (
-                  <option key={s.id} value={s.id}>{s.name}</option>
-                ))}
-              </select>
+              <div className="relative">
+                <input
+                  type="text"
+                  placeholder="Search student by name, admission no, or class..."
+                  value={studentSearch}
+                  onChange={(e) => {
+                    setStudentSearch(e.target.value);
+                    setShowStudentDropdown(true);
+                  }}
+                  onFocus={() => setShowStudentDropdown(true)}
+                  onBlur={() => setTimeout(() => setShowStudentDropdown(false), 250)}
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none text-xs"
+                />
+                {studentSearch && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setNewInvoice(prev => ({ ...prev, studentId: '' }));
+                      setStudentSearch('');
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs"
+                  >
+                    Clear
+                  </button>
+                )}
+              </div>
+              {showStudentDropdown && (
+                <div className="absolute z-50 w-full mt-1 max-h-48 overflow-y-auto bg-slate-950 border border-slate-800 rounded-xl shadow-2xl divide-y divide-slate-900">
+                  {allStudents.filter(s => 
+                    s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+                    s.admissionNumber.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                    (s.className || '').toLowerCase().includes(studentSearch.toLowerCase())
+                  ).length > 0 ? (
+                    allStudents.filter(s => 
+                      s.name.toLowerCase().includes(studentSearch.toLowerCase()) || 
+                      s.admissionNumber.toLowerCase().includes(studentSearch.toLowerCase()) ||
+                      (s.className || '').toLowerCase().includes(studentSearch.toLowerCase())
+                    ).map(s => (
+                      <div
+                        key={s.id}
+                        onMouseDown={() => {
+                          setNewInvoice(prev => ({ ...prev, studentId: s.id }));
+                          setStudentSearch(`${s.name} (${s.admissionNumber}) - Class ${s.className || 'N/A'}`);
+                          setShowStudentDropdown(false);
+                        }}
+                        className="px-4 py-2 hover:bg-brand-600/20 cursor-pointer text-left text-xs transition-colors"
+                      >
+                        <div className="font-semibold text-slate-100">{s.name}</div>
+                        <div className="text-[10px] text-slate-400">ADM: {s.admissionNumber} | Class: {s.className || 'N/A'}</div>
+                      </div>
+                    ))
+                  ) : (
+                    <div className="px-4 py-3 text-center text-slate-500 text-xs">No matching students found</div>
+                  )}
+                </div>
+              )}
             </div>
 
             <div className="space-y-1">
@@ -4925,9 +5225,64 @@ export const SportsManagement: React.FC = () => {
             </div>
             
             <form onSubmit={handleIssueFine} className="space-y-4 text-xs">
-              <div className="space-y-1">
-                <label className="text-slate-400">Student ID</label>
-                <input type="text" value={fineForm.studentId} onChange={(e) => setFineForm(prev => ({ ...prev, studentId: e.target.value }))} required className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl" placeholder="Student UUID" />
+              <div className="space-y-1 relative">
+                <label className="block text-slate-400 font-semibold">Select Student</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Search student by name, admission no, or class..."
+                    value={fineStudentSearch}
+                    onChange={(e) => {
+                      setFineStudentSearch(e.target.value);
+                      setShowFineStudentDropdown(true);
+                    }}
+                    onFocus={() => setShowFineStudentDropdown(true)}
+                    onBlur={() => setTimeout(() => setShowFineStudentDropdown(false), 250)}
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none text-xs"
+                  />
+                  {fineStudentSearch && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setFineForm(prev => ({ ...prev, studentId: '' }));
+                        setFineStudentSearch('');
+                      }}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 text-xs"
+                    >
+                      Clear
+                    </button>
+                  )}
+                </div>
+                {showFineStudentDropdown && (
+                  <div className="absolute z-50 w-full mt-1 max-h-48 overflow-y-auto bg-slate-950 border border-slate-800 rounded-xl shadow-2xl divide-y divide-slate-900">
+                    {allStudents.filter(s => 
+                      s.name.toLowerCase().includes(fineStudentSearch.toLowerCase()) || 
+                      s.admissionNumber.toLowerCase().includes(fineStudentSearch.toLowerCase()) ||
+                      (s.className || '').toLowerCase().includes(fineStudentSearch.toLowerCase())
+                    ).length > 0 ? (
+                      allStudents.filter(s => 
+                        s.name.toLowerCase().includes(fineStudentSearch.toLowerCase()) || 
+                        s.admissionNumber.toLowerCase().includes(fineStudentSearch.toLowerCase()) ||
+                        (s.className || '').toLowerCase().includes(fineStudentSearch.toLowerCase())
+                      ).map(s => (
+                        <div
+                          key={s.id}
+                          onMouseDown={() => {
+                            setFineForm(prev => ({ ...prev, studentId: s.id }));
+                            setFineStudentSearch(`${s.name} (${s.admissionNumber}) - Class ${s.className || 'N/A'}`);
+                            setShowFineStudentDropdown(false);
+                          }}
+                          className="px-4 py-2 hover:bg-brand-600/20 cursor-pointer text-left text-xs transition-colors"
+                        >
+                          <div className="font-semibold text-slate-100">{s.name}</div>
+                          <div className="text-[10px] text-slate-400">ADM: {s.admissionNumber} | Class: {s.className || 'N/A'}</div>
+                        </div>
+                      ))
+                    ) : (
+                      <div className="px-4 py-3 text-center text-slate-500 text-xs">No matching students found</div>
+                    )}
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
@@ -4991,6 +5346,108 @@ export const SportsManagement: React.FC = () => {
                 <textarea value={expenseForm.description} onChange={(e) => setExpenseForm(prev => ({ ...prev, description: e.target.value }))} rows={2} className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl" placeholder="Items quantities, specifications..." />
               </div>
               <button type="submit" className="w-full py-3 bg-brand-600 text-white font-bold rounded-xl">Submit Request</button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showCreateSalaryRequest && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Create Payroll Request</h3>
+              <button onClick={() => setShowCreateSalaryRequest(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+            
+            <form onSubmit={handleCreateSalaryRequest} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="text-slate-400">Select Employee</label>
+                <select 
+                  value={newSalaryRequest.employeeId} 
+                  onChange={(e) => {
+                    const empId = e.target.value;
+                    const emp = [
+                      ...coaches.map(c => ({ id: c.userId, type: 'COACH' as const, salary: c.salary })),
+                      ...sportsAdmins.map(a => ({ id: a.userId, type: 'ADMIN' as const, salary: 25000 }))
+                    ].find(x => x.id === empId);
+
+                    setNewSalaryRequest(prev => ({ 
+                      ...prev, 
+                      employeeId: empId,
+                      employeeType: emp ? emp.type : 'COACH',
+                      grossSalary: emp ? emp.salary : 0
+                    }));
+                  }} 
+                  required 
+                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl focus:outline-none"
+                >
+                  <option value="">-- Choose Coach / Admin --</option>
+                  <optgroup label="Coaches">
+                    {coaches.map(c => (
+                      <option key={c.id} value={c.userId}>{c.coachName} (Coach - ₹{c.salary})</option>
+                    ))}
+                  </optgroup>
+                  <optgroup label="Sports Admins">
+                    {sportsAdmins.map(a => (
+                      <option key={a.id} value={a.userId}>{a.fullName} (Admin)</option>
+                    ))}
+                  </optgroup>
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-slate-400">Salary Month</label>
+                  <input 
+                    type="month" 
+                    value={newSalaryRequest.salaryMonth} 
+                    onChange={(e) => setNewSalaryRequest(prev => ({ ...prev, salaryMonth: e.target.value }))} 
+                    required 
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl focus:outline-none" 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-400">Gross Salary (₹)</label>
+                  <input 
+                    type="number" 
+                    value={newSalaryRequest.grossSalary || ''} 
+                    onChange={(e) => setNewSalaryRequest(prev => ({ ...prev, grossSalary: Number(e.target.value) }))} 
+                    required 
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl focus:outline-none" 
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-slate-400">Bonus / Allowances (₹)</label>
+                  <input 
+                    type="number" 
+                    value={newSalaryRequest.bonus || ''} 
+                    onChange={(e) => setNewSalaryRequest(prev => ({ ...prev, bonus: Number(e.target.value) }))} 
+                    placeholder="0"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl focus:outline-none" 
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-400">Deductions (₹)</label>
+                  <input 
+                    type="number" 
+                    value={newSalaryRequest.deductions || ''} 
+                    onChange={(e) => setNewSalaryRequest(prev => ({ ...prev, deductions: Number(e.target.value) }))} 
+                    placeholder="0"
+                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl focus:outline-none" 
+                  />
+                </div>
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={submittingSalaryRequest}
+                className="w-full py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl disabled:bg-slate-800 disabled:text-slate-500 transition-all"
+              >
+                {submittingSalaryRequest ? 'Submitting Payroll Request...' : 'Submit Payroll Request'}
+              </button>
             </form>
           </div>
         </div>

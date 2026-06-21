@@ -18504,9 +18504,9 @@ export const mockApi = {
       schoolId: r.school_id,
       studentId: r.student_id,
       invoiceNumber: r.invoice_number,
-      invoiceTitle: r.invoice_title,
-      invoiceDescription: r.invoice_description,
-      invoiceCategory: r.invoice_category,
+      invoiceTitle: r.title,
+      invoiceDescription: r.description,
+      invoiceCategory: r.category,
       amount: Number(r.amount),
       dueDate: r.due_date,
       lateFee: r.late_fee ? Number(r.late_fee) : 0,
@@ -18534,9 +18534,9 @@ export const mockApi = {
         school_id: invoice.schoolId,
         student_id: invoice.studentId,
         invoice_number: invoiceNumber,
-        invoice_title: invoice.invoiceTitle,
-        invoice_description: invoice.invoiceDescription || '',
-        invoice_category: invoice.invoiceCategory,
+        title: invoice.invoiceTitle,
+        description: invoice.invoiceDescription || '',
+        category: invoice.invoiceCategory,
         amount: invoice.amount,
         due_date: invoice.dueDate,
         late_fee: invoice.lateFee || 0,
@@ -18592,9 +18592,9 @@ export const mockApi = {
     const { data, error } = await supabaseAdmin
       .from('sports_invoices')
       .update({
-        invoice_title: updates.invoiceTitle,
-        invoice_description: updates.invoiceDescription,
-        invoice_category: updates.invoiceCategory,
+        title: updates.invoiceTitle,
+        description: updates.invoiceDescription,
+        category: updates.invoiceCategory,
         amount: updates.amount,
         due_date: updates.dueDate,
         late_fee: updates.lateFee,
@@ -18690,7 +18690,7 @@ export const mockApi = {
       schoolId: r.school_id,
       invoiceId: r.invoice_id,
       studentId: r.student_id,
-      parentId: r.parent_id,
+      parentId: r.submitted_by,
       amountPaid: Number(r.amount),
       utrNumber: r.utr_number,
       paymentScreenshotUrl: r.proof_image_url,
@@ -18698,14 +18698,10 @@ export const mockApi = {
       submittedAt: r.submitted_at,
       approvedBy: r.approved_by,
       approvedAt: r.approved_at,
-      rejectedBy: r.rejected_by,
-      rejectedAt: r.rejected_at,
-      remarks: r.remarks,
-      rejectionReason: r.rejection_reason,
       studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
-      feeType: r.sports_invoices?.invoice_category || 'Sports Invoice',
+      feeType: r.sports_invoices?.category || 'Sports Invoice',
       feeAmount: r.sports_invoices?.amount ? Number(r.sports_invoices.amount) : 0,
-      invoiceTitle: r.sports_invoices?.invoice_title || 'Invoice Title'
+      invoiceTitle: r.sports_invoices?.title || 'Invoice Title'
     }));
   },
 
@@ -18728,7 +18724,7 @@ export const mockApi = {
         school_id: schoolId,
         invoice_id: invoiceId,
         student_id: studentId,
-        parent_id: parentId,
+        submitted_by: parentId,
         amount: payment.amountPaid,
         utr_number: payment.utrNumber,
         proof_image_url: payment.paymentScreenshotUrl,
@@ -18786,18 +18782,12 @@ export const mockApi = {
     if (!currentPayment) throw new Error('Payment not found');
 
     const updateFields: any = {
-      status,
-      updated_at: new Date().toISOString()
+      status
     };
 
     if (status === 'APPROVED') {
       updateFields.approved_by = userId;
       updateFields.approved_at = new Date().toISOString();
-      updateFields.remarks = remarksOrReason || 'Payment Approved';
-    } else {
-      updateFields.rejected_by = userId;
-      updateFields.rejected_at = new Date().toISOString();
-      updateFields.rejection_reason = remarksOrReason || 'Payment Rejected';
     }
 
     const { data, error } = await supabaseAdmin
@@ -19611,7 +19601,7 @@ export const mockApi = {
         .from('sports_budget_history')
         .insert({
           school_id: user.school_id,
-          budget_id: data.id,
+          category: budget.category,
           old_amount: oldAmount,
           new_amount: newAmount,
           updated_by: userId
@@ -19626,7 +19616,7 @@ export const mockApi = {
     validateSchoolId(schoolId, 'fetchExpenses');
     const { data, error } = await supabaseAdmin
       .from('sports_expense_requests')
-      .select('*, requester:users!requester_id(first_name, last_name)')
+      .select('*, requester:users!requested_by(first_name, last_name)')
       .eq('school_id', schoolId)
       .order('created_at', { ascending: false });
     if (error) throw error;
@@ -19636,14 +19626,14 @@ export const mockApi = {
       academicSessionId: academicSessionId,
       category: 'EQUIPMENT_PURCHASE',
       title: r.item_name,
-      description: '',
+      description: r.reason,
       amountRequested: Number(r.amount),
       amountApproved: r.status === 'APPROVED' ? Number(r.amount) : null,
-      requestedBy: r.requester_id,
+      requestedBy: r.requested_by,
       approvedBy: null,
       status: r.status,
-      vendor: r.vendor_name,
-      invoiceNumber: r.invoice_number,
+      vendor: r.vendor,
+      invoiceNumber: r.invoice_id,
       paymentStatus: r.payment_status,
       referenceId: null,
       createdAt: r.created_at,
@@ -19662,10 +19652,11 @@ export const mockApi = {
       .insert({
         school_id: user.school_id,
         item_name: expense.title,
-        vendor_name: expense.vendor || null,
-        invoice_number: expense.invoiceNumber || null,
+        vendor: expense.vendor,
+        invoice_id: expense.invoiceNumber || null,
         amount: Number(expense.amountRequested),
-        requester_id: userId,
+        requested_by: userId,
+        reason: expense.description || 'No reason provided',
         status: 'PENDING',
         payment_status: 'PENDING'
       })
@@ -19685,7 +19676,8 @@ export const mockApi = {
     const { data, error } = await supabaseAdmin
       .from('sports_expense_requests')
       .update({
-        status: approveData.status
+        status: approveData.status,
+        approved_at: approveData.status === 'APPROVED' ? new Date().toISOString() : null
       })
       .eq('id', expenseId)
       .select()
@@ -19749,152 +19741,110 @@ export const mockApi = {
     return data;
   },
 
-  async fetchSalaryRecords(schoolId: string, academicSessionId: string): Promise<any[]> {
-    validateSchoolId(schoolId, 'fetchSalaryRecords');
+  async generateMonthlyPayroll(userId: string, academicSessionId: string, month: string): Promise<void> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
+
+    // Fetch all active coaches for the school
+    const { data: coaches, error: coachesErr } = await supabaseAdmin
+      .from('sports_coaches')
+      .select('*')
+      .eq('school_id', user.school_id)
+      .eq('status', 'ACTIVE');
+    
+    if (coachesErr) throw coachesErr;
+    if (!coaches || coaches.length === 0) {
+      throw new Error('No active coaches found in this school.');
+    }
+
+    // For each coach, check if request already exists for that month
+    for (const coach of coaches) {
+      const { data: existing } = await supabaseAdmin
+        .from('sports_salary_requests')
+        .select('id')
+        .eq('school_id', user.school_id)
+        .eq('employee_id', coach.user_id)
+        .eq('salary_month', month)
+        .maybeSingle();
+
+      if (!existing) {
+        // Create request
+        await supabaseAdmin
+          .from('sports_salary_requests')
+          .insert({
+            school_id: user.school_id,
+            employee_id: coach.user_id,
+            employee_type: 'COACH',
+            salary_month: month,
+            gross_salary: Number(coach.salary || 0),
+            bonus: 0,
+            deductions: 0,
+            net_salary: Number(coach.salary || 0),
+            status: 'PENDING',
+            requested_by: userId
+          });
+      }
+    }
+
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'GENERATE_PAYROLL', `Generated monthly payroll for: ${month}`, undefined, undefined, { month });
+  },
+
+  async fetchSalaryRequests(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSalaryRequests');
     const { data, error } = await supabaseAdmin
-      .from('sports_salary_records')
-      .select('*, users(first_name, last_name)')
+      .from('sports_salary_requests')
+      .select('*, employee:users!employee_id(first_name, last_name), requester:users!requested_by(first_name, last_name)')
       .eq('school_id', schoolId)
-      .eq('academic_session_id', academicSessionId)
-      .order('month', { ascending: false });
+      .order('salary_month', { ascending: false });
     if (error) throw error;
     return (data || []).map(r => ({
       id: r.id,
       schoolId: r.school_id,
-      academicSessionId: r.academic_session_id,
-      userId: r.user_id,
-      employeeRole: r.employee_role,
-      amount: Number(r.amount),
+      employeeId: r.employee_id,
+      employeeType: r.employee_type,
+      salaryMonth: r.salary_month,
+      grossSalary: Number(r.gross_salary),
       bonus: Number(r.bonus),
       deductions: Number(r.deductions),
-      month: r.month,
+      netSalary: Number(r.net_salary),
       status: r.status,
+      requestedBy: r.requested_by,
       approvedBy: r.approved_by,
-      paymentDate: r.payment_date,
+      requestedAt: r.requested_at,
+      approvedAt: r.approved_at,
       transactionId: r.transaction_id,
-      createdAt: r.created_at,
-      updatedAt: r.updated_at,
-      employeeName: r.users ? `${r.users.first_name} ${r.users.last_name}` : 'Unknown Employee'
+      paymentDate: r.payment_date,
+      employeeName: r.employee ? `${r.employee.first_name} ${r.employee.last_name}` : 'Unknown Employee',
+      requestedByName: r.requester ? `${r.requester.first_name} ${r.requester.last_name}` : 'System'
     }));
   },
 
-  async generateMonthlyPayroll(userId: string, academicSessionId: string, month: string): Promise<void> {
+  async createSalaryRequest(userId: string, request: any): Promise<any> {
     const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
-    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
-    const schoolId = user.school_id;
-
-    const { data: coaches } = await supabaseAdmin
-      .from('sports_coaches')
-      .select('id, user_id, salary')
-      .eq('school_id', schoolId)
-      .eq('status', 'ACTIVE');
-    
-    const { data: admins } = await supabaseAdmin
-      .from('sports_admins')
-      .select('user_id')
-      .eq('school_id', schoolId)
-      .eq('status', 'ACTIVE');
-
-    const salaryRecords = [];
-
-    if (coaches) {
-      for (const coach of coaches) {
-        // Fetch attendance for this coach in this month (month is YYYY-MM)
-        const startDate = `${month}-01`;
-        const endDate = `${month}-31`;
-        const { data: attRecords } = await supabaseAdmin
-          .from('sports_coach_attendance')
-          .select('*')
-          .eq('school_id', schoolId)
-          .eq('coach_id', coach.id)
-          .gte('attendance_date', startDate)
-          .lte('attendance_date', endDate);
-
-        let absentCount = 0;
-        let halfDayCount = 0;
-        let lateCount = 0;
-        let presentCount = 0;
-        let totalExpectedDays = attRecords ? attRecords.length : 0;
-        let overtimeHours = 0;
-
-        if (attRecords) {
-          attRecords.forEach((att: any) => {
-            if (att.status === 'ABSENT') absentCount++;
-            else if (att.status === 'HALF_DAY') halfDayCount++;
-            else if (att.status === 'LATE') {
-              lateCount++;
-              presentCount++;
-            } else if (['PRESENT', 'TRAINING_DUTY', 'TOURNAMENT_DUTY'].includes(att.status)) {
-              presentCount++;
-            } else if (att.status === 'LEAVE' || att.status === 'MEDICAL_LEAVE') {
-              // Paid leave, but count as expected days
-            }
-
-            const hours = Number(att.working_hours || 0);
-            if (hours > 8) {
-              overtimeHours += (hours - 8);
-            }
-          });
-        }
-
-        const baseSalary = Number(coach.salary || 0);
-        // Deduction = pro-rated day salary per absent day, half day pro-rated per half day, plus ₹100 per late arrival
-        const deductions = Math.round((absentCount * (baseSalary / 30)) + (halfDayCount * (baseSalary / 60)) + (lateCount * 100));
-        
-        // Overtime = ₹250 per hour
-        const overtimePay = Math.round(overtimeHours * 250);
-
-        // Attendance % = present / total. If total is 0, defaults to 100
-        const attendancePct = totalExpectedDays > 0 ? (presentCount / totalExpectedDays) * 100 : 100;
-        const bonus = attendancePct >= 95 && totalExpectedDays > 0 ? 2000.00 : 0.00;
-
-        salaryRecords.push({
-          school_id: schoolId,
-          academic_session_id: academicSessionId,
-          user_id: coach.user_id,
-          employee_role: 'COACH',
-          amount: baseSalary + overtimePay,
-          bonus: bonus,
-          deductions: deductions,
-          month,
-          status: 'GENERATED'
-        });
-      }
+    if (!user || !['SPORTS_ADMIN', 'FINANCE_ADMIN', 'ADMIN', 'SUPER_ADMIN'].includes(user.role)) {
+      throw new Error('Unauthorized');
     }
+    const netSalary = Number(request.grossSalary) + Number(request.bonus || 0) - Number(request.deductions || 0);
 
-    if (admins) {
-      for (const adm of admins) {
-        salaryRecords.push({
-          school_id: schoolId,
-          academic_session_id: academicSessionId,
-          user_id: adm.user_id,
-          employee_role: 'SPORTS_ADMIN',
-          amount: 25000.00,
-          bonus: 0.00,
-          deductions: 0.00,
-          month,
-          status: 'GENERATED'
-        });
-      }
-    }
+    const { data, error } = await supabaseAdmin
+      .from('sports_salary_requests')
+      .insert({
+        school_id: user.school_id,
+        employee_id: request.employeeId,
+        employee_type: request.employeeType,
+        salary_month: request.salaryMonth,
+        gross_salary: Number(request.grossSalary),
+        bonus: Number(request.bonus || 0),
+        deductions: Number(request.deductions || 0),
+        net_salary: netSalary,
+        status: 'PENDING',
+        requested_by: userId
+      })
+      .select()
+      .single();
 
-    for (const rec of salaryRecords) {
-      const { data: existing } = await supabaseAdmin
-        .from('sports_salary_records')
-        .select('id')
-        .eq('school_id', schoolId)
-        .eq('user_id', rec.user_id)
-        .eq('month', month)
-        .maybeSingle();
-      
-      if (!existing) {
-        await supabaseAdmin.from('sports_salary_records').insert(rec);
-      } else {
-        await supabaseAdmin.from('sports_salary_records').update(rec).eq('id', existing.id);
-      }
-    }
-
-    await this.logSportsActivity(schoolId, userId, 'FINANCE_ADMIN', 'GENERATE_PAYROLL', `Generated payroll for month ${month}`, undefined, undefined, { month });
+    if (error) throw error;
+    return data;
   },
 
   async approveSalaryRecord(userId: string, salaryId: string): Promise<any> {
@@ -19902,11 +19852,11 @@ export const mockApi = {
     if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
 
     const { data, error } = await supabaseAdmin
-      .from('sports_salary_records')
+      .from('sports_salary_requests')
       .update({
         status: 'APPROVED',
         approved_by: userId,
-        updated_at: new Date().toISOString()
+        approved_at: new Date().toISOString()
       })
       .eq('id', salaryId)
       .select()
@@ -19914,33 +19864,51 @@ export const mockApi = {
     
     if (error) throw error;
 
-    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'APPROVE_SALARY', `Approved salary payout for employee`, undefined, undefined, { salaryId });
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'APPROVE_SALARY', `Approved salary payout request`, undefined, undefined, { salaryId });
     return data;
   },
 
-  async paySalaryRecord(userId: string, salaryId: string, payData: { bonus?: number; deductions?: number; transactionId?: string }): Promise<any> {
+  async rejectSalaryRecord(userId: string, salaryId: string): Promise<any> {
+    const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
+    if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
+
+    const { data, error } = await supabaseAdmin
+      .from('sports_salary_requests')
+      .update({
+        status: 'REJECTED',
+        approved_by: userId,
+        approved_at: new Date().toISOString()
+      })
+      .eq('id', salaryId)
+      .select()
+      .single();
+    
+    if (error) throw error;
+
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'REJECT_SALARY', `Rejected salary payout request`, undefined, undefined, { salaryId });
+    return data;
+  },
+
+  async paySalaryRecord(userId: string, salaryId: string, payData: { transactionId?: string }): Promise<any> {
     const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
     if (!user || user.role !== 'FINANCE_ADMIN') throw new Error('Unauthorized');
 
     const { data: existingRecord } = await supabaseAdmin
-      .from('sports_salary_records')
-      .select('amount, academic_session_id')
+      .from('sports_salary_requests')
+      .select('net_salary')
       .eq('id', salaryId)
       .single();
     
-    if (!existingRecord) throw new Error('Salary record not found');
+    if (!existingRecord) throw new Error('Salary request not found');
 
-    const finalAmount = Number(existingRecord.amount) + Number(payData.bonus || 0) - Number(payData.deductions || 0);
+    const finalAmount = Number(existingRecord.net_salary);
 
     const { data, error } = await supabaseAdmin
-      .from('sports_salary_records')
+      .from('sports_salary_requests')
       .update({
         status: 'PAID',
-        bonus: Number(payData.bonus || 0),
-        deductions: Number(payData.deductions || 0),
         transaction_id: payData.transactionId || `TXN-SAL-${Math.floor(Math.random() * 900000 + 100000)}`,
-        payment_date: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+        payment_date: new Date().toISOString()
       })
       .eq('id', salaryId)
       .select()
@@ -19948,34 +19916,39 @@ export const mockApi = {
     
     if (error) throw error;
 
-    await supabaseAdmin.from('sports_finance_transactions').insert({
-      school_id: user.school_id,
-      academic_session_id: existingRecord.academic_session_id,
-      type: 'EXPENSE',
-      category: 'SALARY_PAYOUT',
-      amount: finalAmount,
-      reference_id: salaryId,
-      status: 'APPROVED',
-      remarks: `Salary payout processed for ${data.employee_role}`
-    });
+    try {
+      await supabaseAdmin.from('sports_finance_transactions').insert({
+        school_id: user.school_id,
+        academic_session_id: null,
+        type: 'EXPENSE',
+        category: 'SALARY_PAYOUT',
+        amount: finalAmount,
+        reference_id: salaryId,
+        status: 'APPROVED',
+        remarks: `Salary payout processed for employee`
+      });
+    } catch (e) {
+      console.warn("Failed to write to sports_finance_transactions:", e);
+    }
 
-    const { data: budget } = await supabaseAdmin
-      .from('sports_budget_allocations')
-      .select('spent_amount')
-      .eq('school_id', user.school_id)
-      .eq('academic_session_id', existingRecord.academic_session_id)
-      .eq('category', 'SALARY')
-      .maybeSingle();
-    
-    if (budget) {
-      await supabaseAdmin
+    try {
+      const { data: budget } = await supabaseAdmin
         .from('sports_budget_allocations')
-        .update({
-          spent_amount: Number(budget.spent_amount) + finalAmount
-        })
+        .select('id, spent_amount')
         .eq('school_id', user.school_id)
-        .eq('academic_session_id', existingRecord.academic_session_id)
-        .eq('category', 'SALARY');
+        .eq('category', 'SALARY')
+        .maybeSingle();
+      
+      if (budget) {
+        await supabaseAdmin
+          .from('sports_budget_allocations')
+          .update({
+            spent_amount: Number(budget.spent_amount) + finalAmount
+          })
+          .eq('id', budget.id);
+      }
+    } catch (e) {
+      console.warn("Failed to update budget allocations for salary payout:", e);
     }
 
     await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', 'PAY_SALARY', `Completed payment of ₹${finalAmount} for salary`, undefined, undefined, { salaryId });
@@ -20053,7 +20026,7 @@ export const mockApi = {
         student_id: fine.student_id,
         amount: Number(fine.amount),
         reason: fine.reason,
-        utr_number: payData.utrNumber,
+        utr_reference: payData.utrNumber,
         proof_image_url: payData.screenshotUrl || null,
         status: 'PENDING'
       })
@@ -20081,7 +20054,8 @@ export const mockApi = {
     const { data: payment, error } = await supabaseAdmin
       .from('sports_fine_payments')
       .update({
-        status: status
+        status: status,
+        approved_at: status === 'APPROVED' ? new Date().toISOString() : null
       })
       .eq('id', paymentId)
       .select()
@@ -20132,11 +20106,11 @@ export const mockApi = {
           remarks: `Fine payment approved: ${payment.reason}`
         });
       } catch (e) {
-        console.warn("Failed to write fine to sports_finance_transactions:", e);
+        console.warn("Failed to write to sports_finance_transactions:", e);
       }
     }
 
-    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', status === 'APPROVED' ? 'APPROVE_FINE_PAYMENT' : 'REJECT_FINE_PAYMENT', `${status === 'APPROVED' ? 'Approved' : 'Rejected'} fine payment`, undefined, undefined, { paymentId });
+    await this.logSportsActivity(user.school_id, userId, 'FINANCE_ADMIN', status === 'APPROVED' ? 'APPROVE_FINE' : 'REJECT_FINE', `${status === 'APPROVED' ? 'Approved' : 'Rejected'} fine payment of ₹${payment.amount}`, undefined, undefined, { paymentId });
     return payment;
   },
 
@@ -20144,7 +20118,7 @@ export const mockApi = {
     validateSchoolId(schoolId, 'fetchBudgetHistory');
     const { data, error } = await supabaseAdmin
       .from('sports_budget_history')
-      .select('*, updater:users!updated_by(first_name, last_name), budget:sports_budget_allocations(category)')
+      .select('*, updater:users!updated_by(first_name, last_name)')
       .eq('school_id', schoolId)
       .order('updated_at', { ascending: false })
       .limit(50);
@@ -20152,12 +20126,11 @@ export const mockApi = {
     return (data || []).map(r => ({
       id: r.id,
       schoolId: r.school_id,
-      budgetId: r.budget_id,
       oldAmount: Number(r.old_amount),
       newAmount: Number(r.new_amount),
       updatedBy: r.updated_by,
       updatedAt: r.updated_at,
-      category: r.budget?.category || 'General',
+      category: r.category || 'General',
       updatedByName: r.updater ? `${r.updater.first_name} ${r.updater.last_name}` : 'Unknown Admin'
     }));
   },
