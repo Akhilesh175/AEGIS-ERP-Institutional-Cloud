@@ -6,7 +6,7 @@ import {
   Mic, MicOff, Video, VideoOff, Monitor, MonitorOff, 
   Hand, MessageSquare, Users, PhoneOff, Send, Download, 
   Check, X, AlertCircle, Circle, UserCheck, ShieldAlert,
-  Paperclip, Plus, FileText, Trash, Volume2, VolumeX, Eye
+  Paperclip, Plus, FileText, Trash, RefreshCw, Volume2, Eye
 } from 'lucide-react';
 
 interface AegisMeetProps {
@@ -32,20 +32,18 @@ interface ChatMessage {
   senderRole: string;
   messageText: string;
   createdAt: string;
-  fileUrl?: string;
-  fileName?: string;
-  fileType?: string;
+  attachment?: AttachmentMetadata;
 }
 
-interface FileMetadata {
+interface AttachmentMetadata {
   id: string;
   fileName: string;
   fileType: string;
   fileSize: number;
-  fileUrl: string;
+  publicUrl: string;
   senderId: string;
   senderName: string;
-  uploadedAt: string;
+  createdAt: string;
 }
 
 interface FollowupTask {
@@ -56,6 +54,35 @@ interface FollowupTask {
   priority: 'LOW' | 'MEDIUM' | 'HIGH';
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED';
 }
+
+// Sub-component for managing individual remote video attachments to bypass DOM unmount lifecycle races
+interface RemoteVideoProps {
+  stream: MediaStream | null;
+  videoEnabled: boolean;
+  participantId: string;
+}
+
+const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, participantId }) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+
+  useEffect(() => {
+    if (videoRef.current && stream) {
+      videoRef.current.srcObject = stream;
+    }
+  }, [stream]);
+
+  return (
+    <video
+      ref={videoRef}
+      id={`video-${participantId}`}
+      autoPlay
+      playsInline
+      className={`w-full h-full object-cover transition-opacity duration-300 ${
+        videoEnabled && stream ? 'opacity-100 block' : 'opacity-0 hidden'
+      }`}
+    />
+  );
+};
 
 export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const { session } = useStore();
@@ -71,34 +98,43 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const [screenStream, setScreenStream] = useState<MediaStream | null>(null);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
-  const [sharedFiles, setSharedFiles] = useState<FileMetadata[]>([]);
+  const [sharedAttachments, setSharedAttachments] = useState<AttachmentMetadata[]>([]);
   const [newMessage, setNewMessage] = useState('');
   
-  // UI Panels
+  // UI drawers
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isParticipantsOpen, setIsParticipantsOpen] = useState(false);
   const [isNotesOpen, setIsNotesOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<'CHAT' | 'FILES'>('CHAT');
+  const [drawerTab, setDrawerTab] = useState<'CHAT' | 'FILES'>('CHAT');
 
-  // Preview modals
-  const [previewFile, setPreviewFile] = useState<FileMetadata | null>(null);
+  // Preview document state
+  const [previewAttachment, setPreviewAttachment] = useState<AttachmentMetadata | null>(null);
 
-  // Meeting states
+  // Connection overlay banners states
+  const [deviceError, setDeviceError] = useState<string | null>(null);
+  const [connectionStatus, setConnectionStatus] = useState<string | null>(null);
+
+  // File Upload states (Issue #1)
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+  const [failedFile, setFailedFile] = useState<File | null>(null);
+  const [isUploading, setIsUploading] = useState(false);
+
+  // Meeting toggles
   const [micEnabled, setMicEnabled] = useState(true);
   const [videoEnabled, setVideoEnabled] = useState(true);
   const [screenSharing, setScreenSharing] = useState(false);
   const [handRaised, setHandRaised] = useState(false);
 
-  // Participant screen share host permission setting
-  const [hostAllowsScreenShare, setHostAllowsScreenShare] = useState(true);
+  // Screen share settings
+  const [allowParticipantScreenShare, setAllowParticipantScreenShare] = useState(true);
   
-  // Waiting room states
+  // Waiting Room states
   const [inWaitingRoom, setInWaitingRoom] = useState(currentUserRole !== 'TEACHER' && currentUserRole !== 'ADMIN');
   const [waitingUsers, setWaitingUsers] = useState<any[]>([]);
   const [admitted, setAdmitted] = useState(currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN');
   const [waitingStatus, setWaitingStatus] = useState<'PENDING' | 'REJECTED' | 'APPROVED'>('PENDING');
 
-  // Notes & Tasks states (Phase 10 & 11)
+  // Notes & Tasks (Phase 10 & 11)
   const [strengths, setStrengths] = useState('');
   const [weaknesses, setWeaknesses] = useState('');
   const [recommendations, setRecommendations] = useState('');
@@ -110,35 +146,41 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
   const [newTaskPriority, setNewTaskPriority] = useState<'LOW' | 'MEDIUM' | 'HIGH'>('MEDIUM');
 
-  // Recording states
+  // Recording
   const [isRecording, setIsRecording] = useState(false);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+
+  // WebRTC streams map
+  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
 
   // Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
   const channelRef = useRef<any>(null);
-  const attendanceRecordIdRef = useRef<string | null>(null);
-  const joinTimeRef = useRef<string>(new Date().toISOString());
+  const participantSessionIdRef = useRef<string | null>(null);
 
-  // Check table presence fallback indicator
-  const [dbTablesAvailable, setDbTablesAvailable] = useState(true);
-
-  // 1. Initial Load: Meeting details and check waiting room status
+  // Bound local stream to ref when it changes
   useEffect(() => {
-    const initMeeting = async () => {
+    if (localVideoRef.current && localStream) {
+      localVideoRef.current.srcObject = localStream;
+    }
+  }, [localStream, videoEnabled]);
+
+  // 1. Fetch meeting configuration & check waitlist
+  useEffect(() => {
+    const loadMeetingDetails = async () => {
       try {
         if (!schoolId) return;
 
-        // Fetch meeting details
+        // Load PTM detail
         const meetings = await mockApi.fetchPTMMeetings(schoolId);
         const found = meetings.find(m => m.id === meetingId);
         if (found) {
           setMeeting(found);
         }
 
-        // Fetch existing notes/feedback
+        // Load historical notes
         const feedback = await mockApi.fetchPTMFeedback(meetingId);
         if (feedback) {
           setStrengths(feedback.strengths || '');
@@ -148,7 +190,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           setActionPlan(feedback.actionPlan || '');
         }
 
-        // Fetch existing follow-up tasks
+        // Load tasks
         const followups = await mockApi.fetchPTMFollowups(meetingId);
         if (followups) {
           setTasks(followups.map((f: any) => ({
@@ -161,50 +203,85 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           })));
         }
 
-        // Fetch existing chat messages
-        const chats = await supabase
-          .from('meeting_chat_messages')
+        // Load persisted text messages (ptm_messages table)
+        const msgs = await supabase
+          .from('ptm_messages')
           .select('*')
           .eq('meeting_id', meetingId)
           .order('created_at', { ascending: true });
         
-        if (chats.data) {
-          setChatMessages(chats.data.map((c: any) => ({
+        if (msgs.data) {
+          setChatMessages(msgs.data.map((c: any) => ({
             id: c.id,
             senderId: c.sender_id,
-            senderName: c.sender_name,
+            senderName: 'Participant', // Fallback, loaded dynamically below
             senderRole: c.sender_role,
             messageText: c.message,
             createdAt: c.created_at
           })));
+
+          // Backfill sender names
+          const senderIds = Array.from(new Set(msgs.data.map(m => m.sender_id)));
+          if (senderIds.length > 0) {
+            const { data: usersList } = await supabase
+              .from('users')
+              .select('id, first_name, last_name')
+              .in('id', senderIds);
+            
+            if (usersList) {
+              const nameMap = new Map(usersList.map(u => [u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim()]));
+              setChatMessages(prev => prev.map(m => ({
+                ...m,
+                senderName: nameMap.get(m.senderId) || m.senderName
+              })));
+            }
+          }
         }
 
-        // Fetch existing uploaded files
+        // Load persisted chat attachments (ptm_chat_attachments table)
         const filesRes = await supabase
-          .from('meeting_files')
+          .from('ptm_chat_attachments')
           .select('*')
           .eq('meeting_id', meetingId)
-          .order('uploaded_at', { ascending: true });
+          .order('created_at', { ascending: true });
 
         if (filesRes.data) {
-          setSharedFiles(filesRes.data.map((f: any) => ({
+          setSharedAttachments(filesRes.data.map((f: any) => ({
             id: f.id,
             fileName: f.file_name,
             fileType: f.file_type,
             fileSize: f.file_size,
-            fileUrl: f.file_url,
+            publicUrl: f.public_url,
             senderId: f.sender_id,
-            senderName: 'Participant', // Fallback
-            uploadedAt: f.uploaded_at
+            senderName: 'Participant',
+            createdAt: f.created_at
           })));
+
+          // Backfill attachment sender names
+          const senderIds = Array.from(new Set(filesRes.data.map(f => f.sender_id)));
+          if (senderIds.length > 0) {
+            const { data: usersList } = await supabase
+              .from('users')
+              .select('id, first_name, last_name')
+              .in('id', senderIds);
+            
+            if (usersList) {
+              const nameMap = new Map(usersList.map(u => [u.id, `${u.first_name || ''} ${u.last_name || ''}`.trim()]));
+              setSharedAttachments(prev => prev.map(f => ({
+                ...f,
+                senderName: nameMap.get(f.senderId) || f.senderName
+              })));
+            }
+          }
         }
 
-        // Host logic versus Participant logic
+        // Host versus Participant Admission
         if (currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN') {
           setInWaitingRoom(false);
           setAdmitted(true);
           setWaitingStatus('APPROVED');
-          // Load waiting users
+          
+          // Fetch existing waiting users
           const wr = await supabase
             .from('meeting_waiting_room')
             .select(`
@@ -229,10 +306,11 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             })));
           }
 
-          // Record teacher attendance
-          recordJoinAttendance();
+          // Register teacher session & attendance
+          registerParticipantSession();
+          updateAttendanceRecord(true);
         } else {
-          // Participant check waiting room status
+          // Participant waiting room check
           const wrCheck = await supabase
             .from('meeting_waiting_room')
             .select('*')
@@ -247,14 +325,15 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             if (wrCheck.data.status === 'APPROVED') {
               setInWaitingRoom(false);
               setAdmitted(true);
-              recordJoinAttendance();
+              registerParticipantSession();
+              updateAttendanceRecord(true);
             } else if (wrCheck.data.status === 'REJECTED') {
               setInWaitingRoom(true);
               setAdmitted(false);
             }
           } else {
-            // Create pending wait request
-            const { data: newWr } = await supabase
+            // Write new pending wait request
+            await supabase
               .from('meeting_waiting_room')
               .insert({
                 school_id: schoolId,
@@ -262,9 +341,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                 participant_id: currentUserId,
                 participant_role: currentUserRole,
                 status: 'PENDING'
-              })
-              .select()
-              .single();
+              });
             
             setWaitingStatus('PENDING');
             setInWaitingRoom(true);
@@ -272,65 +349,96 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           }
         }
       } catch (e: any) {
-        console.error('Failed to initialize meeting database state:', e);
-        // Fallback for missing tables
-        setDbTablesAvailable(false);
-        setInWaitingRoom(false);
-        setAdmitted(true);
+        console.error('PTM meeting initialization failed:', e);
       }
     };
 
-    initMeeting();
+    loadMeetingDetails();
   }, [meetingId, schoolId, currentUserId, currentUserRole]);
 
-  // 2. Attendance log creation
-  const recordJoinAttendance = async () => {
+  // 2. Database participants registration & attendance log persistence
+  const registerParticipantSession = async () => {
     try {
-      joinTimeRef.current = new Date().toISOString();
-      const { data, error } = await supabase
-        .from('meeting_attendance')
+      const { data } = await supabase
+        .from('ptm_participants')
         .insert({
           school_id: schoolId,
           meeting_id: meetingId,
-          participant_id: currentUserId,
+          user_id: currentUserId,
           role: currentUserRole,
-          join_time: joinTimeRef.current
+          joined_at: new Date().toISOString()
         })
         .select()
         .single();
       
       if (data) {
-        attendanceRecordIdRef.current = data.id;
+        participantSessionIdRef.current = data.id;
       }
     } catch (e) {
-      console.warn('Unable to write to meeting_attendance:', e);
+      console.warn('ptm_participants registration failed:', e);
     }
   };
 
-  const recordLeaveAttendance = async () => {
-    if (attendanceRecordIdRef.current) {
+  const deregisterParticipantSession = async () => {
+    if (participantSessionIdRef.current) {
       try {
-        const leaveTime = new Date();
-        const joinTime = new Date(joinTimeRef.current);
-        const duration = Math.round((leaveTime.getTime() - joinTime.getTime()) / 1000);
-
         await supabase
-          .from('meeting_attendance')
-          .update({
-            leave_time: leaveTime.toISOString(),
-            meeting_duration: duration
-          })
-          .eq('id', attendanceRecordIdRef.current);
+          .from('ptm_participants')
+          .update({ left_at: new Date().toISOString() })
+          .eq('id', participantSessionIdRef.current);
       } catch (e) {
-        console.warn('Failed to update meeting_attendance:', e);
+        console.warn('ptm_participants deregistration failed:', e);
       }
     }
   };
 
-  // 3. Media device activation
+  const updateAttendanceRecord = async (isJoin: boolean) => {
+    try {
+      // Fetch or auto-create unique attendance record
+      let record: any = null;
+      const { data } = await supabase
+        .from('ptm_attendance')
+        .select('*')
+        .eq('meeting_id', meetingId)
+        .maybeSingle();
+      
+      if (data) {
+        record = data;
+      } else {
+        const { data: newRecord } = await supabase
+          .from('ptm_attendance')
+          .insert({ meeting_id: meetingId })
+          .select()
+          .single();
+        record = newRecord;
+      }
+
+      if (record) {
+        const updatePayload: any = { attendance_status: 'PRESENT' };
+        const timeField = isJoin ? '_join_time' : '_leave_time';
+        
+        if (currentUserRole === 'TEACHER') {
+          updatePayload[`teacher${timeField}`] = new Date().toISOString();
+        } else if (currentUserRole === 'PARENT') {
+          updatePayload[`parent${timeField}`] = new Date().toISOString();
+        } else if (currentUserRole === 'STUDENT') {
+          updatePayload[`student${timeField}`] = new Date().toISOString();
+        }
+
+        await supabase
+          .from('ptm_attendance')
+          .update(updatePayload)
+          .eq('id', record.id);
+      }
+    } catch (e) {
+      console.warn('Failed to update ptm_attendance status:', e);
+    }
+  };
+
+  // 3. getUserMedia Call & Tracks setup
   useEffect(() => {
     let activeStream: MediaStream | null = null;
-    const startMedia = async () => {
+    const startCallCapture = async () => {
       try {
         const stream = await navigator.mediaDevices.getUserMedia({
           video: true,
@@ -338,16 +446,21 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         });
         setLocalStream(stream);
         activeStream = stream;
-        if (localVideoRef.current) {
-          localVideoRef.current.srcObject = stream;
+        setDeviceError(null);
+      } catch (err: any) {
+        console.warn('Media capture error:', err);
+        if (err.name === 'NotFoundError' || err.message?.includes('devices')) {
+          setDeviceError('Camera Not Found');
+        } else if (err.name === 'NotAllowedError' || err.message?.includes('Permission')) {
+          setDeviceError('Permission Denied');
+        } else {
+          setDeviceError('Microphone Not Found');
         }
-      } catch (err) {
-        console.warn('Camera or Mic device not found/permitted, continuing as visual fallback:', err);
       }
     };
 
     if (admitted) {
-      startMedia();
+      startCallCapture();
     }
 
     return () => {
@@ -357,19 +470,19 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     };
   }, [admitted]);
 
-  // 4. Real-time Subscriptions and Channels
+  // 4. Real-time signaling & Subscriptions
   useEffect(() => {
     if (!meetingId) return;
 
-    // A. Broadcast Signaling Channel
-    const channelName = `aegis-meet-broadcast-${meetingId}`;
-    const broadcastChannel = supabase.channel(channelName, {
+    // A. Broadcast signaling channel (WebRTC handshake)
+    const channelName = `aegis-meet-signaling-${meetingId}`;
+    const signalingChannel = supabase.channel(channelName, {
       config: { broadcast: { self: false } }
     });
 
-    channelRef.current = broadcastChannel;
+    channelRef.current = signalingChannel;
 
-    broadcastChannel
+    signalingChannel
       .on('broadcast', { event: 'webrtc-offer' }, async ({ payload }) => {
         if (payload.targetId === currentUserId) {
           await handleOffer(payload.senderId, payload.offer);
@@ -410,7 +523,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       .on('broadcast', { event: 'state-update' }, ({ payload }) => {
         setParticipants(prev => {
           if (!prev.some(p => p.id === payload.id)) {
-            // New participant discover
+            // Connect to newly discovered peer
             initiatePeerConnection(payload.id, true);
             return [...prev, {
               id: payload.id,
@@ -430,16 +543,10 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           });
         });
       })
-      .on('broadcast', { event: 'raise-hand-notification' }, ({ payload }) => {
-        if (currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN') {
-          // Display hand raise visual popup
-          console.log(`${payload.senderName} raised hand`);
-        }
-      })
-      .on('broadcast', { event: 'chat-settings' }, ({ payload }) => {
-        if (payload.hostAllowsScreenShare !== undefined) {
-          setHostAllowsScreenShare(payload.hostAllowsScreenShare);
-          if (!payload.hostAllowsScreenShare && screenSharing) {
+      .on('broadcast', { event: 'chat-permissions' }, ({ payload }) => {
+        if (payload.allowParticipantScreenShare !== undefined) {
+          setAllowParticipantScreenShare(payload.allowParticipantScreenShare);
+          if (!payload.allowParticipantScreenShare && screenSharing && currentUserRole === 'PARENT') {
             stopScreenSharingLocally();
           }
         }
@@ -458,8 +565,9 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             screenSharing: payload.screenSharing
           }];
         });
-        // Reply with local state
-        broadcastChannel.send({
+        
+        // Broadcast local state back
+        signalingChannel.send({
           type: 'broadcast',
           event: 'state-update',
           payload: {
@@ -479,11 +587,16 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           delete peerConnections.current[payload.id];
         }
         setParticipants(prev => prev.filter(p => p.id !== payload.id));
+        setRemoteStreams(prev => {
+          const next = { ...prev };
+          delete next[payload.id];
+          return next;
+        });
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED' && admitted) {
-          // Announce presence
-          broadcastChannel.send({
+          // Announce local join
+          signalingChannel.send({
             type: 'broadcast',
             event: 'join-announcement',
             payload: {
@@ -535,15 +648,16 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               }
             }
           } else {
-            // Participant listening to status updates
+            // Participant status sync
             if (payload.eventType === 'UPDATE' && payload.new.participant_id === currentUserId) {
               setWaitingStatus(payload.new.status);
               if (payload.new.status === 'APPROVED') {
                 setInWaitingRoom(false);
                 setAdmitted(true);
-                recordJoinAttendance();
-                // Announce presence to peers
-                broadcastChannel.send({
+                registerParticipantSession();
+                updateAttendanceRecord(true);
+                // Broadcast presence to peer list
+                signalingChannel.send({
                   type: 'broadcast',
                   event: 'join-announcement',
                   payload: {
@@ -566,7 +680,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       )
       .subscribe();
 
-    // C. Chat realtime subscription
+    // C. Chat Realtime Sync (ptm_messages table)
     const chatSub = supabase
       .channel(`chat-changes-${meetingId}`)
       .on(
@@ -574,36 +688,61 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'meeting_chat_messages',
+          table: 'ptm_messages',
           filter: `meeting_id=eq.${meetingId}`
         },
         async (payload) => {
-          if (payload.new.sender_id === currentUserId) return; // ignore own broadcast as we display it instantly
+          if (payload.new.sender_id === currentUserId) return;
           
           const { data: sender } = await supabase
             .from('users')
-            .select('first_name, last_name, role')
+            .select('first_name, last_name')
             .eq('id', payload.new.sender_id)
             .single();
 
           const name = sender ? `${sender.first_name || ''} ${sender.last_name || ''}`.trim() : 'Participant';
           
+          // Re-load to check if it has attachments
+          const { data: attach } = await supabase
+            .from('ptm_chat_attachments')
+            .select('*')
+            .eq('meeting_id', meetingId)
+            .eq('sender_id', payload.new.sender_id)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .maybeSingle();
+
+          let msgAttachment: AttachmentMetadata | undefined;
+          if (attach && payload.new.message.includes(attach.file_name)) {
+            msgAttachment = {
+              id: attach.id,
+              fileName: attach.file_name,
+              fileType: attach.file_type,
+              fileSize: attach.file_size,
+              publicUrl: attach.public_url,
+              senderId: attach.sender_id,
+              senderName: name,
+              createdAt: attach.created_at
+            };
+          }
+
           setChatMessages(prev => {
             if (prev.some(m => m.id === payload.new.id)) return prev;
             return [...prev, {
               id: payload.new.id,
               senderId: payload.new.sender_id,
               senderName: name,
-              senderRole: payload.new.sender_role || sender?.role || 'GUEST',
+              senderRole: payload.new.sender_role,
               messageText: payload.new.message,
-              createdAt: payload.new.created_at
+              createdAt: payload.new.created_at,
+              attachment: msgAttachment
             }];
           });
         }
       )
       .subscribe();
 
-    // D. Files realtime subscription
+    // D. Attachments Realtime Sync (ptm_chat_attachments table)
     const filesSub = supabase
       .channel(`files-changes-${meetingId}`)
       .on(
@@ -611,7 +750,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         {
           event: 'INSERT',
           schema: 'public',
-          table: 'meeting_files',
+          table: 'ptm_chat_attachments',
           filter: `meeting_id=eq.${meetingId}`
         },
         async (payload) => {
@@ -622,24 +761,24 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             .single();
           
           const name = sender ? `${sender.first_name || ''} ${sender.last_name || ''}`.trim() : 'Participant';
-          setSharedFiles(prev => {
+          setSharedAttachments(prev => {
             if (prev.some(f => f.id === payload.new.id)) return prev;
             return [...prev, {
               id: payload.new.id,
               fileName: payload.new.file_name,
               fileType: payload.new.file_type,
               fileSize: payload.new.file_size,
-              fileUrl: payload.new.file_url,
+              publicUrl: payload.new.public_url,
               senderId: payload.new.sender_id,
               senderName: name,
-              uploadedAt: payload.new.uploaded_at
+              createdAt: payload.new.created_at
             }];
           });
         }
       )
       .subscribe();
 
-    // E. Notes & follow-ups feedback subscription
+    // E. Feedback & tasks Realtime Sync
     const feedbackSub = supabase
       .channel(`feedback-changes-${meetingId}`)
       .on(
@@ -707,29 +846,26 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       .subscribe();
 
     return () => {
-      // Leave announcement
       if (admitted) {
-        broadcastChannel.send({
+        signalingChannel.send({
           type: 'broadcast',
           event: 'leave-announcement',
           payload: { id: currentUserId }
         });
       }
-      // Unsubscribe all
-      broadcastChannel.unsubscribe();
+      signalingChannel.unsubscribe();
       waitingRoomSub.unsubscribe();
       chatSub.unsubscribe();
       filesSub.unsubscribe();
       feedbackSub.unsubscribe();
       followupsSub.unsubscribe();
 
-      // Close all peer connections
       Object.values(peerConnections.current).forEach(pc => pc.close());
       peerConnections.current = {};
     };
   }, [meetingId, admitted, micEnabled, videoEnabled, handRaised, screenSharing]);
 
-  // 5. State broadcaster
+  // 5. Broadcaster state payload
   const broadcastState = (updates: Partial<Participant>) => {
     if (channelRef.current) {
       channelRef.current.send({
@@ -740,7 +876,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     }
   };
 
-  // 6. WebRTC Core Negotiation
+  // 6. WebRTC RTC Connections
   const initiatePeerConnection = async (peerId: string, isInitiator: boolean) => {
     const pc = new RTCPeerConnection({
       iceServers: [
@@ -772,9 +908,19 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     };
 
     pc.ontrack = (event) => {
-      const remoteVideo = document.getElementById(`video-${peerId}`) as HTMLVideoElement;
-      if (remoteVideo && event.streams[0]) {
-        remoteVideo.srcObject = event.streams[0];
+      if (event.streams[0]) {
+        setRemoteStreams(prev => ({
+          ...prev,
+          [peerId]: event.streams[0]
+        }));
+      }
+    };
+
+    pc.onconnectionstatechange = () => {
+      if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
+        setConnectionStatus('Reconnecting...');
+      } else if (pc.connectionState === 'connected') {
+        setConnectionStatus(null);
       }
     };
 
@@ -792,7 +938,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           }
         });
       } catch (err) {
-        console.error('Failed to create RTC offer:', err);
+        console.error('Failed to create offer:', err);
       }
     }
   };
@@ -823,7 +969,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     }
   };
 
-  // 7. Call Controls
+  // 7. Video and audio devices triggers
   const toggleMic = () => {
     const nextState = !micEnabled;
     setMicEnabled(nextState);
@@ -843,7 +989,11 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   };
 
   const toggleScreenShare = async () => {
-    if (!hostAllowsScreenShare && currentUserRole !== 'TEACHER' && currentUserRole !== 'ADMIN') {
+    if (currentUserRole === 'STUDENT') {
+      alert('Screen sharing is not permitted for students.');
+      return;
+    }
+    if (currentUserRole === 'PARENT' && !allowParticipantScreenShare) {
       alert('Screen sharing has been disabled by the host.');
       return;
     }
@@ -906,17 +1056,9 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     const nextState = !handRaised;
     setHandRaised(nextState);
     broadcastState({ handRaised: nextState });
-
-    if (nextState && channelRef.current) {
-      channelRef.current.send({
-        type: 'broadcast',
-        event: 'raise-hand-notification',
-        payload: { senderId: currentUserId, senderName: currentUserName }
-      });
-    }
   };
 
-  // 8. Host Waiting Room approval methods
+  // 8. Host waitlist admissions
   const admitWaitingUser = async (userId: string, waitingRoomId: string) => {
     try {
       await supabase
@@ -951,8 +1093,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     }
   };
 
-  // 9. Host Participant control panel methods
-  const muteUser = (userId: string) => {
+  // 9. Host Participant list options
+  const muteParticipantUser = (userId: string) => {
     if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
@@ -962,7 +1104,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     }
   };
 
-  const removeUser = (userId: string) => {
+  const removeParticipantUser = (userId: string) => {
     if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
@@ -973,27 +1115,27 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     setParticipants(prev => prev.filter(p => p.id !== userId));
   };
 
-  const toggleHostScreenShareSetting = () => {
-    const nextState = !hostAllowsScreenShare;
-    setHostAllowsScreenShare(nextState);
+  const toggleHostScreenSharePermission = () => {
+    const nextState = !allowParticipantScreenShare;
+    setAllowParticipantScreenShare(nextState);
     if (channelRef.current) {
       channelRef.current.send({
         type: 'broadcast',
-        event: 'chat-settings',
-        payload: { hostAllowsScreenShare: nextState }
+        event: 'chat-permissions',
+        payload: { allowParticipantScreenShare: nextState }
       });
     }
   };
 
-  // 10. Chat messaging & File attachments upload
-  const sendChat = async () => {
+  // 10. Chat Message and File attachments uploading workflows (Issue #1)
+  const sendChatMessageText = async () => {
     if (!newMessage.trim()) return;
     const msgText = newMessage;
     setNewMessage('');
 
     try {
       const { data: insertedMsg } = await supabase
-        .from('meeting_chat_messages')
+        .from('ptm_messages')
         .insert({
           school_id: schoolId,
           meeting_id: meetingId,
@@ -1016,49 +1158,101 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         }
       ]);
     } catch (e) {
-      console.error('Failed to send chat message:', e);
+      console.error('Failed to save message:', e);
     }
   };
 
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
+  // Validation lists for files upload
+  const ALLOWED_EXTENSIONS = ['pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx', 'txt', 'csv', 'png', 'jpg', 'jpeg', 'webp', 'zip'];
+  const MAX_FILE_SIZE = 50 * 1024 * 1024; // 50 MB
+
+  const uploadFileToSupabase = async (file: File) => {
+    // A. Validate file type extension
+    const ext = file.name.split('.').pop()?.toLowerCase() || '';
+    if (!ALLOWED_EXTENSIONS.includes(ext)) {
+      alert('Unsupported File Type');
+      return;
+    }
+
+    // B. Validate size limit
+    if (file.size > MAX_FILE_SIZE) {
+      alert('File Too Large');
+      return;
+    }
+
+    setIsUploading(true);
+    setUploadProgress(10);
+    setFailedFile(null);
 
     try {
-      // Ensure storage bucket is active
-      await supabase.storage.createBucket('meeting-files', { public: true }).catch(() => {});
-      
-      const fileExt = file.name.split('.').pop();
-      const filePath = `${schoolId}/${meetingId}/files/${Date.now()}_${file.name}`;
+      // C. Ensure storage bucket is created
+      const { error: bucketErr } = await supabase.storage.createBucket('ptm-chat-files', { public: true });
+      if (bucketErr && !bucketErr.message.includes('already exists')) {
+        // Check permission policy error
+        if (bucketErr.message.includes('row-level security') || bucketErr.message.includes('Permission')) {
+          alert('Permission Denied');
+        } else {
+          alert('Bucket Missing');
+        }
+        setIsUploading(false);
+        setFailedFile(file);
+        return;
+      }
+
+      setUploadProgress(35);
+      const filePath = `${schoolId}/${meetingId}/attachments/${Date.now()}_${file.name}`;
       
       const { error: uploadErr } = await supabase.storage
-        .from('meeting-files')
+        .from('ptm-chat-files')
         .upload(filePath, file);
 
-      if (uploadErr) throw uploadErr;
+      if (uploadErr) {
+        if (uploadErr.message.includes('Row-level security') || uploadErr.message.includes('Permission')) {
+          alert('Permission Denied');
+        } else if (uploadErr.message.includes('Network') || uploadErr.message.includes('fetch')) {
+          alert('Network Error');
+        } else {
+          alert('Bucket Missing');
+        }
+        setIsUploading(false);
+        setFailedFile(file);
+        return;
+      }
 
+      setUploadProgress(70);
       const { data: urlData } = supabase.storage
-        .from('meeting-files')
+        .from('ptm-chat-files')
         .getPublicUrl(filePath);
 
-      // Save file metadata
-      const { data: fileRecord } = await supabase
-        .from('meeting_files')
+      // D. Save attachment row metadata
+      const { data: fileRecord, error: fileErr } = await supabase
+        .from('ptm_chat_attachments')
         .insert({
           school_id: schoolId,
           meeting_id: meetingId,
           sender_id: currentUserId,
+          sender_role: currentUserRole,
           file_name: file.name,
-          file_type: file.type,
           file_size: file.size,
-          file_url: urlData.publicUrl
+          file_type: file.type,
+          storage_path: filePath,
+          public_url: urlData.publicUrl
         })
         .select()
         .single();
 
-      // Auto-post link in chat message
+      if (fileErr) {
+        alert('Permission Denied');
+        setIsUploading(false);
+        setFailedFile(file);
+        return;
+      }
+
+      setUploadProgress(90);
+
+      // E. Persist message text linking attachment
       await supabase
-        .from('meeting_chat_messages')
+        .from('ptm_messages')
         .insert({
           school_id: schoolId,
           meeting_id: meetingId,
@@ -1067,19 +1261,18 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           message: `Shared file: ${file.name}`
         });
 
-      setSharedFiles(prev => [
-        ...prev,
-        {
-          id: fileRecord?.id || Math.random().toString(),
-          fileName: file.name,
-          fileType: file.type,
-          fileSize: file.size,
-          fileUrl: urlData.publicUrl,
-          senderId: currentUserId,
-          senderName: currentUserName,
-          uploadedAt: new Date().toISOString()
-        }
-      ]);
+      const newAttachment: AttachmentMetadata = {
+        id: fileRecord.id,
+        fileName: file.name,
+        fileType: file.type,
+        fileSize: file.size,
+        publicUrl: urlData.publicUrl,
+        senderId: currentUserId,
+        senderName: currentUserName,
+        createdAt: fileRecord.created_at
+      };
+
+      setSharedAttachments(prev => [...prev, newAttachment]);
 
       setChatMessages(prev => [
         ...prev,
@@ -1090,19 +1283,33 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           senderRole: currentUserRole,
           messageText: `Shared file: ${file.name}`,
           createdAt: new Date().toISOString(),
-          fileUrl: urlData.publicUrl,
-          fileName: file.name,
-          fileType: file.type
+          attachment: newAttachment
         }
       ]);
+
+      setUploadProgress(100);
+      setTimeout(() => {
+        setIsUploading(false);
+        setUploadProgress(null);
+      }, 500);
+
     } catch (err: any) {
       console.error(err);
-      alert(`File upload failed: ${err.message || err}`);
+      alert('Network Error');
+      setIsUploading(false);
+      setFailedFile(file);
     }
   };
 
-  // 11. Notes & Tasks log handlers
-  const handleSaveNotes = async () => {
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      uploadFileToSupabase(file);
+    }
+  };
+
+  // 11. Notes & tasks log save triggers
+  const handleSaveAcademicNotes = async () => {
     try {
       await mockApi.submitPTMFeedback(meetingId, {
         meetingId,
@@ -1119,7 +1326,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     }
   };
 
-  const handleAddTask = async (e: React.FormEvent) => {
+  const handleAddTaskAction = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newTaskText.trim() || !newTaskDueDate) return;
 
@@ -1154,7 +1361,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     }
   };
 
-  const handleDeleteTask = async (taskId: string) => {
+  const handleDeleteTaskAction = async (taskId: string) => {
     try {
       await mockApi.deletePTMFollowup(taskId);
       setTasks(prev => prev.filter(t => t.id !== taskId));
@@ -1163,8 +1370,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     }
   };
 
-  // 12. Recording controllers
-  const toggleRecording = () => {
+  // 12. Local recording
+  const handleToggleRecording = () => {
     if (isRecording) {
       if (mediaRecorderRef.current) {
         mediaRecorderRef.current.stop();
@@ -1195,7 +1402,6 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       recorder.onstop = async () => {
         const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
         
-        // Auto-save recording metadata & upload
         try {
           const filePath = `${schoolId}/${meetingId}/recordings/${Date.now()}_PTM_Recording.webm`;
           await supabase.storage.createBucket('meeting-files', { public: true }).catch(() => {});
@@ -1210,7 +1416,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               .getPublicUrl(filePath);
 
             await supabase
-              .from('meeting_recordings')
+              .from('ptm_recordings')
               .insert({
                 school_id: schoolId,
                 meeting_id: meetingId,
@@ -1222,7 +1428,6 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           console.warn('Unable to persist recording in storage:', notifErr);
         }
 
-        // Local downloader fallback
         const url = URL.createObjectURL(blob);
         const a = document.createElement('a');
         a.style.display = 'none';
@@ -1242,9 +1447,10 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     }
   };
 
-  // 13. Exit Call
+  // 13. Leave call
   const handleLeaveCall = async () => {
-    await recordLeaveAttendance();
+    await updateAttendanceRecord(false);
+    await deregisterParticipantSession();
     if (onLeave) {
       onLeave();
     } else {
@@ -1255,11 +1461,11 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   return (
     <div className="fixed inset-0 z-50 bg-[#070b13] text-white flex flex-col font-sans select-none overflow-hidden">
       
-      {/* Background visual blur glows */}
+      {/* Background glow filters */}
       <div className="absolute top-[-10%] left-[-10%] w-[40%] h-[40%] rounded-full bg-brand-500/5 blur-[120px] pointer-events-none" />
       <div className="absolute bottom-[-10%] right-[-10%] w-[40%] h-[40%] rounded-full bg-blue-600/5 blur-[120px] pointer-events-none" />
 
-      {/* Header bar */}
+      {/* Header element */}
       <header className="h-16 border-b border-slate-800 bg-[#0b101d]/90 flex items-center justify-between px-6 backdrop-blur-md z-10">
         <div className="flex items-center gap-3">
           <div className="w-3.5 h-3.5 rounded-full bg-emerald-500 flex items-center justify-center relative shadow-lg shadow-emerald-500/25">
@@ -1267,7 +1473,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           </div>
           <div>
             <h1 className="font-extrabold text-sm tracking-wider uppercase text-white flex items-center gap-2">
-              AEGIS Meet <span className="text-[10px] bg-slate-800 text-slate-400 font-bold px-2 py-0.5 rounded border border-slate-700">PTM Mode</span>
+              AEGIS Meet <span className="text-[10px] bg-slate-800 text-slate-400 font-bold px-2 py-0.5 rounded border border-slate-700">PTM MODE</span>
             </h1>
             <p className="text-[10px] text-slate-400 font-semibold tracking-wider mt-0.5 uppercase">
               {meeting?.title || 'Online parent teacher meeting room'}
@@ -1276,6 +1482,13 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         </div>
 
         <div className="flex items-center gap-4">
+          {/* Connection Error Banner Overlay */}
+          {connectionStatus && (
+            <div className="flex items-center gap-2 px-3 py-1 bg-yellow-600/10 border border-yellow-500/30 rounded-full text-xs text-yellow-400 font-bold animate-pulse">
+              <span>{connectionStatus}</span>
+            </div>
+          )}
+
           {isRecording && (
             <div className="flex items-center gap-2 px-3 py-1 bg-red-600/10 border border-red-500/30 rounded-full text-xs text-red-400 font-bold animate-pulse shadow-md">
               <Circle className="fill-red-500" size={8} />
@@ -1290,10 +1503,11 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         </div>
       </header>
 
-      {/* Main Body view */}
-      <div className="flex-1 flex relative overflow-hidden">
+      {/* Main Content Area */}
+      <div className="flex-1 flex relative overflow-hidden bg-[#090e1a]">
+        
         {inWaitingRoom ? (
-          /* WAITING ROOM SCREEN */
+          /* WAITING SCREEN */
           <div className="flex-1 flex flex-col items-center justify-center p-8 bg-[#090e1a]/95">
             {waitingStatus === 'REJECTED' ? (
               <div className="max-w-md w-full p-8 border border-red-500/20 bg-[#0e1220] rounded-2xl shadow-2xl text-center space-y-5 animate-fade-in">
@@ -1303,7 +1517,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                 <div className="space-y-2">
                   <h3 className="text-lg font-extrabold text-slate-100 uppercase tracking-wide">Access Denied</h3>
                   <p className="text-xs text-slate-400 leading-relaxed font-semibold">
-                    Host denied meeting access. If this was an error, please coordinate with your class teacher or support admin.
+                    Host denied meeting access. If this was an error, please coordinate with your class teacher.
                   </p>
                 </div>
                 <div className="flex justify-center pt-2">
@@ -1311,7 +1525,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                     onClick={onLeave}
                     className="px-5 py-2.5 bg-red-650 hover:bg-red-700 text-white font-bold rounded-xl text-xs uppercase tracking-wider transition-all"
                   >
-                    Exit Portal
+                    Exit Call
                   </button>
                 </div>
               </div>
@@ -1356,7 +1570,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                 <div className="flex gap-2">
                   <button
                     onClick={() => admitWaitingUser(waitingUsers[0].id, waitingUsers[0].waitingRoomId)}
-                    className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wide rounded-lg transition-all"
+                    className="px-3.5 py-1.5 bg-emerald-650 hover:bg-emerald-700 text-white font-extrabold text-[10px] uppercase tracking-wide rounded-lg transition-all"
                   >
                     Admit
                   </button>
@@ -1370,29 +1584,36 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               </div>
             )}
 
-            {/* Video Streams Canvas Grid */}
+            {/* Video Canvas Grid */}
             <div className="flex-1 p-6 grid grid-cols-1 md:grid-cols-2 gap-4 items-center justify-center content-center bg-[#090e1a]">
               
-              {/* Local Client View Box */}
-              <div className="relative aspect-video max-w-xl mx-auto w-full bg-[#111827] rounded-2xl overflow-hidden border border-slate-800 shadow-xl group transition-all">
-                {videoEnabled && localStream ? (
-                  <video 
-                    ref={localVideoRef} 
-                    autoPlay 
-                    playsInline 
-                    muted 
-                    className="w-full h-full object-cover transform scale-x-[-1]"
-                  />
-                ) : (
+              {/* Local Video Box */}
+              <div className="relative aspect-video max-w-xl mx-auto w-full bg-[#111827] rounded-2xl overflow-hidden border border-slate-800 shadow-xl group">
+                <video 
+                  ref={localVideoRef} 
+                  autoPlay 
+                  playsInline 
+                  muted 
+                  className={`w-full h-full object-cover transform scale-x-[-1] transition-opacity duration-300 ${
+                    videoEnabled && localStream ? 'opacity-100 block' : 'opacity-0 hidden'
+                  }`}
+                />
+                
+                {(!videoEnabled || !localStream) && (
                   <div className="w-full h-full flex flex-col items-center justify-center bg-[#131b2e] relative">
-                    <div className="w-20 h-20 rounded-full bg-[#1e294b] flex items-center justify-center text-slate-300 font-extrabold text-2xl shadow-lg border border-slate-700 uppercase">
+                    <div className="w-20 h-20 rounded-full bg-[#1e294b] flex items-center justify-center text-slate-350 font-extrabold text-2xl border border-slate-700 uppercase">
                       {currentUserName.substring(0, 2)}
                     </div>
-                    <span className="text-[10px] uppercase tracking-widest text-slate-500 mt-3 font-extrabold">Camera Disabled</span>
+                    {deviceError ? (
+                      <span className="text-[10px] uppercase tracking-widest text-red-400 mt-3 font-extrabold flex items-center gap-1">
+                        <AlertCircle size={12} /> {deviceError}
+                      </span>
+                    ) : (
+                      <span className="text-[10px] uppercase tracking-widest text-slate-500 mt-3 font-extrabold">Camera Off</span>
+                    )}
                   </div>
                 )}
                 
-                {/* Labels overlay */}
                 <div className="absolute bottom-3 left-3 bg-[#0a0f1d]/85 px-3 py-1.5 rounded-xl border border-slate-800/80 flex items-center gap-2 backdrop-blur shadow text-[10px] font-bold">
                   <span>{currentUserName} (You)</span>
                   {handRaised && <Hand size={12} className="text-yellow-400 animate-bounce" />}
@@ -1400,22 +1621,21 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                 </div>
               </div>
 
-              {/* Dynamic Remote Streams View Boxes */}
+              {/* Remote Participant Streams */}
               {participants.map(p => (
                 <div key={p.id} className="relative aspect-video max-w-xl mx-auto w-full bg-[#111827] rounded-2xl overflow-hidden border border-slate-800 shadow-xl group">
-                  {p.videoEnabled ? (
-                    <video 
-                      id={`video-${p.id}`}
-                      autoPlay 
-                      playsInline 
-                      className="w-full h-full object-cover"
-                    />
-                  ) : (
+                  <RemoteVideo 
+                    stream={remoteStreams[p.id] || null} 
+                    videoEnabled={p.videoEnabled} 
+                    participantId={p.id} 
+                  />
+
+                  {(!p.videoEnabled || !remoteStreams[p.id]) && (
                     <div className="w-full h-full flex flex-col items-center justify-center bg-[#131b2e]">
-                      <div className="w-20 h-20 rounded-full bg-[#1e294b] flex items-center justify-center text-brand-400 font-extrabold text-2xl shadow-lg border border-slate-700 uppercase">
+                      <div className="w-20 h-20 rounded-full bg-[#1e294b] flex items-center justify-center text-brand-400 font-extrabold text-2xl border border-slate-700 uppercase">
                         {p.name.substring(0, 2)}
                       </div>
-                      <span className="text-[10px] uppercase tracking-widest text-slate-500 mt-3 font-extrabold">No video stream</span>
+                      <span className="text-[10px] uppercase tracking-widest text-slate-500 mt-3 font-extrabold">Camera Off</span>
                     </div>
                   )}
 
@@ -1425,20 +1645,20 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                     {!p.micEnabled && <MicOff size={10} className="text-red-400" />}
                   </div>
 
-                  {/* Host specific control overlay */}
+                  {/* Host specific overlay options */}
                   {(currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN') && (
-                    <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1.5">
+                    <div className="absolute top-3 right-3 opacity-0 group-hover:opacity-100 transition-opacity flex gap-1.5 z-10">
                       {p.micEnabled && (
                         <button 
-                          onClick={() => muteUser(p.id)}
-                          className="px-2 py-1 bg-red-600 hover:bg-red-700 text-white rounded text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md"
+                          onClick={() => muteParticipantUser(p.id)}
+                          className="px-2 py-1 bg-red-650 hover:bg-red-700 text-white rounded text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md border border-red-500/10"
                         >
                           <MicOff size={10} /> Mute
                         </button>
                       )}
                       <button 
-                        onClick={() => removeUser(p.id)}
-                        className="px-2 py-1 bg-red-750 hover:bg-red-800 text-white rounded text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md"
+                        onClick={() => removeParticipantUser(p.id)}
+                        className="px-2 py-1 bg-red-750 hover:bg-red-800 text-white rounded text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 shadow-md border border-red-500/10"
                       >
                         <Trash size={10} /> Kick
                       </button>
@@ -1450,38 +1670,38 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               {/* Waiting states fallback */}
               {participants.length === 0 && (
                 <div className="aspect-video max-w-xl mx-auto w-full bg-[#111827]/20 rounded-2xl border border-dashed border-slate-800 flex flex-col items-center justify-center p-6 text-slate-500">
-                  <AlertCircle size={22} className="mb-2 text-slate-650" />
+                  <AlertCircle size={22} className="mb-2 text-slate-605 animate-pulse" />
                   <p className="text-[10px] font-extrabold uppercase tracking-widest text-slate-400">Waiting for other participants</p>
-                  <p className="text-[9px] text-slate-600 mt-1 max-w-xs text-center leading-relaxed">
-                    Once parents, teachers or students enter, their audio/video channels will load here.
+                  <p className="text-[9px] text-slate-600 mt-1 max-w-xs text-center leading-relaxed font-semibold">
+                    Once parents, teachers or students confirm entry, their audio/video channels will load here.
                   </p>
                 </div>
               )}
 
             </div>
 
-            {/* SLIDE PANELS */}
+            {/* SIDE SLIDE DRAWER DETAILS */}
 
-            {/* Panel A: Chat & File Sharing */}
+            {/* Chat & File Sharing Drawer */}
             {isChatOpen && (
-              <div className="w-80 border-l border-slate-800 bg-[#0b101d] flex flex-col z-10">
+              <div className="w-85 border-l border-slate-800 bg-[#0b101d] flex flex-col z-10">
                 <div className="h-12 border-b border-slate-800 flex items-center justify-between px-4">
                   <div className="flex gap-2">
                     <button 
-                      onClick={() => setActiveTab('CHAT')}
+                      onClick={() => setDrawerTab('CHAT')}
                       className={`text-[10px] font-extrabold uppercase tracking-wider pb-1 transition-all ${
-                        activeTab === 'CHAT' ? 'border-b-2 border-brand-500 text-brand-400 font-black' : 'text-slate-400 hover:text-slate-200'
+                        drawerTab === 'CHAT' ? 'border-b-2 border-brand-500 text-brand-400 font-black' : 'text-slate-400 hover:text-slate-200'
                       }`}
                     >
                       Chat
                     </button>
                     <button 
-                      onClick={() => setActiveTab('FILES')}
+                      onClick={() => setDrawerTab('FILES')}
                       className={`text-[10px] font-extrabold uppercase tracking-wider pb-1 transition-all ${
-                        activeTab === 'FILES' ? 'border-b-2 border-brand-500 text-brand-400' : 'text-slate-400 hover:text-slate-200'
+                        drawerTab === 'FILES' ? 'border-b-2 border-brand-500 text-brand-400' : 'text-slate-400 hover:text-slate-200'
                       }`}
                     >
-                      Files ({sharedFiles.length})
+                      Files ({sharedAttachments.length})
                     </button>
                   </div>
                   <button onClick={() => setIsChatOpen(false)} className="text-slate-400 hover:text-slate-200">
@@ -1489,7 +1709,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                   </button>
                 </div>
 
-                {activeTab === 'CHAT' ? (
+                {drawerTab === 'CHAT' ? (
                   /* Chat Messages feed */
                   <div className="flex-1 flex flex-col min-h-0 bg-[#090e1a]">
                     <div className="flex-1 p-4 overflow-y-auto space-y-3.5">
@@ -1501,12 +1721,46 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                             </span>
                             <span>{new Date(msg.createdAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
                           </div>
+                          
+                          {/* Chat bubble body */}
                           <div className={`p-2.5 rounded-xl border text-xs leading-relaxed break-words font-medium ${
                             msg.senderId === currentUserId 
                               ? 'bg-brand-600/10 border-brand-500/25 text-slate-100' 
                               : 'bg-slate-900 border-slate-800 text-slate-250'
                           }`}>
                             {msg.messageText}
+
+                            {/* Render Inline attachment previews inside chat bubbles if present */}
+                            {msg.attachment && (
+                              <div className="mt-2.5 pt-2 border-t border-slate-800/80 space-y-2">
+                                <div className="flex items-start gap-2 bg-slate-950/40 p-2 rounded-lg border border-slate-800/60">
+                                  <FileText size={14} className="text-brand-400 mt-0.5" />
+                                  <div className="min-w-0 flex-1">
+                                    <div className="text-[10px] font-bold text-slate-200 truncate">{msg.attachment.fileName}</div>
+                                    <div className="text-[8px] text-slate-500 font-bold uppercase mt-0.5">
+                                      {Math.round(msg.attachment.fileSize / 1024)} KB
+                                    </div>
+                                  </div>
+                                </div>
+                                <div className="flex gap-1 justify-end">
+                                  <button 
+                                    onClick={() => setPreviewAttachment(msg.attachment!)}
+                                    className="px-2 py-0.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[8px] font-bold uppercase tracking-wider flex items-center gap-0.5"
+                                  >
+                                    <Eye size={8} /> Preview
+                                  </button>
+                                  <a 
+                                    href={msg.attachment.publicUrl} 
+                                    download={msg.attachment.fileName}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    className="px-2 py-0.5 bg-emerald-650/20 text-emerald-400 rounded text-[8px] font-bold uppercase tracking-wider flex items-center gap-0.5 border border-emerald-500/10"
+                                  >
+                                    <Download size={8} /> Download
+                                  </a>
+                                </div>
+                              </div>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -1517,27 +1771,65 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                       )}
                     </div>
 
+                    {/* Progress indicators overlay (Issue #1) */}
+                    {isUploading && (
+                      <div className="px-4 py-2 border-t border-slate-800 bg-[#0b101d] flex items-center justify-between text-[9px] font-bold text-slate-300 gap-4">
+                        <div className="flex items-center gap-2">
+                          <RefreshCw size={12} className="animate-spin text-brand-400" />
+                          <span>Uploading File...</span>
+                        </div>
+                        <div className="flex-1 max-w-[120px] bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                          <div className="bg-brand-500 h-1.5 transition-all duration-300" style={{ width: `${uploadProgress || 0}%` }} />
+                        </div>
+                        <span>{uploadProgress || 0}%</span>
+                      </div>
+                    )}
+
+                    {/* Retry triggers on failure */}
+                    {failedFile && (
+                      <div className="px-4 py-2 border-t border-red-500/20 bg-red-500/5 flex items-center justify-between text-[9px] font-bold text-red-400 gap-4">
+                        <div className="flex items-center gap-1.5">
+                          <AlertCircle size={12} />
+                          <span className="truncate max-w-[120px]">{failedFile.name} failed</span>
+                        </div>
+                        <div className="flex gap-2">
+                          <button 
+                            onClick={() => uploadFileToSupabase(failedFile)}
+                            className="px-2 py-0.5 bg-red-600 text-white rounded font-extrabold uppercase text-[8px]"
+                          >
+                            Retry
+                          </button>
+                          <button 
+                            onClick={() => setFailedFile(null)}
+                            className="px-2 py-0.5 bg-slate-800 text-slate-300 rounded font-extrabold uppercase text-[8px]"
+                          >
+                            Dismiss
+                          </button>
+                        </div>
+                      </div>
+                    )}
+
                     <div className="p-3 border-t border-slate-800 flex gap-2 items-center bg-[#0b101d]">
-                      {/* File attachment upload trigger */}
+                      {/* Attachment file selector (Issue #1) */}
                       <label className="p-2.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:text-white cursor-pointer transition-all active:scale-95">
                         <Paperclip size={14} />
                         <input 
                           type="file" 
-                          onChange={handleFileUpload} 
+                          onChange={handleFileChange} 
                           className="hidden" 
-                          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.png,.jpg,.jpeg,.webp" 
+                          accept=".pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.csv,.png,.jpg,.jpeg,.webp,.zip" 
                         />
                       </label>
                       <input
                         type="text"
                         value={newMessage}
                         onChange={e => setNewMessage(e.target.value)}
-                        onKeyDown={e => e.key === 'Enter' && sendChat()}
+                        onKeyDown={e => e.key === 'Enter' && sendChatMessageText()}
                         placeholder="Type message..."
                         className="flex-1 bg-[#162038] border border-slate-700/80 rounded-lg px-3.5 py-2 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-brand-500 font-semibold"
                       />
                       <button 
-                        onClick={sendChat} 
+                        onClick={sendChatMessageText} 
                         className="bg-brand-600 hover:bg-brand-700 transition-colors p-2.5 rounded-lg flex items-center justify-center text-slate-950"
                       >
                         <Send size={13} />
@@ -1545,30 +1837,33 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                     </div>
                   </div>
                 ) : (
-                  /* File List view */
+                  /* Files repository list view */
                   <div className="flex-1 overflow-y-auto p-4 bg-[#090e1a] space-y-3">
-                    {sharedFiles.map(file => (
-                      <div key={file.id} className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex flex-col gap-2">
+                    {sharedAttachments.map(file => (
+                      <div key={file.id} className="bg-slate-900/60 border border-slate-800 rounded-xl p-3 flex flex-col gap-2 shadow-sm">
                         <div className="flex items-start gap-2.5">
                           <div className="p-2 bg-slate-800 text-brand-400 rounded-lg border border-slate-700">
                             <FileText size={16} />
                           </div>
                           <div className="min-w-0 flex-1">
                             <div className="text-xs font-bold text-slate-200 truncate" title={file.fileName}>{file.fileName}</div>
-                            <div className="text-[9px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
+                            <div className="text-[8px] text-slate-500 font-semibold uppercase mt-0.5">
+                              Uploaded by: {file.senderName}
+                            </div>
+                            <div className="text-[8px] text-slate-500 font-semibold uppercase tracking-wider mt-0.5">
                               {file.fileType.split('/').pop()?.toUpperCase()} • {Math.round(file.fileSize / 1024)} KB
                             </div>
                           </div>
                         </div>
                         <div className="flex gap-1.5 justify-end">
                           <button 
-                            onClick={() => setPreviewFile(file)}
+                            onClick={() => setPreviewAttachment(file)}
                             className="px-2.5 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded text-[9px] font-bold uppercase tracking-wider flex items-center gap-1 border border-slate-750 transition-all"
                           >
                             <Eye size={10} /> Preview
                           </button>
                           <a 
-                            href={file.fileUrl} 
+                            href={file.publicUrl} 
                             download={file.fileName}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -1579,7 +1874,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                         </div>
                       </div>
                     ))}
-                    {sharedFiles.length === 0 && (
+                    {sharedAttachments.length === 0 && (
                       <div className="text-center py-20 text-[10px] uppercase font-bold tracking-wider text-slate-650">
                         No shared documents.
                       </div>
@@ -1589,7 +1884,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               </div>
             )}
 
-            {/* Panel B: Participants Panel */}
+            {/* Participants list drawer */}
             {isParticipantsOpen && (
               <div className="w-80 border-l border-slate-800 bg-[#0b101d] flex flex-col z-10">
                 <div className="h-12 border-b border-slate-800 flex items-center justify-between px-4">
@@ -1635,11 +1930,10 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                     </div>
                   )}
 
-                  {/* Active List */}
+                  {/* Active call list details */}
                   <div className="space-y-2">
                     <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Active Call ({participants.length + 1})</h4>
                     <div className="space-y-1">
-                      {/* Self Card */}
                       <div className="flex items-center justify-between p-2.5 hover:bg-[#151c2e] rounded-xl transition-colors border border-transparent hover:border-slate-800">
                         <div>
                           <div className="text-xs font-bold text-slate-200">{currentUserName} (You)</div>
@@ -1667,7 +1961,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                     </div>
                   </div>
 
-                  {/* Host Permission Controls Toggles */}
+                  {/* Host Settings config */}
                   {(currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN') && (
                     <div className="pt-4 border-t border-slate-800 space-y-2">
                       <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mb-2">Meeting Settings</h4>
@@ -1675,8 +1969,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                         <span className="font-semibold text-slate-350">Allow Screen Sharing</span>
                         <input 
                           type="checkbox" 
-                          checked={hostAllowsScreenShare} 
-                          onChange={toggleHostScreenShareSetting} 
+                          checked={allowParticipantScreenShare} 
+                          onChange={toggleHostScreenSharePermission} 
                           className="rounded text-brand-600 focus:ring-brand-500 bg-[#162038] border-slate-700"
                         />
                       </label>
@@ -1687,7 +1981,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               </div>
             )}
 
-            {/* Panel C: Meeting Notes & Action Plans Panel (Phase 10 & 11) */}
+            {/* Notes & Tasks Log Drawer */}
             {isNotesOpen && (
               <div className="w-80 border-l border-slate-800 bg-[#0b101d] flex flex-col z-10">
                 <div className="h-12 border-b border-slate-800 flex items-center justify-between px-4">
@@ -1699,7 +1993,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                 
                 <div className="flex-1 p-4 overflow-y-auto bg-[#090e1a] space-y-5 text-xs">
                   {currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN' ? (
-                    /* Host Edit Mode */
+                    /* Edit view for Host */
                     <div className="space-y-4">
                       <div>
                         <label className="block text-[9px] text-slate-400 uppercase font-bold mb-1">Student Strengths</label>
@@ -1748,17 +2042,17 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                       </div>
                       
                       <button 
-                        onClick={handleSaveNotes}
+                        onClick={handleSaveAcademicNotes}
                         className="w-full py-2 bg-brand-600 hover:bg-brand-700 text-slate-950 font-black uppercase text-[10px] tracking-wider rounded-xl transition-all shadow-md active:scale-95"
                       >
                         Save Notes
                       </button>
 
-                      {/* Follow-up tasks registry */}
+                      {/* Follow-up tasks */}
                       <div className="pt-4 border-t border-slate-800 space-y-3">
                         <h4 className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Follow-up Tasks</h4>
                         
-                        <form onSubmit={handleAddTask} className="space-y-2.5 bg-slate-900/40 p-3 border border-slate-800 rounded-xl">
+                        <form onSubmit={handleAddTaskAction} className="space-y-2.5 bg-slate-900/40 p-3 border border-slate-800 rounded-xl">
                           <input 
                             type="text" 
                             placeholder="Add task detail..." 
@@ -1799,7 +2093,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                               type="date" 
                               value={newTaskDueDate} 
                               onChange={e => setNewTaskDueDate(e.target.value)}
-                              className="w-full bg-[#162038] border border-slate-750 rounded p-1 text-slate-250"
+                              className="w-full bg-[#162038] border border-slate-750 rounded p-1 text-slate-255"
                               required
                             />
                           </div>
@@ -1820,7 +2114,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                                   {t.assignedTo} • Due: {t.dueDate}
                                 </div>
                               </div>
-                              <button onClick={() => handleDeleteTask(t.id)} className="text-red-400 hover:text-red-500 p-0.5 bg-red-500/10 border border-red-500/10 rounded">
+                              <button onClick={() => handleDeleteTaskAction(t.id)} className="text-red-400 hover:text-red-500 p-0.5 bg-red-500/10 border border-red-500/10 rounded">
                                 <X size={10} />
                               </button>
                             </div>
@@ -1829,7 +2123,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                       </div>
                     </div>
                   ) : (
-                    /* Read-Only Viewer Mode (Parent/Student) */
+                    /* Read-Only mode for Parent/Student */
                     <div className="space-y-4 leading-relaxed font-semibold">
                       <div className="bg-slate-900/60 border border-slate-800 rounded-xl p-3.5 space-y-3.5">
                         <div>
@@ -1846,7 +2140,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                         </div>
                         <div>
                           <span className="text-[9px] uppercase font-bold text-brand-400 block mb-0.5">Behaviour:</span>
-                          <p className="text-slate-200">{behaviouralNotes || 'No noteslogged.'}</p>
+                          <p className="text-slate-200">{behaviouralNotes || 'No notes logged.'}</p>
                         </div>
                         <div>
                           <span className="text-[9px] uppercase font-bold text-brand-400 block mb-0.5">Action Plan:</span>
@@ -1873,7 +2167,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                             </div>
                           ))}
                           {tasks.length === 0 && (
-                            <div className="text-center py-8 text-[9px] text-slate-650 uppercase">No follow-up action plan registered.</div>
+                            <div className="text-center py-8 text-[9px] text-slate-650 uppercase font-bold">No follow-up action plan registered.</div>
                           )}
                         </div>
                       </div>
@@ -1901,7 +2195,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           </button>
         </div>
 
-        {/* Dynamic call control states togglers */}
+        {/* Media Buttons */}
         {!inWaitingRoom && (
           <div className="flex items-center gap-3">
             <button 
@@ -1930,7 +2224,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
             <button 
               onClick={toggleScreenShare}
-              disabled={!hostAllowsScreenShare && currentUserRole !== 'TEACHER' && currentUserRole !== 'ADMIN'}
+              disabled={currentUserRole === 'STUDENT' || (currentUserRole === 'PARENT' && !allowParticipantScreenShare)}
               className={`p-3.5 rounded-xl border transition-all shadow-md flex items-center justify-center active:scale-95 disabled:opacity-50 ${
                 screenSharing 
                   ? 'bg-emerald-600/20 border-emerald-600/30 text-emerald-400 hover:bg-emerald-600/30' 
@@ -1953,11 +2247,11 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               <Hand size={16} />
             </button>
 
-            {/* Local WebM Video recording (Teacher / Host only) */}
+            {/* Local recording (Teacher / Admin only) */}
             {(currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN') && (
               isRecording ? (
                 <button 
-                  onClick={toggleRecording}
+                  onClick={handleToggleRecording}
                   className="px-4 py-3 bg-red-600/20 border border-red-500/40 text-red-400 rounded-xl font-extrabold text-xs uppercase tracking-wider flex items-center gap-2 hover:bg-red-600/30 transition-all shadow-md animate-pulse"
                   title="Stop PTM Recording"
                 >
@@ -1966,7 +2260,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                 </button>
               ) : (
                 <button 
-                  onClick={toggleRecording}
+                  onClick={handleToggleRecording}
                   className="px-4 py-3 bg-[#1b253b] border border-slate-750 hover:bg-[#25324e] text-slate-200 rounded-xl font-extrabold text-xs uppercase tracking-wider flex items-center gap-2 transition-all shadow-md"
                   title="Record Meeting"
                 >
@@ -1978,7 +2272,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           </div>
         )}
 
-        {/* Side drawers togglers */}
+        {/* Side drawers triggers */}
         {!inWaitingRoom ? (
           <div className="flex items-center gap-2">
             <button 
@@ -2041,28 +2335,28 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       </footer>
 
       {/* PDF & Images Viewer Modal Overlay */}
-      {previewFile && (
+      {previewAttachment && (
         <div className="fixed inset-0 z-50 bg-[#04060d]/90 flex flex-col backdrop-blur animate-fade-in">
           <div className="h-14 border-b border-slate-800 flex items-center justify-between px-6 bg-[#0b101d]">
-            <span className="text-xs font-extrabold text-slate-200 uppercase truncate max-w-lg">{previewFile.fileName}</span>
+            <span className="text-xs font-extrabold text-slate-200 uppercase truncate max-w-lg">{previewAttachment.fileName}</span>
             <button 
-              onClick={() => setPreviewFile(null)}
+              onClick={() => setPreviewAttachment(null)}
               className="p-1 bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white rounded-lg transition-all"
             >
               <X size={16} />
             </button>
           </div>
           <div className="flex-1 p-8 flex items-center justify-center min-h-0 bg-[#080b13]">
-            {previewFile.fileType.startsWith('image/') ? (
+            {previewAttachment.fileType.startsWith('image/') ? (
               <img 
-                src={previewFile.fileUrl} 
-                alt={previewFile.fileName} 
+                src={previewAttachment.publicUrl} 
+                alt={previewAttachment.fileName} 
                 className="max-w-full max-h-full object-contain rounded-lg shadow-2xl border border-slate-850"
               />
-            ) : previewFile.fileType === 'application/pdf' ? (
+            ) : previewAttachment.fileType === 'application/pdf' ? (
               <iframe 
-                src={previewFile.fileUrl} 
-                title={previewFile.fileName}
+                src={previewAttachment.publicUrl} 
+                title={previewAttachment.fileName}
                 className="w-full h-full rounded-lg shadow-2xl border border-slate-850 bg-white"
               />
             ) : (
@@ -2070,11 +2364,11 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                 <AlertCircle size={32} className="text-brand-400 mx-auto" />
                 <h4 className="text-xs font-bold text-slate-100 uppercase tracking-wider">No Preview Available</h4>
                 <p className="text-[10px] text-slate-400 font-semibold leading-relaxed">
-                  This document type ({previewFile.fileType}) cannot be rendered directly. Please use the download option below.
+                  This document type ({previewAttachment.fileType}) cannot be rendered directly. Please download the document to view.
                 </p>
                 <a 
-                  href={previewFile.fileUrl} 
-                  download={previewFile.fileName}
+                  href={previewAttachment.publicUrl} 
+                  download={previewAttachment.fileName}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-4 py-2 bg-emerald-650 text-white font-extrabold uppercase text-[10px] tracking-wider rounded-xl transition-all shadow"
