@@ -20,11 +20,11 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 async function run() {
-  const migrationFile = path.resolve(process.cwd(), 'supabase/migrations/20260628_ptm_participant_validation.sql');
+  const migrationFile = path.resolve(process.cwd(), 'supabase/migrations/20260629_fix_ptm_participant_rls_deadlock.sql');
   const sql = fs.readFileSync(migrationFile, 'utf-8');
   console.log("Reading migration SQL...");
   
-  const { data, error } = await supabaseAdmin.rpc('exec_sql', { sql });
+  const { data, error } = await supabaseAdmin.rpc('exec_sql', { sql_query: sql });
   if (error) {
     console.error("Failed to execute migration SQL:", error);
   } else {

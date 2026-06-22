@@ -18,15 +18,14 @@ const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-  const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers();
-  if (error) {
-    console.error("Failed to list users:", error);
-  } else {
-    console.log("Auth users count:", users.length);
-    users.forEach(u => {
-      console.log(`- Email: ${u.email}, ID: ${u.id}`);
-    });
-  }
+  const parentUserId = 'd6c61203-2878-4f85-8252-d319bd6224ee'; // parent user_id from ptm_meetings
+  const { data: parentUser, error } = await supabaseAdmin
+    .from('users')
+    .select('*')
+    .eq('id', parentUserId)
+    .single();
+
+  console.log("Parent User Record:", parentUser, error);
 }
 
 run().catch(console.error);

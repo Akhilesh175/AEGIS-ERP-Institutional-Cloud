@@ -92,7 +92,9 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     ? `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim() 
     : 'Guest Participant';
   const currentUserRole = session?.user?.role || 'PARENT';
-  const schoolId = session?.user?.schoolId || '';
+  // schoolId: prefer session value, fallback resolved from meeting record after load
+  const [resolvedSchoolId, setResolvedSchoolId] = React.useState(session?.user?.schoolId || '');
+  const schoolId = resolvedSchoolId;
 
   const [meeting, setMeeting] = useState<any>(null);
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
@@ -182,6 +184,10 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         const found = meetings.find(m => m.id === meetingId);
         if (found) {
           setMeeting(found);
+          // Resolve schoolId from meeting record as authoritative fallback
+          if (!resolvedSchoolId && found.schoolId) {
+            setResolvedSchoolId(found.schoolId);
+          }
         }
 
         // Load historical notes
@@ -397,28 +403,45 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   // to prevent RLS rejection (circular deadlock was fixed in migration 20260629)
   const registerParticipantSession = async (): Promise<boolean> => {
     // Avoid duplicate registrations (idempotent)
-    if (participantRegisteredRef.current && participantSessionIdRef.current) {
+    if (participantRegisteredRef.current) {
       return true;
     }
     try {
-      const { data, error } = await supabase
+      // NOTE: We do NOT use .select().single() here because the FOR ALL USING policy on
+      // ptm_participants applies the USING clause to the RETURNING statement, which can
+      // fail RLS checks even when the INSERT itself succeeds. Instead, we check status.
+      const effectiveSchoolId = resolvedSchoolId || meeting?.schoolId || '';
+      const insertResult = await supabase
         .from('ptm_participants')
         .insert({
-          school_id: schoolId,
+          school_id: effectiveSchoolId,
           meeting_id: meetingId,
           user_id: currentUserId,
           role: currentUserRole,
           joined_at: new Date().toISOString()
-        })
-        .select()
-        .single();
+        });
       
-      if (data && !error) {
-        participantSessionIdRef.current = data.id;
+      // status 201 = Created (success), null error = success
+      if (insertResult.status === 201 || !insertResult.error) {
         participantRegisteredRef.current = true;
-        console.log('[AegisMeet] Participant registered in ptm_participants:', data.id);
+        // Try to fetch back our session ID so deregister can update the specific row
+        try {
+          const { data: sessionRows } = await supabase
+            .from('ptm_participants')
+            .select('id')
+            .eq('meeting_id', meetingId)
+            .eq('user_id', currentUserId)
+            .is('left_at', null)
+            .order('joined_at', { ascending: false })
+            .limit(1);
+          if (sessionRows && sessionRows.length > 0) {
+            participantSessionIdRef.current = sessionRows[0].id;
+          }
+        } catch (_) { /* Non-critical — deregister will update by user_id fallback */ }
+        console.log('[AegisMeet] Participant registered in ptm_participants (session:', participantSessionIdRef.current, ')');
         return true;
-      } else if (error) {
+      } else if (insertResult.error) {
+        const error = insertResult.error;
         console.warn('[AegisMeet] ptm_participants registration error:', error.message);
         // If it's a unique constraint violation (already registered), mark as registered
         if (error.message?.includes('unique') || error.code === '23505') {
@@ -435,15 +458,25 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   };
 
   const deregisterParticipantSession = async () => {
-    if (participantSessionIdRef.current) {
-      try {
+    const leftAt = new Date().toISOString();
+    try {
+      if (participantSessionIdRef.current) {
+        // Update specific session row by ID
         await supabase
           .from('ptm_participants')
-          .update({ left_at: new Date().toISOString() })
+          .update({ left_at: leftAt })
           .eq('id', participantSessionIdRef.current);
-      } catch (e) {
-        console.warn('ptm_participants deregistration failed:', e);
+      } else if (participantRegisteredRef.current) {
+        // Fallback: update most recent active session by user_id + meeting_id
+        await supabase
+          .from('ptm_participants')
+          .update({ left_at: leftAt })
+          .eq('meeting_id', meetingId)
+          .eq('user_id', currentUserId)
+          .is('left_at', null);
       }
+    } catch (e) {
+      console.warn('ptm_participants deregistration failed:', e);
     }
   };
 
@@ -1433,97 +1466,104 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         }
       }
 
-      const { data: insertedMsg, error: msgError } = await supabase
+      // NOTE: We do NOT use .select().single() on message inserts because the FOR ALL
+      // USING policy applies to the RETURNING clause, causing RLS rejection even when
+      // the INSERT itself succeeds. Instead, we check status and build the record locally.
+      const effectiveSchoolId = resolvedSchoolId || meeting?.schoolId || '';
+      const localMsgId = 'local-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+      const localCreatedAt = new Date().toISOString();
+
+      const msgInsertResult = await supabase
         .from('ptm_messages')
         .insert({
-          school_id: schoolId,
+          school_id: effectiveSchoolId,
           meeting_id: meetingId,
           sender_id: currentUserId,
           sender_role: currentUserRole,
           message: msgText,
           message_type: 'TEXT'
-        })
-        .select()
-        .single();
+        });
 
-      if (msgError) {
+      if (msgInsertResult.error) {
+        const msgError = msgInsertResult.error;
         console.error('[AegisMeet] Message insert error:', msgError.message);
         // If RLS rejection, try re-registering once and retry
-        if (msgError.message?.includes('Row-level security') || msgError.message?.includes('permission') || msgError.code === '42501') {
+        if (msgError.message?.includes('Row-level security') || msgError.message?.includes('permission') || msgError.code === '42501' || msgError.code === 'PGRST301') {
           console.log('[AegisMeet] RLS rejection — attempting participant re-registration...');
           participantRegisteredRef.current = false;
           const ok = await registerParticipantSession();
           if (ok) {
-            // Retry send once
-            const { data: retryMsg } = await supabase
+            // Retry send once (no .select() to avoid RETURNING RLS deadlock)
+            const retryResult = await supabase
               .from('ptm_messages')
               .insert({
-                school_id: schoolId,
+                school_id: effectiveSchoolId,
                 meeting_id: meetingId,
                 sender_id: currentUserId,
                 sender_role: currentUserRole,
                 message: msgText,
                 message_type: 'TEXT'
-              })
-              .select()
-              .single();
-            if (retryMsg) {
+              });
+            if (!retryResult.error) {
               const newMsgObj = {
-                id: retryMsg.id,
+                id: localMsgId,
                 senderId: currentUserId,
                 senderName: currentUserName,
                 senderRole: currentUserRole,
                 messageText: msgText,
-                createdAt: retryMsg.created_at
+                createdAt: localCreatedAt
               };
               setChatMessages(prev => [...prev, newMsgObj]);
               if (channelRef.current) {
                 channelRef.current.send({
                   type: 'broadcast',
                   event: 'message_sent',
-                  payload: { id: retryMsg.id, senderId: currentUserId, senderName: currentUserName, senderRole: currentUserRole, messageText: msgText, createdAt: retryMsg.created_at }
+                  payload: { id: localMsgId, senderId: currentUserId, senderName: currentUserName, senderRole: currentUserRole, messageText: msgText, createdAt: localCreatedAt }
                 });
               }
+            } else {
+              console.error('[AegisMeet] Retry message failed:', retryResult.error.message);
             }
           }
           return;
         }
         // For other errors, still show locally (optimistic update)
         const optimisticMsg = {
-          id: 'local-' + Date.now(),
+          id: localMsgId,
           senderId: currentUserId,
           senderName: currentUserName,
           senderRole: currentUserRole,
           messageText: msgText,
-          createdAt: new Date().toISOString()
+          createdAt: localCreatedAt
         };
         setChatMessages(prev => [...prev, optimisticMsg]);
         return;
       }
 
+      // Insert succeeded — build message object from known local data
       const newMsgObj = {
-        id: insertedMsg?.id || Math.random().toString(),
+        id: localMsgId,
         senderId: currentUserId,
         senderName: currentUserName,
         senderRole: currentUserRole,
         messageText: msgText,
-        createdAt: insertedMsg?.created_at || new Date().toISOString()
+        createdAt: localCreatedAt
       };
 
       setChatMessages(prev => [...prev, newMsgObj]);
 
       // Broadcast message to peers instantly
-      if (channelRef.current && insertedMsg) {
+      if (channelRef.current) {
         channelRef.current.send({
           type: 'broadcast',
           event: 'message_sent',
           payload: {
-            id: insertedMsg.id,
+            id: localMsgId,
             senderId: currentUserId,
             senderName: currentUserName,
             senderRole: currentUserRole,
             messageText: msgText,
-            createdAt: insertedMsg.created_at
+            createdAt: localCreatedAt
           }
         });
       }
@@ -1601,11 +1641,19 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           setUploadProgress(85);
 
           try {
-            // Parallelize database inserts & signed URL generation to prevent serial stalling
-            const [signedUrlResult, attachmentResult, messageResult] = await Promise.all([
+            // NOTE: We do NOT use .select().single() on inserts because the FOR ALL USING
+            // policy applies the USING clause to the RETURNING statement, causing RLS rejection
+            // even when the INSERT itself succeeds. We build records locally from known data.
+            const effectiveSchoolId = resolvedSchoolId || meeting?.schoolId || '';
+            const localFileId = 'local-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+            const localMsgId = 'local-msg-' + Date.now() + '-' + Math.random().toString(36).substring(2, 7);
+            const localCreatedAt = new Date().toISOString();
+
+            // Parallelize storage signed URL + both DB inserts
+            const [signedUrlResult, attachmentInsertResult, messageInsertResult] = await Promise.all([
               supabase.storage.from('ptm-chat-files').createSignedUrl(filePath, 86400),
               supabase.from('ptm_chat_attachments').insert({
-                school_id: schoolId,
+                school_id: effectiveSchoolId,
                 meeting_id: meetingId,
                 sender_id: currentUserId,
                 sender_role: currentUserRole,
@@ -1614,26 +1662,27 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                 file_type: file.type,
                 storage_path: filePath,
                 public_url: ''
-              }).select().single(),
+              }),
               supabase.from('ptm_messages').insert({
-                school_id: schoolId,
+                school_id: effectiveSchoolId,
                 meeting_id: meetingId,
                 sender_id: currentUserId,
                 sender_role: currentUserRole,
                 message: `Shared file: ${file.name}`,
                 message_type: 'FILE'
-              }).select().single()
+              })
             ]);
 
-            const fileErr = attachmentResult.error;
-            const messageErr = messageResult.error;
+            const fileErr = attachmentInsertResult.error;
+            const messageErr = messageInsertResult.error;
 
             if (fileErr || messageErr) {
               const err = fileErr || messageErr;
-              if (err?.message.includes('Row-level security') || err?.message.includes('Permission')) {
-                alert('Permission Denied\nYou are not a participant of this meeting.');
+              console.error('[AegisMeet] File upload DB insert error:', err?.message);
+              if (err?.message?.includes('Row-level security') || err?.message?.includes('Permission') || err?.code === '42501' || err?.code === 'PGRST301') {
+                alert('Permission Denied\nYou are not a participant of this meeting.\n\nPlease try joining the call first, then upload.');
               } else {
-                alert('Permission Denied');
+                alert('File upload failed: ' + (err?.message || 'Unknown error'));
               }
               setIsUploading(false);
               setFailedFile(file);
@@ -1642,16 +1691,15 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
             setUploadProgress(95);
 
-            const fileRecord = attachmentResult.data;
-            const messageRecord = messageResult.data;
             const signedUrl = signedUrlResult.data?.signedUrl || '';
 
             if (signedUrl) {
               setSignedUrls(prev => ({ ...prev, [filePath]: signedUrl }));
             }
 
+            // Build attachment record from local data (no RETURNING needed)
             const newAttachment: AttachmentMetadata = {
-              id: fileRecord.id,
+              id: localFileId,
               fileName: file.name,
               fileType: file.type,
               fileSize: file.size,
@@ -1659,7 +1707,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               storagePath: filePath,
               senderId: currentUserId,
               senderName: currentUserName,
-              createdAt: fileRecord.created_at
+              createdAt: localCreatedAt
             };
 
             setSharedAttachments(prev => [...prev, newAttachment]);
@@ -1667,31 +1715,31 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             setChatMessages(prev => [
               ...prev,
               {
-                id: messageRecord.id,
+                id: localMsgId,
                 senderId: currentUserId,
                 senderName: currentUserName,
                 senderRole: currentUserRole,
                 messageText: `Shared file: ${file.name}`,
-                createdAt: messageRecord.created_at,
+                createdAt: localCreatedAt,
                 attachment: newAttachment
               }
             ]);
 
             // Broadcast file_uploaded event instantly to peers
-            if (channelRef.current && fileRecord && messageRecord) {
+            if (channelRef.current) {
               channelRef.current.send({
                 type: 'broadcast',
                 event: 'file_uploaded',
                 payload: {
-                  id: messageRecord.id,
-                  attachmentId: fileRecord.id,
+                  id: localMsgId,
+                  attachmentId: localFileId,
                   fileName: file.name,
                   fileType: file.type,
                   fileSize: file.size,
                   storagePath: filePath,
                   senderId: currentUserId,
                   senderName: currentUserName,
-                  createdAt: messageRecord.created_at
+                  createdAt: localCreatedAt
                 }
               });
             }

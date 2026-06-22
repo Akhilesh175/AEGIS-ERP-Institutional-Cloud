@@ -20,16 +20,11 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 async function run() {
-  const migrationFile = path.resolve(process.cwd(), 'supabase/migrations/20260628_ptm_participant_validation.sql');
-  const sql = fs.readFileSync(migrationFile, 'utf-8');
-  console.log("Reading migration SQL...");
-  
-  const { data, error } = await supabaseAdmin.rpc('exec_sql', { sql });
-  if (error) {
-    console.error("Failed to execute migration SQL:", error);
-  } else {
-    console.log("Migration executed successfully. Result:", data);
-  }
+  const { data: parts, error: partsErr } = await supabaseAdmin
+    .from('ptm_participants')
+    .select('*')
+    .limit(5);
+  console.log("ptm_participants output:", { parts, partsErr });
 }
 
 run().catch(console.error);

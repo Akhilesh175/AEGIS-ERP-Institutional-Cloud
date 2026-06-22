@@ -18,13 +18,19 @@ const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-  const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers();
+  console.log("=== PTM PARTICIPANTS ===");
+  const { data, error } = await supabaseAdmin
+    .from('ptm_participants')
+    .select('*, users(first_name, last_name, role)');
   if (error) {
-    console.error("Failed to list users:", error);
+    console.error("Error fetching participants:", error);
   } else {
-    console.log("Auth users count:", users.length);
-    users.forEach(u => {
-      console.log(`- Email: ${u.email}, ID: ${u.id}`);
+    console.log(`Found ${data.length} participants:`);
+    data.forEach(p => {
+      console.log(`- Meeting ID: ${p.meeting_id}`);
+      console.log(`  User: ${p.users?.first_name} ${p.users?.last_name} (${p.users?.role}) | ID: ${p.user_id}`);
+      console.log(`  Role: ${p.role}`);
+      console.log(`  Joined: ${p.joined_at} | Left: ${p.left_at}`);
     });
   }
 }

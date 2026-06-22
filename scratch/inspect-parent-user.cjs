@@ -15,21 +15,24 @@ envContent.split('\n').forEach(line => {
 const supabaseUrl = env['VITE_SUPABASE_URL'];
 const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
 
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: { autoRefreshToken: false, persistSession: false }
-});
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-  const migrationFile = path.resolve(process.cwd(), 'supabase/migrations/20260628_ptm_participant_validation.sql');
-  const sql = fs.readFileSync(migrationFile, 'utf-8');
-  console.log("Reading migration SQL...");
+  const parentId = '22b46288-28d8-428d-9616-19f6aa870e25';
   
-  const { data, error } = await supabaseAdmin.rpc('exec_sql', { sql });
-  if (error) {
-    console.error("Failed to execute migration SQL:", error);
-  } else {
-    console.log("Migration executed successfully. Result:", data);
-  }
+  const { data: user, error: userErr } = await supabaseAdmin
+    .from('users')
+    .select('*')
+    .eq('id', parentId)
+    .maybeSingle();
+  console.log('Parent user in public.users:', user);
+  if (userErr) console.error('Parent query error:', userErr);
+
+  const { data: mapping, error: mapErr } = await supabaseAdmin
+    .from('parent_student_mapping')
+    .select('*')
+    .eq('parent_id', parentId);
+  console.log('Parent mapping:', mapping);
 }
 
 run().catch(console.error);

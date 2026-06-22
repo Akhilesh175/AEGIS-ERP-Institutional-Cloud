@@ -20,16 +20,19 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 async function run() {
-  const migrationFile = path.resolve(process.cwd(), 'supabase/migrations/20260628_ptm_participant_validation.sql');
-  const sql = fs.readFileSync(migrationFile, 'utf-8');
-  console.log("Reading migration SQL...");
-  
-  const { data, error } = await supabaseAdmin.rpc('exec_sql', { sql });
+  const migrationPath = path.resolve(process.cwd(), 'supabase/migrations/20260622_sports_finance_fixes.sql');
+  const sql = fs.readFileSync(migrationPath, 'utf-8');
+  console.log("Running Sports Finance Fixes Migration SQL...");
+  const { data, error } = await supabaseAdmin.rpc('exec_sql', { sql_query: sql });
   if (error) {
-    console.error("Failed to execute migration SQL:", error);
+    console.error("Failed to execute SQL:", error.message);
+    process.exit(1);
   } else {
-    console.log("Migration executed successfully. Result:", data);
+    console.log("Migration executed successfully! Result:", data);
   }
 }
 
-run().catch(console.error);
+run().catch(err => {
+  console.error(err);
+  process.exit(1);
+});

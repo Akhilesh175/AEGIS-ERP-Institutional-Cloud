@@ -20,15 +20,16 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 async function run() {
-  const migrationFile = path.resolve(process.cwd(), 'supabase/migrations/20260628_ptm_participant_validation.sql');
-  const sql = fs.readFileSync(migrationFile, 'utf-8');
-  console.log("Reading migration SQL...");
+  console.log("Querying sports_fine_payments...");
+  const { data, error } = await supabaseAdmin
+    .from('sports_fine_payments')
+    .select('*, students(*, users(first_name, last_name))');
   
-  const { data, error } = await supabaseAdmin.rpc('exec_sql', { sql });
   if (error) {
-    console.error("Failed to execute migration SQL:", error);
+    console.error("Error fetching fine payments:", error.message);
   } else {
-    console.log("Migration executed successfully. Result:", data);
+    console.log("Fine payments count:", data.length);
+    console.log("Raw Fine Payments rows:", JSON.stringify(data, null, 2));
   }
 }
 

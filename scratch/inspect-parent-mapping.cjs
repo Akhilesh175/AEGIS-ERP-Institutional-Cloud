@@ -18,15 +18,15 @@ const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-  const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers();
-  if (error) {
-    console.error("Failed to list users:", error);
-  } else {
-    console.log("Auth users count:", users.length);
-    users.forEach(u => {
-      console.log(`- Email: ${u.email}, ID: ${u.id}`);
-    });
-  }
+  const { data: students, error: stErr } = await supabaseAdmin
+    .from('students')
+    .select('id, user_id, class_id, users(first_name, last_name)');
+  console.log('Students:', JSON.stringify(students, null, 2));
+
+  const { data: mappings, error: mapErr } = await supabaseAdmin
+    .from('parent_student_mapping')
+    .select('*');
+  console.log('Mappings:', JSON.stringify(mappings, null, 2));
 }
 
 run().catch(console.error);

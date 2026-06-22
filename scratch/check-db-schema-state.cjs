@@ -15,18 +15,14 @@ envContent.split('\n').forEach(line => {
 const supabaseUrl = env['VITE_SUPABASE_URL'];
 const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
 
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+const supabase = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-  const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers();
-  if (error) {
-    console.error("Failed to list users:", error);
-  } else {
-    console.log("Auth users count:", users.length);
-    users.forEach(u => {
-      console.log(`- Email: ${u.email}, ID: ${u.id}`);
-    });
-  }
+  const { data: logsData, error: logsError } = await supabase.from('ptm_screenshare_logs').select('*').limit(1);
+  console.log('ptm_screenshare_logs query:', { logsData, logsError });
+
+  const { data: msgData, error: msgError } = await supabase.from('ptm_messages').select('message_type').limit(1);
+  console.log('ptm_messages message_type query:', { msgData, msgError });
 }
 
 run().catch(console.error);

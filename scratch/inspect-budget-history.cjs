@@ -1,30 +1,30 @@
+const { createClient } = require('@supabase/supabase-js');
 const fs = require('fs');
-const path = require('path');
 
-const envPath = path.resolve(process.cwd(), '.env');
-const envContent = fs.readFileSync(envPath, 'utf-8');
-const env = {};
-envContent.split('\n').forEach(line => {
-  const parts = line.split('=');
-  if (parts.length >= 2) {
-    env[parts[0].trim()] = parts.slice(1).join('=').trim();
+let supabaseUrl, supabaseServiceKey;
+try {
+  const envContent = fs.readFileSync('.env', 'utf-8');
+  for (const line of envContent.split('\n')) {
+    const [key, ...valueParts] = line.split('=');
+    const value = valueParts.join('=');
+    if (key === 'VITE_SUPABASE_URL') supabaseUrl = value.trim();
+    if (key === 'VITE_SUPABASE_SERVICE_ROLE_KEY') supabaseServiceKey = value.trim();
   }
-});
-
-const supabaseUrl = env['VITE_SUPABASE_URL'];
-const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
-
-async function run() {
-  const url = `${supabaseUrl}/rest/v1/`;
-  const response = await fetch(url, {
-    headers: {
-      'apikey': supabaseServiceKey,
-      'Authorization': `Bearer ${supabaseServiceKey}`
-    }
-  });
-  const schema = await response.json();
-  const columns = schema.definitions['sports_budget_history']?.properties;
-  console.log("sports_budget_history Columns:", Object.keys(columns || {}));
+} catch (err) {
+  console.error(err);
 }
 
-run().catch(console.error);
+const supabase = createClient(supabaseUrl, supabaseServiceKey, {
+  auth: { persistSession: false }
+});
+
+async function main() {
+  const { data: history, error } = await supabase
+    .from('sports_budget_history')
+    .select('*, updater:users!updated_by(first_name, last_name)');
+  
+  console.log("Error:", error);
+  console.log("Joined budget history:", history);
+}
+
+main().catch(console.error);

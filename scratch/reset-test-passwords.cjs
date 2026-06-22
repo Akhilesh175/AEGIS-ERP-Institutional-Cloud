@@ -18,14 +18,22 @@ const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-  const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers();
-  if (error) {
-    console.error("Failed to list users:", error);
-  } else {
-    console.log("Auth users count:", users.length);
-    users.forEach(u => {
-      console.log(`- Email: ${u.email}, ID: ${u.id}`);
-    });
+  const users = [
+    { email: 'vishal@gmail.com', id: '38f8269e-fb13-4ca1-aada-a5c59e83417e' },
+    { email: 'basantkry1@gmail.com', id: 'd6c61203-2878-4f85-8252-d319bd6224ee' }
+  ];
+
+  for (const user of users) {
+    console.log(`Updating password for ${user.email} (ID: ${user.id})...`);
+    const { data, error } = await supabaseAdmin.auth.admin.updateUserById(
+      user.id,
+      { password: 'Password123!' }
+    );
+    if (error) {
+      console.error(`Failed to update password for ${user.email}:`, error.message);
+    } else {
+      console.log(`Successfully updated password for ${user.email}!`);
+    }
   }
 }
 

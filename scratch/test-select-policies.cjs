@@ -18,15 +18,12 @@ const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
 const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
 
 async function run() {
-  const { data: { users }, error } = await supabaseAdmin.auth.admin.listUsers();
-  if (error) {
-    console.error("Failed to list users:", error);
-  } else {
-    console.log("Auth users count:", users.length);
-    users.forEach(u => {
-      console.log(`- Email: ${u.email}, ID: ${u.id}`);
-    });
-  }
+  const { data, error } = await supabaseAdmin
+    .from('pg_policies')
+    .select('*')
+    .eq('schemaname', 'public')
+    .eq('tablename', 'ptm_chat_attachments');
+  console.log("Policies:", data, error);
 }
 
 run().catch(console.error);
