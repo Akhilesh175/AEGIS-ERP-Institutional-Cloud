@@ -103,8 +103,6 @@ ON CONFLICT (id) DO UPDATE SET
     'image/webp'
   ];
 
--- 5. Enable RLS on storage.objects table
-ALTER TABLE storage.objects ENABLE ROW LEVEL SECURITY;
 
 -- 6. Storage Object RLS Policies (ptm-chat-files bucket isolation)
 DROP POLICY IF EXISTS "Allow meeting participants select" ON storage.objects;
