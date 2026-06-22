@@ -491,6 +491,9 @@ const SUPER_ADMIN_EMAIL = 'jy7018080@gmail.com';
 // Dynamic cache for student attendance analytics to prevent portal lag
 export const attendanceAnalyticsCache: Record<string, { timestamp: number; data: any }> = {};
 
+// Dynamic cache for database synchronization to prevent N+1 queries and excessive HTTP fetches
+export const syncCache: Record<string, number> = {};
+
 const PLAN_HIERARCHY: Record<string, number> = {
   freemium: 0,
   basic: 1,
@@ -3617,23 +3620,25 @@ export const mockApi = {
     const student = mockDb.students.find(s => s.id === studentId);
     if (!student) throw new Error('Student profile not found.');
 
-    // Sync from database first
-    await this.syncSchoolsData(student.schoolId);
-    await this.syncClassesData(student.schoolId);
-    await this.syncTeachersData(student.schoolId);
-    await this.syncSubjectsData(student.schoolId);
-    await this.syncTeacherClassSubjectMappingsData(student.schoolId);
-    await this.syncExamsData(student.schoolId);
-    await this.syncExamSchedulesData(student.schoolId);
-    await this.syncExamMarksData(student.schoolId);
-    await this.syncTimetablesData(student.schoolId);
-    await this.syncAssignmentsData(student.schoolId);
-    await this.syncAssignmentSubmissionsData(student.schoolId);
-    await this.syncHomeworkAttachmentsData(student.schoolId);
-    await this.syncAttendanceData(student.schoolId);
-    await this.syncFeeStructuresData(student.schoolId);
-    await this.syncFeePaymentsData(student.schoolId);
-    await this.syncUsersData(student.schoolId).catch(() => {});
+    // Sync from database first in parallel
+    await Promise.all([
+      this.syncSchoolsData(student.schoolId),
+      this.syncClassesData(student.schoolId),
+      this.syncTeachersData(student.schoolId),
+      this.syncSubjectsData(student.schoolId),
+      this.syncTeacherClassSubjectMappingsData(student.schoolId),
+      this.syncExamsData(student.schoolId),
+      this.syncExamSchedulesData(student.schoolId),
+      this.syncExamMarksData(student.schoolId),
+      this.syncTimetablesData(student.schoolId),
+      this.syncAssignmentsData(student.schoolId),
+      this.syncAssignmentSubmissionsData(student.schoolId),
+      this.syncHomeworkAttachmentsData(student.schoolId),
+      this.syncAttendanceData(student.schoolId),
+      this.syncFeeStructuresData(student.schoolId),
+      this.syncFeePaymentsData(student.schoolId),
+      this.syncUsersData(student.schoolId).catch(() => {})
+    ]);
 
     const userDetails = mockDb.users.find(u => u.id === student.userId);
     if (!userDetails) throw new Error('Student user profile not found.');
@@ -22039,5 +22044,24 @@ export const mockApi = {
     };
   }
 };
+
+// Automatically wrap all sync functions with cache validation to prevent N+1 request cascades
+Object.keys(mockApi).forEach(key => {
+  if (key.startsWith('sync') && key.endsWith('Data') && typeof (mockApi as any)[key] === 'function') {
+    const originalFn = (mockApi as any)[key];
+    (mockApi as any)[key] = async function(id: string, ...args: any[]) {
+      if (!id) return;
+      const cacheKey = `${key}_${id}`;
+      const lastSync = syncCache[cacheKey] || 0;
+      const now = Date.now();
+      if (now - lastSync < 30000) {
+        return;
+      }
+      syncCache[cacheKey] = now;
+      return originalFn.call(this, id, ...args);
+    };
+  }
+});
+
 
 

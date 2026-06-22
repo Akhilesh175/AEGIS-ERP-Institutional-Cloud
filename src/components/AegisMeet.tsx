@@ -41,6 +41,7 @@ interface AttachmentMetadata {
   fileType: string;
   fileSize: number;
   publicUrl: string;
+  storagePath?: string;
   senderId: string;
   senderName: string;
   createdAt: string;
@@ -118,6 +119,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const [uploadProgress, setUploadProgress] = useState<number | null>(null);
   const [failedFile, setFailedFile] = useState<File | null>(null);
   const [isUploading, setIsUploading] = useState(false);
+  const [signedUrls, setSignedUrls] = useState<Record<string, string>>({});
 
   // Meeting toggles
   const [micEnabled, setMicEnabled] = useState(true);
@@ -246,16 +248,47 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           .order('created_at', { ascending: true });
 
         if (filesRes.data) {
-          setSharedAttachments(filesRes.data.map((f: any) => ({
+          const mappedAttachments = filesRes.data.map((f: any) => ({
             id: f.id,
             fileName: f.file_name,
             fileType: f.file_type,
             fileSize: f.file_size,
             publicUrl: f.public_url,
+            storagePath: f.storage_path,
             senderId: f.sender_id,
             senderName: 'Participant',
             createdAt: f.created_at
-          })));
+          }));
+          setSharedAttachments(mappedAttachments);
+
+          // Associate attachments to loaded messages
+          setChatMessages(prev => prev.map(msg => {
+            const att = mappedAttachments.find(a => msg.messageText.includes(a.fileName));
+            if (att) {
+              return { ...msg, attachment: att };
+            }
+            return msg;
+          }));
+
+          // Bulk fetch signed URLs for loaded attachments
+          const paths = mappedAttachments.map(a => a.storagePath).filter(Boolean) as string[];
+          if (paths.length > 0) {
+            supabase.storage
+              .from('ptm-chat-files')
+              .createSignedUrls(paths, 86400)
+              .then(({ data: urlsData }) => {
+                if (urlsData) {
+                  const urlMap: Record<string, string> = {};
+                  urlsData.forEach(item => {
+                    if (item.signedUrl && item.path) {
+                      urlMap[item.path] = item.signedUrl;
+                    }
+                  });
+                  setSignedUrls(prev => ({ ...prev, ...urlMap }));
+                }
+              })
+              .catch(e => console.warn('Failed to bulk resolve signed URLs:', e));
+          }
 
           // Backfill attachment sender names
           const senderIds = Array.from(new Set(filesRes.data.map(f => f.sender_id)));
@@ -761,19 +794,42 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             .single();
           
           const name = sender ? `${sender.first_name || ''} ${sender.last_name || ''}`.trim() : 'Participant';
+          
+          // Fetch signed URL for the new attachment immediately
+          supabase.storage
+            .from('ptm-chat-files')
+            .createSignedUrl(payload.new.storage_path, 86400)
+            .then(({ data: signedData }) => {
+              if (signedData?.signedUrl) {
+                setSignedUrls(prev => ({ ...prev, [payload.new.storage_path]: signedData.signedUrl }));
+              }
+            })
+            .catch(e => console.warn('Realtime attachment sign failed:', e));
+
+          const newAttachObj: AttachmentMetadata = {
+            id: payload.new.id,
+            fileName: payload.new.file_name,
+            fileType: payload.new.file_type,
+            fileSize: payload.new.file_size,
+            publicUrl: payload.new.public_url,
+            storagePath: payload.new.storage_path,
+            senderId: payload.new.sender_id,
+            senderName: name,
+            createdAt: payload.new.created_at
+          };
+
           setSharedAttachments(prev => {
             if (prev.some(f => f.id === payload.new.id)) return prev;
-            return [...prev, {
-              id: payload.new.id,
-              fileName: payload.new.file_name,
-              fileType: payload.new.file_type,
-              fileSize: payload.new.file_size,
-              publicUrl: payload.new.public_url,
-              senderId: payload.new.sender_id,
-              senderName: name,
-              createdAt: payload.new.created_at
-            }];
+            return [...prev, newAttachObj];
           });
+
+          // Link new attachment to matching chat messages
+          setChatMessages(prev => prev.map(msg => {
+            if (msg.messageText.includes(newAttachObj.fileName)) {
+              return { ...msg, attachment: newAttachObj };
+            }
+            return msg;
+          }));
         }
       )
       .subscribe();
@@ -1176,7 +1232,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
     // B. Validate size limit
     if (file.size > MAX_FILE_SIZE) {
-      alert('File Too Large');
+      alert('File Too Large\nMaximum size allowed is 50 MB.');
       return;
     }
 
@@ -1185,20 +1241,6 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     setFailedFile(null);
 
     try {
-      // C. Ensure storage bucket is created
-      const { error: bucketErr } = await supabase.storage.createBucket('ptm-chat-files', { public: true });
-      if (bucketErr && !bucketErr.message.includes('already exists')) {
-        // Check permission policy error
-        if (bucketErr.message.includes('row-level security') || bucketErr.message.includes('Permission')) {
-          alert('Permission Denied');
-        } else {
-          alert('Bucket Missing');
-        }
-        setIsUploading(false);
-        setFailedFile(file);
-        return;
-      }
-
       setUploadProgress(35);
       const filePath = `${schoolId}/${meetingId}/attachments/${Date.now()}_${file.name}`;
       
@@ -1207,12 +1249,14 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         .upload(filePath, file);
 
       if (uploadErr) {
-        if (uploadErr.message.includes('Row-level security') || uploadErr.message.includes('Permission')) {
-          alert('Permission Denied');
+        if (uploadErr.message.includes('bucket') || uploadErr.message.includes('Bucket not found') || uploadErr.message.includes('does not exist')) {
+          alert('Storage Configuration Error');
+        } else if (uploadErr.message.includes('Row-level security') || uploadErr.message.includes('Permission')) {
+          alert('Permission Denied\nYou are not a participant of this meeting.');
         } else if (uploadErr.message.includes('Network') || uploadErr.message.includes('fetch')) {
           alert('Network Error');
         } else {
-          alert('Bucket Missing');
+          alert('Storage Configuration Error');
         }
         setIsUploading(false);
         setFailedFile(file);
@@ -1220,9 +1264,16 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       }
 
       setUploadProgress(70);
-      const { data: urlData } = supabase.storage
+      
+      // Dynamic signed URL generation
+      const { data: signedData, error: signErr } = await supabase.storage
         .from('ptm-chat-files')
-        .getPublicUrl(filePath);
+        .createSignedUrl(filePath, 86400); // 24 hours expiry
+      
+      const signedUrl = signedData?.signedUrl || '';
+      if (signedUrl) {
+        setSignedUrls(prev => ({ ...prev, [filePath]: signedUrl }));
+      }
 
       // D. Save attachment row metadata
       const { data: fileRecord, error: fileErr } = await supabase
@@ -1236,13 +1287,17 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           file_size: file.size,
           file_type: file.type,
           storage_path: filePath,
-          public_url: urlData.publicUrl
+          public_url: signedUrl
         })
         .select()
         .single();
 
       if (fileErr) {
-        alert('Permission Denied');
+        if (fileErr.message.includes('Row-level security') || fileErr.message.includes('Permission')) {
+          alert('Permission Denied\nYou are not a participant of this meeting.');
+        } else {
+          alert('Permission Denied');
+        }
         setIsUploading(false);
         setFailedFile(file);
         return;
@@ -1266,7 +1321,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         fileName: file.name,
         fileType: file.type,
         fileSize: file.size,
-        publicUrl: urlData.publicUrl,
+        publicUrl: signedUrl,
+        storagePath: filePath,
         senderId: currentUserId,
         senderName: currentUserName,
         createdAt: fileRecord.created_at
@@ -1750,7 +1806,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                                     <Eye size={8} /> Preview
                                   </button>
                                   <a 
-                                    href={msg.attachment.publicUrl} 
+                                    href={signedUrls[msg.attachment.storagePath || ''] || msg.attachment.publicUrl} 
                                     download={msg.attachment.fileName}
                                     target="_blank"
                                     rel="noopener noreferrer"
@@ -1863,7 +1919,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                             <Eye size={10} /> Preview
                           </button>
                           <a 
-                            href={file.publicUrl} 
+                            href={signedUrls[file.storagePath || ''] || file.publicUrl} 
                             download={file.fileName}
                             target="_blank"
                             rel="noopener noreferrer"
@@ -2349,13 +2405,13 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           <div className="flex-1 p-8 flex items-center justify-center min-h-0 bg-[#080b13]">
             {previewAttachment.fileType.startsWith('image/') ? (
               <img 
-                src={previewAttachment.publicUrl} 
+                src={signedUrls[previewAttachment.storagePath || ''] || previewAttachment.publicUrl} 
                 alt={previewAttachment.fileName} 
                 className="max-w-full max-h-full object-contain rounded-lg shadow-2xl border border-slate-850"
               />
             ) : previewAttachment.fileType === 'application/pdf' ? (
               <iframe 
-                src={previewAttachment.publicUrl} 
+                src={signedUrls[previewAttachment.storagePath || ''] || previewAttachment.publicUrl} 
                 title={previewAttachment.fileName}
                 className="w-full h-full rounded-lg shadow-2xl border border-slate-850 bg-white"
               />
@@ -2367,7 +2423,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                   This document type ({previewAttachment.fileType}) cannot be rendered directly. Please download the document to view.
                 </p>
                 <a 
-                  href={previewAttachment.publicUrl} 
+                  href={signedUrls[previewAttachment.storagePath || ''] || previewAttachment.publicUrl} 
                   download={previewAttachment.fileName}
                   target="_blank"
                   rel="noopener noreferrer"

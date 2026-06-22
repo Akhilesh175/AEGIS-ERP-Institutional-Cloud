@@ -161,16 +161,18 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
       const parentUser = mockDb.users.find(u => u.id === session?.user?.id);
       const parentSchoolId = mockDb.parents.find(p => p.id === parentId)?.schoolId || parentUser?.schoolId;
       if (parentSchoolId) {
-        await mockApi.syncSchoolsData(parentSchoolId);
-        await mockApi.syncClassesData(parentSchoolId);
-        await mockApi.syncTeachersData(parentSchoolId);
-        await mockApi.syncSubjectsData(parentSchoolId);
-        await mockApi.syncTeacherClassSubjectMappingsData(parentSchoolId);
-        await mockApi.syncAcademicSessionsData(parentSchoolId);
-        await mockApi.syncStudentsData(parentSchoolId);
-        await mockApi.syncParentsData(parentSchoolId);
-        await mockApi.syncParentStudentMappingsData(parentSchoolId);
-        await mockApi.syncUsersData(parentSchoolId).catch(() => {});
+        await Promise.all([
+          mockApi.syncSchoolsData(parentSchoolId),
+          mockApi.syncClassesData(parentSchoolId),
+          mockApi.syncTeachersData(parentSchoolId),
+          mockApi.syncSubjectsData(parentSchoolId),
+          mockApi.syncTeacherClassSubjectMappingsData(parentSchoolId),
+          mockApi.syncAcademicSessionsData(parentSchoolId),
+          mockApi.syncStudentsData(parentSchoolId),
+          mockApi.syncParentsData(parentSchoolId),
+          mockApi.syncParentStudentMappingsData(parentSchoolId),
+          mockApi.syncUsersData(parentSchoolId).catch(() => {})
+        ]);
       }
 
       const data = await mockApi.parentGetStudents(parentId);
@@ -233,92 +235,115 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
       }
 
       if (studentObj) {
-        await mockApi.syncSchoolsData(studentObj.schoolId);
-        await mockApi.syncClassesData(studentObj.schoolId);
-        await mockApi.syncTeachersData(studentObj.schoolId);
-        await mockApi.syncSubjectsData(studentObj.schoolId);
-        await mockApi.syncTeacherClassSubjectMappingsData(studentObj.schoolId);
-        await mockApi.syncAcademicSessionsData(studentObj.schoolId);
-        await mockApi.syncStudentsData(studentObj.schoolId);
-        await mockApi.syncParentsData(studentObj.schoolId);
-        await mockApi.syncParentStudentMappingsData(studentObj.schoolId);
-        await mockApi.syncUsersData(studentObj.schoolId).catch(() => {});
-
-        await mockApi.syncForumCategoriesData(studentObj.schoolId).catch(() => {});
-        await mockApi.syncForumPostsData(studentObj.schoolId).catch(() => {});
-        await mockApi.syncForumRepliesData(studentObj.schoolId).catch(() => {});
-        
-        const allPosts = await mockApi.getForumPosts().catch(() => []);
-        const cats = await mockApi.getForumCategories(studentObj.schoolId).catch(() => []);
-        const allowedCats = cats.filter(c => c.classId === studentObj.classId || !c.classId);
-        const allowedCatIds = allowedCats.map(c => c.id);
-        const filteredPosts = allPosts.filter(p => allowedCatIds.includes(p.categoryId));
-        // Deduplicate forum posts by id
-        setForumPosts(Array.from(new Map(filteredPosts.map(p => [p.id, p])).values()));
-
-        // Fetch dynamic transit and library details for parent selectedStudent with safe catches
-        const [allAssignments, allBuses, allRoutes, allPickupPoints, allDrivers, myIssues, myFines, digitalAssets, booksList] = await Promise.all([
-          mockApi.fetchTransportAssignments(studentObj.schoolId).catch(() => []),
-          mockApi.fetchBuses(studentObj.schoolId).catch(() => []),
-          mockApi.fetchRoutes(studentObj.schoolId).catch(() => []),
-          mockApi.fetchPickupPoints(studentObj.schoolId).catch(() => []),
-          mockApi.fetchDrivers(studentObj.schoolId).catch(() => []),
-          mockApi.fetchBookIssues(studentObj.schoolId, selectedStudent).catch(() => []),
-          mockApi.fetchLibraryFines(studentObj.schoolId, selectedStudent).catch(() => []),
-          mockApi.fetchDigitalLibraryAssets(studentObj.schoolId).catch(() => []),
-          mockApi.fetchBookInventory(studentObj.schoolId).catch(() => [])
+        // Sync core school entities in parallel
+        await Promise.all([
+          mockApi.syncSchoolsData(studentObj.schoolId),
+          mockApi.syncClassesData(studentObj.schoolId),
+          mockApi.syncTeachersData(studentObj.schoolId),
+          mockApi.syncSubjectsData(studentObj.schoolId),
+          mockApi.syncTeacherClassSubjectMappingsData(studentObj.schoolId),
+          mockApi.syncAcademicSessionsData(studentObj.schoolId),
+          mockApi.syncStudentsData(studentObj.schoolId),
+          mockApi.syncParentsData(studentObj.schoolId),
+          mockApi.syncParentStudentMappingsData(studentObj.schoolId),
+          mockApi.syncUsersData(studentObj.schoolId).catch(() => {})
         ]);
 
-        const studentUserId = studentObj?.userId || '';
-        const myAssignment = allAssignments.find(ta => (ta.studentId === selectedStudent || ta.studentId === studentUserId) && ta.status === 'ACTIVE');
-        if (myAssignment) {
-          setTransitAssignment(myAssignment);
-          const route = allRoutes.find(r => r.id === myAssignment.routeId);
-          setAssignedRoute(route);
-          const bus = allBuses.find(b => b.id === myAssignment.busId);
-          setAssignedBus(bus);
-          const pickup = allPickupPoints.find(p => p.id === myAssignment.pickupPointId);
-          setAssignedPickupPoint(pickup);
-          if (bus && bus.driverId) {
-            const driver = allDrivers.find(d => d.id === bus.driverId);
-            setAssignedDriver(driver);
-          } else if (bus && (bus.driverName || bus.driverPhone)) {
-            setAssignedDriver({
-              name: bus.driverName,
-              phone: bus.driverPhone
-            });
-          }
-        } else {
-          setTransitAssignment(null);
-          setAssignedRoute(null);
-          setAssignedBus(null);
-          setAssignedPickupPoint(null);
-          setAssignedDriver(null);
+        // 1. Forums Tab Specific Syncs & Queries
+        if (activeTab === 'forums') {
+          await Promise.all([
+            mockApi.syncForumCategoriesData(studentObj.schoolId).catch(() => {}),
+            mockApi.syncForumPostsData(studentObj.schoolId).catch(() => {}),
+            mockApi.syncForumRepliesData(studentObj.schoolId).catch(() => {})
+          ]);
+          
+          const allPosts = await mockApi.getForumPosts().catch(() => []);
+          const cats = await mockApi.getForumCategories(studentObj.schoolId).catch(() => []);
+          const allowedCats = cats.filter(c => c.classId === studentObj.classId || !c.classId);
+          const allowedCatIds = allowedCats.map(c => c.id);
+          const filteredPosts = allPosts.filter(p => allowedCatIds.includes(p.categoryId));
+          setForumPosts(Array.from(new Map(filteredPosts.map(p => [p.id, p])).values()));
         }
 
-        setIssuedBooks(Array.from(new Map(myIssues.map(bi => [bi.id, bi])).values()));
-        setLibraryFines(Array.from(new Map(myFines.map(lf => [lf.id, lf])).values()));
-        setDigitalLibraryAssets(Array.from(new Map((digitalAssets || []).map(da => [da.id, da])).values()));
-        setLibraryBooks(Array.from(new Map((booksList || []).map(b => [b.id, b])).values()));
+        // 2. Transport Tab Specific Syncs & Queries
+        if (activeTab === 'transit' || activeTab === 'transport') {
+          const [allAssignments, allBuses, allRoutes, allPickupPoints, allDrivers] = await Promise.all([
+            mockApi.fetchTransportAssignments(studentObj.schoolId).catch(() => []),
+            mockApi.fetchBuses(studentObj.schoolId).catch(() => []),
+            mockApi.fetchRoutes(studentObj.schoolId).catch(() => []),
+            mockApi.fetchPickupPoints(studentObj.schoolId).catch(() => []),
+            mockApi.fetchDrivers(studentObj.schoolId).catch(() => [])
+          ]);
 
-        // Load Hostel details for Parent's ward
-        if (studentObj) {
+          const studentUserId = studentObj?.userId || '';
+          const myAssignment = allAssignments.find(ta => (ta.studentId === selectedStudent || ta.studentId === studentUserId) && ta.status === 'ACTIVE');
+          if (myAssignment) {
+            setTransitAssignment(myAssignment);
+            const route = allRoutes.find(r => r.id === myAssignment.routeId);
+            setAssignedRoute(route);
+            const bus = allBuses.find(b => b.id === myAssignment.busId);
+            setAssignedBus(bus);
+            const pickup = allPickupPoints.find(p => p.id === myAssignment.pickupPointId);
+            setAssignedPickupPoint(pickup);
+            if (bus && bus.driverId) {
+              const driver = allDrivers.find(d => d.id === bus.driverId);
+              setAssignedDriver(driver);
+            } else if (bus && (bus.driverName || bus.driverPhone)) {
+              setAssignedDriver({
+                name: bus.driverName,
+                phone: bus.driverPhone
+              });
+            }
+          } else {
+            setTransitAssignment(null);
+            setAssignedRoute(null);
+            setAssignedBus(null);
+            setAssignedPickupPoint(null);
+            setAssignedDriver(null);
+          }
+        }
+
+        // 3. Library Tab Specific Syncs & Queries
+        if (activeTab === 'library') {
+          const [myIssues, myFines, digitalAssets, booksList] = await Promise.all([
+            mockApi.fetchBookIssues(studentObj.schoolId, selectedStudent).catch(() => []),
+            mockApi.fetchLibraryFines(studentObj.schoolId, selectedStudent).catch(() => []),
+            mockApi.fetchDigitalLibraryAssets(studentObj.schoolId).catch(() => []),
+            mockApi.fetchBookInventory(studentObj.schoolId).catch(() => [])
+          ]);
+
+          setIssuedBooks(Array.from(new Map(myIssues.map(bi => [bi.id, bi])).values()));
+          setLibraryFines(Array.from(new Map(myFines.map(lf => [lf.id, lf])).values()));
+          setDigitalLibraryAssets(Array.from(new Map((digitalAssets || []).map(da => [da.id, da])).values()));
+          setLibraryBooks(Array.from(new Map((booksList || []).map(b => [b.id, b])).values()));
+        }
+
+        // 4. Hostel Tab Specific Syncs & Queries
+        if (activeTab === 'hostel') {
           const schoolId = studentObj.schoolId;
           const studentId = selectedStudent;
           await mockApi.syncHostelData(schoolId).catch(() => {});
           
-          const admissions = await mockApi.fetchHostelAdmissions(schoolId).catch(() => []);
+          const [admissions, hostels, blocks, rooms, beds, wardens, menus, leaves, complaints, attendance, visitors, payments, feesList] = await Promise.all([
+            mockApi.fetchHostelAdmissions(schoolId).catch(() => []),
+            mockApi.fetchHostels(schoolId).catch(() => []),
+            mockApi.fetchHostelBlocks(schoolId).catch(() => []),
+            mockApi.fetchHostelRooms(schoolId).catch(() => []),
+            mockApi.fetchHostelBeds(schoolId).catch(() => []),
+            mockApi.fetchHostelWardens(schoolId).catch(() => []),
+            mockApi.fetchHostelMessMenus(schoolId).catch(() => []),
+            mockApi.fetchHostelLeaveRequests(schoolId).catch(() => []),
+            mockApi.fetchHostelComplaints(schoolId).catch(() => []),
+            mockApi.fetchHostelAttendance(schoolId).catch(() => []),
+            mockApi.fetchHostelVisitors(schoolId).catch(() => []),
+            mockApi.fetchHostelPayments(schoolId).catch(() => []),
+            mockApi.fetchHostelFees(schoolId).catch(() => [])
+          ]);
+
           const activeAd = admissions.find((a: any) => a.studentId === studentId && a.status === 'ACTIVE');
           setActiveAdmission(activeAd || null);
           
           if (activeAd) {
-            const hostels = await mockApi.fetchHostels(schoolId).catch(() => []);
-            const blocks = await mockApi.fetchHostelBlocks(schoolId).catch(() => []);
-            const rooms = await mockApi.fetchHostelRooms(schoolId).catch(() => []);
-            const beds = await mockApi.fetchHostelBeds(schoolId).catch(() => []);
-            const wardens = await mockApi.fetchHostelWardens(schoolId).catch(() => []);
-            const menus = await mockApi.fetchHostelMessMenus(schoolId).catch(() => []);
-            
             const h = hostels.find((x: any) => x.id === activeAd.hostelId);
             const rm = rooms.find((x: any) => x.id === activeAd.roomId);
             const bl = blocks.find((x: any) => x.id === rm?.blockId);
@@ -353,22 +378,11 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
             setMessMenus([]);
           }
 
-          const leaves = await mockApi.fetchHostelLeaveRequests(schoolId).catch(() => []);
           setMyLeaveRequests(leaves.filter((l: any) => l.studentId === studentId));
-
-          const complaints = await mockApi.fetchHostelComplaints(schoolId).catch(() => []);
           setMyComplaints(complaints.filter((c: any) => c.studentId === studentId));
-
-          const attendance = await mockApi.fetchHostelAttendance(schoolId).catch(() => []);
           setMyAttendance(attendance.filter((a: any) => a.studentId === studentId));
-
-          const visitors = await mockApi.fetchHostelVisitors(schoolId).catch(() => []);
           setMyVisitors(visitors.filter((v: any) => v.studentId === studentId));
-
-          const payments = await mockApi.fetchHostelPayments(schoolId).catch(() => []);
           setMyPayments(payments.filter((p: any) => p.studentId === studentId));
-
-          const feesList = await mockApi.fetchHostelFees(schoolId).catch(() => []);
           setMyFees(feesList);
         }
       }
@@ -646,8 +660,63 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
   if (loading && !academicRecord) {
     return (
-      <div className="py-12 text-center text-slate-400 text-sm">
-        Retrieving secure child records...
+      <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-pulse">
+        {/* Header identity skeleton */}
+        <div className="h-28 bg-[#0b101d] border border-slate-800 rounded-3xl p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 bg-slate-800 rounded-xl"></div>
+            <div className="space-y-2">
+              <div className="h-4 w-40 bg-slate-800 rounded"></div>
+              <div className="h-3 w-60 bg-slate-800 rounded"></div>
+            </div>
+          </div>
+          <div className="h-8 w-44 bg-slate-800 rounded-xl"></div>
+        </div>
+
+        {/* 3 cards skeleton */}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="h-20 bg-[#0b101d] border border-slate-800 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-slate-800 rounded-lg"></div>
+            <div className="space-y-2 flex-1">
+              <div className="h-2 w-20 bg-slate-800 rounded"></div>
+              <div className="h-3 w-28 bg-slate-800 rounded"></div>
+            </div>
+          </div>
+          <div className="h-20 bg-[#0b101d] border border-slate-800 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-slate-800 rounded-lg"></div>
+            <div className="space-y-2 flex-1">
+              <div className="h-2 w-20 bg-slate-800 rounded"></div>
+              <div className="h-3 w-28 bg-slate-800 rounded"></div>
+            </div>
+          </div>
+          <div className="h-20 bg-[#0b101d] border border-slate-800 rounded-2xl p-4 flex items-center gap-3">
+            <div className="w-10 h-10 bg-slate-800 rounded-lg"></div>
+            <div className="space-y-2 flex-1">
+              <div className="h-2 w-20 bg-slate-800 rounded"></div>
+              <div className="h-3 w-28 bg-slate-800 rounded"></div>
+            </div>
+          </div>
+        </div>
+
+        {/* Main layout skeleton */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="h-96 bg-[#0b101d] border border-slate-800 rounded-3xl p-6 space-y-4">
+            <div className="h-4 w-40 bg-slate-800 rounded"></div>
+            <div className="space-y-3 pt-2">
+              <div className="h-24 bg-slate-900/40 border border-slate-800/40 rounded-2xl"></div>
+              <div className="h-24 bg-slate-900/40 border border-slate-800/40 rounded-2xl"></div>
+              <div className="h-24 bg-slate-900/40 border border-slate-800/40 rounded-2xl"></div>
+            </div>
+          </div>
+          <div className="h-96 bg-[#0b101d] border border-slate-800 rounded-3xl p-6 space-y-4">
+            <div className="h-4 w-40 bg-slate-800 rounded"></div>
+            <div className="space-y-3 pt-2">
+              <div className="h-24 bg-slate-900/40 border border-slate-800/40 rounded-2xl"></div>
+              <div className="h-24 bg-slate-900/40 border border-slate-800/40 rounded-2xl"></div>
+              <div className="h-24 bg-slate-900/40 border border-slate-800/40 rounded-2xl"></div>
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
