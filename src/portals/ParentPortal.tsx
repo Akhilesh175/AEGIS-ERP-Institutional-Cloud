@@ -24,6 +24,7 @@ import {
   downloadStudentIdCardPdf, downloadAdmissionFormPdf, 
   downloadBonafideCertificatePdf 
 } from '../components/DocumentTemplates';
+import { ParentPTMManagement } from '../components/PTMManagement';
 
 const renderVideoPlayer = (url: string) => {
   if (!url) return null;
@@ -3539,6 +3540,10 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                   )}
                 </div>
               </PremiumLock>
+            )}
+
+            {activeTab === 'ptm' && (
+              <ParentPTMManagement />
             )}
 
             {activeTab === 'notifications' && (

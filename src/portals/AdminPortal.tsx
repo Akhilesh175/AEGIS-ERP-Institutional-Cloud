@@ -22,6 +22,7 @@ import {
   downloadCertificateOfExcellencePdf 
 } from '../components/DocumentTemplates';
 import { ClassDiscussion } from '../components/ClassDiscussion';
+import { AdminPTMManagement } from '../components/PTMManagement';
 
 export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawActiveTab }) => {
   const activeTab = rawActiveTab.split('/')[0];
@@ -14143,6 +14144,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
             )}
           </GlassCard>
         </div>
+      )}
+
+      {activeTab === 'ptm' && (
+        <AdminPTMManagement />
       )}
 
       {/* ── Edit Book Issue Modal Overlay ── */}

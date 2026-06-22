@@ -1505,3 +1505,103 @@ const PTMAdminView: React.FC<AdminViewProps> = ({ schoolId, meetings, onReload }
     </div>
   );
 };
+
+interface PTMErrorBoundaryProps {
+  children?: React.ReactNode;
+}
+
+interface PTMErrorBoundaryState {
+  hasError: boolean;
+  error: Error | null;
+}
+
+export class PTMErrorBoundary extends React.Component<PTMErrorBoundaryProps, PTMErrorBoundaryState> {
+  public state: PTMErrorBoundaryState = {
+    hasError: false,
+    error: null
+  };
+
+  public static getDerivedStateFromError(error: Error): PTMErrorBoundaryState {
+    return { hasError: true, error };
+  }
+
+  public componentDidCatch(error: Error, errorInfo: React.ErrorInfo) {
+    console.error('PTM Module Error Boundary caught an exception:', error, errorInfo);
+  }
+
+  private handleRetry = () => {
+    console.log('Retrying PTM Module load...');
+    this.setState({ hasError: false, error: null });
+  };
+
+  public render() {
+    if (this.state.hasError) {
+      return (
+        <div className="p-6 md:p-8 min-h-[60vh] flex flex-col items-center justify-center text-center animate-fade-in bg-[#070b13] text-slate-200 w-full">
+          <GlassCard className="max-w-md p-8 border-red-500/10 shadow-red-500/5 space-y-6">
+            <div className="w-16 h-16 bg-red-500/10 rounded-full flex items-center justify-center border border-red-500/20 mx-auto text-red-400">
+              <AlertCircle size={32} />
+            </div>
+            <div className="space-y-2">
+              <h3 className="text-lg font-bold text-slate-100">Unable to load PTM module.</h3>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                An unexpected exception occurred while loading or rendering the Parent-Teacher Meeting module.
+              </p>
+              {this.state.error && (
+                <div className="p-2.5 bg-slate-950/40 border border-slate-850 rounded-lg text-left mt-2">
+                  <p className="text-[9px] font-mono text-rose-400 break-all leading-normal font-semibold">
+                    {this.state.error.name}: {this.state.error.message}
+                  </p>
+                </div>
+              )}
+            </div>
+            <div className="flex justify-center pt-2">
+              <button
+                onClick={this.handleRetry}
+                className="px-5 py-2.5 bg-brand-600 hover:bg-brand-500 text-white font-semibold rounded-xl text-xs flex items-center gap-1.5 active:scale-95 transition-all shadow-lg shadow-brand-500/10"
+              >
+                <RefreshCw size={13} />
+                Retry
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+export const TeacherPTMManagement: React.FC = () => {
+  return (
+    <PTMErrorBoundary>
+      <PTMManagement />
+    </PTMErrorBoundary>
+  );
+};
+
+export const ParentPTMManagement: React.FC = () => {
+  return (
+    <PTMErrorBoundary>
+      <PTMManagement />
+    </PTMErrorBoundary>
+  );
+};
+
+export const StudentPTMManagement: React.FC = () => {
+  return (
+    <PTMErrorBoundary>
+      <PTMManagement />
+    </PTMErrorBoundary>
+  );
+};
+
+export const AdminPTMManagement: React.FC = () => {
+  return (
+    <PTMErrorBoundary>
+      <PTMManagement />
+    </PTMErrorBoundary>
+  );
+};
+

@@ -10,7 +10,6 @@ import { TeacherPortal } from './portals/TeacherPortal';
 import { AdminPortal } from './portals/AdminPortal';
 import { SuperAdminPortal } from './portals/SuperAdminPortal';
 import { SportsManagement } from './components/SportsManagement';
-import { PTMManagement } from './components/PTMManagement';
 import { AegisMeet } from './components/AegisMeet';
 import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff, Building2, GraduationCap, Users, BookOpen, Home, Key, UserCheck, Phone, MessageSquare, Instagram, CheckCircle2, ShieldAlert, Database, Network, Layers, FileText, CheckSquare, HelpCircle, Globe, Laptop, ArrowRight, ShieldCheck, Bell } from 'lucide-react';
 import { GlassCard } from './components/GlassCard';
@@ -26,34 +25,34 @@ const getTabsForRole = (role: string, planName: string): string[] => {
 
   switch (role) {
     case 'STUDENT':
-      return ['dashboard', 'timetable', 'grades', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'fees', 'hostel', 'support', 'groupdiscussion'];
+      return ['dashboard', 'timetable', 'ptm', 'grades', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'fees', 'hostel', 'support', 'groupdiscussion'];
     case 'PARENT':
-      return ['dashboard', 'notifications', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'hostel', 'support'];
+      return ['dashboard', 'notifications', 'ptm', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'hostel', 'support'];
     case 'TEACHER':
     case 'DRIVER':
-      return ['dashboard', 'timetable', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'sports', 'analytics', 'paymentsettings', 'support', 'groupdiscussion'];
+      return ['dashboard', 'timetable', 'ptm', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'sports', 'analytics', 'paymentsettings', 'support', 'groupdiscussion'];
     case 'SUPER_ADMIN':
-      return ['dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'sports', 'support'];
+      return ['dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'sports', 'ptm', 'support'];
     case 'ADMIN':
       return [
         'dashboard', 'impersonation', 'dangerzone', 'subscriptions',
         'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'groupdiscussion', 'sports'
+        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'groupdiscussion', 'sports', 'ptm'
       ];
     case 'FINANCE_ADMIN':
       return [
         'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'sports'
+        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'sports', 'ptm'
       ];
     case 'SPORTS_ADMIN':
-      return ['dashboard', 'sports', 'paymentsettings', 'support'];
+      return ['dashboard', 'sports', 'paymentsettings', 'ptm', 'support'];
     default: { // Sub-admin roles (Librarian, Warden, Academic Admin, Exam Controller, etc.)
       const tabs = [
         'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'communications', 'rbac', 'backups', 'books', 'transport', 'marksheets', 'quizzes', 
-        'attendance', 'assignments', 'hostel', 'support', 'paymentsettings', 'sports'
+        'attendance', 'assignments', 'hostel', 'support', 'paymentsettings', 'sports', 'ptm'
       ];
       if (role === 'ACADEMIC_ADMIN') {
         tabs.push('groupdiscussion');
@@ -1316,8 +1315,6 @@ export const App: React.FC = () => {
                   <>
                     {activeTab === 'sports' ? (
                       <SportsManagement />
-                    ) : activeTab === 'ptm' ? (
-                      <PTMManagement />
                     ) : (
                       <>
                         {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}

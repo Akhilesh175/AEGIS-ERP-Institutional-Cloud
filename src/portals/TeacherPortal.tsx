@@ -18,6 +18,7 @@ import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 import { ClassDiscussion } from '../components/ClassDiscussion';
+import { TeacherPTMManagement } from '../components/PTMManagement';
 
 export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: string) => void }> = ({ activeTab, setActiveTab }) => {
   const { session, syncSubscriptionPlan } = useStore();
@@ -5025,6 +5026,10 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
           </GlassCard>
         </div>
         </PremiumLock>
+      )}
+
+      {activeTab === 'ptm' && (
+        <TeacherPTMManagement />
       )}
 
       {/* ── PAYMENT SETTINGS TAB ── */}

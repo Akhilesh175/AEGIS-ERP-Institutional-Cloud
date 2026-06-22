@@ -26,6 +26,7 @@ import {
   downloadBonafideCertificatePdf 
 } from '../components/DocumentTemplates';
 import { ClassDiscussion } from '../components/ClassDiscussion';
+import { StudentPTMManagement } from '../components/PTMManagement';
 
 const renderVideoPlayer = (url: string) => {
   if (!url) return null;
@@ -2050,6 +2051,10 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
             </div>
           </div>
         </div>
+      )}
+
+      {activeTab === 'ptm' && (
+        <StudentPTMManagement />
       )}
 
       {activeTab === 'hostel' && (
