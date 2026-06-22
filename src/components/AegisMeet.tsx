@@ -9,6 +9,17 @@ import {
   Paperclip, Plus, FileText, Trash, RefreshCw, Volume2, Eye
 } from 'lucide-react';
 
+// ─── Host Role Guard ────────────────────────────────────────────────────────
+// All roles listed here bypass the waiting room and auto-register as host.
+// Fix 1: Expanding from just TEACHER/ADMIN to all admin/staff roles.
+const HOST_ROLES = [
+  'TEACHER', 'ADMIN', 'SUPER_ADMIN', 'ACADEMIC_ADMIN',
+  'SUB_ADMIN', 'FINANCE_ADMIN', 'EXAM_CONTROLLER'
+] as const;
+const isHostRole = (role: string): boolean =>
+  (HOST_ROLES as readonly string[]).includes(role);
+// ─────────────────────────────────────────────────────────────────────────────
+
 interface AegisMeetProps {
   meetingId: string;
   onLeave?: () => void;
@@ -133,9 +144,10 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const [allowParticipantScreenShare, setAllowParticipantScreenShare] = useState(true);
   
   // Waiting Room states
-  const [inWaitingRoom, setInWaitingRoom] = useState(currentUserRole !== 'TEACHER' && currentUserRole !== 'ADMIN');
+  // Fix 2: Use isHostRole() to correctly bypass waiting room for all host/admin roles
+  const [inWaitingRoom, setInWaitingRoom] = useState(!isHostRole(currentUserRole));
   const [waitingUsers, setWaitingUsers] = useState<any[]>([]);
-  const [admitted, setAdmitted] = useState(currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN');
+  const [admitted, setAdmitted] = useState(isHostRole(currentUserRole));
   const [waitingStatus, setWaitingStatus] = useState<'PENDING' | 'REJECTED' | 'APPROVED'>('PENDING');
 
   // Notes & Tasks (Phase 10 & 11)
@@ -165,6 +177,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const participantSessionIdRef = useRef<string | null>(null);
   // Tracks whether this user has a live row in ptm_participants (needed for RLS authorization)
   const participantRegisteredRef = useRef<boolean>(false);
+  // Fix 3: Promise mutex — prevents duplicate registrations from concurrent approval events
+  const participantRegistrationPromiseRef = useRef<Promise<boolean> | null>(null);
 
   // Bound local stream to ref when it changes
   useEffect(() => {
@@ -177,18 +191,50 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   useEffect(() => {
     const loadMeetingDetails = async () => {
       try {
-        if (!schoolId) return;
+        // Fix 4: Load meeting by ID directly — do NOT require schoolId first.
+        // Previously `if (!schoolId) return` caused a silent abort for users whose
+        // session.user.schoolId was empty, blocking all subsequent initialization.
+        const { data: rawMeeting, error: meetingErr } = await supabase
+          .from('ptm_meetings')
+          .select('*')
+          .eq('id', meetingId)
+          .single();
 
-        // Load PTM detail
-        const meetings = await mockApi.fetchPTMMeetings(schoolId);
-        const found = meetings.find(m => m.id === meetingId);
-        if (found) {
-          setMeeting(found);
-          // Resolve schoolId from meeting record as authoritative fallback
-          if (!resolvedSchoolId && found.schoolId) {
-            setResolvedSchoolId(found.schoolId);
-          }
+        if (meetingErr || !rawMeeting) {
+          console.error('[AegisMeet] Meeting not found:', meetingId, meetingErr?.message);
+          return;
         }
+
+        // Resolve schoolId from meeting record (authoritative source)
+        const meetingSchoolId: string = rawMeeting.school_id || '';
+        if (meetingSchoolId && meetingSchoolId !== resolvedSchoolId) {
+          setResolvedSchoolId(meetingSchoolId);
+        }
+
+        // Map raw DB row to meeting object
+        const found = {
+          id: rawMeeting.id,
+          schoolId: rawMeeting.school_id,
+          title: rawMeeting.title,
+          description: rawMeeting.description,
+          teacherId: rawMeeting.teacher_id,
+          parentId: rawMeeting.parent_id,
+          studentId: rawMeeting.student_id,
+          classId: rawMeeting.class_id,
+          scheduledDate: rawMeeting.scheduled_date,
+          startTime: rawMeeting.start_time,
+          endTime: rawMeeting.end_time,
+          meetingMode: rawMeeting.meeting_mode,
+          status: rawMeeting.status,
+          meetingLink: rawMeeting.meeting_link,
+          teacherName: rawMeeting.teacher_name,
+          parentName: rawMeeting.parent_name,
+          studentName: rawMeeting.student_name,
+          className: rawMeeting.class_name,
+          sectionName: rawMeeting.section_name,
+        };
+        setMeeting(found);
+
 
         // Load historical notes
         const feedback = await mockApi.fetchPTMFeedback(meetingId);
@@ -316,13 +362,13 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           }
         }
 
-        // Host versus Participant Admission
-        if (currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN') {
+        // Fix 4 (host/participant): Use isHostRole() to correctly identify all host roles
+        if (isHostRole(currentUserRole)) {
           setInWaitingRoom(false);
           setAdmitted(true);
           setWaitingStatus('APPROVED');
-          
-          // Fetch existing waiting users
+
+          // Fetch existing waiting users with their waitingRoomId
           const wr = await supabase
             .from('meeting_waiting_room')
             .select(`
@@ -337,7 +383,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             `)
             .eq('meeting_id', meetingId)
             .eq('status', 'PENDING');
-          
+
           if (wr.data) {
             setWaitingUsers(wr.data.map((w: any) => ({
               id: w.participant_id,
@@ -347,11 +393,12 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             })));
           }
 
-        // Register teacher session & attendance — MUST AWAIT before allowing chat/upload
-          await registerParticipantSession();
+          // Pass meetingSchoolId directly — React state not yet flushed at this point
+          await registerParticipantSession(meetingSchoolId);
           updateAttendanceRecord(true);
+
         } else {
-          // Participant waiting room check
+          // Participant flow: check if already in waiting room or previously approved
           const wrCheck = await supabase
             .from('meeting_waiting_room')
             .select('*')
@@ -366,28 +413,40 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             if (wrCheck.data.status === 'APPROVED') {
               setInWaitingRoom(false);
               setAdmitted(true);
-              // MUST AWAIT registration before user can send messages
-              await registerParticipantSession();
+              await registerParticipantSession(meetingSchoolId);
               updateAttendanceRecord(true);
             } else if (wrCheck.data.status === 'REJECTED') {
               setInWaitingRoom(true);
               setAdmitted(false);
             }
+            // PENDING: stay in waiting room (state set by initial useState)
           } else {
-            // Write new pending wait request
+            // Fix 4: UPSERT prevents duplicate rows on component re-mount
+            const effectiveSchoolId = meetingSchoolId || resolvedSchoolId || '';
             await supabase
               .from('meeting_waiting_room')
-              .insert({
-                school_id: schoolId,
+              .upsert({
+                school_id: effectiveSchoolId,
                 meeting_id: meetingId,
                 participant_id: currentUserId,
                 participant_role: currentUserRole,
                 status: 'PENDING'
-              });
-            
+              }, { onConflict: 'meeting_id,participant_id', ignoreDuplicates: true });
+
             setWaitingStatus('PENDING');
             setInWaitingRoom(true);
             setAdmitted(false);
+
+            // Fix 6: Broadcast waiting_room_request so teacher gets instant notification.
+            // waitingRoomId intentionally omitted here — the Teacher's postgres_changes
+            // subscription will receive it via payload.new.id when the row propagates.
+            if (channelRef.current) {
+              channelRef.current.send({
+                type: 'broadcast',
+                event: 'waiting_room_request',
+                payload: { id: currentUserId, name: currentUserName, role: currentUserRole }
+              });
+            }
           }
         }
       } catch (e: any) {
@@ -396,65 +455,70 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     };
 
     loadMeetingDetails();
-  }, [meetingId, schoolId, currentUserId, currentUserRole]);
+  // Fix 12: Removed schoolId from deps — meeting now loaded by meetingId directly
+  }, [meetingId, currentUserId, currentUserRole]);
 
   // 2. Database participants registration & attendance log persistence
-  // CRITICAL: This must be awaited before any ptm_messages/ptm_chat_attachments writes
-  // to prevent RLS rejection (circular deadlock was fixed in migration 20260629)
-  const registerParticipantSession = async (): Promise<boolean> => {
-    // Avoid duplicate registrations (idempotent)
-    if (participantRegisteredRef.current) {
-      return true;
+  // Fix 5: Added overrideSchoolId param (React state not flushed in same async frame).
+  //        Added Promise-mutex to prevent duplicate rows from concurrent approval events.
+  const registerParticipantSession = async (overrideSchoolId?: string): Promise<boolean> => {
+    if (participantRegisteredRef.current) return true;
+
+    // Promise mutex: if registration already in-flight, return the same promise
+    if (participantRegistrationPromiseRef.current) {
+      return participantRegistrationPromiseRef.current;
     }
-    try {
-      // NOTE: We do NOT use .select().single() here because the FOR ALL USING policy on
-      // ptm_participants applies the USING clause to the RETURNING statement, which can
-      // fail RLS checks even when the INSERT itself succeeds. Instead, we check status.
-      const effectiveSchoolId = resolvedSchoolId || meeting?.schoolId || '';
-      const insertResult = await supabase
-        .from('ptm_participants')
-        .insert({
-          school_id: effectiveSchoolId,
-          meeting_id: meetingId,
-          user_id: currentUserId,
-          role: currentUserRole,
-          joined_at: new Date().toISOString()
-        });
-      
-      // status 201 = Created (success), null error = success
-      if (insertResult.status === 201 || !insertResult.error) {
-        participantRegisteredRef.current = true;
-        // Try to fetch back our session ID so deregister can update the specific row
-        try {
-          const { data: sessionRows } = await supabase
-            .from('ptm_participants')
-            .select('id')
-            .eq('meeting_id', meetingId)
-            .eq('user_id', currentUserId)
-            .is('left_at', null)
-            .order('joined_at', { ascending: false })
-            .limit(1);
-          if (sessionRows && sessionRows.length > 0) {
-            participantSessionIdRef.current = sessionRows[0].id;
-          }
-        } catch (_) { /* Non-critical — deregister will update by user_id fallback */ }
-        console.log('[AegisMeet] Participant registered in ptm_participants (session:', participantSessionIdRef.current, ')');
-        return true;
-      } else if (insertResult.error) {
-        const error = insertResult.error;
-        console.warn('[AegisMeet] ptm_participants registration error:', error.message);
-        // If it's a unique constraint violation (already registered), mark as registered
-        if (error.message?.includes('unique') || error.code === '23505') {
+
+    const doRegister = async (): Promise<boolean> => {
+      try {
+        const effectiveSchoolId = overrideSchoolId || resolvedSchoolId || meeting?.schoolId || '';
+        const insertResult = await supabase
+          .from('ptm_participants')
+          .insert({
+            school_id: effectiveSchoolId,
+            meeting_id: meetingId,
+            user_id: currentUserId,
+            role: currentUserRole,
+            joined_at: new Date().toISOString()
+          });
+
+        if (insertResult.status === 201 || !insertResult.error) {
           participantRegisteredRef.current = true;
+          try {
+            const { data: sessionRows } = await supabase
+              .from('ptm_participants')
+              .select('id')
+              .eq('meeting_id', meetingId)
+              .eq('user_id', currentUserId)
+              .is('left_at', null)
+              .order('joined_at', { ascending: false })
+              .limit(1);
+            if (sessionRows && sessionRows.length > 0) {
+              participantSessionIdRef.current = sessionRows[0].id;
+            }
+          } catch (_) { /* Non-critical */ }
+          console.log('[AegisMeet] Participant registered (session:', participantSessionIdRef.current, ')');
           return true;
+        } else if (insertResult.error) {
+          const error = insertResult.error;
+          console.warn('[AegisMeet] ptm_participants registration error:', error.message);
+          if (error.message?.includes('unique') || error.code === '23505') {
+            participantRegisteredRef.current = true;
+            return true;
+          }
+          return false;
         }
         return false;
+      } catch (e) {
+        console.warn('[AegisMeet] ptm_participants registration failed:', e);
+        return false;
       }
-      return false;
-    } catch (e) {
-      console.warn('[AegisMeet] ptm_participants registration failed:', e);
-      return false;
-    }
+    };
+
+    participantRegistrationPromiseRef.current = doRegister();
+    const result = await participantRegistrationPromiseRef.current;
+    participantRegistrationPromiseRef.current = null;
+    return result;
   };
 
   const deregisterParticipantSession = async () => {
@@ -740,14 +804,12 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         });
       })
       .on('broadcast', { event: 'waiting_room_request' }, ({ payload }) => {
-        if (currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN') {
+        // Fix 7: Use isHostRole() to handle all admin/teacher roles correctly
+        if (isHostRole(currentUserRole)) {
           setWaitingUsers(prev => {
             if (prev.some(w => w.id === payload.id)) return prev;
-            return [...prev, {
-              id: payload.id,
-              name: payload.name,
-              role: payload.role
-            }];
+            // waitingRoomId not included in broadcast; DB subscription will fill it in
+            return [...prev, { id: payload.id, name: payload.name, role: payload.role }];
           });
         }
       })
@@ -757,25 +819,17 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           if (payload.status === 'APPROVED') {
             setInWaitingRoom(false);
             setAdmitted(true);
-            // AWAIT registration so that subsequent chat/upload is authorized
-            registerParticipantSession().then(() => {
-              updateAttendanceRecord(true);
-            });
-            
-            // Broadcast presence to peer list
-            signalingChannel.send({
-              type: 'broadcast',
-              event: 'join-announcement',
-              payload: {
-                id: currentUserId,
-                name: currentUserName,
-                role: currentUserRole,
-                micEnabled,
-                videoEnabled,
-                handRaised,
-                screenSharing
-              }
-            });
+            // Fix 9: Properly await registration before announcing presence
+            (async () => {
+              await registerParticipantSession();
+              await updateAttendanceRecord(true);
+              signalingChannel.send({
+                type: 'broadcast',
+                event: 'join-announcement',
+                payload: { id: currentUserId, name: currentUserName, role: currentUserRole,
+                  micEnabled, videoEnabled, handRaised, screenSharing }
+              });
+            })();
           } else if (payload.status === 'REJECTED') {
             setInWaitingRoom(true);
             setAdmitted(false);
@@ -813,14 +867,14 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           filter: `meeting_id=eq.${meetingId}`
         },
         async (payload) => {
-          if (currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN') {
+          // Fix 7: Use isHostRole() for all admin roles
+          if (isHostRole(currentUserRole)) {
             if (payload.eventType === 'INSERT') {
               const { data: user } = await supabase
                 .from('users')
                 .select('first_name, last_name')
                 .eq('id', payload.new.participant_id)
                 .single();
-              
               const name = user ? `${user.first_name || ''} ${user.last_name || ''}`.trim() : 'Waiting User';
               setWaitingUsers(prev => {
                 if (prev.some(w => w.id === payload.new.participant_id)) return prev;
@@ -828,7 +882,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                   id: payload.new.participant_id,
                   name,
                   role: payload.new.participant_role,
-                  waitingRoomId: payload.new.id
+                  waitingRoomId: payload.new.id  // ✅ waitingRoomId from DB row
                 }];
               });
             } else if (payload.eventType === 'UPDATE') {
@@ -837,30 +891,23 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               }
             }
           } else {
-            // Participant status sync
+            // Participant: sync own waiting room status
             if (payload.eventType === 'UPDATE' && payload.new.participant_id === currentUserId) {
               setWaitingStatus(payload.new.status);
               if (payload.new.status === 'APPROVED') {
                 setInWaitingRoom(false);
                 setAdmitted(true);
-                // AWAIT registration before enabling chat
-                registerParticipantSession().then(() => {
-                  updateAttendanceRecord(true);
-                });
-                // Broadcast presence to peer list
-                signalingChannel.send({
-                  type: 'broadcast',
-                  event: 'join-announcement',
-                  payload: {
-                    id: currentUserId,
-                    name: currentUserName,
-                    role: currentUserRole,
-                    micEnabled,
-                    videoEnabled,
-                    handRaised,
-                    screenSharing
-                  }
-                });
+                // Fix 9: Properly await registration before announcing presence
+                (async () => {
+                  await registerParticipantSession();
+                  await updateAttendanceRecord(true);
+                  signalingChannel.send({
+                    type: 'broadcast',
+                    event: 'join-announcement',
+                    payload: { id: currentUserId, name: currentUserName, role: currentUserRole,
+                      micEnabled, videoEnabled, handRaised, screenSharing }
+                  });
+                })();
               } else if (payload.new.status === 'REJECTED') {
                 setInWaitingRoom(true);
                 setAdmitted(false);
@@ -883,17 +930,17 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           filter: `meeting_id=eq.${meetingId}`
         },
         async (payload) => {
-          if (payload.new.sender_id === currentUserId) return;
-          
-          const { data: sender } = await supabase
-            .from('users')
-            .select('first_name, last_name')
-            .eq('id', payload.new.sender_id)
-            .single();
+          // Fix 8: Don't skip own messages — instead replace any local optimistic copy
+          // with the canonical DB record (identified by sender + message text match).
+          const senderIsMe = payload.new.sender_id === currentUserId;
 
-          const name = sender ? `${sender.first_name || ''} ${sender.last_name || ''}`.trim() : 'Participant';
-          
-          // Re-load to check if it has attachments
+          const { data: sender } = !senderIsMe
+            ? await supabase.from('users').select('first_name, last_name').eq('id', payload.new.sender_id).single()
+            : { data: null };
+          const name = senderIsMe
+            ? currentUserName
+            : (sender ? `${(sender as any).first_name || ''} ${(sender as any).last_name || ''}`.trim() : 'Participant');
+
           const { data: attach } = await supabase
             .from('ptm_chat_attachments')
             .select('*')
@@ -904,29 +951,26 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             .maybeSingle();
 
           let msgAttachment: AttachmentMetadata | undefined;
-          if (attach && payload.new.message.includes(attach.file_name)) {
+          if (attach && payload.new.message.includes((attach as any).file_name)) {
             msgAttachment = {
-              id: attach.id,
-              fileName: attach.file_name,
-              fileType: attach.file_type,
-              fileSize: attach.file_size,
-              publicUrl: attach.public_url,
-              senderId: attach.sender_id,
-              senderName: name,
-              createdAt: attach.created_at
+              id: (attach as any).id, fileName: (attach as any).file_name,
+              fileType: (attach as any).file_type, fileSize: (attach as any).file_size,
+              publicUrl: (attach as any).public_url, senderId: (attach as any).sender_id,
+              senderName: name, createdAt: (attach as any).created_at
             };
           }
 
           setChatMessages(prev => {
-            if (prev.some(m => m.id === payload.new.id)) return prev;
-            return [...prev, {
-              id: payload.new.id,
-              senderId: payload.new.sender_id,
-              senderName: name,
-              senderRole: payload.new.sender_role,
-              messageText: payload.new.message,
-              createdAt: payload.new.created_at,
-              attachment: msgAttachment
+            // Deduplicate: exact ID match, or replace a local-* optimistic copy
+            const filtered = prev.filter(m =>
+              m.id !== payload.new.id &&
+              !(m.id.startsWith('local-') && m.senderId === payload.new.sender_id &&
+                m.messageText === payload.new.message)
+            );
+            return [...filtered, {
+              id: payload.new.id, senderId: payload.new.sender_id, senderName: name,
+              senderRole: payload.new.sender_role, messageText: payload.new.message,
+              createdAt: payload.new.created_at, attachment: msgAttachment
             }];
           });
         }
@@ -1360,60 +1404,59 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   };
 
   // 8. Host waitlist admissions
-  const admitWaitingUser = async (userId: string, waitingRoomId: string) => {
+  // Fix 9: Falls back to participant_id query when waitingRoomId is missing
+  // (e.g. user appeared via broadcast before DB subscription fired its INSERT event)
+  const admitWaitingUser = async (userId: string, waitingRoomId?: string) => {
     try {
-      await supabase
-        .from('meeting_waiting_room')
-        .update({
-          status: 'APPROVED',
-          approved_by: currentUserId,
-          approved_at: new Date().toISOString()
-        })
-        .eq('id', waitingRoomId);
+      const updatePayload = {
+        status: 'APPROVED',
+        approved_by: currentUserId,
+        approved_at: new Date().toISOString()
+      };
+
+      if (waitingRoomId) {
+        await supabase.from('meeting_waiting_room').update(updatePayload).eq('id', waitingRoomId);
+      } else {
+        // Fallback: query by participant_id (safe when waitingRoomId unavailable)
+        await supabase.from('meeting_waiting_room').update(updatePayload)
+          .eq('meeting_id', meetingId).eq('participant_id', userId).eq('status', 'PENDING');
+      }
 
       setWaitingUsers(prev => prev.filter(u => u.id !== userId));
-
       if (channelRef.current) {
         channelRef.current.send({
           type: 'broadcast',
           event: 'waiting_room_approved',
-          payload: {
-            targetId: userId,
-            status: 'APPROVED'
-          }
+          payload: { targetId: userId, status: 'APPROVED' }
         });
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
 
-  const rejectWaitingUser = async (userId: string, waitingRoomId: string) => {
+  const rejectWaitingUser = async (userId: string, waitingRoomId?: string) => {
     try {
-      await supabase
-        .from('meeting_waiting_room')
-        .update({
-          status: 'REJECTED',
-          approved_by: currentUserId,
-          approved_at: new Date().toISOString()
-        })
-        .eq('id', waitingRoomId);
+      const updatePayload = {
+        status: 'REJECTED',
+        approved_by: currentUserId,
+        approved_at: new Date().toISOString()
+      };
+
+      if (waitingRoomId) {
+        await supabase.from('meeting_waiting_room').update(updatePayload).eq('id', waitingRoomId);
+      } else {
+        await supabase.from('meeting_waiting_room').update(updatePayload)
+          .eq('meeting_id', meetingId).eq('participant_id', userId).eq('status', 'PENDING');
+      }
 
       setWaitingUsers(prev => prev.filter(u => u.id !== userId));
-
       if (channelRef.current) {
         channelRef.current.send({
           type: 'broadcast',
           event: 'waiting_room_approved',
-          payload: {
-            targetId: userId,
-            status: 'REJECTED'
-          }
+          payload: { targetId: userId, status: 'REJECTED' }
         });
       }
-    } catch (e) {
-      console.error(e);
-    }
+    } catch (e) { console.error(e); }
   };
 
   // 9. Host Participant list options
@@ -1614,7 +1657,9 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
       const anonKey = (supabase as any).supabaseKey || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
       const supabaseUrl = (supabase as any).supabaseUrl || import.meta.env.VITE_SUPABASE_URL || '';
-      const filePath = `${schoolId}/${meetingId}/attachments/${Date.now()}_${file.name}`;
+      // Fix 10: Use effectiveSchoolId to avoid empty-schoolId storage paths
+      const effectiveSchoolIdForPath = resolvedSchoolId || meeting?.schoolId || '';
+      const filePath = `${effectiveSchoolIdForPath}/${meetingId}/attachments/${Date.now()}_${file.name}`;
       const uploadUrl = `${supabaseUrl}/storage/v1/object/ptm-chat-files/${filePath}`;
 
       const xhr = new XMLHttpRequest();
@@ -1678,15 +1723,42 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
             if (fileErr || messageErr) {
               const err = fileErr || messageErr;
-              console.error('[AegisMeet] File upload DB insert error:', err?.message);
-              if (err?.message?.includes('Row-level security') || err?.message?.includes('Permission') || err?.code === '42501' || err?.code === 'PGRST301') {
-                alert('Permission Denied\nYou are not a participant of this meeting.\n\nPlease try joining the call first, then upload.');
+              const isRlsError = err?.message?.includes('Row-level security') ||
+                err?.message?.includes('permission') || err?.code === '42501' || err?.code === 'PGRST301';
+              console.warn('[AegisMeet] File upload DB insert error:', err?.message, '| RLS?', isRlsError);
+
+              // Fix 11: Retry with re-registration instead of immediately showing Permission Denied
+              if (isRlsError) {
+                console.log('[AegisMeet] RLS error on file upload — attempting re-registration and retry...');
+                participantRegisteredRef.current = false;
+                const reReg = await registerParticipantSession(effectiveSchoolId);
+                if (reReg) {
+                  const [retryAtt, retryMsg] = await Promise.all([
+                    supabase.from('ptm_chat_attachments').insert({
+                      school_id: effectiveSchoolId, meeting_id: meetingId,
+                      sender_id: currentUserId, sender_role: currentUserRole,
+                      file_name: file.name, file_size: file.size, file_type: file.type,
+                      storage_path: filePath, public_url: ''
+                    }),
+                    supabase.from('ptm_messages').insert({
+                      school_id: effectiveSchoolId, meeting_id: meetingId,
+                      sender_id: currentUserId, sender_role: currentUserRole,
+                      message: `Shared file: ${file.name}`, message_type: 'FILE'
+                    })
+                  ]);
+                  if (retryAtt.error || retryMsg.error) {
+                    alert('Permission Denied\nUnable to record file in meeting. Please rejoin the meeting and try again.');
+                    setIsUploading(false); setFailedFile(file); return;
+                  }
+                  // Retry succeeded — fall through to success path
+                } else {
+                  alert('Permission Denied\nUnable to verify meeting participation. Please rejoin the meeting.');
+                  setIsUploading(false); setFailedFile(file); return;
+                }
               } else {
                 alert('File upload failed: ' + (err?.message || 'Unknown error'));
+                setIsUploading(false); setFailedFile(file); return;
               }
-              setIsUploading(false);
-              setFailedFile(file);
-              return;
             }
 
             setUploadProgress(95);
@@ -1757,18 +1829,28 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             setFailedFile(file);
           }
         } else {
-          let errMsg = 'Storage Configuration Error';
+          // Storage upload itself failed — parse error message
+          let errMsg = 'Storage error';
           try {
             const resp = JSON.parse(xhr.responseText);
             errMsg = resp.message || resp.error || errMsg;
-          } catch (e) {}
+          } catch (_e) {}
 
+          console.error('[AegisMeet] Storage upload HTTP error:', xhr.status, errMsg);
           if (errMsg.includes('bucket') || errMsg.includes('Bucket not found') || errMsg.includes('does not exist')) {
-            alert('Storage Configuration Error');
-          } else if (errMsg.includes('Row-level security') || errMsg.includes('Permission') || errMsg.includes('policy')) {
-            alert('Permission Denied\nYou are not a participant of this meeting.');
+            alert('Storage Configuration Error\nThe file storage bucket is not configured. Contact your administrator.');
+          } else if (xhr.status === 403 || errMsg.includes('Row-level security') || errMsg.includes('policy')) {
+            // Fix 11: Retry with re-registration for storage RLS errors too
+            console.log('[AegisMeet] Storage 403 — attempting participant re-registration...');
+            participantRegisteredRef.current = false;
+            const reReg = await registerParticipantSession();
+            if (!reReg) {
+              alert('Access Denied\nYou are not authorized to upload files to this meeting. Please rejoin.');
+            } else {
+              alert('Upload failed due to a temporary permission error. Please try uploading again.');
+            }
           } else {
-            alert('Permission Denied\nYou are not a participant of this meeting.');
+            alert(`Upload failed (${xhr.status})\n${errMsg}`);
           }
           setIsUploading(false);
           setFailedFile(file);
