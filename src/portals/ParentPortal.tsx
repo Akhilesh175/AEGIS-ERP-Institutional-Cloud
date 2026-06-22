@@ -181,7 +181,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
         if (prev && data.some(s => s.id === prev)) {
           return prev;
         }
-        return data[0].id;
+        return data[0]?.id || '';
       });
       setLoading(false);
     } catch (err: any) {
@@ -772,6 +772,19 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
           <div>
             <h4 className="font-bold text-sm">Security Policy Alert</h4>
             <p className="text-xs leading-relaxed opacity-90">{error}</p>
+          </div>
+        </div>
+      ) : assignedStudents.length === 0 ? (
+        <div className="p-12 text-center bg-[#0b101d] border border-slate-800 rounded-3xl space-y-4">
+          <div className="w-16 h-16 mx-auto rounded-2xl bg-slate-800/40 border border-slate-700/50 flex items-center justify-center">
+            <UsersRound className="text-slate-550" size={32} />
+          </div>
+          <div className="max-w-md mx-auto space-y-2">
+            <h3 className="text-lg font-bold text-slate-200">No Wards Linked</h3>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              We couldn't find any student profiles linked to your parent account in this institution. 
+              Please contact the school administration to map your child's student profile to your login credentials.
+            </p>
           </div>
         </div>
       ) : (
