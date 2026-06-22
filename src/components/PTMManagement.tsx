@@ -267,6 +267,7 @@ interface TeacherViewProps {
 }
 
 const PTMTeacherView: React.FC<TeacherViewProps> = ({ schoolId, teacherId, meetings, onReload, onDownloadPDF, onJoinMeet }) => {
+  const { session } = useStore();
   const [classes, setClasses] = useState<any[]>([]);
   const [students, setStudents] = useState<any[]>([]);
   const [selectedClass, setSelectedClass] = useState('');
@@ -278,6 +279,7 @@ const PTMTeacherView: React.FC<TeacherViewProps> = ({ schoolId, teacherId, meeti
   const [description, setDescription] = useState('');
   const [mode, setMode] = useState<'ONLINE' | 'OFFLINE' | 'HYBRID'>('ONLINE');
   const [venue, setVenue] = useState('');
+  const [roomNumber, setRoomNumber] = useState('');
   const [date, setDate] = useState('');
   const [startTime, setStartTime] = useState('');
   const [endTime, setEndTime] = useState('');
@@ -322,24 +324,44 @@ const PTMTeacherView: React.FC<TeacherViewProps> = ({ schoolId, teacherId, meeti
         return;
       }
       try {
-        const { data: mapping } = await supabase
+        const { data: mapping, error: mapErr } = await supabase
           .from('parent_student_mapping')
           .select('parent_id')
           .eq('student_id', selectedStudent)
           .maybeSingle();
 
-        if (mapping) {
-          const { data: user } = await supabase
-            .from('users')
-            .select('first_name, last_name')
-            .eq('id', mapping.parent_id)
-            .single();
+        if (mapErr) {
+          console.error('Error fetching parent student mapping:', mapErr);
+        }
 
-          if (user) {
-            setResolvedParent({
-              id: mapping.parent_id,
-              name: `${user.first_name || ''} ${user.last_name || ''}`.trim()
-            });
+        if (mapping) {
+          const { data: parentRecord, error: parentErr } = await supabase
+            .from('parents')
+            .select('user_id')
+            .eq('id', mapping.parent_id)
+            .maybeSingle();
+
+          if (parentErr) {
+            console.error('Error fetching parent profile:', parentErr);
+          }
+
+          if (parentRecord) {
+            const { data: user, error: userErr } = await supabase
+              .from('users')
+              .select('id, first_name, last_name')
+              .eq('id', parentRecord.user_id)
+              .single();
+
+            if (userErr) {
+              console.error('Error fetching parent user details:', userErr);
+            }
+
+            if (user) {
+              setResolvedParent({
+                id: user.id,
+                name: `${user.first_name || ''} ${user.last_name || ''}`.trim()
+              });
+            }
           }
         }
       } catch (err) {
@@ -352,15 +374,106 @@ const PTMTeacherView: React.FC<TeacherViewProps> = ({ schoolId, teacherId, meeti
   // Handle schedule submit
   const handleSchedulePTM = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!selectedClass || !selectedStudent || !resolvedParent || !title || !date || !startTime || !endTime) {
-      alert('Please fill out all required scheduling fields.');
+
+    // PHASE 2 — DIAGNOSTICS LOGGING
+    console.log("PTM SCHEDULING PAYLOAD DIAGNOSTICS:", {
+      classId: selectedClass,
+      studentId: selectedStudent,
+      resolvedParent,
+      meetingTitle: title,
+      description: description || null,
+      meetingMode: mode,
+      meetingDate: date,
+      startTime,
+      endTime,
+      schoolId,
+      teacherId,
+      sessionId: session?.user?.academicSessionId || null
+    });
+
+    // PHASE 3 — VALIDATION REBUILD WITH PRECISE ERROR ALERTS
+    if (!selectedClass) {
+      alert("Please select a class.");
+      return;
+    }
+    if (!selectedStudent) {
+      alert("Please select a student.");
+      return;
+    }
+    if (!resolvedParent) {
+      alert("Please select a valid parent mapped to the student.");
+      return;
+    }
+    if (!title || !title.trim()) {
+      alert("Meeting title is required.");
+      return;
+    }
+    if (!mode) {
+      alert("Please select meeting mode.");
+      return;
+    }
+    if (!date) {
+      alert("Please select meeting date.");
+      return;
+    }
+    if (!startTime) {
+      alert("Please select start time.");
+      return;
+    }
+    if (!endTime) {
+      alert("Please select end time.");
+      return;
+    }
+
+    // Time validation (End time must be later than start time)
+    const parseTimeToMinutes = (timeStr: string) => {
+      if (!timeStr) return 0;
+      const match = timeStr.match(/^(\d+):(\d+)\s*(AM|PM)?$/i);
+      if (match) {
+        let hours = parseInt(match[1]);
+        const minutes = parseInt(match[2]);
+        const ampm = match[3];
+        if (ampm) {
+          if (ampm.toUpperCase() === 'PM' && hours < 12) hours += 12;
+          if (ampm.toUpperCase() === 'AM' && hours === 12) hours = 0;
+        }
+        return hours * 60 + minutes;
+      }
+      const match24 = timeStr.match(/^(\d+):(\d+)$/);
+      if (match24) {
+        const hours = parseInt(match24[1]);
+        const minutes = parseInt(match24[2]);
+        return hours * 60 + minutes;
+      }
+      return 0;
+    };
+
+    const startMin = parseTimeToMinutes(startTime);
+    const endMin = parseTimeToMinutes(endTime);
+    if (endMin <= startMin) {
+      alert("End time must be later than start time.");
       return;
     }
 
     try {
-      const meetId = Math.random().toString(36).substring(2, 10);
-      const link = mode === 'ONLINE' || mode === 'HYBRID' ? `https://aegiserp.xyz/meet/${meetId}` : undefined;
+      // PHASE 5 — ONLINE PTM ENGINE: Automatically generate secure meeting link
+      const generateRoomId = () => {
+        const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+        let result = '';
+        for (let i = 0; i < 8; i++) {
+          result += chars.charAt(Math.floor(Math.random() * chars.length));
+        }
+        return `PTM-${result}`;
+      };
       
+      const meetingRoomId = generateRoomId();
+      const link = mode === 'ONLINE' || mode === 'HYBRID' ? `${window.location.origin}/meet/${meetingRoomId}` : undefined;
+      
+      // PHASE 6 — OFFLINE PTM: Store venue, room number, meeting notes
+      const finalVenue = (mode === 'OFFLINE' || mode === 'HYBRID') 
+        ? `${venue || ''}${roomNumber ? ` (Room ${roomNumber})` : ''}`.trim()
+        : undefined;
+
       await mockApi.createPTMMeeting({
         schoolId,
         classId: selectedClass,
@@ -368,9 +481,9 @@ const PTMTeacherView: React.FC<TeacherViewProps> = ({ schoolId, teacherId, meeti
         parentId: resolvedParent.id,
         teacherId,
         title,
-        description,
+        description: description || undefined,
         meetingMode: mode,
-        venue: mode === 'OFFLINE' || mode === 'HYBRID' ? venue : undefined,
+        venue: finalVenue,
         meetingLink: link,
         scheduledDate: date,
         startTime,
@@ -379,15 +492,17 @@ const PTMTeacherView: React.FC<TeacherViewProps> = ({ schoolId, teacherId, meeti
       });
 
       setIsScheduleOpen(false);
-      // reset form
+      // Reset form fields
       setTitle('');
       setDescription('');
       setSelectedClass('');
       setSelectedStudent('');
+      setVenue('');
+      setRoomNumber('');
       onReload();
-    } catch (e) {
-      console.error(e);
-      alert('Failed to schedule PTM');
+    } catch (e: any) {
+      console.error("PTM creation exception diagnostics:", e);
+      alert(`Unable to load PTM module. Create PTM failed: ${e.message || e}`);
     }
   };
 
@@ -691,17 +806,30 @@ const PTMTeacherView: React.FC<TeacherViewProps> = ({ schoolId, teacherId, meeti
                 </div>
 
                 {(mode === 'OFFLINE' || mode === 'HYBRID') && (
-                  <div>
-                    <label className="block text-slate-400 font-bold mb-1 uppercase tracking-wider text-[9px]">Venue / Room Location *</label>
-                    <input 
-                      type="text" 
-                      value={venue} 
-                      onChange={e => setVenue(e.target.value)}
-                      placeholder="e.g. Conference Room 3"
-                      className="w-full bg-[#162038] border border-slate-700/80 rounded-lg p-2.5 text-white focus:outline-none"
-                      required
-                    />
-                  </div>
+                  <>
+                    <div>
+                      <label className="block text-slate-400 font-bold mb-1 uppercase tracking-wider text-[9px]">Venue *</label>
+                      <input 
+                        type="text" 
+                        value={venue} 
+                        onChange={e => setVenue(e.target.value)}
+                        placeholder="e.g. Science Block"
+                        className="w-full bg-[#162038] border border-slate-700/80 rounded-lg p-2.5 text-white focus:outline-none"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-slate-400 font-bold mb-1 uppercase tracking-wider text-[9px]">Room Number *</label>
+                      <input 
+                        type="text" 
+                        value={roomNumber} 
+                        onChange={e => setRoomNumber(e.target.value)}
+                        placeholder="e.g. Room 101"
+                        className="w-full bg-[#162038] border border-slate-700/80 rounded-lg p-2.5 text-white focus:outline-none"
+                        required
+                      />
+                    </div>
+                  </>
                 )}
               </div>
 

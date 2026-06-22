@@ -21415,6 +21415,7 @@ export const mockApi = {
         *,
         students (
           id,
+          user_id,
           users (
             first_name,
             last_name
@@ -21427,6 +21428,7 @@ export const mockApi = {
         ),
         teachers (
           id,
+          user_id,
           users (
             first_name,
             last_name
@@ -21451,6 +21453,69 @@ export const mockApi = {
     const studentName = data.students?.users ? `${data.students.users.first_name || ''} ${data.students.users.last_name || ''}`.trim() : 'Unknown Student';
     const parentName = data.parent ? `${data.parent.first_name || ''} ${data.parent.last_name || ''}`.trim() : 'Unknown Parent';
     const teacherName = data.teachers?.users ? `${data.teachers.users.first_name || ''} ${data.teachers.users.last_name || ''}`.trim() : 'Unknown Teacher';
+
+    // Auto-create notifications for Parent, Student, and Teacher (Phase 7 Notifications)
+    try {
+      // 1. Parent Notification
+      await supabaseAdmin.from('ptm_notifications').insert({
+        user_id: data.parent_id,
+        meeting_id: data.id,
+        title: 'New PTM Scheduled',
+        message: `A new Parent-Teacher Meeting "${data.title}" has been scheduled on ${data.scheduled_date} at ${data.start_time}.`
+      });
+      await supabaseAdmin.from('notifications').insert({
+        user_id: data.parent_id,
+        title: 'New PTM Scheduled',
+        content: `A new Parent-Teacher Meeting "${data.title}" has been scheduled on ${data.scheduled_date} at ${data.start_time}.`,
+        sender_id: data.teachers?.user_id || null,
+        recipient_role: 'PARENT',
+        category: 'PTM',
+        priority: 'MEDIUM',
+        is_read: false
+      });
+
+      // 2. Student Notification
+      if (data.students?.user_id) {
+        await supabaseAdmin.from('ptm_notifications').insert({
+          user_id: data.students.user_id,
+          meeting_id: data.id,
+          title: 'New PTM Scheduled',
+          message: `A Parent-Teacher Meeting "${data.title}" has been scheduled with your parent on ${data.scheduled_date} at ${data.start_time}.`
+        });
+        await supabaseAdmin.from('notifications').insert({
+          user_id: data.students.user_id,
+          title: 'New PTM Scheduled',
+          content: `A Parent-Teacher Meeting "${data.title}" has been scheduled with your parent on ${data.scheduled_date} at ${data.start_time}.`,
+          sender_id: data.teachers?.user_id || null,
+          recipient_role: 'STUDENT',
+          category: 'PTM',
+          priority: 'MEDIUM',
+          is_read: false
+        });
+      }
+
+      // 3. Teacher Notification
+      if (data.teachers?.user_id) {
+        await supabaseAdmin.from('ptm_notifications').insert({
+          user_id: data.teachers.user_id,
+          meeting_id: data.id,
+          title: 'PTM Scheduled Successfully',
+          message: `You have successfully scheduled PTM "${data.title}" with student ${studentName} on ${data.scheduled_date} at ${data.start_time}.`
+        });
+        await supabaseAdmin.from('notifications').insert({
+          user_id: data.teachers.user_id,
+          title: 'PTM Scheduled Successfully',
+          content: `You have successfully scheduled PTM "${data.title}" with student ${studentName} on ${data.scheduled_date} at ${data.start_time}.`,
+          sender_id: data.teachers.user_id,
+          recipient_role: 'TEACHER',
+          category: 'PTM',
+          priority: 'MEDIUM',
+          is_read: false
+        });
+      }
+    } catch (notifError) {
+      console.error('Failed to auto-create notifications for PTM:', notifError);
+    }
 
     return {
       id: data.id,
