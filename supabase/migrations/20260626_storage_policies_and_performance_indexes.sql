@@ -174,8 +174,8 @@ CREATE INDEX IF NOT EXISTS idx_ptm_messages_school_id ON public.ptm_messages(sch
 CREATE INDEX IF NOT EXISTS idx_ptm_participants_meeting_id ON public.ptm_participants(meeting_id);
 CREATE INDEX IF NOT EXISTS idx_ptm_participants_user_id ON public.ptm_participants(user_id);
 
-CREATE INDEX IF NOT EXISTS idx_parent_student_mappings_parent_id ON public.parent_student_mappings(parent_id);
-CREATE INDEX IF NOT EXISTS idx_parent_student_mappings_student_id ON public.parent_student_mappings(student_id);
+CREATE INDEX IF NOT EXISTS idx_parent_student_mapping_parent_id ON public.parent_student_mapping(parent_id);
+CREATE INDEX IF NOT EXISTS idx_parent_student_mapping_student_id ON public.parent_student_mapping(student_id);
 
 CREATE INDEX IF NOT EXISTS idx_attendance_student_id ON public.attendance(student_id);
 CREATE INDEX IF NOT EXISTS idx_homeworks_class_id ON public.homeworks(class_id);
