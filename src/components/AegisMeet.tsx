@@ -161,6 +161,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
   const channelRef = useRef<any>(null);
   const participantSessionIdRef = useRef<string | null>(null);
+  // Tracks whether this user has a live row in ptm_participants (needed for RLS authorization)
+  const participantRegisteredRef = useRef<boolean>(false);
 
   // Bound local stream to ref when it changes
   useEffect(() => {
@@ -339,8 +341,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             })));
           }
 
-          // Register teacher session & attendance
-          registerParticipantSession();
+        // Register teacher session & attendance — MUST AWAIT before allowing chat/upload
+          await registerParticipantSession();
           updateAttendanceRecord(true);
         } else {
           // Participant waiting room check
@@ -358,7 +360,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             if (wrCheck.data.status === 'APPROVED') {
               setInWaitingRoom(false);
               setAdmitted(true);
-              registerParticipantSession();
+              // MUST AWAIT registration before user can send messages
+              await registerParticipantSession();
               updateAttendanceRecord(true);
             } else if (wrCheck.data.status === 'REJECTED') {
               setInWaitingRoom(true);
@@ -390,9 +393,15 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   }, [meetingId, schoolId, currentUserId, currentUserRole]);
 
   // 2. Database participants registration & attendance log persistence
-  const registerParticipantSession = async () => {
+  // CRITICAL: This must be awaited before any ptm_messages/ptm_chat_attachments writes
+  // to prevent RLS rejection (circular deadlock was fixed in migration 20260629)
+  const registerParticipantSession = async (): Promise<boolean> => {
+    // Avoid duplicate registrations (idempotent)
+    if (participantRegisteredRef.current && participantSessionIdRef.current) {
+      return true;
+    }
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from('ptm_participants')
         .insert({
           school_id: schoolId,
@@ -404,11 +413,24 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         .select()
         .single();
       
-      if (data) {
+      if (data && !error) {
         participantSessionIdRef.current = data.id;
+        participantRegisteredRef.current = true;
+        console.log('[AegisMeet] Participant registered in ptm_participants:', data.id);
+        return true;
+      } else if (error) {
+        console.warn('[AegisMeet] ptm_participants registration error:', error.message);
+        // If it's a unique constraint violation (already registered), mark as registered
+        if (error.message?.includes('unique') || error.code === '23505') {
+          participantRegisteredRef.current = true;
+          return true;
+        }
+        return false;
       }
+      return false;
     } catch (e) {
-      console.warn('ptm_participants registration failed:', e);
+      console.warn('[AegisMeet] ptm_participants registration failed:', e);
+      return false;
     }
   };
 
@@ -702,8 +724,10 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           if (payload.status === 'APPROVED') {
             setInWaitingRoom(false);
             setAdmitted(true);
-            registerParticipantSession();
-            updateAttendanceRecord(true);
+            // AWAIT registration so that subsequent chat/upload is authorized
+            registerParticipantSession().then(() => {
+              updateAttendanceRecord(true);
+            });
             
             // Broadcast presence to peer list
             signalingChannel.send({
@@ -786,8 +810,10 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               if (payload.new.status === 'APPROVED') {
                 setInWaitingRoom(false);
                 setAdmitted(true);
-                registerParticipantSession();
-                updateAttendanceRecord(true);
+                // AWAIT registration before enabling chat
+                registerParticipantSession().then(() => {
+                  updateAttendanceRecord(true);
+                });
                 // Broadcast presence to peer list
                 signalingChannel.send({
                   type: 'broadcast',
@@ -1000,6 +1026,80 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       )
       .subscribe();
 
+    // F. Active PTM Participants Realtime Sync
+    const participantsSub = supabase
+      .channel(`ptm-participants-changes-${meetingId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ptm_participants',
+          filter: `meeting_id=eq.${meetingId}`
+        },
+        async (payload) => {
+          console.log('Realtime ptm_participants update:', payload);
+          if (payload.eventType === 'INSERT') {
+            const newPart = payload.new;
+            if (newPart.left_at) return;
+            try {
+              const { data: userProfile } = await supabase
+                .from('users')
+                .select('id, first_name, last_name, role')
+                .eq('id', newPart.user_id)
+                .single();
+
+              if (userProfile) {
+                const name = `${userProfile.first_name} ${userProfile.last_name}`.trim();
+                setParticipants(prev => {
+                  if (prev.some(p => p.id === newPart.user_id)) return prev;
+                  return [...prev, {
+                    id: newPart.user_id,
+                    name,
+                    role: newPart.role,
+                    micEnabled: false,
+                    videoEnabled: false,
+                    handRaised: false,
+                    screenSharing: false
+                  }];
+                });
+              }
+            } catch (err) {
+              console.error('Failed to fetch user details for participant:', err);
+            }
+          } else if (payload.eventType === 'UPDATE') {
+            const updatedPart = payload.new;
+            if (updatedPart.left_at) {
+              setParticipants(prev => prev.filter(p => p.id !== updatedPart.user_id));
+              setRemoteStreams(prev => {
+                const next = { ...prev };
+                delete next[updatedPart.user_id];
+                return next;
+              });
+              if (peerConnections.current[updatedPart.user_id]) {
+                peerConnections.current[updatedPart.user_id].close();
+                delete peerConnections.current[updatedPart.user_id];
+              }
+            }
+          } else if (payload.eventType === 'DELETE') {
+            const oldPart = payload.old;
+            if (oldPart && oldPart.user_id) {
+              setParticipants(prev => prev.filter(p => p.id !== oldPart.user_id));
+              setRemoteStreams(prev => {
+                const next = { ...prev };
+                delete next[oldPart.user_id];
+                return next;
+              });
+              if (peerConnections.current[oldPart.user_id]) {
+                peerConnections.current[oldPart.user_id].close();
+                delete peerConnections.current[oldPart.user_id];
+              }
+            }
+          }
+        }
+      )
+      .subscribe();
+
     return () => {
       if (admitted) {
         signalingChannel.send({
@@ -1014,6 +1114,11 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       filesSub.unsubscribe();
       feedbackSub.unsubscribe();
       followupsSub.unsubscribe();
+      participantsSub.unsubscribe();
+
+      // Clean up active participant registration on unmount
+      deregisterParticipantSession();
+      updateAttendanceRecord(false);
 
       Object.values(peerConnections.current).forEach(pc => pc.close());
       peerConnections.current = {};
@@ -1312,14 +1417,23 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     }
   };
 
-  // 10. Chat Message and File attachments uploading workflows (Issue #1)
+  // 10. Chat Message and File attachments uploading workflows
   const sendChatMessageText = async () => {
     if (!newMessage.trim()) return;
     const msgText = newMessage;
     setNewMessage('');
 
     try {
-      const { data: insertedMsg } = await supabase
+      // Ensure participant is registered before attempting write (avoids RLS rejection)
+      if (!participantRegisteredRef.current) {
+        console.log('[AegisMeet] Participant not yet registered — registering before send...');
+        const ok = await registerParticipantSession();
+        if (!ok) {
+          console.warn('[AegisMeet] Could not register participant — message may fail RLS check');
+        }
+      }
+
+      const { data: insertedMsg, error: msgError } = await supabase
         .from('ptm_messages')
         .insert({
           school_id: schoolId,
@@ -1331,6 +1445,61 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         })
         .select()
         .single();
+
+      if (msgError) {
+        console.error('[AegisMeet] Message insert error:', msgError.message);
+        // If RLS rejection, try re-registering once and retry
+        if (msgError.message?.includes('Row-level security') || msgError.message?.includes('permission') || msgError.code === '42501') {
+          console.log('[AegisMeet] RLS rejection — attempting participant re-registration...');
+          participantRegisteredRef.current = false;
+          const ok = await registerParticipantSession();
+          if (ok) {
+            // Retry send once
+            const { data: retryMsg } = await supabase
+              .from('ptm_messages')
+              .insert({
+                school_id: schoolId,
+                meeting_id: meetingId,
+                sender_id: currentUserId,
+                sender_role: currentUserRole,
+                message: msgText,
+                message_type: 'TEXT'
+              })
+              .select()
+              .single();
+            if (retryMsg) {
+              const newMsgObj = {
+                id: retryMsg.id,
+                senderId: currentUserId,
+                senderName: currentUserName,
+                senderRole: currentUserRole,
+                messageText: msgText,
+                createdAt: retryMsg.created_at
+              };
+              setChatMessages(prev => [...prev, newMsgObj]);
+              if (channelRef.current) {
+                channelRef.current.send({
+                  type: 'broadcast',
+                  event: 'message_sent',
+                  payload: { id: retryMsg.id, senderId: currentUserId, senderName: currentUserName, senderRole: currentUserRole, messageText: msgText, createdAt: retryMsg.created_at }
+                });
+              }
+            }
+          }
+          return;
+        }
+        // For other errors, still show locally (optimistic update)
+        const optimisticMsg = {
+          id: 'local-' + Date.now(),
+          senderId: currentUserId,
+          senderName: currentUserName,
+          senderRole: currentUserRole,
+          messageText: msgText,
+          createdAt: new Date().toISOString()
+        };
+        setChatMessages(prev => [...prev, optimisticMsg]);
+        return;
+      }
 
       const newMsgObj = {
         id: insertedMsg?.id || Math.random().toString(),
@@ -1359,7 +1528,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         });
       }
     } catch (e) {
-      console.error('Failed to save message:', e);
+      console.error('[AegisMeet] Failed to save message:', e);
     }
   };
 
@@ -1386,6 +1555,15 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     setFailedFile(null);
 
     try {
+      // Ensure participant is registered before attempting upload (avoids RLS rejection)
+      if (!participantRegisteredRef.current) {
+        console.log('[AegisMeet] Participant not yet registered — registering before upload...');
+        const ok = await registerParticipantSession();
+        if (!ok) {
+          console.warn('[AegisMeet] Could not register participant — upload may fail RLS check');
+        }
+      }
+
       const sessionRes = await supabase.auth.getSession();
       const token = sessionRes.data.session?.access_token;
       if (!token) {

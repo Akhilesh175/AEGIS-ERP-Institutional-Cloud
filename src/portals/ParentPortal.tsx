@@ -78,6 +78,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   const [assignedStudents, setAssignedStudents] = useState<(Student & { userDetails: User; className: string })[]>([]);
   const [selectedStudent, setSelectedStudent] = useState<string>('');
   const [schoolPaymentSettings, setSchoolPaymentSettings] = useState<SchoolPaymentSettings | null>(null);
+  // wardLoadComplete prevents premature 'No Wards Linked' render during async initial load
+  const [wardLoadComplete, setWardLoadComplete] = useState(false);
   const [selectedFee, setSelectedFee] = useState<any | null>(null);
   const [showProofModal, setShowProofModal] = useState(false);
   const [showPayModal, setShowPayModal] = useState(false);
@@ -151,13 +153,17 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   const [notifCategoryFilter, setNotifCategoryFilter] = useState<string>('all');
   const [notifSearchQuery, setNotifSearchQuery] = useState('');
 
-  // Load parent's students
+  // Load parent's students — sets wardLoadComplete ONLY after the full async chain resolves
   const loadAssignedStudents = async () => {
     if (!parentId) return;
     try {
       await syncSubscriptionPlan();
       setLoading(true);
       
+      // STEP 1: Sync mappings directly by parentId first (fastest path to ward data)
+      await mockApi.syncParentStudentMappingsForParent(parentId);
+
+      // STEP 2: Sync school-level data in parallel once we know the parent's school
       const parentUser = mockDb.users.find(u => u.id === session?.user?.id);
       const parentSchoolId = mockDb.parents.find(p => p.id === parentId)?.schoolId || parentUser?.schoolId;
       if (parentSchoolId) {
@@ -170,11 +176,14 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
           mockApi.syncAcademicSessionsData(parentSchoolId),
           mockApi.syncStudentsData(parentSchoolId),
           mockApi.syncParentsData(parentSchoolId),
-          mockApi.syncParentStudentMappingsData(parentSchoolId),
           mockApi.syncUsersData(parentSchoolId).catch(() => {})
         ]);
       }
 
+      // STEP 3: Re-sync mappings after school data is loaded to resolve any student/user cross-references
+      await mockApi.syncParentStudentMappingsForParent(parentId);
+
+      // STEP 4: Fetch the resolved list of students
       const data = await mockApi.parentGetStudents(parentId);
       setAssignedStudents(data);
       setSelectedStudent(prev => {
@@ -184,9 +193,12 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
         return data[0]?.id || '';
       });
       setLoading(false);
+      // Mark ward data as fully loaded — this PREVENTS premature 'No Wards Linked' from rendering
+      setWardLoadComplete(true);
     } catch (err: any) {
       setError(err.message || 'Error loading mapped student records');
       setLoading(false);
+      setWardLoadComplete(true); // Still mark complete so UI shows error, not skeleton forever
     }
   };
 
@@ -412,6 +424,38 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
   useEffect(() => {
     loadAssignedStudents();
+  }, [parentId]);
+
+  // Real-time Supabase Postgres changes subscription for parent ward mappings
+  // This fires whenever admin links/unlinks a student — causing instant portal update with NO page refresh required
+  useEffect(() => {
+    if (!parentId) return;
+
+    const handleMappingSync = async (_payload?: any) => {
+      console.log('[ParentPortal] Realtime ward mapping change detected — reloading ward data instantly...');
+      // Reset wardLoadComplete so portal shows skeleton (not stale 'No Wards' state) during reload
+      setWardLoadComplete(false);
+      await mockApi.syncParentStudentMappingsForParent(parentId);
+      await loadAssignedStudents();
+    };
+
+    const channel = supabase
+      .channel(`parent-mappings-realtime-${parentId}`)
+      // Primary trigger: direct mapping row INSERT/UPDATE/DELETE
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'parent_student_mapping', filter: `parent_id=eq.${parentId}` }, handleMappingSync)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'parent_student_mapping', filter: `parent_id=eq.${parentId}` }, handleMappingSync)
+      .on('postgres_changes', { event: 'DELETE', schema: 'public', table: 'parent_student_mapping', filter: `parent_id=eq.${parentId}` }, handleMappingSync)
+      // Secondary triggers: student/parent profile changes affecting the parent
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'students' }, handleMappingSync)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'parents', filter: `id=eq.${parentId}` }, handleMappingSync)
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'users' }, handleMappingSync)
+      .subscribe((status) => {
+        console.log('[ParentPortal] Ward realtime channel status:', status);
+      });
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
   }, [parentId]);
 
   // Real-time Supabase Postgres changes subscription
@@ -658,7 +702,9 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   // Get student names
   const studentNames = assignedStudents.map(s => `${s.userDetails?.firstName || 'Student'} ${s.userDetails?.lastName || ''}`.trim()).join(', ') || 'No linked wards';
 
-  if (loading && !academicRecord) {
+  // RACE CONDITION FIX: Only show skeleton if ward data hasn't loaded yet OR if academic record is loading
+  // We NEVER show 'No Wards Linked' until wardLoadComplete=true to prevent premature empty state
+  if (!wardLoadComplete || ((loading || !parentId) && assignedStudents.length === 0) || (loading && !academicRecord && assignedStudents.length > 0)) {
     return (
       <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-pulse">
         {/* Header identity skeleton */}

@@ -2942,6 +2942,91 @@ export const mockApi = {
     }
   },
 
+  async syncParentStudentMappingsForParent(parentId: string): Promise<void> {
+    try {
+      const { data: dbMappings } = await supabaseAdmin
+        .from('parent_student_mapping')
+        .select('*')
+        .eq('parent_id', parentId);
+
+      if (dbMappings) {
+        mockDb.parentStudentMappings = mockDb.parentStudentMappings.filter(
+          m => m.parentId !== parentId
+        );
+
+        dbMappings.forEach((r: any) => {
+          const map: ParentStudentMapping = {
+            parentId: r.parent_id,
+            studentId: r.student_id,
+            relationship: r.relationship
+          };
+          mockDb.parentStudentMappings.push(map);
+        });
+
+        const studentIds = dbMappings.map((r: any) => r.student_id);
+        if (studentIds.length > 0) {
+          const { data: dbStudents } = await supabaseAdmin
+            .from('students')
+            .select('*')
+            .in('id', studentIds);
+
+          if (dbStudents) {
+            dbStudents.forEach((r: any) => {
+              const studentMapped: Student = {
+                id: r.id,
+                userId: r.user_id,
+                schoolId: r.school_id,
+                classId: r.class_id || '',
+                sectionId: r.section_id || null,
+                academicSessionId: r.academic_session_id || 'session-1',
+                admissionNumber: r.admission_number,
+                rollNumber: r.roll_number,
+                dateOfBirth: r.date_of_birth || '',
+                gender: r.gender,
+                createdAt: r.created_at
+              };
+              const idx = mockDb.students.findIndex(s => s.id === r.id);
+              if (idx === -1) mockDb.students.push(studentMapped);
+              else mockDb.students[idx] = studentMapped;
+            });
+
+            const userIds = dbStudents.map((s: any) => s.user_id);
+            if (userIds.length > 0) {
+              const { data: dbUsers } = await supabaseAdmin
+                .from('users')
+                .select('*')
+                .in('id', userIds);
+
+              if (dbUsers) {
+                dbUsers.forEach((r: any) => {
+                  const user: User = {
+                    id: r.id,
+                    email: r.email,
+                    role: r.role,
+                    firstName: r.first_name,
+                    lastName: r.last_name,
+                    phone: r.phone || '',
+                    avatarUrl: r.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+                    isActive: r.is_active,
+                    schoolId: r.school_id,
+                    createdAt: r.created_at || new Date().toISOString(),
+                    updatedAt: r.created_at || new Date().toISOString()
+                  };
+                  const idx = mockDb.users.findIndex(u => u.id === user.id);
+                  if (idx === -1) mockDb.users.push(user);
+                  else mockDb.users[idx] = user;
+                });
+              }
+            }
+          }
+        }
+        mockDb.saveAll();
+      }
+    } catch (e) {
+      console.error('Failed to sync parent student mappings for parent:', e);
+    }
+  },
+
   async syncSchoolsData(schoolId: string): Promise<void> {
     try {
       const { data: dbSchool } = await supabaseAdmin
