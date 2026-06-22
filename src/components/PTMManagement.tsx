@@ -69,6 +69,29 @@ export const PTMManagement: React.FC = () => {
 
   useEffect(() => {
     loadMeetings();
+
+    if (!schoolId) return;
+
+    const channel = supabase
+      .channel(`ptm-meetings-school-${schoolId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'ptm_meetings',
+          filter: `school_id=eq.${schoolId}`
+        },
+        (payload) => {
+          console.log('PTM Meeting database change event:', payload.eventType, (payload.new as any)?.id);
+          loadMeetings();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      channel.unsubscribe();
+    };
   }, [schoolId, currentRole, currentUserId]);
 
   const downloadPTMSummary = async (meeting: PTMMeeting) => {

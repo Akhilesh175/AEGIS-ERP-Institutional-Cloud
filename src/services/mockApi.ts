@@ -21920,6 +21920,18 @@ export const mockApi = {
     if (error) throw error;
   },
 
+  async logScreenShare(meetingId: string, schoolId: string, userId: string, action: 'START' | 'STOP'): Promise<void> {
+    const { error } = await supabaseAdmin
+      .from('ptm_screenshare_logs')
+      .insert({
+        meeting_id: meetingId,
+        school_id: schoolId,
+        user_id: userId,
+        action
+      });
+    if (error) throw error;
+  },
+
   async fetchPTMNotifications(userId: string): Promise<PTMNotification[]> {
     const { data, error } = await supabaseAdmin
       .from('ptm_notifications')

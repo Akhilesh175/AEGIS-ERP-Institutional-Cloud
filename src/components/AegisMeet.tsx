@@ -507,8 +507,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   useEffect(() => {
     if (!meetingId) return;
 
-    // A. Broadcast signaling channel (WebRTC handshake)
-    const channelName = `aegis-meet-signaling-${meetingId}`;
+    // A. Broadcast signaling channel (WebRTC handshake + unified meeting broadcast)
+    const channelName = `ptm-meeting-${meetingId}`;
     const signalingChannel = supabase.channel(channelName, {
       config: { broadcast: { self: false } }
     });
@@ -556,8 +556,9 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       .on('broadcast', { event: 'state-update' }, ({ payload }) => {
         setParticipants(prev => {
           if (!prev.some(p => p.id === payload.id)) {
-            // Connect to newly discovered peer
-            initiatePeerConnection(payload.id, true);
+            // Connect to newly discovered peer - prevent WebRTC glare via deterministic comparison
+            const isInitiator = currentUserId < payload.id;
+            initiatePeerConnection(payload.id, isInitiator);
             return [...prev, {
               id: payload.id,
               name: payload.name,
@@ -587,7 +588,9 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       .on('broadcast', { event: 'join-announcement' }, ({ payload }) => {
         setParticipants(prev => {
           if (prev.some(p => p.id === payload.id)) return prev;
-          initiatePeerConnection(payload.id, true);
+          // Prevent WebRTC glare by lexicographical user ID comparison
+          const isInitiator = currentUserId < payload.id;
+          initiatePeerConnection(payload.id, isInitiator);
           return [...prev, {
             id: payload.id,
             name: payload.name,
@@ -625,6 +628,102 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           delete next[payload.id];
           return next;
         });
+      })
+      .on('broadcast', { event: 'message_sent' }, ({ payload }) => {
+        setChatMessages(prev => {
+          if (prev.some(m => m.id === payload.id)) return prev;
+          return [...prev, {
+            id: payload.id,
+            senderId: payload.senderId,
+            senderName: payload.senderName,
+            senderRole: payload.senderRole,
+            messageText: payload.messageText,
+            createdAt: payload.createdAt
+          }];
+        });
+      })
+      .on('broadcast', { event: 'file_uploaded' }, ({ payload }) => {
+        const newAttachment: AttachmentMetadata = {
+          id: payload.attachmentId,
+          fileName: payload.fileName,
+          fileType: payload.fileType,
+          fileSize: payload.fileSize,
+          publicUrl: '',
+          storagePath: payload.storagePath,
+          senderId: payload.senderId,
+          senderName: payload.senderName,
+          createdAt: payload.createdAt
+        };
+
+        // Pre-resolve signed URL for peer instant render
+        supabase.storage
+          .from('ptm-chat-files')
+          .createSignedUrl(payload.storagePath, 86400)
+          .then(({ data: signedData }) => {
+            if (signedData?.signedUrl) {
+              setSignedUrls(prev => ({ ...prev, [payload.storagePath]: signedData.signedUrl }));
+            }
+          })
+          .catch(e => console.warn(e));
+
+        setSharedAttachments(prev => {
+          if (prev.some(f => f.id === payload.attachmentId)) return prev;
+          return [...prev, newAttachment];
+        });
+
+        setChatMessages(prev => {
+          if (prev.some(m => m.id === payload.id)) return prev;
+          return [...prev, {
+            id: payload.id,
+            senderId: payload.senderId,
+            senderName: payload.senderName,
+            senderRole: payload.senderRole,
+            messageText: `Shared file: ${payload.fileName}`,
+            createdAt: payload.createdAt,
+            attachment: newAttachment
+          }];
+        });
+      })
+      .on('broadcast', { event: 'waiting_room_request' }, ({ payload }) => {
+        if (currentUserRole === 'TEACHER' || currentUserRole === 'ADMIN') {
+          setWaitingUsers(prev => {
+            if (prev.some(w => w.id === payload.id)) return prev;
+            return [...prev, {
+              id: payload.id,
+              name: payload.name,
+              role: payload.role
+            }];
+          });
+        }
+      })
+      .on('broadcast', { event: 'waiting_room_approved' }, ({ payload }) => {
+        if (payload.targetId === currentUserId) {
+          setWaitingStatus(payload.status);
+          if (payload.status === 'APPROVED') {
+            setInWaitingRoom(false);
+            setAdmitted(true);
+            registerParticipantSession();
+            updateAttendanceRecord(true);
+            
+            // Broadcast presence to peer list
+            signalingChannel.send({
+              type: 'broadcast',
+              event: 'join-announcement',
+              payload: {
+                id: currentUserId,
+                name: currentUserName,
+                role: currentUserRole,
+                micEnabled,
+                videoEnabled,
+                handRaised,
+                screenSharing
+              }
+            });
+          } else if (payload.status === 'REJECTED') {
+            setInWaitingRoom(true);
+            setAdmitted(false);
+          }
+        }
       })
       .subscribe((status) => {
         if (status === 'SUBSCRIBED' && admitted) {
@@ -1080,6 +1179,10 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         };
 
         broadcastState({ screenSharing: true });
+
+        // Database-driven logging of screen sharing start
+        mockApi.logScreenShare(meetingId, schoolId, currentUserId, 'START')
+          .catch(err => console.error('Failed to log screen share start:', err));
       } catch (err) {
         console.error('Failed to start screen share:', err);
       }
@@ -1106,6 +1209,10 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       }
     }
     broadcastState({ screenSharing: false });
+
+    // Database-driven logging of screen sharing stop
+    mockApi.logScreenShare(meetingId, schoolId, currentUserId, 'STOP')
+      .catch(err => console.error('Failed to log screen share stop:', err));
   };
 
   const toggleHandRaise = () => {
@@ -1127,6 +1234,17 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         .eq('id', waitingRoomId);
 
       setWaitingUsers(prev => prev.filter(u => u.id !== userId));
+
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'waiting_room_approved',
+          payload: {
+            targetId: userId,
+            status: 'APPROVED'
+          }
+        });
+      }
     } catch (e) {
       console.error(e);
     }
@@ -1144,6 +1262,17 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         .eq('id', waitingRoomId);
 
       setWaitingUsers(prev => prev.filter(u => u.id !== userId));
+
+      if (channelRef.current) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'waiting_room_approved',
+          payload: {
+            targetId: userId,
+            status: 'REJECTED'
+          }
+        });
+      }
     } catch (e) {
       console.error(e);
     }
@@ -1197,22 +1326,38 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           meeting_id: meetingId,
           sender_id: currentUserId,
           sender_role: currentUserRole,
-          message: msgText
+          message: msgText,
+          message_type: 'TEXT'
         })
         .select()
         .single();
 
-      setChatMessages(prev => [
-        ...prev,
-        {
-          id: insertedMsg?.id || Math.random().toString(),
-          senderId: currentUserId,
-          senderName: currentUserName,
-          senderRole: currentUserRole,
-          messageText: msgText,
-          createdAt: new Date().toISOString()
-        }
-      ]);
+      const newMsgObj = {
+        id: insertedMsg?.id || Math.random().toString(),
+        senderId: currentUserId,
+        senderName: currentUserName,
+        senderRole: currentUserRole,
+        messageText: msgText,
+        createdAt: insertedMsg?.created_at || new Date().toISOString()
+      };
+
+      setChatMessages(prev => [...prev, newMsgObj]);
+
+      // Broadcast message to peers instantly
+      if (channelRef.current && insertedMsg) {
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'message_sent',
+          payload: {
+            id: insertedMsg.id,
+            senderId: currentUserId,
+            senderName: currentUserName,
+            senderRole: currentUserRole,
+            messageText: msgText,
+            createdAt: insertedMsg.created_at
+          }
+        });
+      }
     } catch (e) {
       console.error('Failed to save message:', e);
     }
@@ -1237,117 +1382,174 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     }
 
     setIsUploading(true);
-    setUploadProgress(10);
+    setUploadProgress(5);
     setFailedFile(null);
 
     try {
-      setUploadProgress(35);
+      const sessionRes = await supabase.auth.getSession();
+      const token = sessionRes.data.session?.access_token;
+      if (!token) {
+        alert('Authentication required to upload files.');
+        setIsUploading(false);
+        return;
+      }
+
+      const anonKey = (supabase as any).supabaseKey || import.meta.env.VITE_SUPABASE_ANON_KEY || '';
+      const supabaseUrl = (supabase as any).supabaseUrl || import.meta.env.VITE_SUPABASE_URL || '';
       const filePath = `${schoolId}/${meetingId}/attachments/${Date.now()}_${file.name}`;
-      
-      const { error: uploadErr } = await supabase.storage
-        .from('ptm-chat-files')
-        .upload(filePath, file);
+      const uploadUrl = `${supabaseUrl}/storage/v1/object/ptm-chat-files/${filePath}`;
 
-      if (uploadErr) {
-        if (uploadErr.message.includes('bucket') || uploadErr.message.includes('Bucket not found') || uploadErr.message.includes('does not exist')) {
-          alert('Storage Configuration Error');
-        } else if (uploadErr.message.includes('Row-level security') || uploadErr.message.includes('Permission')) {
-          alert('Permission Denied\nYou are not a participant of this meeting.');
-        } else if (uploadErr.message.includes('Network') || uploadErr.message.includes('fetch')) {
-          alert('Network Error');
-        } else {
-          alert('Storage Configuration Error');
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', uploadUrl, true);
+      xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      xhr.setRequestHeader('apikey', anonKey);
+      xhr.setRequestHeader('Content-Type', file.type || 'application/octet-stream');
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = Math.round((event.loaded / event.total) * 100);
+          setUploadProgress(Math.min(80, Math.round(percentComplete * 0.8)));
         }
-        setIsUploading(false);
-        setFailedFile(file);
-        return;
-      }
-
-      setUploadProgress(70);
-      
-      // Dynamic signed URL generation
-      const { data: signedData, error: signErr } = await supabase.storage
-        .from('ptm-chat-files')
-        .createSignedUrl(filePath, 86400); // 24 hours expiry
-      
-      const signedUrl = signedData?.signedUrl || '';
-      if (signedUrl) {
-        setSignedUrls(prev => ({ ...prev, [filePath]: signedUrl }));
-      }
-
-      // D. Save attachment row metadata
-      const { data: fileRecord, error: fileErr } = await supabase
-        .from('ptm_chat_attachments')
-        .insert({
-          school_id: schoolId,
-          meeting_id: meetingId,
-          sender_id: currentUserId,
-          sender_role: currentUserRole,
-          file_name: file.name,
-          file_size: file.size,
-          file_type: file.type,
-          storage_path: filePath,
-          public_url: signedUrl
-        })
-        .select()
-        .single();
-
-      if (fileErr) {
-        if (fileErr.message.includes('Row-level security') || fileErr.message.includes('Permission')) {
-          alert('Permission Denied\nYou are not a participant of this meeting.');
-        } else {
-          alert('Permission Denied');
-        }
-        setIsUploading(false);
-        setFailedFile(file);
-        return;
-      }
-
-      setUploadProgress(90);
-
-      // E. Persist message text linking attachment
-      await supabase
-        .from('ptm_messages')
-        .insert({
-          school_id: schoolId,
-          meeting_id: meetingId,
-          sender_id: currentUserId,
-          sender_role: currentUserRole,
-          message: `Shared file: ${file.name}`
-        });
-
-      const newAttachment: AttachmentMetadata = {
-        id: fileRecord.id,
-        fileName: file.name,
-        fileType: file.type,
-        fileSize: file.size,
-        publicUrl: signedUrl,
-        storagePath: filePath,
-        senderId: currentUserId,
-        senderName: currentUserName,
-        createdAt: fileRecord.created_at
       };
 
-      setSharedAttachments(prev => [...prev, newAttachment]);
-
-      setChatMessages(prev => [
-        ...prev,
-        {
-          id: Math.random().toString(),
-          senderId: currentUserId,
-          senderName: currentUserName,
-          senderRole: currentUserRole,
-          messageText: `Shared file: ${file.name}`,
-          createdAt: new Date().toISOString(),
-          attachment: newAttachment
-        }
-      ]);
-
-      setUploadProgress(100);
-      setTimeout(() => {
+      xhr.onerror = () => {
+        alert('Network Error');
         setIsUploading(false);
-        setUploadProgress(null);
-      }, 500);
+        setFailedFile(file);
+      };
+
+      xhr.onload = async () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          setUploadProgress(85);
+
+          try {
+            // Parallelize database inserts & signed URL generation to prevent serial stalling
+            const [signedUrlResult, attachmentResult, messageResult] = await Promise.all([
+              supabase.storage.from('ptm-chat-files').createSignedUrl(filePath, 86400),
+              supabase.from('ptm_chat_attachments').insert({
+                school_id: schoolId,
+                meeting_id: meetingId,
+                sender_id: currentUserId,
+                sender_role: currentUserRole,
+                file_name: file.name,
+                file_size: file.size,
+                file_type: file.type,
+                storage_path: filePath,
+                public_url: ''
+              }).select().single(),
+              supabase.from('ptm_messages').insert({
+                school_id: schoolId,
+                meeting_id: meetingId,
+                sender_id: currentUserId,
+                sender_role: currentUserRole,
+                message: `Shared file: ${file.name}`,
+                message_type: 'FILE'
+              }).select().single()
+            ]);
+
+            const fileErr = attachmentResult.error;
+            const messageErr = messageResult.error;
+
+            if (fileErr || messageErr) {
+              const err = fileErr || messageErr;
+              if (err?.message.includes('Row-level security') || err?.message.includes('Permission')) {
+                alert('Permission Denied\nYou are not a participant of this meeting.');
+              } else {
+                alert('Permission Denied');
+              }
+              setIsUploading(false);
+              setFailedFile(file);
+              return;
+            }
+
+            setUploadProgress(95);
+
+            const fileRecord = attachmentResult.data;
+            const messageRecord = messageResult.data;
+            const signedUrl = signedUrlResult.data?.signedUrl || '';
+
+            if (signedUrl) {
+              setSignedUrls(prev => ({ ...prev, [filePath]: signedUrl }));
+            }
+
+            const newAttachment: AttachmentMetadata = {
+              id: fileRecord.id,
+              fileName: file.name,
+              fileType: file.type,
+              fileSize: file.size,
+              publicUrl: signedUrl,
+              storagePath: filePath,
+              senderId: currentUserId,
+              senderName: currentUserName,
+              createdAt: fileRecord.created_at
+            };
+
+            setSharedAttachments(prev => [...prev, newAttachment]);
+
+            setChatMessages(prev => [
+              ...prev,
+              {
+                id: messageRecord.id,
+                senderId: currentUserId,
+                senderName: currentUserName,
+                senderRole: currentUserRole,
+                messageText: `Shared file: ${file.name}`,
+                createdAt: messageRecord.created_at,
+                attachment: newAttachment
+              }
+            ]);
+
+            // Broadcast file_uploaded event instantly to peers
+            if (channelRef.current && fileRecord && messageRecord) {
+              channelRef.current.send({
+                type: 'broadcast',
+                event: 'file_uploaded',
+                payload: {
+                  id: messageRecord.id,
+                  attachmentId: fileRecord.id,
+                  fileName: file.name,
+                  fileType: file.type,
+                  fileSize: file.size,
+                  storagePath: filePath,
+                  senderId: currentUserId,
+                  senderName: currentUserName,
+                  createdAt: messageRecord.created_at
+                }
+              });
+            }
+
+            setUploadProgress(100);
+            setTimeout(() => {
+              setIsUploading(false);
+              setUploadProgress(null);
+            }, 500);
+
+          } catch (dbErr: any) {
+            console.error(dbErr);
+            alert('Database Connection Failed');
+            setIsUploading(false);
+            setFailedFile(file);
+          }
+        } else {
+          let errMsg = 'Storage Configuration Error';
+          try {
+            const resp = JSON.parse(xhr.responseText);
+            errMsg = resp.message || resp.error || errMsg;
+          } catch (e) {}
+
+          if (errMsg.includes('bucket') || errMsg.includes('Bucket not found') || errMsg.includes('does not exist')) {
+            alert('Storage Configuration Error');
+          } else if (errMsg.includes('Row-level security') || errMsg.includes('Permission') || errMsg.includes('policy')) {
+            alert('Permission Denied\nYou are not a participant of this meeting.');
+          } else {
+            alert('Permission Denied\nYou are not a participant of this meeting.');
+          }
+          setIsUploading(false);
+          setFailedFile(file);
+        }
+      };
+
+      xhr.send(file);
 
     } catch (err: any) {
       console.error(err);
