@@ -72,27 +72,80 @@ interface RemoteVideoProps {
   stream: MediaStream | null;
   videoEnabled: boolean;
   participantId: string;
+  participantName: string;
 }
 
-const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, participantId }) => {
+const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, participantId, participantName }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const [hasVideoTrack, setHasVideoTrack] = useState(false);
+
+  useEffect(() => {
+    if (!stream) {
+      setHasVideoTrack(false);
+      return;
+    }
+
+    const updateTrackStatus = () => {
+      const videoTracks = stream.getVideoTracks();
+      const active = videoTracks.length > 0 && videoTracks.some(t => t.enabled && t.readyState === 'live');
+      setHasVideoTrack(active);
+    };
+
+    updateTrackStatus();
+
+    // Listen to changes
+    stream.onaddtrack = updateTrackStatus;
+    stream.onremovetrack = updateTrackStatus;
+
+    const tracks = stream.getVideoTracks();
+    tracks.forEach(track => {
+      track.onmute = updateTrackStatus;
+      track.onunmute = updateTrackStatus;
+      track.onended = updateTrackStatus;
+    });
+
+    return () => {
+      stream.onaddtrack = null;
+      stream.onremovetrack = null;
+      tracks.forEach(track => {
+        track.onmute = null;
+        track.onunmute = null;
+        track.onended = null;
+      });
+    };
+  }, [stream]);
 
   useEffect(() => {
     if (videoRef.current && stream) {
-      videoRef.current.srcObject = stream;
+      if (videoRef.current.srcObject !== stream) {
+        console.log(`[AegisMeet] video element rebound for participant: ${participantId}`);
+        videoRef.current.srcObject = stream;
+      }
     }
-  }, [stream]);
+  }, [stream, participantId]);
+
+  const showVideo = videoEnabled && stream && hasVideoTrack;
 
   return (
-    <video
-      ref={videoRef}
-      id={`video-${participantId}`}
-      autoPlay
-      playsInline
-      className={`w-full h-full object-cover transition-opacity duration-300 ${
-        videoEnabled && stream ? 'opacity-100 block' : 'opacity-0 hidden'
-      }`}
-    />
+    <div className="w-full h-full relative">
+      <video
+        ref={videoRef}
+        id={`video-${participantId}`}
+        autoPlay
+        playsInline
+        className={`w-full h-full object-cover transition-opacity duration-300 ${
+          showVideo ? 'opacity-100 block' : 'opacity-0 hidden'
+        }`}
+      />
+      {!showVideo && (
+        <div className="absolute inset-0 flex flex-col items-center justify-center bg-[#131b2e]">
+          <div className="w-20 h-20 rounded-full bg-[#1e294b] flex items-center justify-center text-brand-400 font-extrabold text-2xl border border-slate-700 uppercase">
+            {participantName ? participantName.substring(0, 2) : 'P'}
+          </div>
+          <span className="text-[10px] uppercase tracking-widest text-slate-500 mt-3 font-extrabold">Camera Off</span>
+        </div>
+      )}
+    </div>
   );
 };
 
@@ -179,6 +232,46 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const participantRegisteredRef = useRef<boolean>(false);
   // Fix 3: Promise mutex — prevents duplicate registrations from concurrent approval events
   const participantRegistrationPromiseRef = useRef<Promise<boolean> | null>(null);
+
+  // Persistent participant registry refs to avoid unmount/recreate cycles
+  const participantRegistry = useRef<Map<string, Participant>>(new Map());
+
+  // Refs for tracking local states inside the signaling useEffect callback closures
+  const micEnabledRef = useRef(micEnabled);
+  const videoEnabledRef = useRef(videoEnabled);
+  const handRaisedRef = useRef(handRaised);
+  const screenSharingRef = useRef(screenSharing);
+  const currentUserNameRef = useRef(currentUserName);
+  const currentUserRoleRef = useRef(currentUserRole);
+
+  useEffect(() => { micEnabledRef.current = micEnabled; }, [micEnabled]);
+  useEffect(() => { videoEnabledRef.current = videoEnabled; }, [videoEnabled]);
+  useEffect(() => { handRaisedRef.current = handRaised; }, [handRaised]);
+  useEffect(() => { screenSharingRef.current = screenSharing; }, [screenSharing]);
+  useEffect(() => { currentUserNameRef.current = currentUserName; }, [currentUserName]);
+  useEffect(() => { currentUserRoleRef.current = currentUserRole; }, [currentUserRole]);
+
+  const updateParticipantInRegistry = (id: string, updates: Partial<Participant>) => {
+    const existing = participantRegistry.current.get(id);
+    if (existing) {
+      Object.assign(existing, updates);
+      console.log(`[AegisMeet] participant updated: ${id}`, updates);
+    } else {
+      const newParticipant: Participant = {
+        id,
+        name: updates.name || 'Participant',
+        role: updates.role || 'GUEST',
+        micEnabled: updates.micEnabled ?? true,
+        videoEnabled: updates.videoEnabled ?? true,
+        handRaised: updates.handRaised ?? false,
+        screenSharing: updates.screenSharing ?? false,
+        isMutedByHost: updates.isMutedByHost ?? false,
+      };
+      participantRegistry.current.set(id, newParticipant);
+      console.log(`[AegisMeet] participant joined: ${id}`, newParticipant);
+    }
+    setParticipants(Array.from(participantRegistry.current.values()));
+  };
 
   // Bound local stream to ref when it changes
   useEffect(() => {
@@ -673,53 +766,48 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         }
       })
       .on('broadcast', { event: 'state-update' }, ({ payload }) => {
-        setParticipants(prev => {
-          if (!prev.some(p => p.id === payload.id)) {
-            // Connect to newly discovered peer - prevent WebRTC glare via deterministic comparison
-            const isInitiator = currentUserId < payload.id;
-            initiatePeerConnection(payload.id, isInitiator);
-            return [...prev, {
-              id: payload.id,
-              name: payload.name,
-              role: payload.role,
-              micEnabled: payload.micEnabled,
-              videoEnabled: payload.videoEnabled,
-              handRaised: payload.handRaised,
-              screenSharing: payload.screenSharing
-            }];
-          }
-          return prev.map(p => {
-            if (p.id === payload.id) {
-              return { ...p, ...payload.updates };
-            }
-            return p;
-          });
-        });
+        const id = payload.id;
+        const updates = payload.updates || {
+          name: payload.name,
+          role: payload.role,
+          micEnabled: payload.micEnabled,
+          videoEnabled: payload.videoEnabled,
+          handRaised: payload.handRaised,
+          screenSharing: payload.screenSharing
+        };
+        
+        const exists = participantRegistry.current.has(id);
+        updateParticipantInRegistry(id, updates);
+
+        if (!exists) {
+          const isInitiator = currentUserId < id;
+          initiatePeerConnection(id, isInitiator);
+        }
       })
       .on('broadcast', { event: 'chat-permissions' }, ({ payload }) => {
         if (payload.allowParticipantScreenShare !== undefined) {
           setAllowParticipantScreenShare(payload.allowParticipantScreenShare);
-          if (!payload.allowParticipantScreenShare && screenSharing && currentUserRole === 'PARENT') {
+          if (!payload.allowParticipantScreenShare && screenSharingRef.current && currentUserRoleRef.current === 'PARENT') {
             stopScreenSharingLocally();
           }
         }
       })
       .on('broadcast', { event: 'join-announcement' }, ({ payload }) => {
-        setParticipants(prev => {
-          if (prev.some(p => p.id === payload.id)) return prev;
-          // Prevent WebRTC glare by lexicographical user ID comparison
-          const isInitiator = currentUserId < payload.id;
-          initiatePeerConnection(payload.id, isInitiator);
-          return [...prev, {
-            id: payload.id,
-            name: payload.name,
-            role: payload.role,
-            micEnabled: payload.micEnabled,
-            videoEnabled: payload.videoEnabled,
-            handRaised: payload.handRaised,
-            screenSharing: payload.screenSharing
-          }];
+        const id = payload.id;
+        const exists = participantRegistry.current.has(id);
+        updateParticipantInRegistry(id, {
+          name: payload.name,
+          role: payload.role,
+          micEnabled: payload.micEnabled,
+          videoEnabled: payload.videoEnabled,
+          handRaised: payload.handRaised,
+          screenSharing: payload.screenSharing
         });
+
+        if (!exists) {
+          const isInitiator = currentUserId < id;
+          initiatePeerConnection(id, isInitiator);
+        }
         
         // Broadcast local state back
         signalingChannel.send({
@@ -727,12 +815,12 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           event: 'state-update',
           payload: {
             id: currentUserId,
-            name: currentUserName,
-            role: currentUserRole,
-            micEnabled,
-            videoEnabled,
-            handRaised,
-            screenSharing
+            name: currentUserNameRef.current,
+            role: currentUserRoleRef.current,
+            micEnabled: micEnabledRef.current,
+            videoEnabled: videoEnabledRef.current,
+            handRaised: handRaisedRef.current,
+            screenSharing: screenSharingRef.current
           }
         });
       })
@@ -741,7 +829,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           peerConnections.current[payload.id].close();
           delete peerConnections.current[payload.id];
         }
-        setParticipants(prev => prev.filter(p => p.id !== payload.id));
+        participantRegistry.current.delete(payload.id);
+        setParticipants(Array.from(participantRegistry.current.values()));
         setRemoteStreams(prev => {
           const next = { ...prev };
           delete next[payload.id];
@@ -805,7 +894,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       })
       .on('broadcast', { event: 'waiting_room_request' }, ({ payload }) => {
         // Fix 7: Use isHostRole() to handle all admin/teacher roles correctly
-        if (isHostRole(currentUserRole)) {
+        if (isHostRole(currentUserRoleRef.current)) {
           setWaitingUsers(prev => {
             if (prev.some(w => w.id === payload.id)) return prev;
             // waitingRoomId not included in broadcast; DB subscription will fill it in
@@ -826,8 +915,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               signalingChannel.send({
                 type: 'broadcast',
                 event: 'join-announcement',
-                payload: { id: currentUserId, name: currentUserName, role: currentUserRole,
-                  micEnabled, videoEnabled, handRaised, screenSharing }
+                payload: { id: currentUserId, name: currentUserNameRef.current, role: currentUserRoleRef.current,
+                  micEnabled: micEnabledRef.current, videoEnabled: videoEnabledRef.current, handRaised: handRaisedRef.current, screenSharing: screenSharingRef.current }
               });
             })();
           } else if (payload.status === 'REJECTED') {
@@ -844,12 +933,12 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             event: 'join-announcement',
             payload: {
               id: currentUserId,
-              name: currentUserName,
-              role: currentUserRole,
-              micEnabled,
-              videoEnabled,
-              handRaised,
-              screenSharing
+              name: currentUserNameRef.current,
+              role: currentUserRoleRef.current,
+              micEnabled: micEnabledRef.current,
+              videoEnabled: videoEnabledRef.current,
+              handRaised: handRaisedRef.current,
+              screenSharing: screenSharingRef.current
             }
           });
         }
@@ -868,7 +957,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         },
         async (payload) => {
           // Fix 7: Use isHostRole() for all admin roles
-          if (isHostRole(currentUserRole)) {
+          if (isHostRole(currentUserRoleRef.current)) {
             if (payload.eventType === 'INSERT') {
               const { data: user } = await supabase
                 .from('users')
@@ -904,8 +993,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                   signalingChannel.send({
                     type: 'broadcast',
                     event: 'join-announcement',
-                    payload: { id: currentUserId, name: currentUserName, role: currentUserRole,
-                      micEnabled, videoEnabled, handRaised, screenSharing }
+                    payload: { id: currentUserId, name: currentUserNameRef.current, role: currentUserRoleRef.current,
+                      micEnabled: micEnabledRef.current, videoEnabled: videoEnabledRef.current, handRaised: handRaisedRef.current, screenSharing: screenSharingRef.current }
                   });
                 })();
               } else if (payload.new.status === 'REJECTED') {
@@ -938,7 +1027,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             ? await supabase.from('users').select('first_name, last_name').eq('id', payload.new.sender_id).single()
             : { data: null };
           const name = senderIsMe
-            ? currentUserName
+            ? currentUserNameRef.current
             : (sender ? `${(sender as any).first_name || ''} ${(sender as any).last_name || ''}`.trim() : 'Participant');
 
           const { data: attach } = await supabase
@@ -1128,17 +1217,13 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
               if (userProfile) {
                 const name = `${userProfile.first_name} ${userProfile.last_name}`.trim();
-                setParticipants(prev => {
-                  if (prev.some(p => p.id === newPart.user_id)) return prev;
-                  return [...prev, {
-                    id: newPart.user_id,
-                    name,
-                    role: newPart.role,
-                    micEnabled: false,
-                    videoEnabled: false,
-                    handRaised: false,
-                    screenSharing: false
-                  }];
+                updateParticipantInRegistry(newPart.user_id, {
+                  name,
+                  role: newPart.role,
+                  micEnabled: false,
+                  videoEnabled: false,
+                  handRaised: false,
+                  screenSharing: false
                 });
               }
             } catch (err) {
@@ -1147,7 +1232,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           } else if (payload.eventType === 'UPDATE') {
             const updatedPart = payload.new;
             if (updatedPart.left_at) {
-              setParticipants(prev => prev.filter(p => p.id !== updatedPart.user_id));
+              participantRegistry.current.delete(updatedPart.user_id);
+              setParticipants(Array.from(participantRegistry.current.values()));
               setRemoteStreams(prev => {
                 const next = { ...prev };
                 delete next[updatedPart.user_id];
@@ -1161,7 +1247,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           } else if (payload.eventType === 'DELETE') {
             const oldPart = payload.old;
             if (oldPart && oldPart.user_id) {
-              setParticipants(prev => prev.filter(p => p.id !== oldPart.user_id));
+              participantRegistry.current.delete(oldPart.user_id);
+              setParticipants(Array.from(participantRegistry.current.values()));
               setRemoteStreams(prev => {
                 const next = { ...prev };
                 delete next[oldPart.user_id];
@@ -1200,7 +1287,30 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       Object.values(peerConnections.current).forEach(pc => pc.close());
       peerConnections.current = {};
     };
-  }, [meetingId, admitted, micEnabled, videoEnabled, handRaised, screenSharing]);
+  }, [meetingId, admitted]);
+
+  // Separate useEffect to attach local stream tracks to all active peer connections when localStream loads or changes
+  useEffect(() => {
+    if (!localStream) return;
+    
+    console.log('[AegisMeet] Local stream loaded/changed, attaching tracks to all peers');
+    Object.entries(peerConnections.current).forEach(([peerId, pc]) => {
+      const senders = pc.getSenders();
+      localStream.getTracks().forEach(track => {
+        const alreadyAdded = senders.some(s => s.track === track || (s.track && s.track.kind === track.kind));
+        if (!alreadyAdded) {
+          console.log(`[AegisMeet] Adding track ${track.kind} to peer ${peerId}`);
+          pc.addTrack(track, localStream);
+        } else {
+          const sender = senders.find(s => s.track && s.track.kind === track.kind);
+          if (sender && sender.track !== track) {
+            console.log(`[AegisMeet] Replacing track ${track.kind} for peer ${peerId}`);
+            sender.replaceTrack(track);
+          }
+        }
+      });
+    });
+  }, [localStream]);
 
   // 5. Broadcaster state payload
   const broadcastState = (updates: Partial<Participant>) => {
@@ -1215,6 +1325,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
   // 6. WebRTC RTC Connections
   const initiatePeerConnection = async (peerId: string, isInitiator: boolean) => {
+    console.log(`[AegisMeet] initiatePeerConnection for peer: ${peerId}, isInitiator: ${isInitiator}`);
     const pc = new RTCPeerConnection({
       iceServers: [
         { urls: 'stun:stun.l.google.com:19302' },
@@ -1226,6 +1337,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
     if (localStream) {
       localStream.getTracks().forEach(track => {
+        console.log(`[AegisMeet] Adding local track ${track.kind} to peer ${peerId}`);
         pc.addTrack(track, localStream);
       });
     }
@@ -1245,18 +1357,60 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     };
 
     pc.ontrack = (event) => {
+      console.log(`[AegisMeet] WebRTC track added from peer: ${peerId}, kind: ${event.track.kind}`);
       if (event.streams[0]) {
-        setRemoteStreams(prev => ({
-          ...prev,
-          [peerId]: event.streams[0]
-        }));
+        console.log(`[AegisMeet] stream replaced/assigned for peer: ${peerId}`);
+        setRemoteStreams(prev => {
+          if (prev[peerId] === event.streams[0]) return prev;
+          return {
+            ...prev,
+            [peerId]: event.streams[0]
+          };
+        });
+
+        // Add track level mute/unmute recovery handlers
+        const track = event.track;
+        const handleMute = () => {
+          console.log(`[AegisMeet] track mute event for peer: ${peerId}, kind: ${track.kind}`);
+        };
+        const handleUnmute = () => {
+          console.log(`[AegisMeet] track unmute event (restoring stream) for peer: ${peerId}, kind: ${track.kind}`);
+          setRemoteStreams(prev => ({ ...prev }));
+        };
+        const handleEnded = () => {
+          console.log(`[AegisMeet] track ended event for peer: ${peerId}, kind: ${track.kind}`);
+        };
+
+        track.addEventListener('mute', handleMute);
+        track.addEventListener('unmute', handleUnmute);
+        track.addEventListener('ended', handleEnded);
       }
     };
 
     pc.onconnectionstatechange = () => {
+      console.log(`[AegisMeet] connectionstatechange: ${pc.connectionState} for peer: ${peerId}`);
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
         setConnectionStatus('Reconnecting...');
+        try {
+          pc.restartIce();
+        } catch (e) {
+          console.warn('ICE restart failed:', e);
+        }
       } else if (pc.connectionState === 'connected') {
+        setConnectionStatus(null);
+      }
+    };
+
+    pc.oniceconnectionstatechange = () => {
+      console.log(`[AegisMeet] iceconnectionstatechange: ${pc.iceConnectionState} for peer: ${peerId}`);
+      if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
+        setConnectionStatus('Reconnecting...');
+        try {
+          pc.restartIce();
+        } catch (e) {
+          console.warn('ICE restart failed:', e);
+        }
+      } else if (pc.iceConnectionState === 'connected' || pc.iceConnectionState === 'completed') {
         setConnectionStatus(null);
       }
     };
@@ -2194,16 +2348,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                     stream={remoteStreams[p.id] || null} 
                     videoEnabled={p.videoEnabled} 
                     participantId={p.id} 
+                    participantName={p.name}
                   />
-
-                  {(!p.videoEnabled || !remoteStreams[p.id]) && (
-                    <div className="w-full h-full flex flex-col items-center justify-center bg-[#131b2e]">
-                      <div className="w-20 h-20 rounded-full bg-[#1e294b] flex items-center justify-center text-brand-400 font-extrabold text-2xl border border-slate-700 uppercase">
-                        {p.name.substring(0, 2)}
-                      </div>
-                      <span className="text-[10px] uppercase tracking-widest text-slate-500 mt-3 font-extrabold">Camera Off</span>
-                    </div>
-                  )}
 
                   <div className="absolute bottom-3 left-3 bg-[#0a0f1d]/85 px-3 py-1.5 rounded-xl border border-slate-800/80 flex items-center gap-2 backdrop-blur shadow text-[10px] font-bold">
                     <span>{p.name} ({p.role})</span>
