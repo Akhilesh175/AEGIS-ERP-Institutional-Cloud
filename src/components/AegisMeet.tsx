@@ -20,6 +20,18 @@ const isHostRole = (role: string): boolean =>
   (HOST_ROLES as readonly string[]).includes(role);
 // ─────────────────────────────────────────────────────────────────────────────
 
+const sanitizeStorageFileName = (name: string): string => {
+  const dotIndex = name.lastIndexOf('.');
+  const ext = dotIndex > -1 ? name.slice(dotIndex) : '';
+  const base = dotIndex > -1 ? name.slice(0, dotIndex) : name;
+  const sanitized = base
+    .replace(/\s+/g, '_')
+    .replace(/[<>:"/\\|?*\x00-\x1f]/g, '')
+    .replace(/_+/g, '_')
+    .replace(/^_+|_+$/g, '');
+  return (sanitized || 'file') + ext;
+};
+
 interface AegisMeetProps {
   meetingId: string;
   onLeave?: () => void;
@@ -785,6 +797,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       })
       .on('broadcast', { event: 'state-update' }, ({ payload }) => {
         const id = payload.id;
+        if (id === currentUserId) return;
         const updates = payload.updates || {
           name: payload.name,
           role: payload.role,
@@ -812,6 +825,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       })
       .on('broadcast', { event: 'join-announcement' }, ({ payload }) => {
         const id = payload.id;
+        if (id === currentUserId) return;
         const exists = participantRegistry.current.has(id);
         updateParticipantInRegistry(id, {
           name: payload.name,
@@ -1225,6 +1239,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           console.log('Realtime ptm_participants update:', payload);
           if (payload.eventType === 'INSERT') {
             const newPart = payload.new;
+            if (newPart.user_id === currentUserId) return;
             if (newPart.left_at) return;
             try {
               const { data: userProfile } = await supabase
@@ -1249,6 +1264,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             }
           } else if (payload.eventType === 'UPDATE') {
             const updatedPart = payload.new;
+            if (updatedPart.user_id === currentUserId) return;
             if (updatedPart.left_at) {
               participantRegistry.current.delete(updatedPart.user_id);
               setParticipants(Array.from(participantRegistry.current.values()));
@@ -1264,6 +1280,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             }
           } else if (payload.eventType === 'DELETE') {
             const oldPart = payload.old;
+            if (oldPart && oldPart.user_id === currentUserId) return;
             if (oldPart && oldPart.user_id) {
               participantRegistry.current.delete(oldPart.user_id);
               setParticipants(Array.from(participantRegistry.current.values()));
@@ -1831,7 +1848,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       const supabaseUrl = (supabase as any).supabaseUrl || import.meta.env.VITE_SUPABASE_URL || '';
       // Fix 10: Use effectiveSchoolId to avoid empty-schoolId storage paths
       const effectiveSchoolIdForPath = resolvedSchoolId || meeting?.schoolId || '';
-      const filePath = `${effectiveSchoolIdForPath}/${meetingId}/attachments/${Date.now()}_${file.name}`;
+      const sanitizedName = sanitizeStorageFileName(file.name);
+      const filePath = `${effectiveSchoolIdForPath}/${meetingId}/attachments/${Date.now()}_${sanitizedName}`;
       const uploadUrl = `${supabaseUrl}/storage/v1/object/ptm-chat-files/${filePath}`;
 
       const xhr = new XMLHttpRequest();
