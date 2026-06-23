@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from './store/useStore';
 import { mockApi } from './services/mockApi';
 import { supabase } from './lib/supabase';
@@ -14,6 +14,8 @@ import { AegisMeet } from './components/AegisMeet';
 import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff, Building2, GraduationCap, Users, BookOpen, Home, Key, UserCheck, Phone, MessageSquare, Instagram, CheckCircle2, ShieldAlert, Database, Network, Layers, FileText, CheckSquare, HelpCircle, Globe, Laptop, ArrowRight, ShieldCheck, Bell } from 'lucide-react';
 import { GlassCard } from './components/GlassCard';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { useInactivityTimeout } from './hooks/useInactivityTimeout';
+import { InactivityWarningModal } from './components/InactivityWarningModal';
 
 const getTabsForRole = (role: string, planName: string): string[] => {
   if (planName === 'expired') {
@@ -214,7 +216,71 @@ const RoleSelectorOverlay: React.FC<{
 
 export const App: React.FC = () => {
   const { session, theme, toggleTheme, setSession, initializeStore, isInitialized } = useStore();
-  
+
+  // ─── Inactivity Session Timeout ──────────────────────────────────────────────
+  // showInactivityWarning: controls the countdown modal
+  // inactivityRemaining: ms passed to the modal so it can render the right count
+  const [showInactivityWarning, setShowInactivityWarning] = useState(false);
+  const [inactivityRemaining, setInactivityRemaining] = useState(60_000);
+  // isLoggingOutRef prevents double-invocation on rapid expiry calls
+  const isLoggingOutRef = useRef(false);
+
+  /**
+   * performSessionExpiry
+   * Full production logout sequence:
+   *   1. Guard against re-entry
+   *   2. Close warning modal
+   *   3. Call mockApi.logout() → clears LS/SS, Supabase signOut
+   *   4. Clear Zustand session
+   *   5. Hard reload so all in-memory React state is wiped
+   *
+   * NOTE: We call mockApi.logout() here rather than duplicating its
+   *       localStorage loop, so the session-cleanup logic stays in one place.
+   */
+  const performSessionExpiry = useCallback(async (reason: 'inactivity' | 'manual' = 'inactivity') => {
+    if (isLoggingOutRef.current) return;
+    isLoggingOutRef.current = true;
+    setShowInactivityWarning(false);
+
+    // Store the expiry reason so the login page can show a banner
+    try {
+      sessionStorage.setItem('aegis_session_expired', reason === 'inactivity' ? 'inactivity' : 'manual');
+    } catch (_) {}
+
+    try {
+      await mockApi.logout();
+    } catch (err) {
+      console.error('[Inactivity] logout error:', err);
+    }
+
+    setSession(null);
+    // Hard reload clears all in-memory state (WebRTC, subscriptions, etc.)
+    window.location.href = window.location.origin + window.location.pathname;
+  }, [setSession]);
+
+  const handleInactivityWarn = useCallback((remainingMs: number) => {
+    setInactivityRemaining(remainingMs);
+    setShowInactivityWarning(true);
+  }, []);
+
+  const handleInactivityResume = useCallback(() => {
+    setShowInactivityWarning(false);
+  }, []);
+
+  const handleInactivityExpire = useCallback(() => {
+    performSessionExpiry('inactivity');
+  }, [performSessionExpiry]);
+
+  useInactivityTimeout({
+    timeoutMs: 5 * 60 * 1000,   // 5 minutes total idle
+    warningMs: 60 * 1000,       // warn 60 s before expiry (at 4-min mark)
+    isActive: !!session,         // only track when a session is live
+    onWarn: handleInactivityWarn,
+    onResume: handleInactivityResume,
+    onExpire: handleInactivityExpire,
+  });
+  // ─────────────────────────────────────────────────────────────────────────────
+
   // Auth Form states
   const [email, setEmail] = useState('');
   const [showPushPrompt, setShowPushPrompt] = useState(false);
@@ -291,6 +357,18 @@ export const App: React.FC = () => {
   const [resetLoading, setResetLoading] = useState(false);
   const [resetError, setResetError] = useState<string | null>(null);
   const [resetSuccess, setResetSuccess] = useState<string | null>(null);
+
+  // Reads the inactivity-expiry flag written by performSessionExpiry()
+  // Cleared immediately after reading so it never shows twice.
+  const [sessionExpiredReason, setSessionExpiredReason] = useState<'inactivity' | 'manual' | null>(() => {
+    try {
+      const v = sessionStorage.getItem('aegis_session_expired') as 'inactivity' | 'manual' | null;
+      if (v) sessionStorage.removeItem('aegis_session_expired');
+      return v;
+    } catch {
+      return null;
+    }
+  });
 
   useEffect(() => {
     const handleHash = () => {
@@ -986,6 +1064,27 @@ export const App: React.FC = () => {
                       <p className="text-xs text-slate-400 mt-1">Authenticate credentials to access your multi-tenant portal.</p>
                     </div>
 
+                    {/* Session auto-expiry banner — shows once after inactivity logout */}
+                    {sessionExpiredReason === 'inactivity' && (
+                      <div className="p-3.5 bg-amber-500/8 border border-amber-500/25 text-amber-300 text-xs rounded-xl flex items-start gap-2.5 animate-fade-in">
+                        <ShieldAlert size={16} className="shrink-0 mt-0.5 text-amber-400" />
+                        <div>
+                          <p className="font-bold text-amber-300 mb-0.5">Session Expired — Inactivity Timeout</p>
+                          <p className="text-amber-400/80 leading-relaxed">
+                            Your session was automatically terminated after 5 minutes of inactivity.
+                            Please sign in again to continue.
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => setSessionExpiredReason(null)}
+                          className="ml-auto shrink-0 text-amber-500/60 hover:text-amber-300 transition-colors p-0.5"
+                          aria-label="Dismiss"
+                        >
+                          ✕
+                        </button>
+                      </div>
+                    )}
+
                     {error && (
                       <div className="p-3.5 bg-red-500/5 border border-red-500/20 text-red-400 text-xs rounded-xl flex items-start gap-2.5">
                         <ShieldAlert size={16} className="shrink-0 mt-0.5" />
@@ -1380,6 +1479,20 @@ export const App: React.FC = () => {
             </div>
           </div>
         </div>
+      )}
+
+      {/* ── Inactivity Session Timeout Warning Modal ───────────────────────────── */}
+      {showInactivityWarning && (
+        <InactivityWarningModal
+          remainingMs={inactivityRemaining}
+          onStay={() => {
+            setShowInactivityWarning(false);
+            // The hook's activity listener fires on pointer/key events, but
+            // the button click itself counts — no explicit timer reset needed
+            // because the hook's handleActivity fires on the click event.
+          }}
+          onSignOut={() => performSessionExpiry('manual')}
+        />
       )}
     </div>
   );
