@@ -17,7 +17,7 @@ import {
   BookMarked, Layers, Home, Coffee, Utensils, ClipboardList, Check, X, Bell, Mail
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
-import { subscriptionPlans } from '../services/subscriptionConfig';
+import { subscriptionPlans, isTabLocked } from '../services/subscriptionConfig';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 import { downloadReceiptPdf } from '../components/ReceiptTemplate';
 import { 
@@ -3671,7 +3671,13 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
             )}
 
             {activeTab === 'ptm' && (
-              <ParentPTMManagement />
+              <PremiumLock
+                isLocked={isTabLocked('PARENT', 'ptm', currentPlanName)}
+                requiredTier="Pro"
+                featureName="PTM Meetings"
+              >
+                <ParentPTMManagement />
+              </PremiumLock>
             )}
 
             {activeTab === 'notifications' && (

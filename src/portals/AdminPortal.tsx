@@ -12,7 +12,7 @@ import {
   Award, BookOpen, Home, UserCheck, UserX, Image, PlusCircle, Megaphone, X, Printer, QrCode, Wifi, WifiOff, Upload, ToggleLeft, ToggleRight, Info, ExternalLink, Banknote, ScanLine, ShieldCheck, Ban
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
-import { subscriptionPlans } from '../services/subscriptionConfig';
+import { subscriptionPlans, isTabLocked } from '../services/subscriptionConfig';
 import { OfflineSyncManager } from '../components/OfflineSyncManager';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 import { downloadReceiptPdf } from '../components/ReceiptTemplate';
@@ -14147,7 +14147,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       )}
 
       {activeTab === 'ptm' && (
-        <AdminPTMManagement />
+        <PremiumLock
+          isLocked={isTabLocked('ADMIN', 'ptm', currentPlanName)}
+          requiredTier="Pro"
+          featureName="PTM Meetings & Management"
+        >
+          <AdminPTMManagement />
+        </PremiumLock>
       )}
 
       {/* ── Edit Book Issue Modal Overlay ── */}

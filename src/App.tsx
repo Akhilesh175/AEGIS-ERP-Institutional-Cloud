@@ -16,6 +16,8 @@ import { GlassCard } from './components/GlassCard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useInactivityTimeout } from './hooks/useInactivityTimeout';
 import { InactivityWarningModal } from './components/InactivityWarningModal';
+import PremiumLock from './components/PremiumLock';
+import { isTabLocked } from './services/subscriptionConfig';
 
 const getTabsForRole = (role: string, planName: string): string[] => {
   if (planName === 'expired') {
@@ -1424,7 +1426,13 @@ export const App: React.FC = () => {
                 ) : (
                   <>
                     {activeTab === 'sports' ? (
-                      <SportsManagement />
+                      <PremiumLock
+                        isLocked={isTabLocked(session?.user?.role || '', 'sports', session?.schoolSubscriptionPlan || 'freemium')}
+                        requiredTier="Enterprise"
+                        featureName="Sports & Activities"
+                      >
+                        <SportsManagement />
+                      </PremiumLock>
                     ) : (
                       <>
                         {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}

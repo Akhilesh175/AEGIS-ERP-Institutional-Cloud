@@ -18,7 +18,7 @@ import {
   BookMarked, Layers, Home, User, Coffee, HelpCircle, Activity, Utensils, ShieldAlert
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
-import { subscriptionPlans } from '../services/subscriptionConfig';
+import { subscriptionPlans, isTabLocked } from '../services/subscriptionConfig';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 import { downloadReceiptPdf } from '../components/ReceiptTemplate';
 import { 
@@ -2054,7 +2054,13 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
       )}
 
       {activeTab === 'ptm' && (
-        <StudentPTMManagement />
+        <PremiumLock
+          isLocked={isTabLocked('STUDENT', 'ptm', currentPlanName)}
+          requiredTier="Pro"
+          featureName="PTM Meetings"
+        >
+          <StudentPTMManagement />
+        </PremiumLock>
       )}
 
       {activeTab === 'hostel' && (

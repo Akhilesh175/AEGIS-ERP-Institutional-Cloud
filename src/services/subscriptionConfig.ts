@@ -81,6 +81,8 @@ export const isTabLocked = (role: string, tabId: string, planName: string): bool
     if (tabId === 'quizzes') return plan === 'freemium' || plan === 'basic';
     if (tabId === 'forums') return plan === 'freemium';
     if (tabId === 'fees') return plan === 'freemium';
+    if (tabId === 'ptm') return plan === 'freemium' || plan === 'basic';
+    if (tabId === 'sports') return plan !== 'enterprise';
   }
   if (role === 'PARENT') {
     if (tabId === 'homework') return plan !== 'enterprise';
@@ -91,6 +93,8 @@ export const isTabLocked = (role: string, tabId: string, planName: string): bool
     if (tabId === 'quizzes') return plan === 'freemium' || plan === 'basic';
     if (tabId === 'forums') return plan === 'freemium';
     if (tabId === 'fees') return plan === 'freemium';
+    if (tabId === 'ptm') return plan === 'freemium' || plan === 'basic';
+    if (tabId === 'sports') return plan !== 'enterprise';
   }
   if (role === 'TEACHER') {
     if (tabId === 'classroster') return plan === 'freemium';
@@ -101,6 +105,8 @@ export const isTabLocked = (role: string, tabId: string, planName: string): bool
     if (tabId === 'quizzes') return plan === 'freemium' || plan === 'basic';
     if (tabId === 'materials') return plan !== 'enterprise';
     if (tabId === 'forums') return plan === 'freemium';
+    if (tabId === 'ptm') return plan === 'freemium' || plan === 'basic';
+    if (tabId === 'sports') return plan !== 'enterprise';
   }
   if (role === 'ADMIN') {
     if (tabId === 'attendance') return plan === 'freemium';
@@ -110,6 +116,10 @@ export const isTabLocked = (role: string, tabId: string, planName: string): bool
     if (tabId === 'analytics') return plan === 'freemium' || plan === 'basic';
     if (tabId === 'rbac') return plan !== 'enterprise' && plan !== 'pro';
     if (tabId === 'backups') return plan !== 'enterprise';
+    // PTM Meetings: requires Pro or Enterprise
+    if (tabId === 'ptm') return plan === 'freemium' || plan === 'basic';
+    // Sports & Activities: requires Enterprise only
+    if (tabId === 'sports') return plan !== 'enterprise';
   }
   return false;
 };
