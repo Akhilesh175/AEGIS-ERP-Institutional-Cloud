@@ -1268,14 +1268,29 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
               if (userProfile) {
                 const name = `${userProfile.first_name} ${userProfile.last_name}`.trim();
-                updateParticipantInRegistry(newPart.user_id, {
-                  name,
-                  role: newPart.role,
-                  micEnabled: false,
-                  videoEnabled: false,
-                  handRaised: false,
-                  screenSharing: false
-                });
+                // CRITICAL FIX: Only set initial values (micEnabled:false, videoEnabled:false)
+                // if participant is NOT already in registry from a prior join-announcement broadcast.
+                // The join-announcement arrives first with correct live mic/video state.
+                // If we overwrite with false here, the participant tile gets stuck on Camera Off
+                // even though they have their camera on.
+                const alreadyRegistered = participantRegistry.current.has(newPart.user_id);
+                if (alreadyRegistered) {
+                  // Just update name and role — preserve the live media state from join-announcement
+                  updateParticipantInRegistry(newPart.user_id, { name, role: newPart.role });
+                  console.log(`[WEBRTC] VIDEO_ENABLED_PRESERVED for ${newPart.user_id}: participant already registered via broadcast, keeping live videoEnabled`);
+                } else {
+                  // First registration — start with conservative defaults.
+                  // The join-announcement will follow and update to live values.
+                  updateParticipantInRegistry(newPart.user_id, {
+                    name,
+                    role: newPart.role,
+                    micEnabled: false,
+                    videoEnabled: false,
+                    handRaised: false,
+                    screenSharing: false
+                  });
+                  console.log(`[WEBRTC] PARTICIPANT_JOINED (DB INSERT): ${newPart.user_id} role=${newPart.role} — awaiting join-announcement for live media state`);
+                }
               }
             } catch (err) {
               console.error('Failed to fetch user details for participant:', err);
@@ -1425,11 +1440,17 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
     peerConnections.current[peerId] = pc;
 
-    if (localStream) {
-      localStream.getTracks().forEach(track => {
-        console.log(`[AegisMeet] Adding local track ${track.kind} to peer ${peerId}`);
-        pc.addTrack(track, localStream);
+    // CRITICAL: Use localStreamRef.current (not stale closure `localStream` state)
+    // localStream state is always null at initiatePeerConnection call time because
+    // the signaling useEffect captures localStream=null from mount.
+    const streamToAdd = localStreamRef.current;
+    if (streamToAdd) {
+      streamToAdd.getTracks().forEach(track => {
+        console.log(`[WEBRTC] TRACK_ADDED: kind=${track.kind} peer=${peerId} readyState=${track.readyState}`);
+        pc.addTrack(track, streamToAdd);
       });
+    } else {
+      console.warn(`[WEBRTC] WARNING: No local stream available when creating peer connection for ${peerId}. Tracks will be added when stream arrives.`);
     }
 
     pc.onicecandidate = (event) => {
