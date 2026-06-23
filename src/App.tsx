@@ -17,6 +17,7 @@ import { ErrorBoundary } from './components/ErrorBoundary';
 import { useInactivityTimeout } from './hooks/useInactivityTimeout';
 import { InactivityWarningModal } from './components/InactivityWarningModal';
 import PremiumLock from './components/PremiumLock';
+import { AdminPortalHeader } from './components/AdminPortalHeader';
 import { isTabLocked } from './services/subscriptionConfig';
 
 const getTabsForRole = (role: string, planName: string): string[] => {
@@ -1426,13 +1427,18 @@ export const App: React.FC = () => {
                 ) : (
                   <>
                     {activeTab === 'sports' ? (
-                      <PremiumLock
-                        isLocked={isTabLocked(session?.user?.role || '', 'sports', session?.schoolSubscriptionPlan || 'freemium')}
-                        requiredTier="Enterprise"
-                        featureName="Sports & Activities"
-                      >
-                        <SportsManagement />
-                      </PremiumLock>
+                      <div className="space-y-6">
+                        {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN', 'DRIVER'].includes(session.user.role)) && (
+                          <AdminPortalHeader />
+                        )}
+                        <PremiumLock
+                          isLocked={isTabLocked(session?.user?.role || '', 'sports', session?.schoolSubscriptionPlan || 'freemium')}
+                          requiredTier="Enterprise"
+                          featureName="Sports & Activities"
+                        >
+                          <SportsManagement />
+                        </PremiumLock>
+                      </div>
                     ) : (
                       <>
                         {session.user.role === 'STUDENT' && <StudentPortal activeTab={activeTab} />}
