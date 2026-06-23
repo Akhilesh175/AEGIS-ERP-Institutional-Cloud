@@ -86,9 +86,10 @@ interface RemoteVideoProps {
   videoEnabled: boolean;
   participantId: string;
   participantName: string;
+  logWebRTC?: (event: string, peerId: string, metadata?: Record<string, any>) => void;
 }
 
-const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, updatedAt, videoEnabled, participantId, participantName }) => {
+const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, updatedAt, videoEnabled, participantId, participantName, logWebRTC }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   // hasVideoTrack: true once the peer connection has delivered at least one live video track.
   // This is used to separate the "connecting" placeholder from the "camera off" state.
@@ -137,14 +138,22 @@ const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, updatedAt, videoEnabl
   useEffect(() => {
     if (videoRef.current && stream) {
       if (videoRef.current.srcObject !== stream) {
-        console.log(`[WEBRTC] STREAM_ATTACHED for participant: ${participantId}`);
+        if (logWebRTC) {
+          logWebRTC('STREAM_ATTACHED', participantId, {
+            hasStream: true,
+            videoTracksCount: stream.getVideoTracks().length,
+            audioTracksCount: stream.getAudioTracks().length
+          });
+        } else {
+          console.log(`[WEBRTC] STREAM_ATTACHED for participant: ${participantId}`);
+        }
         videoRef.current.srcObject = stream;
       }
       videoRef.current.play().catch(err => {
         console.warn(`[WEBRTC] Autoplay blocked for peer ${participantId}:`, err);
       });
     }
-  }, [stream, participantId]);
+  }, [stream, participantId, logWebRTC]);
 
   // showVideo: controlled purely by the remote participant's broadcast videoEnabled state.
   // hasVideoTrack guards against showing a blank video element before the WebRTC track arrives.
@@ -256,6 +265,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   // Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
+  const peerInitiators = useRef<Record<string, boolean>>({});
   const iceCandidateQueue = useRef<Record<string, RTCIceCandidateInit[]>>({});
   const channelRef = useRef<any>(null);
   const participantSessionIdRef = useRef<string | null>(null);
@@ -284,6 +294,45 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   useEffect(() => { currentUserNameRef.current = currentUserName; }, [currentUserName]);
   useEffect(() => { currentUserRoleRef.current = currentUserRole; }, [currentUserRole]);
   useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
+
+  // SDP verification helper
+  const verifySDP = (sdpText: string) => {
+    const hasAudio = sdpText.includes('m=audio');
+    const hasVideo = sdpText.includes('m=video');
+    const direction = sdpText.includes('a=inactive')
+      ? 'inactive'
+      : sdpText.includes('a=sendonly')
+      ? 'sendonly'
+      : sdpText.includes('a=recvonly')
+      ? 'recvonly'
+      : sdpText.includes('a=sendrecv')
+      ? 'sendrecv'
+      : 'default/sendrecv';
+    return {
+      hasAudio,
+      hasVideo,
+      direction,
+      isInactive: direction === 'inactive',
+      hasSendRecv: direction === 'sendrecv' || direction === 'default/sendrecv'
+    };
+  };
+
+  // WebRTC Logger helper
+  const logWebRTC = (event: string, peerId: string, metadata: Record<string, any> = {}) => {
+    const timestamp = new Date().toISOString();
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : 'Unknown';
+    const isMobile = /Mobi|Android|iPhone|iPad/i.test(ua);
+    const deviceType = isMobile ? 'Mobile' : 'Laptop/Desktop';
+    let browser = 'Unknown';
+    if (/Chrome/i.test(ua) && !/Edge/i.test(ua)) browser = 'Chrome';
+    else if (/Safari/i.test(ua) && !/Chrome/i.test(ua)) browser = 'Safari';
+    else if (/Firefox/i.test(ua)) browser = 'Firefox';
+    else if (/Edge/i.test(ua)) browser = 'Edge';
+
+    console.log(
+      `[WEBRTC] ${event} | Peer: ${peerId} | ParticipantId: ${currentUserId} | Role: ${currentUserRole} | Device: ${deviceType} | Browser: ${browser} | Time: ${timestamp} | Meta: ${JSON.stringify(metadata)}`
+    );
+  };
 
   const updateParticipantInRegistry = (id: string, updates: Partial<Participant>) => {
     const existing = participantRegistry.current.get(id);
@@ -726,8 +775,16 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         setLocalStream(stream);
         activeStream = stream;
         setDeviceError(null);
+        logWebRTC('LOCAL_STREAM_FOUND', 'local', {
+          hasStream: true,
+          videoTracksCount: stream.getVideoTracks().length,
+          audioTracksCount: stream.getAudioTracks().length
+        });
+        logWebRTC('VIDEO_TRACK_COUNT', 'local', { count: stream.getVideoTracks().length });
+        logWebRTC('AUDIO_TRACK_COUNT', 'local', { count: stream.getAudioTracks().length });
       } catch (err: any) {
         console.warn('Media capture error:', err);
+        logWebRTC('LOCAL_STREAM_FOUND', 'local', { hasStream: false, error: err.name || err.message });
         if (err.name === 'NotFoundError' || err.message?.includes('devices')) {
           setDeviceError('Camera Not Found');
         } else if (err.name === 'NotAllowedError' || err.message?.includes('Permission')) {
@@ -764,13 +821,11 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     signalingChannel
       .on('broadcast', { event: 'webrtc-offer' }, async ({ payload }) => {
         if (payload.targetId === currentUserId) {
-          console.log(`[WEBRTC] OFFER_RECEIVED from peer: ${payload.senderId}`);
           await handleOffer(payload.senderId, payload.offer);
         }
       })
       .on('broadcast', { event: 'webrtc-answer' }, async ({ payload }) => {
         if (payload.targetId === currentUserId) {
-          console.log(`[WEBRTC] ANSWER_RECEIVED from peer: ${payload.senderId}`);
           await handleAnswer(payload.senderId, payload.answer);
         }
       })
@@ -779,7 +834,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           const senderId = payload.senderId;
           const candidate = payload.candidate;
           if (!candidate) return;
-          console.log(`[WEBRTC] ICE_RECEIVED from peer: ${senderId}`);
+          logWebRTC('ICE_RECEIVED', senderId, { candidate: candidate.candidate });
 
           const pc = peerConnections.current[senderId];
           if (pc && pc.remoteDescription) {
@@ -794,6 +849,45 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               iceCandidateQueue.current[senderId] = [];
             }
             iceCandidateQueue.current[senderId].push(candidate);
+          }
+        }
+      })
+      .on('broadcast', { event: 'webrtc-negotiation-needed' }, async ({ payload }) => {
+        if (payload.targetId === currentUserId) {
+          const senderId = payload.senderId;
+          logWebRTC('NEGOTIATION_NEEDED_RECEIVED', senderId);
+          const pc = peerConnections.current[senderId];
+          if (pc) {
+            if (pc.signalingState !== 'stable') {
+              console.log(`[WEBRTC] NEGOTIATION_NEEDED_RECEIVED ignored: signalingState is ${pc.signalingState}`);
+              return;
+            }
+            try {
+              const offer = await pc.createOffer();
+              const sdpVerify = verifySDP(offer.sdp || '');
+              logWebRTC('OFFER_CREATED', senderId, {
+                context: 'renegotiation_signal',
+                sdp: offer.sdp,
+                hasAudio: sdpVerify.hasAudio,
+                hasVideo: sdpVerify.hasVideo,
+                direction: sdpVerify.direction,
+                isInactive: sdpVerify.isInactive,
+                hasSendRecv: sdpVerify.hasSendRecv
+              });
+              await pc.setLocalDescription(offer);
+              channelRef.current.send({
+                type: 'broadcast',
+                event: 'webrtc-offer',
+                payload: {
+                  senderId: currentUserId,
+                  targetId: senderId,
+                  offer
+                }
+              });
+              logWebRTC('OFFER_SENT', senderId, { context: 'renegotiation_signal' });
+            } catch (err) {
+              console.error(`[WEBRTC] Error creating offer on negotiationneeded signal for peer ${senderId}:`, err);
+            }
           }
         }
       })
@@ -1367,7 +1461,13 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       localStream.getTracks().forEach(track => {
         const alreadyAdded = senders.some(s => s.track === track || (s.track && s.track.kind === track.kind));
         if (!alreadyAdded) {
-          console.log(`[AegisMeet] Adding track ${track.kind} to peer ${peerId}`);
+          logWebRTC('TRACK_ADDED', peerId, {
+            kind: track.kind,
+            readyState: track.readyState,
+            enabled: track.enabled,
+            trackId: track.id,
+            context: 'localStream_loaded_changed_effect'
+          });
           pc.addTrack(track, localStream);
         } else {
           const sender = senders.find(s => s.track && s.track.kind === track.kind);
@@ -1409,7 +1509,18 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   };
 
   const initiatePeerConnection = async (peerId: string, isInitiator: boolean) => {
+    // If connection already exists, close it first to prevent leaks and port collisions
+    if (peerConnections.current[peerId]) {
+      logWebRTC('WARNING', peerId, { detail: 'Overwriting existing peer connection. Closing old connection first.' });
+      try {
+        peerConnections.current[peerId].close();
+      } catch (e) {
+        console.error(`[WEBRTC] Failed to close old peer connection:`, e);
+      }
+    }
+
     console.log(`[AegisMeet] initiatePeerConnection for peer: ${peerId}, isInitiator: ${isInitiator}`);
+    logWebRTC('PEER_CREATED', peerId, { isInitiator });
     
     const customIceServers = import.meta.env.VITE_ICE_SERVERS 
       ? JSON.parse(import.meta.env.VITE_ICE_SERVERS) 
@@ -1438,6 +1549,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       ]
     });
 
+    peerInitiators.current[peerId] = isInitiator;
     peerConnections.current[peerId] = pc;
 
     // CRITICAL: Use localStreamRef.current (not stale closure `localStream` state)
@@ -1445,17 +1557,31 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     // the signaling useEffect captures localStream=null from mount.
     const streamToAdd = localStreamRef.current;
     if (streamToAdd) {
+      logWebRTC('LOCAL_STREAM_FOUND', peerId, {
+        hasStream: true,
+        videoTracksCount: streamToAdd.getVideoTracks().length,
+        audioTracksCount: streamToAdd.getAudioTracks().length
+      });
+      logWebRTC('VIDEO_TRACK_COUNT', peerId, { count: streamToAdd.getVideoTracks().length });
+      logWebRTC('AUDIO_TRACK_COUNT', peerId, { count: streamToAdd.getAudioTracks().length });
+
       streamToAdd.getTracks().forEach(track => {
-        console.log(`[WEBRTC] TRACK_ADDED: kind=${track.kind} peer=${peerId} readyState=${track.readyState}`);
+        logWebRTC('TRACK_ADDED', peerId, {
+          kind: track.kind,
+          readyState: track.readyState,
+          enabled: track.enabled,
+          trackId: track.id
+        });
         pc.addTrack(track, streamToAdd);
       });
     } else {
+      logWebRTC('LOCAL_STREAM_FOUND', peerId, { hasStream: false });
       console.warn(`[WEBRTC] WARNING: No local stream available when creating peer connection for ${peerId}. Tracks will be added when stream arrives.`);
     }
 
     pc.onicecandidate = (event) => {
       if (event.candidate && channelRef.current) {
-        console.log(`[WEBRTC] ICE_SENT to peer: ${peerId}`);
+        logWebRTC('ICE_SENT', peerId, { candidate: event.candidate.candidate });
         channelRef.current.send({
           type: 'broadcast',
           event: 'webrtc-ice',
@@ -1469,7 +1595,14 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     };
 
     pc.ontrack = (event) => {
-      console.log(`[WEBRTC] TRACK_RECEIVED: peer: ${peerId}, kind: ${event.track.kind}, streams:`, event.streams);
+      logWebRTC('ONTRACK_FIRED', peerId, {
+        kind: event.track.kind,
+        readyState: event.track.readyState,
+        enabled: event.track.enabled,
+        streamsCount: event.streams.length,
+        tracksInStream: event.streams[0] ? event.streams[0].getTracks().map(t => ({ kind: t.kind, id: t.id })) : []
+      });
+
       if (event.streams[0]) {
         setRemoteStreams(prev => {
           return {
@@ -1511,7 +1644,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     };
 
     pc.onconnectionstatechange = () => {
-      console.log(`[WEBRTC] CONNECTION_STATE change: ${pc.connectionState} for peer: ${peerId}`);
+      logWebRTC('CONNECTION_STATE', peerId, { state: pc.connectionState });
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
         setConnectionStatus('Reconnecting...');
         try {
@@ -1525,7 +1658,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log(`[WEBRTC] ICE_STATE change: ${pc.iceConnectionState} for peer: ${peerId}`);
+      logWebRTC('ICE_CONNECTION_STATE', peerId, { state: pc.iceConnectionState });
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
         setConnectionStatus('Reconnecting...');
         try {
@@ -1538,11 +1671,72 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       }
     };
 
+    pc.onsignalingstatechange = () => {
+      logWebRTC('SIGNALING_STATE', peerId, { state: pc.signalingState });
+    };
+
+    // Negotiation needed callback handles dynamic track attachment
+    pc.onnegotiationneeded = async () => {
+      logWebRTC('NEGOTIATION_NEEDED', peerId, { signalingState: pc.signalingState });
+      if (pc.signalingState !== 'stable') {
+        console.log(`[WEBRTC] NEGOTIATION_NEEDED ignored: signalingState is ${pc.signalingState}`);
+        return;
+      }
+      
+      const isPeerInitiator = peerInitiators.current[peerId];
+      if (isPeerInitiator) {
+        try {
+          const offer = await pc.createOffer();
+          const sdpVerify = verifySDP(offer.sdp || '');
+          logWebRTC('OFFER_CREATED', peerId, {
+            context: 'onnegotiationneeded',
+            sdp: offer.sdp,
+            hasAudio: sdpVerify.hasAudio,
+            hasVideo: sdpVerify.hasVideo,
+            direction: sdpVerify.direction,
+            isInactive: sdpVerify.isInactive,
+            hasSendRecv: sdpVerify.hasSendRecv
+          });
+          await pc.setLocalDescription(offer);
+          channelRef.current.send({
+            type: 'broadcast',
+            event: 'webrtc-offer',
+            payload: {
+              senderId: currentUserId,
+              targetId: peerId,
+              offer
+            }
+          });
+          logWebRTC('OFFER_SENT', peerId, { context: 'onnegotiationneeded' });
+        } catch (err) {
+          console.error(`[WEBRTC] Error creating offer on negotiationneeded for peer ${peerId}:`, err);
+        }
+      } else {
+        console.log(`[WEBRTC] NEGOTIATION_NEEDED: We are not initiator for ${peerId}, sending negotiation-needed signal`);
+        channelRef.current.send({
+          type: 'broadcast',
+          event: 'webrtc-negotiation-needed',
+          payload: {
+            senderId: currentUserId,
+            targetId: peerId
+          }
+        });
+      }
+    };
+
     if (isInitiator) {
       try {
         const offer = await pc.createOffer();
+        const sdpVerify = verifySDP(offer.sdp || '');
+        logWebRTC('OFFER_CREATED', peerId, {
+          sdp: offer.sdp,
+          hasAudio: sdpVerify.hasAudio,
+          hasVideo: sdpVerify.hasVideo,
+          direction: sdpVerify.direction,
+          isInactive: sdpVerify.isInactive,
+          hasSendRecv: sdpVerify.hasSendRecv
+        });
         await pc.setLocalDescription(offer);
-        console.log(`[WEBRTC] OFFER_CREATED for peer: ${peerId}`);
         channelRef.current.send({
           type: 'broadcast',
           event: 'webrtc-offer',
@@ -1552,6 +1746,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
             offer
           }
         });
+        logWebRTC('OFFER_SENT', peerId);
       } catch (err) {
         console.error('Failed to create offer:', err);
       }
@@ -1559,14 +1754,32 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   };
 
   const handleOffer = async (senderId: string, offer: RTCSessionDescriptionInit) => {
+    const sdpVerify = verifySDP(offer.sdp || '');
+    logWebRTC('OFFER_RECEIVED', senderId, {
+      sdp: offer.sdp,
+      hasAudio: sdpVerify.hasAudio,
+      hasVideo: sdpVerify.hasVideo,
+      direction: sdpVerify.direction,
+      isInactive: sdpVerify.isInactive,
+      hasSendRecv: sdpVerify.hasSendRecv
+    });
+
     await initiatePeerConnection(senderId, false);
     const pc = peerConnections.current[senderId];
     if (pc) {
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
       await processIceCandidateQueue(senderId);
       const answer = await pc.createAnswer();
+      const sdpVerifyAnswer = verifySDP(answer.sdp || '');
+      logWebRTC('ANSWER_CREATED', senderId, {
+        sdp: answer.sdp,
+        hasAudio: sdpVerifyAnswer.hasAudio,
+        hasVideo: sdpVerifyAnswer.hasVideo,
+        direction: sdpVerifyAnswer.direction,
+        isInactive: sdpVerifyAnswer.isInactive,
+        hasSendRecv: sdpVerifyAnswer.hasSendRecv
+      });
       await pc.setLocalDescription(answer);
-      console.log(`[WEBRTC] ANSWER_CREATED for peer: ${senderId}`);
       channelRef.current.send({
         type: 'broadcast',
         event: 'webrtc-answer',
@@ -1576,10 +1789,21 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
           answer
         }
       });
+      logWebRTC('ANSWER_SENT', senderId);
     }
   };
 
   const handleAnswer = async (senderId: string, answer: RTCSessionDescriptionInit) => {
+    const sdpVerify = verifySDP(answer.sdp || '');
+    logWebRTC('ANSWER_RECEIVED', senderId, {
+      sdp: answer.sdp,
+      hasAudio: sdpVerify.hasAudio,
+      hasVideo: sdpVerify.hasVideo,
+      direction: sdpVerify.direction,
+      isInactive: sdpVerify.isInactive,
+      hasSendRecv: sdpVerify.hasSendRecv
+    });
+
     const pc = peerConnections.current[senderId];
     if (pc) {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
@@ -2478,6 +2702,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
                     videoEnabled={p.videoEnabled} 
                     participantId={p.id} 
                     participantName={p.name}
+                    logWebRTC={logWebRTC}
                   />
 
                   <div className="absolute bottom-3 left-3 bg-[#0a0f1d]/85 px-3 py-1.5 rounded-xl border border-slate-800/80 flex items-center gap-2 backdrop-blur shadow text-[10px] font-bold">
