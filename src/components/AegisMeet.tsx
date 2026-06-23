@@ -77,6 +77,11 @@ interface RemoteVideoProps {
 
 const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, participantId, participantName }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  // hasVideoTrack: true once the peer connection has delivered at least one live video track.
+  // This is used to separate the "connecting" placeholder from the "camera off" state.
+  // NOTE: We do NOT check track.enabled here — track.enabled is a local-only property in WebRTC
+  // and is meaningless on the receiver side. The remote camera on/off state is communicated
+  // via the `videoEnabled` prop (broadcast from the remote participant).
   const [hasVideoTrack, setHasVideoTrack] = useState(false);
 
   useEffect(() => {
@@ -87,13 +92,14 @@ const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, partici
 
     const updateTrackStatus = () => {
       const videoTracks = stream.getVideoTracks();
-      const active = videoTracks.length > 0 && videoTracks.some(t => t.enabled && t.readyState === 'live');
+      // Only check readyState — NOT track.enabled, which is local-only
+      const active = videoTracks.length > 0 && videoTracks.some(t => t.readyState === 'live');
       setHasVideoTrack(active);
     };
 
     updateTrackStatus();
 
-    // Listen to changes
+    // Listen to structural changes (track added/removed/ended)
     stream.onaddtrack = updateTrackStatus;
     stream.onremovetrack = updateTrackStatus;
 
@@ -124,10 +130,14 @@ const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, partici
     }
   }, [stream, participantId]);
 
-  const showVideo = videoEnabled && stream && hasVideoTrack;
+  // showVideo: controlled purely by the remote participant's broadcast videoEnabled state.
+  // hasVideoTrack guards against showing a blank video element before the WebRTC track arrives.
+  // This ensures: camera toggle → avatar shown; camera on → video shown; no blank panels.
+  const showVideo = videoEnabled && stream !== null && hasVideoTrack;
 
   return (
     <div className="w-full h-full relative">
+      {/* Video element stays permanently mounted to avoid srcObject rebind race conditions */}
       <video
         ref={videoRef}
         id={`video-${participantId}`}
@@ -142,7 +152,9 @@ const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, partici
           <div className="w-20 h-20 rounded-full bg-[#1e294b] flex items-center justify-center text-brand-400 font-extrabold text-2xl border border-slate-700 uppercase">
             {participantName ? participantName.substring(0, 2) : 'P'}
           </div>
-          <span className="text-[10px] uppercase tracking-widest text-slate-500 mt-3 font-extrabold">Camera Off</span>
+          <span className="text-[10px] uppercase tracking-widest text-slate-500 mt-3 font-extrabold">
+            {stream && !hasVideoTrack ? 'Connecting...' : 'Camera Off'}
+          </span>
         </div>
       )}
     </div>
@@ -151,7 +163,9 @@ const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, partici
 
 export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const { session } = useStore();
-  const currentUserId = session?.user?.id || 'guest-' + Math.random().toString(36).substring(2, 7);
+  // Stable guest ID: generate once and hold in a ref to prevent regeneration on every render
+  const guestIdRef = useRef<string>('guest-' + Math.random().toString(36).substring(2, 7));
+  const currentUserId = session?.user?.id || guestIdRef.current;
   const currentUserName = session?.user 
     ? `${session.user.firstName || ''} ${session.user.lastName || ''}`.trim() 
     : 'Guest Participant';
@@ -243,6 +257,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const screenSharingRef = useRef(screenSharing);
   const currentUserNameRef = useRef(currentUserName);
   const currentUserRoleRef = useRef(currentUserRole);
+  // localStreamRef provides stable access to localStream inside stale effect closures
+  const localStreamRef = useRef<MediaStream | null>(null);
 
   useEffect(() => { micEnabledRef.current = micEnabled; }, [micEnabled]);
   useEffect(() => { videoEnabledRef.current = videoEnabled; }, [videoEnabled]);
@@ -250,6 +266,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   useEffect(() => { screenSharingRef.current = screenSharing; }, [screenSharing]);
   useEffect(() => { currentUserNameRef.current = currentUserName; }, [currentUserName]);
   useEffect(() => { currentUserRoleRef.current = currentUserRole; }, [currentUserRole]);
+  useEffect(() => { localStreamRef.current = localStream; }, [localStream]);
 
   const updateParticipantInRegistry = (id: string, updates: Partial<Participant>) => {
     const existing = participantRegistry.current.get(id);
@@ -754,8 +771,9 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         if (payload.targetId === currentUserId) {
           if (payload.action === 'mute') {
             setMicEnabled(false);
-            if (localStream) {
-              localStream.getAudioTracks().forEach(t => t.enabled = false);
+            // Use localStreamRef to access current stream (avoids stale closure capture)
+            if (localStreamRef.current) {
+              localStreamRef.current.getAudioTracks().forEach(t => t.enabled = false);
             }
             alert('You have been muted by the host.');
             broadcastState({ micEnabled: false });
