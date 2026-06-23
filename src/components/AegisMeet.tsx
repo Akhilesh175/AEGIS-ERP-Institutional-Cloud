@@ -82,12 +82,13 @@ interface FollowupTask {
 // Sub-component for managing individual remote video attachments to bypass DOM unmount lifecycle races
 interface RemoteVideoProps {
   stream: MediaStream | null;
+  updatedAt: number;
   videoEnabled: boolean;
   participantId: string;
   participantName: string;
 }
 
-const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, participantId, participantName }) => {
+const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, updatedAt, videoEnabled, participantId, participantName }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   // hasVideoTrack: true once the peer connection has delivered at least one live video track.
   // This is used to separate the "connecting" placeholder from the "camera off" state.
@@ -131,14 +132,17 @@ const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, partici
         track.onended = null;
       });
     };
-  }, [stream]);
+  }, [stream, updatedAt]);
 
   useEffect(() => {
     if (videoRef.current && stream) {
       if (videoRef.current.srcObject !== stream) {
-        console.log(`[AegisMeet] video element rebound for participant: ${participantId}`);
+        console.log(`[WEBRTC] STREAM_ATTACHED for participant: ${participantId}`);
         videoRef.current.srcObject = stream;
       }
+      videoRef.current.play().catch(err => {
+        console.warn(`[WEBRTC] Autoplay blocked for peer ${participantId}:`, err);
+      });
     }
   }, [stream, participantId]);
 
@@ -149,14 +153,14 @@ const RemoteVideo: React.FC<RemoteVideoProps> = ({ stream, videoEnabled, partici
 
   return (
     <div className="w-full h-full relative">
-      {/* Video element stays permanently mounted to avoid srcObject rebind race conditions */}
+      {/* Video element stays permanently mounted and layout-active to prevent mobile browsers from suspending remote audio */}
       <video
         ref={videoRef}
         id={`video-${participantId}`}
         autoPlay
         playsInline
         className={`w-full h-full object-cover transition-opacity duration-300 ${
-          showVideo ? 'opacity-100 block' : 'opacity-0 hidden'
+          showVideo ? 'opacity-100 relative' : 'opacity-0 absolute pointer-events-none'
         }`}
       />
       {!showVideo && (
@@ -247,11 +251,12 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   const recordedChunksRef = useRef<Blob[]>([]);
 
   // WebRTC streams map
-  const [remoteStreams, setRemoteStreams] = useState<Record<string, MediaStream>>({});
+  const [remoteStreams, setRemoteStreams] = useState<Record<string, { stream: MediaStream; updatedAt: number }>>({});
 
   // Refs
   const localVideoRef = useRef<HTMLVideoElement>(null);
   const peerConnections = useRef<Record<string, RTCPeerConnection>>({});
+  const iceCandidateQueue = useRef<Record<string, RTCIceCandidateInit[]>>({});
   const channelRef = useRef<any>(null);
   const participantSessionIdRef = useRef<string | null>(null);
   // Tracks whether this user has a live row in ptm_participants (needed for RLS authorization)
@@ -759,23 +764,36 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     signalingChannel
       .on('broadcast', { event: 'webrtc-offer' }, async ({ payload }) => {
         if (payload.targetId === currentUserId) {
+          console.log(`[WEBRTC] OFFER_RECEIVED from peer: ${payload.senderId}`);
           await handleOffer(payload.senderId, payload.offer);
         }
       })
       .on('broadcast', { event: 'webrtc-answer' }, async ({ payload }) => {
         if (payload.targetId === currentUserId) {
+          console.log(`[WEBRTC] ANSWER_RECEIVED from peer: ${payload.senderId}`);
           await handleAnswer(payload.senderId, payload.answer);
         }
       })
       .on('broadcast', { event: 'webrtc-ice' }, async ({ payload }) => {
         if (payload.targetId === currentUserId) {
-          const pc = peerConnections.current[payload.senderId];
-          if (pc && payload.candidate) {
+          const senderId = payload.senderId;
+          const candidate = payload.candidate;
+          if (!candidate) return;
+          console.log(`[WEBRTC] ICE_RECEIVED from peer: ${senderId}`);
+
+          const pc = peerConnections.current[senderId];
+          if (pc && pc.remoteDescription) {
             try {
-              await pc.addIceCandidate(new RTCIceCandidate(payload.candidate));
+              await pc.addIceCandidate(new RTCIceCandidate(candidate));
             } catch (err) {
-              console.error('Error adding ICE candidate:', err);
+              console.error(`[WEBRTC] Error adding ICE candidate for peer ${senderId}:`, err);
             }
+          } else {
+            console.log(`[WEBRTC] Queuing remote ICE candidate from peer ${senderId}`);
+            if (!iceCandidateQueue.current[senderId]) {
+              iceCandidateQueue.current[senderId] = [];
+            }
+            iceCandidateQueue.current[senderId].push(candidate);
           }
         }
       })
@@ -1359,12 +1377,49 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
   };
 
   // 6. WebRTC RTC Connections
+  const processIceCandidateQueue = async (peerId: string) => {
+    const pc = peerConnections.current[peerId];
+    const queue = iceCandidateQueue.current[peerId];
+    if (pc && pc.remoteDescription && queue && queue.length > 0) {
+      console.log(`[WEBRTC] Processing ${queue.length} queued ICE candidates for peer ${peerId}`);
+      for (const candidate of queue) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(candidate));
+        } catch (err) {
+          console.error(`[WEBRTC] Error adding queued ICE candidate for peer ${peerId}:`, err);
+        }
+      }
+      iceCandidateQueue.current[peerId] = [];
+    }
+  };
+
   const initiatePeerConnection = async (peerId: string, isInitiator: boolean) => {
     console.log(`[AegisMeet] initiatePeerConnection for peer: ${peerId}, isInitiator: ${isInitiator}`);
+    
+    const customIceServers = import.meta.env.VITE_ICE_SERVERS 
+      ? JSON.parse(import.meta.env.VITE_ICE_SERVERS) 
+      : null;
+
     const pc = new RTCPeerConnection({
-      iceServers: [
+      iceServers: customIceServers || [
         { urls: 'stun:stun.l.google.com:19302' },
-        { urls: 'stun:stun1.l.google.com:19302' }
+        { urls: 'stun:stun1.l.google.com:19302' },
+        // Fallback public TURN servers (OpenRelay)
+        {
+          urls: 'turn:openrelay.metered.ca:80',
+          username: 'openrelay',
+          credential: 'openrelay'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443',
+          username: 'openrelay',
+          credential: 'openrelay'
+        },
+        {
+          urls: 'turn:openrelay.metered.ca:443?transport=tcp',
+          username: 'openrelay',
+          credential: 'openrelay'
+        }
       ]
     });
 
@@ -1379,6 +1434,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
 
     pc.onicecandidate = (event) => {
       if (event.candidate && channelRef.current) {
+        console.log(`[WEBRTC] ICE_SENT to peer: ${peerId}`);
         channelRef.current.send({
           type: 'broadcast',
           event: 'webrtc-ice',
@@ -1392,14 +1448,15 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     };
 
     pc.ontrack = (event) => {
-      console.log(`[AegisMeet] WebRTC track added from peer: ${peerId}, kind: ${event.track.kind}`);
+      console.log(`[WEBRTC] TRACK_RECEIVED: peer: ${peerId}, kind: ${event.track.kind}, streams:`, event.streams);
       if (event.streams[0]) {
-        console.log(`[AegisMeet] stream replaced/assigned for peer: ${peerId}`);
         setRemoteStreams(prev => {
-          if (prev[peerId] === event.streams[0]) return prev;
           return {
             ...prev,
-            [peerId]: event.streams[0]
+            [peerId]: {
+              stream: event.streams[0],
+              updatedAt: Date.now()
+            }
           };
         });
 
@@ -1410,7 +1467,17 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
         };
         const handleUnmute = () => {
           console.log(`[AegisMeet] track unmute event (restoring stream) for peer: ${peerId}, kind: ${track.kind}`);
-          setRemoteStreams(prev => ({ ...prev }));
+          setRemoteStreams(prev => {
+            const existing = prev[peerId];
+            if (!existing) return prev;
+            return {
+              ...prev,
+              [peerId]: {
+                ...existing,
+                updatedAt: Date.now()
+              }
+            };
+          });
         };
         const handleEnded = () => {
           console.log(`[AegisMeet] track ended event for peer: ${peerId}, kind: ${track.kind}`);
@@ -1423,7 +1490,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     };
 
     pc.onconnectionstatechange = () => {
-      console.log(`[AegisMeet] connectionstatechange: ${pc.connectionState} for peer: ${peerId}`);
+      console.log(`[WEBRTC] CONNECTION_STATE change: ${pc.connectionState} for peer: ${peerId}`);
       if (pc.connectionState === 'disconnected' || pc.connectionState === 'failed') {
         setConnectionStatus('Reconnecting...');
         try {
@@ -1437,7 +1504,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     };
 
     pc.oniceconnectionstatechange = () => {
-      console.log(`[AegisMeet] iceconnectionstatechange: ${pc.iceConnectionState} for peer: ${peerId}`);
+      console.log(`[WEBRTC] ICE_STATE change: ${pc.iceConnectionState} for peer: ${peerId}`);
       if (pc.iceConnectionState === 'disconnected' || pc.iceConnectionState === 'failed') {
         setConnectionStatus('Reconnecting...');
         try {
@@ -1454,6 +1521,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
       try {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
+        console.log(`[WEBRTC] OFFER_CREATED for peer: ${peerId}`);
         channelRef.current.send({
           type: 'broadcast',
           event: 'webrtc-offer',
@@ -1474,8 +1542,10 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     const pc = peerConnections.current[senderId];
     if (pc) {
       await pc.setRemoteDescription(new RTCSessionDescription(offer));
+      await processIceCandidateQueue(senderId);
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
+      console.log(`[WEBRTC] ANSWER_CREATED for peer: ${senderId}`);
       channelRef.current.send({
         type: 'broadcast',
         event: 'webrtc-answer',
@@ -1492,6 +1562,7 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
     const pc = peerConnections.current[senderId];
     if (pc) {
       await pc.setRemoteDescription(new RTCSessionDescription(answer));
+      await processIceCandidateQueue(senderId);
     }
   };
 
@@ -2381,7 +2452,8 @@ export const AegisMeet: React.FC<AegisMeetProps> = ({ meetingId, onLeave }) => {
               {participants.map(p => (
                 <div key={p.id} className="relative aspect-video max-w-xl mx-auto w-full bg-[#111827] rounded-2xl overflow-hidden border border-slate-800 shadow-xl group">
                   <RemoteVideo 
-                    stream={remoteStreams[p.id] || null} 
+                    stream={remoteStreams[p.id]?.stream || null} 
+                    updatedAt={remoteStreams[p.id]?.updatedAt || 0}
                     videoEnabled={p.videoEnabled} 
                     participantId={p.id} 
                     participantName={p.name}
