@@ -213,7 +213,7 @@ const RoleSelectorOverlay: React.FC<{
 };
 
 export const App: React.FC = () => {
-  const { session, theme, toggleTheme, setSession, initializeStore } = useStore();
+  const { session, theme, toggleTheme, setSession, initializeStore, isInitialized } = useStore();
   
   // Auth Form states
   const [email, setEmail] = useState('');
@@ -581,6 +581,17 @@ export const App: React.FC = () => {
       setResetLoading(false);
     }
   };
+
+  if (!isInitialized) {
+    return (
+      <div className="min-h-screen bg-[#070a13] flex flex-col items-center justify-center text-slate-200">
+        <div className="flex flex-col items-center space-y-4 animate-fade-in">
+          <div className="w-12 h-12 border-4 border-brand-500 border-t-transparent rounded-full animate-spin" />
+          <span className="text-xs font-bold tracking-widest text-slate-400 uppercase animate-pulse">Initializing Aegis ERP...</span>
+        </div>
+      </div>
+    );
+  }
 
   if (activeTab.startsWith('verify/marksheet/')) {
     const code = activeTab.replace('verify/marksheet/', '');

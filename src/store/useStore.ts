@@ -3,6 +3,7 @@ import { AuthSession } from '../services/mockApi';
 
 interface SchoolERPStore {
   session: AuthSession | null;
+  isInitialized: boolean;
   theme: 'light' | 'dark';
   activeStudentId: string | null; // For parents viewing linked children
   activeChatUserId: string | null; // Selected user in drawer
@@ -22,6 +23,7 @@ interface SchoolERPStore {
 
 export const useStore = create<SchoolERPStore>((set, get) => ({
   session: null,
+  isInitialized: false,
   theme: 'dark',
   activeStudentId: null,
   activeChatUserId: null,
@@ -148,6 +150,7 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
         localStorage.removeItem('aegis_session');
       }
     }
+    set({ isInitialized: true });
   },
  
   syncSubscriptionPlan: async () => {
