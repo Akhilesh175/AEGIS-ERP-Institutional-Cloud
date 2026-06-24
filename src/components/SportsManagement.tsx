@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { BrandLogo } from './common/BrandLogo';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
@@ -1165,6 +1166,12 @@ export const SportsManagement: React.FC = () => {
         }
       }
       
+      // Add AEGIS ERP branding watermark at bottom of PDF
+      doc.setTextColor(148, 163, 184);
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.text('Powered by AEGIS ERP Institutional Cloud · noreply@aegiserp.xyz', 105, 290, { align: 'center' });
+
       doc.save(`${filename}.pdf`);
     } else if (format === 'CSV') {
       const csv = generateReportString(type, 'CSV');
@@ -1193,7 +1200,7 @@ export const SportsManagement: React.FC = () => {
       <aside className="w-60 bg-[#070a13]/85 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shrink-0">
         <div className="space-y-6">
           <div className="flex items-center gap-3 px-2.5 py-2 bg-brand-500/10 border border-brand-500/20 rounded-xl">
-            <Trophy className="text-brand-400" size={20} />
+            <BrandLogo variant="icon-only" size="xs" className="opacity-90" />
             <div>
               <p className="text-[10px] font-bold text-slate-500 uppercase font-mono tracking-widest leading-none">AEGIS SPORTS</p>
               <p className="text-xs font-semibold text-slate-200 mt-1 truncate">

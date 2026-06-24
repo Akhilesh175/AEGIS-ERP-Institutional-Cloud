@@ -2,6 +2,9 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { supabase } from '../lib/supabase';
 
+/** AEGIS ERP official logo URL — used as PDF watermark footer */
+const AEGIS_LOGO_URL = '/aegis-logo.png';
+
 interface ReceiptData {
   schoolId: string;
   schoolName: string;
@@ -157,6 +160,13 @@ export const downloadReceiptPdf = async (data: ReceiptData) => {
         `}
         <span style="font-size: 9px; font-weight: bold; color: #64748b; border-top: 1px solid #cbd5e1; padding-top: 4px; font-family: sans-serif; width: 100%;">Authorized Signature / Seal</span>
       </div>
+    </div>
+    </div>
+
+    <!-- AEGIS ERP Branding Footer -->
+    <div style="margin-top: 24px; padding-top: 10px; border-top: 1px dashed #cbd5e1; display: flex; align-items: center; justify-content: center; gap: 8px; opacity: 0.65;">
+      <img src="${AEGIS_LOGO_URL}" style="height: 20px; width: 20px; object-fit: contain;" alt="AEGIS ERP" />
+      <span style="font-size: 8px; font-family: sans-serif; color: #64748b; font-weight: 600; letter-spacing: 0.05em; text-transform: uppercase;">Powered by AEGIS ERP Institutional Cloud · noreply@aegiserp.xyz</span>
     </div>
   `;
 

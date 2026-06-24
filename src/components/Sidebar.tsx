@@ -6,9 +6,10 @@ import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare,
   Users, UsersRound, Layers, BookMarked, DollarSign, Activity, Settings, ShieldAlert,
-  Key, Eye, EyeOff, Database, Terminal, HardDrive, CheckCircle2, Clock, Shield, AlertTriangle,
+  Key, Eye, EyeOff, Database, Terminal, HardDrive, CheckCircle2, Clock, AlertTriangle,
   Mail, X, CreditCard, HelpCircle, Bell, ClipboardList, FileText, Home, Trophy
 } from 'lucide-react';
+import { BrandLogo } from './common/BrandLogo';
 
 interface SidebarProps {
   activeTab: string;
@@ -386,7 +387,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         <div className="fixed inset-0 z-50 flex md:hidden bg-black/60 backdrop-blur-sm animate-fade-in">
           {/* Click background to close */}
           <div className="flex-1" onClick={() => setMobileMenuOpen(false)} />
-          <div className="w-64 h-full bg-[#070a13] border-r border-slate-800 flex flex-col justify-between p-4 z-50 animate-slide-right relative">
+        <div className="w-64 h-full bg-[#070a13] border-r border-slate-800 flex flex-col justify-between p-4 z-50 animate-slide-right relative">
             <button 
               onClick={() => setMobileMenuOpen(false)}
               className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 rounded-full transition-all"
@@ -394,6 +395,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
             >
               <X size={18} />
             </button>
+            {/* AEGIS ERP Logo in mobile sidebar */}
+            <div className="mb-4 pt-1">
+              <BrandLogo variant="horizontal" size="xs" showTagline={true} />
+            </div>
             {sidebarContent}
           </div>
         </div>

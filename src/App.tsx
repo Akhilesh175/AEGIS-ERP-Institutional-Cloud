@@ -12,6 +12,7 @@ import { SuperAdminPortal } from './portals/SuperAdminPortal';
 import { SportsManagement } from './components/SportsManagement';
 import { AegisMeet } from './components/AegisMeet';
 import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff, Building2, GraduationCap, Users, BookOpen, Home, Key, UserCheck, Phone, MessageSquare, Instagram, CheckCircle2, ShieldAlert, Database, Network, Layers, FileText, CheckSquare, HelpCircle, Globe, Laptop, ArrowRight, ShieldCheck, Bell } from 'lucide-react';
+import { BrandLogo } from './components/common/BrandLogo';
 import { GlassCard } from './components/GlassCard';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { useInactivityTimeout } from './hooks/useInactivityTimeout';
@@ -743,18 +744,10 @@ export const App: React.FC = () => {
           <line x1="100%" y1="0" x2="0" y2="100%" stroke="rgba(56, 176, 248, 0.02)" strokeWidth="1" />
         </svg>
 
-        {/* Top Header Branding */}
+        {/* Top Header Branding — Official AEGIS ERP Logo */}
         <div className="w-full flex justify-between items-center max-w-6xl mx-auto mb-6 relative z-10 shrink-0">
-          <div className="flex items-center gap-3 animate-fade-in">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-400 flex items-center justify-center shadow-lg shadow-brand-500/20 border border-brand-300/10">
-              <Shield className="text-white" size={24} />
-            </div>
-            <div>
-              <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-1">
-                AEGIS <span className="text-brand-400 text-glow-brand font-light">ERP</span>
-              </h1>
-              <p className="text-[10px] text-brand-300/70 font-bold tracking-widest font-mono uppercase">Institutional Security Center</p>
-            </div>
+          <div className="animate-fade-in">
+            <BrandLogo variant="horizontal" size="md" showTagline={true} />
           </div>
           
           {/* Theme Switcher Toggle */}

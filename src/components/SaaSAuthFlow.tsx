@@ -1,11 +1,12 @@
 import React, { useState, useEffect } from 'react';
 import { 
-  Shield, Building2, Phone, User, MapPin, Globe, Users, 
+  Shield, Phone, User, MapPin, Globe, Users, 
   ArrowRight, CheckCircle2, ShieldAlert, Key, Mail, 
   Landmark, MessageSquare, Clock, CreditCard, ChevronRight, Lock, 
-  Sparkles, HelpCircle, Sun, Moon 
+  Sparkles, HelpCircle, Sun, Moon, Building2
 } from 'lucide-react';
 import { GlassCard } from './GlassCard';
+import { BrandLogo, AEGIS_LOGO_URL } from './common/BrandLogo';
 
 // Dynamically load Razorpay SDK
 const loadRazorpayScript = () => {
@@ -269,7 +270,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
         currency: orderData.currency,
         name: 'Aegis ERP',
         description: `${planCode.toUpperCase()} Subscription (${billingCycle})`,
-        image: 'https://placehold.co/120x120/070a13/ffffff?text=AEGIS',
+        image: AEGIS_LOGO_URL,
         order_id: orderData.orderId,
         handler: async function (response: any) {
           try {
@@ -345,19 +346,9 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
         <rect width="100%" height="100%" fill="url(#saas-grid)" />
       </svg>
 
-      {/* Brand Header */}
+      {/* Brand Header — Official AEGIS ERP Logo */}
       <div className="w-full flex justify-between items-center max-w-6xl mx-auto mb-6 relative z-10 shrink-0">
-        <div className="flex items-center gap-3">
-          <div className="w-12 h-12 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-400 flex items-center justify-center shadow-lg shadow-brand-500/20 border border-brand-300/10">
-            <Building2 className="text-white" size={24} />
-          </div>
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight text-white flex items-center gap-1">
-              AEGIS <span className="text-brand-400 text-glow-brand font-light">ERP</span>
-            </h1>
-            <p className="text-[10px] text-brand-300/70 font-bold tracking-widest font-mono uppercase">School Management System</p>
-          </div>
-        </div>
+        <BrandLogo variant="horizontal" size="md" showTagline={true} />
         
         <button 
           onClick={toggleTheme}

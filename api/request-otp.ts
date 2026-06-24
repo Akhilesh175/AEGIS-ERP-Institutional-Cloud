@@ -156,8 +156,8 @@ export default async function handler(req: any, res: any) {
           body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f4f5f7; margin: 0; padding: 20px; color: #1e293b; }
           .container { max-width: 580px; margin: 0 auto; background: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0,0,0,0.05); border: 1px solid #e2e8f0; }
           .header { background: #070a13; padding: 30px; text-align: center; border-bottom: 3px solid #0ea0eb; }
-          .logo { color: #ffffff; font-size: 24px; font-weight: 800; letter-spacing: 1px; margin: 0; }
-          .logo span { color: #0ea0eb; font-weight: 400; }
+          .logo-wrap { display: flex; align-items: center; justify-content: center; gap: 14px; }
+          
           .content { padding: 40px 30px; }
           h2 { margin-top: 0; font-size: 20px; font-weight: 700; color: #0f172a; }
           p { font-size: 14px; line-height: 1.6; color: #475569; margin-bottom: 24px; }
@@ -169,7 +169,13 @@ export default async function handler(req: any, res: any) {
       <body>
         <div class="container">
           <div class="header">
-            <h1 class="logo">AEGIS <span>ERP</span></h1>
+            <div class="logo-wrap">
+              <img src="https://aegiserp.xyz/aegis-logo.png" alt="AEGIS ERP Institutional Cloud" width="52" height="52" style="object-fit:contain;display:block;" />
+              <div style="text-align:left;">
+                <p style="color:#ffffff;font-size:22px;font-weight:800;letter-spacing:1px;margin:0;">AEGIS <span style="color:#0ea0eb;font-weight:400;">ERP</span></p>
+                <p style="color:#38bdf8;font-size:9px;letter-spacing:0.25em;text-transform:uppercase;font-weight:600;margin:3px 0 0 0;">— Institutional Cloud —</p>
+              </div>
+            </div>
           </div>
           <div class="content">
             <h2>Security Verification Code</h2>

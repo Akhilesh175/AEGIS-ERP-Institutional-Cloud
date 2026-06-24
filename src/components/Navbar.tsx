@@ -3,8 +3,9 @@ import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
 import type { Notification } from '../types';
-import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, User as UserIcon, Shield, Camera, Upload, Trash2, X, Check, Menu, Settings, Key, Lock, Eye, EyeOff, Layers } from 'lucide-react';
+import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, Camera, Upload, Trash2, X, Check, Menu, Settings, Key, Lock, Eye, EyeOff, Layers } from 'lucide-react';
 import { ChatDrawer } from './ChatDrawer';
+import { BrandLogo } from './common/BrandLogo';
 
 export const Navbar: React.FC = () => {
   const { session, theme, toggleTheme, setSession, isMobileMenuOpen, setMobileMenuOpen } = useStore();
@@ -139,7 +140,7 @@ export const Navbar: React.FC = () => {
           if (Notification.permission === 'granted' && document.hidden) {
             new Notification(payload.new.title, {
               body: payload.new.content,
-              icon: '/logo.png'
+              icon: '/aegis-logo.png'
             });
           }
         }
@@ -246,7 +247,7 @@ export const Navbar: React.FC = () => {
   return (
     <>
       <header className="sticky top-0 z-40 w-full glass dark:glass-dark border-b border-slate-800 bg-[#070a13]/85 backdrop-blur-md px-6 py-3 flex items-center justify-between">
-        {/* Branding Title */}
+        {/* Branding Title — AEGIS ERP Official Logo */}
         <div className="flex items-center gap-2">
           <button 
             onClick={() => setMobileMenuOpen(!isMobileMenuOpen)}
@@ -255,16 +256,8 @@ export const Navbar: React.FC = () => {
           >
             <Menu size={20} />
           </button>
-          
-          <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-brand-600 to-brand-400 flex items-center justify-center shadow-lg shadow-brand-500/20">
-            <Shield className="text-white" size={20} />
-          </div>
-          <div>
-            <h1 className="font-bold tracking-tight text-slate-100 font-sans text-lg flex items-center gap-1.5">
-              AEGIS <span className="text-brand-500 text-glow-brand font-medium">ERP</span>
-            </h1>
-            <p className="text-[10px] text-slate-400 uppercase tracking-widest font-semibold font-mono">Institutional Cloud</p>
-          </div>
+
+          <BrandLogo variant="horizontal" size="sm" showTagline={true} />
         </div>
 
         {/* Action Controls */}

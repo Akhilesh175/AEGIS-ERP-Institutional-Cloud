@@ -1,6 +1,17 @@
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 
+/** AEGIS ERP official logo for PDF/certificate watermark footers */
+const AEGIS_LOGO_URL = '/aegis-logo.png';
+
+/** Shared AEGIS ERP branding watermark — appended to all PDF document types */
+const AEGIS_PDF_FOOTER = `
+  <div style="margin-top:20px;padding-top:8px;border-top:1px dashed #cbd5e1;display:flex;align-items:center;justify-content:center;gap:8px;opacity:0.6;">
+    <img src="${AEGIS_LOGO_URL}" style="height:16px;width:16px;object-fit:contain;" alt="AEGIS ERP" />
+    <span style="font-size:7px;font-family:sans-serif;color:#64748b;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;">Powered by AEGIS ERP Institutional Cloud · noreply@aegiserp.xyz</span>
+  </div>
+`;
+
 interface DocumentSchoolData {
   id: string;
   name: string;
@@ -135,6 +146,7 @@ export const downloadStudentIdCardPdf = async (
         <span style="font-size: 8px; color: #64748b; border-top: 1px solid rgba(226, 232, 240, 0.15); display: block; padding-top: 2px; text-transform: uppercase; font-weight: bold;">Authorized Sign</span>
       </div>
     </div>
+  ${AEGIS_PDF_FOOTER}
   `;
 
   await new Promise(r => setTimeout(r, 800));
@@ -299,6 +311,7 @@ export const downloadAdmissionFormPdf = async (
         <span style="font-weight: bold; color: #475569; border-top: 1px solid #cbd5e1; display: block; padding-top: 6px;">${principalName} / Seal</span>
       </div>
     </div>
+  ${AEGIS_PDF_FOOTER}
   `;
 
   await new Promise(r => setTimeout(r, 1000));
@@ -415,6 +428,7 @@ export const downloadTransferCertificatePdf = async (
         <span style="font-weight: bold; color: #475569; border-top: 1px solid #cbd5e1; display: block; padding-top: 6px;">${principalName} / Seal</span>
       </div>
     </div>
+  ${AEGIS_PDF_FOOTER}
   `;
 
   await new Promise(r => setTimeout(r, 1000));
@@ -508,6 +522,7 @@ export const downloadBonafideCertificatePdf = async (
         <span style="font-weight: bold; color: #475569; border-top: 1px solid #cbd5e1; display: block; padding-top: 6px;">${principalName} / Seal</span>
       </div>
     </div>
+  ${AEGIS_PDF_FOOTER}
   `;
 
   await new Promise(r => setTimeout(r, 1000));
@@ -609,6 +624,7 @@ export const downloadCertificateOfExcellencePdf = async (
         <span style="font-weight: bold; color: #475569; border-top: 1.5px solid #d4af37; display: block; padding-top: 6px;">${principalName} / Seal</span>
       </div>
     </div>
+  ${AEGIS_PDF_FOOTER}
   `;
 
   await new Promise(r => setTimeout(r, 1000));

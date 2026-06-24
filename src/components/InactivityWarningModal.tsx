@@ -17,6 +17,7 @@
 
 import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { ShieldAlert, LogOut, RefreshCw } from 'lucide-react';
+import { BrandLogo } from './common/BrandLogo';
 
 interface InactivityWarningModalProps {
   /** Remaining session milliseconds when the modal first appears */
@@ -131,6 +132,11 @@ export const InactivityWarningModal: React.FC<InactivityWarningModalProps> = ({
             background: `linear-gradient(90deg, transparent, ${ringColor}, transparent)`,
           }}
         />
+
+        {/* Brand identity — official logo at top of modal */}
+        <div className="flex justify-center -mb-2">
+          <BrandLogo variant="icon-only" size="xs" className="opacity-70" />
+        </div>
 
         {/* Header */}
         <div className="flex flex-col items-center gap-2 text-center">
