@@ -182,6 +182,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
       }
+      case 'COACH': {
+        return [
+          { id: 'dashboard', label: 'Coach Dashboard', icon: LayoutDashboard },
+          { id: 'sports', label: 'Sports & Activities', icon: Trophy },
+          { id: 'paymentsettings', label: 'Payment Settings', icon: DollarSign },
+          { id: 'support', label: 'Help & Support', icon: HelpCircle }
+        ];
+      }
       case 'ADMIN': {
         const lock = (tabId: string) => isTabLocked('ADMIN', tabId, planName);
         return [
@@ -319,6 +327,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
             {role === 'STUDENT' && 'Student Portal'}
             {role === 'PARENT' && 'Parent Guardian Portal'}
             {role === 'TEACHER' && 'Teacher Portal'}
+            {role === 'COACH' && 'Coach Portal'}
             {role === 'ADMIN' && 'Head Administrative Portal'}
             {role === 'SUPER_ADMIN' && 'Super Admin Engine'}
             {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN'].includes(role) && 'Sub-Admin Portal'}

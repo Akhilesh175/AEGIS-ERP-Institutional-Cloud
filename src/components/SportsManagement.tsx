@@ -327,7 +327,7 @@ export const SportsManagement: React.FC = () => {
       }
 
       // Load all students for the school if Admin, Sports Admin, or Finance Admin
-      if (['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'FINANCE_ADMIN'].includes(userRole)) {
+      if (['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'FINANCE_ADMIN', 'COACH'].includes(userRole)) {
         const { data: stds, error: stdsErr } = await supabase
           .from('students')
           .select('id, admission_number, users(first_name, last_name), classes(name), sections(name)')
@@ -901,6 +901,7 @@ export const SportsManagement: React.FC = () => {
     if (userRole === 'FINANCE_ADMIN') return 'FINANCE_ADMIN';
     if (userRole === 'STUDENT') return 'STUDENT';
     if (userRole === 'PARENT') return 'PARENT';
+    if (userRole === 'COACH') return 'COACH';
     if (userRole === 'TEACHER' && isCoach) return 'COACH';
     if (userRole === 'TEACHER') return 'TEACHER';
     return 'TEACHER';

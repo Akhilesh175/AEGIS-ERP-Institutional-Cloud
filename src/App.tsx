@@ -53,6 +53,8 @@ const getTabsForRole = (role: string, planName: string): string[] => {
       ];
     case 'SPORTS_ADMIN':
       return ['dashboard', 'sports', 'paymentsettings', 'ptm', 'support'];
+    case 'COACH':
+      return ['dashboard', 'sports', 'paymentsettings', 'support'];
     default: { // Sub-admin roles (Librarian, Warden, Academic Admin, Exam Controller, etc.)
       const tabs = [
         'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
@@ -1449,6 +1451,12 @@ export const App: React.FC = () => {
                           activeTab === 'paymentsettings'
                             ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
                             : <AdminPortal activeTab={activeTab} />
+                        )}
+                        {/* Coach Portal: sports is the primary workspace; paymentsettings routes to TeacherPortal for salary/banking */}
+                        {session.user.role === 'COACH' && (
+                          activeTab === 'paymentsettings'
+                            ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
+                            : <SportsManagement />
                         )}
                         {session.user.role === 'ADMIN' && <AdminPortal activeTab={activeTab} />}
                         {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}
