@@ -204,7 +204,7 @@ export const InactivityWarningModal: React.FC<InactivityWarningModalProps> = ({
             <>
               You will be signed out in{' '}
               <span className={`font-bold ${textColor}`}>{secondsLeft}s</span>.
-              {' '}Move your mouse or press any key to continue.
+              {' '}Use the buttons below to stay or sign out.
             </>
           ) : (
             <span className="text-red-400 font-semibold">Signing you out now…</span>

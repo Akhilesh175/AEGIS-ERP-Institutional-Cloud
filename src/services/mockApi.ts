@@ -20680,7 +20680,7 @@ export const mockApi = {
     const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
     if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
 
-    // Retrieve existing active record
+    // Fetch the current record (if any) so we can diff for history logging
     const { data: existing } = await supabaseAdmin
       .from('sports_coach_attendance')
       .select('*')
@@ -20690,16 +20690,43 @@ export const mockApi = {
       .is('deleted_at', null)
       .maybeSingle();
 
-    let data;
-    let error;
+    // ─── Atomic upsert — eliminates duplicate key race conditions ──────────────
+    // Using onConflict: 'coach_id,attendance_date' so the DB handles INSERT vs
+    // UPDATE atomically, even under concurrent requests.
+    const { data, error } = await supabaseAdmin
+      .from('sports_coach_attendance')
+      .upsert({
+        school_id: user.school_id,
+        coach_id: record.coachId,
+        attendance_date: record.attendanceDate,
+        status: record.status,
+        check_in: record.checkIn || null,
+        check_out: record.checkOut || null,
+        working_hours: Number(record.workingHours || 0),
+        remarks: record.remarks || null,
+        device_id: record.deviceId || existing?.device_id || null,
+        ip_address: record.ipAddress || existing?.ip_address || null,
+        latitude: record.latitude || existing?.latitude || null,
+        longitude: record.longitude || existing?.longitude || null,
+        attendance_source: record.attendanceSource || existing?.attendance_source || 'MANUAL',
+        updated_at: new Date().toISOString(),
+        // Only set created_by on first insert; upsert merges so this is safe
+        created_by: existing?.created_by || userId,
+      }, { onConflict: 'coach_id,attendance_date', ignoreDuplicates: false })
+      .select()
+      .single();
 
+    if (error) throw error;
+
+    // Write audit history only when there were actual changes
     if (existing) {
-      const hasChanges = existing.status !== record.status ||
-                         existing.check_in !== (record.checkIn || null) ||
-                         existing.check_out !== (record.checkOut || null) ||
-                         existing.working_hours !== Number(record.workingHours || 0) ||
-                         existing.remarks !== (record.remarks || null);
-      
+      const hasChanges =
+        existing.status !== record.status ||
+        existing.check_in !== (record.checkIn || null) ||
+        existing.check_out !== (record.checkOut || null) ||
+        existing.working_hours !== Number(record.workingHours || 0) ||
+        existing.remarks !== (record.remarks || null);
+
       if (hasChanges) {
         const oldValueStr = JSON.stringify({
           status: existing.status,
@@ -20712,81 +20739,46 @@ export const mockApi = {
           status: record.status,
           check_in: record.checkIn || null,
           check_out: record.checkOut || null,
-          working_hours: record.workingHours || 0,
+          working_hours: Number(record.workingHours || 0),
           remarks: record.remarks || null
         });
-
-        const res = await supabaseAdmin
-          .from('sports_coach_attendance')
-          .update({
+        await supabaseAdmin
+          .from('sports_coach_attendance_history')
+          .insert({
+            school_id: user.school_id,
+            attendance_id: data.id,
+            old_value: oldValueStr,
+            new_value: newValueStr,
+            edited_by: userId,
+            edit_reason: record.editReason || 'Administrative update'
+          });
+      }
+    } else {
+      // First-time insert — write a "created" history entry so history is
+      // immediately visible without having to make an edit first.
+      await supabaseAdmin
+        .from('sports_coach_attendance_history')
+        .insert({
+          school_id: user.school_id,
+          attendance_id: data.id,
+          old_value: 'NEW',
+          new_value: JSON.stringify({
             status: record.status,
             check_in: record.checkIn || null,
             check_out: record.checkOut || null,
             working_hours: Number(record.workingHours || 0),
-            remarks: record.remarks || null,
-            device_id: record.deviceId || existing.device_id || null,
-            ip_address: record.ipAddress || existing.ip_address || null,
-            latitude: record.latitude || existing.latitude || null,
-            longitude: record.longitude || existing.longitude || null,
-            attendance_source: record.attendanceSource || existing.attendance_source || 'MANUAL',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', existing.id)
-          .select()
-          .single();
-        
-        data = res.data;
-        error = res.error;
-
-        if (!error && data) {
-          // Log edit history
-          await supabaseAdmin
-            .from('sports_coach_attendance_history')
-            .insert({
-              school_id: user.school_id,
-              attendance_id: existing.id,
-              old_value: oldValueStr,
-              new_value: newValueStr,
-              edited_by: userId,
-              edit_reason: record.editReason || 'Administrative update'
-            });
-        }
-      } else {
-        data = existing;
-      }
-    } else {
-      const res = await supabaseAdmin
-        .from('sports_coach_attendance')
-        .insert({
-          school_id: user.school_id,
-          coach_id: record.coachId,
-          attendance_date: record.attendanceDate,
-          status: record.status,
-          check_in: record.checkIn || null,
-          check_out: record.checkOut || null,
-          working_hours: Number(record.workingHours || 0),
-          remarks: record.remarks || null,
-          device_id: record.deviceId || null,
-          ip_address: record.ipAddress || null,
-          latitude: record.latitude || null,
-          longitude: record.longitude || null,
-          attendance_source: record.attendanceSource || 'MANUAL',
-          created_by: userId
-        })
-        .select()
-        .single();
-      
-      data = res.data;
-      error = res.error;
+            remarks: record.remarks || null
+          }),
+          edited_by: userId,
+          edit_reason: 'Initial attendance record created'
+        });
     }
 
-    if (error) throw error;
-
     await this.logSportsActivity(
-      user.school_id, 
-      userId, 
-      user.role, 
-      'MARK_COACH_ATTENDANCE', 
+      user.school_id,
+      userId,
+      user.role,
+      'MARK_COACH_ATTENDANCE',
       `Marked attendance for coach on ${record.attendanceDate} as ${record.status}`,
       undefined,
       undefined,
@@ -20982,37 +20974,29 @@ export const mockApi = {
 
     const { data: existingAttendance } = await supabaseAdmin
       .from('sports_coach_attendance')
-      .select('*')
+      .select('id, created_by')
       .eq('coach_id', coachProfile.id)
       .eq('attendance_date', logData.logDate)
       .is('deleted_at', null)
       .maybeSingle();
 
-    if (existingAttendance) {
-      await supabaseAdmin
-        .from('sports_coach_attendance')
-        .update({
-          working_hours: totalHours,
-          updated_at: new Date().toISOString()
-        })
-        .eq('id', existingAttendance.id);
-    } else {
-      await supabaseAdmin
-        .from('sports_coach_attendance')
-        .insert({
-          school_id: user.school_id,
-          coach_id: coachProfile.id,
-          attendance_date: logData.logDate,
-          status: 'PRESENT',
-          working_hours: totalHours,
-          created_by: userId,
-          attendance_source: logData.attendanceSource || 'MANUAL',
-          device_id: logData.deviceId || null,
-          ip_address: logData.ipAddress || null,
-          latitude: logData.latitude || null,
-          longitude: logData.longitude || null
-        });
-    }
+    // Atomic upsert — prevents duplicate key violations from concurrent check-ins
+    await supabaseAdmin
+      .from('sports_coach_attendance')
+      .upsert({
+        school_id: user.school_id,
+        coach_id: coachProfile.id,
+        attendance_date: logData.logDate,
+        status: 'PRESENT',
+        working_hours: totalHours,
+        created_by: existingAttendance?.created_by || userId,
+        attendance_source: logData.attendanceSource || 'MANUAL',
+        device_id: logData.deviceId || null,
+        ip_address: logData.ipAddress || null,
+        latitude: logData.latitude || null,
+        longitude: logData.longitude || null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: 'coach_id,attendance_date', ignoreDuplicates: false });
 
     return data;
   },

@@ -229,6 +229,9 @@ export const App: React.FC = () => {
   const [inactivityRemaining, setInactivityRemaining] = useState(60_000);
   // isLoggingOutRef prevents double-invocation on rapid expiry calls
   const isLoggingOutRef = useRef(false);
+  // Ref bridge so callbacks defined before the hook call can still invoke
+  // setWarningModalOpen / resetAfterStay without TypeScript TDZ errors.
+  const inactivityApiRef = useRef<{ setWarningModalOpen: (v: boolean) => void; resetAfterStay: () => void } | null>(null);
 
   /**
    * performSessionExpiry
@@ -266,17 +269,21 @@ export const App: React.FC = () => {
   const handleInactivityWarn = useCallback((remainingMs: number) => {
     setInactivityRemaining(remainingMs);
     setShowInactivityWarning(true);
+    // Engage the security gate — all background activity is now suppressed
+    // until the user makes an explicit choice (Stay / Sign Out).
+    inactivityApiRef.current?.setWarningModalOpen(true);
   }, []);
 
   const handleInactivityResume = useCallback(() => {
     setShowInactivityWarning(false);
+    inactivityApiRef.current?.setWarningModalOpen(false);
   }, []);
 
   const handleInactivityExpire = useCallback(() => {
     performSessionExpiry('inactivity');
   }, [performSessionExpiry]);
 
-  useInactivityTimeout({
+  const inactivityApi = useInactivityTimeout({
     timeoutMs: 5 * 60 * 1000,   // 5 minutes total idle
     warningMs: 60 * 1000,       // warn 60 s before expiry (at 4-min mark)
     isActive: !!session,         // only track when a session is live
@@ -284,6 +291,8 @@ export const App: React.FC = () => {
     onResume: handleInactivityResume,
     onExpire: handleInactivityExpire,
   });
+  // Synchronously update the ref so callbacks can always access the latest API
+  inactivityApiRef.current = inactivityApi;
   // ─────────────────────────────────────────────────────────────────────────────
 
   // Auth Form states
@@ -1508,10 +1517,11 @@ export const App: React.FC = () => {
         <InactivityWarningModal
           remainingMs={inactivityRemaining}
           onStay={() => {
-            setShowInactivityWarning(false);
-            // The hook's activity listener fires on pointer/key events, but
-            // the button click itself counts — no explicit timer reset needed
-            // because the hook's handleActivity fires on the click event.
+            // resetAfterStay atomically:
+            //  1. Releases the security gate (warningModalOpen → false)
+            //  2. Calls onResume → hides the modal
+            //  3. Restarts the full 5-minute inactivity timer from zero
+            inactivityApiRef.current?.resetAfterStay();
           }}
           onSignOut={() => performSessionExpiry('manual')}
         />

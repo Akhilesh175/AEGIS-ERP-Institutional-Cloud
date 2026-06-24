@@ -2322,25 +2322,39 @@ export const SportsManagement: React.FC = () => {
                         <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
                           <th className="py-2.5 px-4 font-bold">Edited At</th>
                           <th className="py-2.5 px-4 font-bold">Editor Name</th>
-                          <th className="py-2.5 px-4 font-bold">Old Value</th>
-                          <th className="py-2.5 px-4 font-bold">New Value</th>
+                          <th className="py-2.5 px-4 font-bold">Old Status</th>
+                          <th className="py-2.5 px-4 font-bold">New Status</th>
+                          <th className="py-2.5 px-4 font-bold">Check In / Out</th>
+                          <th className="py-2.5 px-4 font-bold">Working Hrs</th>
                           <th className="py-2.5 px-4 font-bold">Change Reason</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-850 text-slate-350">
                         {attendanceHistory.map(hist => {
-                          let parsedOld = hist.oldValue;
-                          let parsedNew = hist.newValue;
-                          try {
-                            const o = JSON.parse(hist.oldValue);
-                            parsedOld = `Status: ${o.status}, hours: ${o.working_hours} (${o.check_in || 'N/A'} - ${o.check_out || 'N/A'})`;
-                          } catch {}
-                          try {
-                            if (hist.newValue !== 'SOFT_DELETED') {
-                              const n = JSON.parse(hist.newValue);
-                              parsedNew = `Status: ${n.status}, hours: ${n.working_hours} (${n.check_in || 'N/A'} - ${n.check_out || 'N/A'})`;
-                            }
-                          } catch {}
+                          // Parse old and new values
+                          let oldData: any = null;
+                          let newData: any = null;
+                          const isNew = hist.oldValue === 'NEW';
+                          const isDeleted = hist.newValue === 'SOFT_DELETED';
+                          try { if (!isNew) oldData = JSON.parse(hist.oldValue); } catch {}
+                          try { if (!isDeleted) newData = JSON.parse(hist.newValue); } catch {}
+
+                          const statusBadge = (status: string | null | undefined) => {
+                            if (!status) return <span className="text-slate-500 italic">—</span>;
+                            const map: Record<string, string> = {
+                              PRESENT: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
+                              TRAINING_DUTY: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
+                              TOURNAMENT_DUTY: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
+                              ABSENT: 'bg-red-500/15 text-red-400 border-red-500/25',
+                              LATE: 'bg-orange-500/15 text-orange-400 border-orange-500/25',
+                              HALF_DAY: 'bg-orange-500/15 text-orange-400 border-orange-500/25',
+                              LEAVE: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+                              MEDICAL_LEAVE: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+                              EXCUSED: 'bg-purple-500/15 text-purple-400 border-purple-500/25',
+                            };
+                            const cls = map[status] || 'bg-slate-700/30 text-slate-400 border-slate-700';
+                            return <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border ${cls}`}>{status.replace('_', ' ')}</span>;
+                          };
 
                           return (
                             <tr key={hist.id} className="hover:bg-slate-900/30">
@@ -2348,15 +2362,29 @@ export const SportsManagement: React.FC = () => {
                                 {new Date(hist.editedAt).toLocaleString()}
                               </td>
                               <td className="py-2.5 px-4 font-semibold text-slate-200">{hist.editorName || 'System'}</td>
-                              <td className="py-2.5 px-4 font-mono text-[10px] text-red-300 max-w-xs truncate" title={parsedOld}>{parsedOld}</td>
-                              <td className="py-2.5 px-4 font-mono text-[10px] text-emerald-300 max-w-xs truncate" title={parsedNew}>{parsedNew}</td>
+                              <td className="py-2.5 px-4">
+                                {isNew
+                                  ? <span className="text-[10px] text-emerald-400 font-mono font-bold">NEW RECORD</span>
+                                  : statusBadge(oldData?.status)}
+                              </td>
+                              <td className="py-2.5 px-4">
+                                {isDeleted
+                                  ? <span className="text-[10px] text-red-400 font-mono font-bold">DELETED</span>
+                                  : statusBadge(newData?.status)}
+                              </td>
+                              <td className="py-2.5 px-4 font-mono text-[10px] text-slate-400">
+                                {newData ? `${newData.check_in || 'N/A'} → ${newData.check_out || 'N/A'}` : '—'}
+                              </td>
+                              <td className="py-2.5 px-4 font-mono text-[10px] font-bold text-slate-200">
+                                {newData?.working_hours != null ? `${Number(newData.working_hours).toFixed(2)} Hrs` : '—'}
+                              </td>
                               <td className="py-2.5 px-4 italic text-slate-400">{hist.editReason || 'N/A'}</td>
                             </tr>
                           );
                         })}
                         {attendanceHistory.length === 0 && (
                           <tr>
-                            <td colSpan={5} className="py-6 text-center text-slate-500 italic">No attendance audit edits recorded yet.</td>
+                            <td colSpan={7} className="py-6 text-center text-slate-500 italic">No attendance audit edits recorded yet.</td>
                           </tr>
                         )}
                       </tbody>
