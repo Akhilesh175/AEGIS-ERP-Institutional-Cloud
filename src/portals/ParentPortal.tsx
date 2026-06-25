@@ -17,7 +17,8 @@ import {
   BookMarked, Layers, Home, Coffee, Utensils, ClipboardList, Check, X, Bell, Mail
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
-import { subscriptionPlans, isTabLocked } from '../services/subscriptionConfig';
+import { subscriptionPlans, isTabLocked, isTabLockedByEntitlements } from '../services/subscriptionConfig';
+import { useFeatureEntitlements } from '../hooks/useFeatureEntitlements';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 import { downloadReceiptPdf } from '../components/ReceiptTemplate';
 import { 
@@ -97,6 +98,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   const studentSchool = studentObj ? mockDb.schools.find(sch => sch.id === studentObj.schoolId) : null;
   const currentPlanName = (session?.schoolSubscriptionPlan || studentSchool?.subscriptionPlan || 'freemium').toLowerCase();
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
+  const ent = useFeatureEntitlements();
   const [academicRecord, setAcademicRecord] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1050,7 +1052,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
             {activeTab === 'homework' && (
               <PremiumLock
-                isLocked={currentPlanName !== 'enterprise'}
+                isLocked={!ent.hasLibraryAccess}
                 requiredTier="ENTERPRISE"
                 featureName="Homework & Assignments"
                 customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
@@ -1467,7 +1469,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
             {activeTab === 'fees' && (
               <PremiumLock 
-                isLocked={currentPlanName === 'freemium'} 
+                isLocked={!ent.hasBilling} 
                 requiredTier="Basic" 
                 featureName="Fee Management"
               >
@@ -2852,7 +2854,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
       )}
                   {activeTab === 'library' && (
                     <PremiumLock
-                      isLocked={currentPlanName !== 'enterprise'}
+                      isLocked={!ent.hasLibraryAccess}
                       requiredTier="ENTERPRISE"
                       featureName="School Library & Digital Books"
                       customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
@@ -2989,7 +2991,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
             {activeTab === 'transit' && (
               <PremiumLock
-                isLocked={currentPlanName !== 'enterprise'}
+                isLocked={!ent.hasTransportAccess}
                 requiredTier="Enterprise"
                 featureName="School Transit & Route Tracking"
               >
@@ -3027,7 +3029,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
             {activeTab === 'forums' && (
               <PremiumLock 
-                isLocked={currentPlanName === 'freemium'} 
+                isLocked={!ent.hasBilling} 
                 requiredTier="Basic" 
                 featureName="Discussions & Forums"
               >
@@ -3119,7 +3121,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
             {activeTab === 'materials' && (
               <PremiumLock
-                isLocked={currentPlanName !== 'enterprise'}
+                isLocked={!ent.hasLibraryAccess}
                 requiredTier="ENTERPRISE"
                 featureName="Premium Learning Resources"
                 customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
@@ -3195,7 +3197,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
             {activeTab === 'quizzes' && (
               <PremiumLock 
-                isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'} 
+                isLocked={!ent.hasQuizzes} 
                 requiredTier="Pro" 
                 featureName="Quizzes & Interactive Online Tests"
               >
@@ -3280,7 +3282,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
             {activeTab === 'hostel' && (
               <PremiumLock 
-                isLocked={currentPlanName !== 'enterprise'} 
+                isLocked={!ent.hasHostelAccess} 
                 requiredTier="Enterprise" 
                 featureName="Hostel Hub"
                 customMessage="Hostel monitoring features are available only under the Enterprise Plan. Please contact the School Administrator to request an upgrade."
@@ -3672,7 +3674,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
             {activeTab === 'ptm' && (
               <PremiumLock
-                isLocked={isTabLocked('PARENT', 'ptm', currentPlanName)}
+                isLocked={isTabLockedByEntitlements('PARENT', 'ptm', ent)}
                 requiredTier="Pro"
                 featureName="PTM Meetings"
               >

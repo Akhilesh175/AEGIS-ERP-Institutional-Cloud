@@ -19,7 +19,8 @@ import { useInactivityTimeout } from './hooks/useInactivityTimeout';
 import { InactivityWarningModal } from './components/InactivityWarningModal';
 import PremiumLock from './components/PremiumLock';
 import { AdminPortalHeader } from './components/AdminPortalHeader';
-import { isTabLocked } from './services/subscriptionConfig';
+import { isTabLockedByEntitlements } from './services/subscriptionConfig';
+import { useFeatureEntitlements } from './hooks/useFeatureEntitlements';
 import { SubscriptionDashboard } from './components/SubscriptionDashboard';
 import { useSubscriptionLifecycle } from './hooks/useSubscriptionLifecycle';
 import { WARNING_BANNER_CONFIG } from './services/subscriptionService';
@@ -307,6 +308,9 @@ export const App: React.FC = () => {
 
   // ── Subscription lifecycle: runs on session load, re-checks every 5 min ──
   const subscriptionLifecycle = useSubscriptionLifecycle();
+
+  // ── DB-driven feature entitlements (replaces hardcoded plan string checks) ──
+  const ent = useFeatureEntitlements();
 
   // Auth Form states
   const [email, setEmail] = useState('');
@@ -1478,7 +1482,7 @@ export const App: React.FC = () => {
                           <AdminPortalHeader />
                         )}
                         <PremiumLock
-                          isLocked={isTabLocked(session?.user?.role || '', 'sports', session?.schoolSubscriptionPlan || 'freemium')}
+                          isLocked={isTabLockedByEntitlements(session?.user?.role || '', 'sports', ent)}
                           requiredTier="Enterprise"
                           featureName="Sports & Activities"
                         >
@@ -1495,7 +1499,7 @@ export const App: React.FC = () => {
                         {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN', 'DRIVER'].includes(session.user.role) && (
                           activeTab === 'paymentsettings'
                             ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
-                            : session.user.role === 'WARDEN' && isTabLocked('WARDEN', activeTab, session?.schoolSubscriptionPlan || 'freemium')
+                            : session.user.role === 'WARDEN' && isTabLockedByEntitlements('WARDEN', activeTab, ent)
                               ? <PremiumLock
                                   isLocked={true}
                                   requiredTier="Enterprise"
@@ -1510,7 +1514,7 @@ export const App: React.FC = () => {
                           activeTab === 'paymentsettings'
                             ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
                             : <PremiumLock
-                                isLocked={isTabLocked('COACH', activeTab, session?.schoolSubscriptionPlan || 'freemium')}
+                                isLocked={isTabLockedByEntitlements('COACH', activeTab, ent)}
                                 requiredTier="Enterprise"
                                 featureName="Coach Portal"
                               >

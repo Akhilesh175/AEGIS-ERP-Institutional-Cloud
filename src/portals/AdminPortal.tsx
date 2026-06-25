@@ -13,7 +13,8 @@ import {
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { AdminPortalHeader } from '../components/AdminPortalHeader';
-import { subscriptionPlans, isTabLocked } from '../services/subscriptionConfig';
+import { subscriptionPlans, isTabLocked, isTabLockedByEntitlements } from '../services/subscriptionConfig';
+import { useFeatureEntitlements } from '../hooks/useFeatureEntitlements';
 import { OfflineSyncManager } from '../components/OfflineSyncManager';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 import { downloadReceiptPdf } from '../components/ReceiptTemplate';
@@ -34,6 +35,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const cachedSchool = session?.user.schoolId ? mockDb.schools.find(s => s.id === session.user.schoolId) : null;
   const currentPlanName = (session?.schoolSubscriptionPlan || cachedSchool?.subscriptionPlan || 'freemium').toLowerCase();
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
+  // DB-driven entitlements: live, DB-synced, fully tier-inheriting
+  const ent = useFeatureEntitlements();
 
   // Datasets
   const [overview, setOverview] = useState<any | null>(null);
@@ -8761,7 +8764,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       {activeTab === 'communications' && (
         currentPlanName === 'freemium' ? (
           <div className="max-w-lg mx-auto py-12 text-center animate-fade-in">
-            <PremiumLock isLocked={true} requiredTier="Basic" featureName="Email & SMS Communication Center">
+            <PremiumLock isLocked={!ent.hasCommunications} requiredTier="Basic" featureName="Email & SMS Communication Center">
               <div />
             </PremiumLock>
           </div>
@@ -9058,7 +9061,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       {activeTab === 'analytics' && (
         (currentPlanName === 'freemium' || currentPlanName === 'basic') ? (
           <div className="max-w-lg mx-auto py-12 text-center animate-fade-in">
-            <PremiumLock isLocked={true} requiredTier="Pro" featureName="Advanced Academic & Finance Analytics">
+            <PremiumLock isLocked={!ent.hasAnalyticsAccess} requiredTier="Pro" featureName="Advanced Academic & Finance Analytics">
               <div />
             </PremiumLock>
           </div>
@@ -9300,7 +9303,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       {activeTab === 'backups' && (
         currentPlanName !== 'enterprise' ? (
           <div className="max-w-lg mx-auto py-12 text-center animate-fade-in">
-            <PremiumLock isLocked={true} requiredTier="enterprise" featureName="SaaS Disaster Recovery & Backup Panel">
+            <PremiumLock isLocked={!ent.hasBackups} requiredTier="enterprise" featureName="SaaS Disaster Recovery & Backup Panel">
               <div />
             </PremiumLock>
           </div>
@@ -9566,8 +9569,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
           {/* Dynamic Grid Table */}
           <PremiumLock
-            isLocked={currentPlanName !== 'enterprise'}
-            requiredTier="Enterprise"
+            isLocked={!ent.hasRbac}
+            requiredTier="Pro"
             featureName="Sub-Admin Modules Authorization Matrix"
           >
             <GlassCard className="space-y-4">
@@ -9772,8 +9775,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
           {/* Enterprise System Audit Trail */}
           <PremiumLock
-            isLocked={currentPlanName !== 'enterprise'}
-            requiredTier="Enterprise"
+            isLocked={!ent.hasRbac}
+            requiredTier="Pro"
             featureName="Enterprise System Audit Trail Log Console"
           >
             <GlassCard className="space-y-4">
@@ -10273,7 +10276,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
       {activeTab === 'transport' && (
         <PremiumLock 
-          isLocked={currentPlanName !== 'enterprise'} 
+          isLocked={!ent.hasTransportAccess} 
           requiredTier="Enterprise" 
           featureName="Transit & Transport Management"
         >
@@ -10981,7 +10984,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
       {activeTab === 'hostel' && (
         <PremiumLock 
-          isLocked={currentPlanName !== 'enterprise'} 
+          isLocked={!ent.hasHostelAccess} 
           requiredTier="Enterprise" 
           featureName="Granular Hostel & Roster Management"
         >
@@ -12357,7 +12360,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
       {activeTab === 'books' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium'}
+          isLocked={!ent.hasLibraryAccess}
           requiredTier="Basic"
           featureName="School Library & Digital Books"
         >
@@ -12841,7 +12844,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
       {activeTab === 'marksheets' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          isLocked={!ent.hasQuizzes}
           requiredTier="Pro"
           featureName="Homeroom Marksheets & Exam Grading"
         >
@@ -13269,7 +13272,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
       {activeTab === 'quizzes' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          isLocked={!ent.hasQuizzes}
           requiredTier="Pro"
           featureName="Quiz Analytics & Scoreboards"
         >
@@ -14138,7 +14141,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
       {activeTab === 'ptm' && (
         <PremiumLock
-          isLocked={isTabLocked('ADMIN', 'ptm', currentPlanName)}
+          isLocked={isTabLockedByEntitlements('ADMIN', 'ptm', ent)}
           requiredTier="Pro"
           featureName="PTM Meetings & Management"
         >

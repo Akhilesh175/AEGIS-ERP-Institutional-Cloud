@@ -15,7 +15,8 @@ import {
   QrCode, Banknote, ScanLine, ShieldCheck, ToggleLeft, ToggleRight, Download, Edit, Shield, Info, EyeOff
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
-import { subscriptionPlans, isTabLocked } from '../services/subscriptionConfig';
+import { subscriptionPlans, isTabLocked, isTabLockedByEntitlements } from '../services/subscriptionConfig';
+import { useFeatureEntitlements } from '../hooks/useFeatureEntitlements';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 import { ClassDiscussion } from '../components/ClassDiscussion';
 import { TeacherPTMManagement } from '../components/PTMManagement';
@@ -25,6 +26,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const teacherId = session?.teacherId;
   const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
+  const ent = useFeatureEntitlements();
 
   // Mappings
   const [classMappings, setClassMappings] = useState<(TeacherClassSubjectMapping & { className: string; subjectName: string; classId: string; subjectCode: string })[]>([]);
@@ -2037,7 +2039,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
           {managedClasses.length > 0 && (
             <PremiumLock
-              isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+              isLocked={!ent.hasBilling}
               requiredTier="Pro"
               featureName="Class Teacher Hub (Timetables, Students, Parents)"
             >
@@ -2373,7 +2375,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {activeTab === 'classroster' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium'}
+          isLocked={!ent.hasBilling}
           requiredTier="Basic"
           featureName="Class Roster"
         >
@@ -2502,7 +2504,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {activeTab === 'attendance' && (
         <PremiumLock 
-          isLocked={currentPlanName === 'freemium'} 
+          isLocked={!ent.hasBilling} 
           requiredTier="Basic"
           featureName="School Attendance & Progress Analytics"
         >
@@ -2883,7 +2885,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {activeTab === 'marksheets' && (
         <PremiumLock
-          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          isLocked={!ent.hasQuizzes}
           requiredTier="Pro"
           featureName="Homeroom Marksheets"
         >
@@ -3033,7 +3035,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       )}
       {activeTab === 'assignments' && (
         <PremiumLock
-          isLocked={currentPlanName !== 'enterprise'}
+          isLocked={!ent.hasLibraryAccess}
           requiredTier="Enterprise"
           featureName="Assignment Creator"
           customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
@@ -3306,7 +3308,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {activeTab === 'quizzes' && (
         <PremiumLock 
-          isLocked={currentPlanName === 'freemium' || currentPlanName === 'basic'}
+          isLocked={!ent.hasQuizzes}
           requiredTier="Pro"
           featureName="Interactive MCQ Online Quizzes"
         >
@@ -3493,7 +3495,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       )}
       {activeTab === 'materials' && (
         <PremiumLock
-          isLocked={currentPlanName !== 'enterprise'}
+          isLocked={!ent.hasLibraryAccess}
           requiredTier="Enterprise"
           featureName="Study Materials Upload"
           customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
@@ -3707,7 +3709,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {activeTab === 'forums' && (
         <PremiumLock 
-          isLocked={currentPlanName === 'freemium'} 
+          isLocked={!ent.hasCommunications} 
           requiredTier="Basic" 
           featureName="Communications & Forums"
         >
@@ -4830,7 +4832,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       )}
       {activeTab === 'analytics' && (
         <PremiumLock
-          isLocked={currentPlanName !== 'enterprise'}
+          isLocked={!ent.hasAnalyticsAccess}
           requiredTier="Enterprise"
           featureName="Class Academic Analytics"
           customMessage="This feature is available only with an active Enterprise Subscription. Please contact your School Administrator."
@@ -5030,7 +5032,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
       {activeTab === 'ptm' && (
         <PremiumLock
-          isLocked={isTabLocked('TEACHER', 'ptm', currentPlanName)}
+          isLocked={isTabLockedByEntitlements('TEACHER', 'ptm', ent)}
           requiredTier="Pro"
           featureName="PTM Meetings"
         >

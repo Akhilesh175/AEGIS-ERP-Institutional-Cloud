@@ -1,3 +1,5 @@
+import type { FeatureEntitlements } from '../hooks/useFeatureEntitlements';
+
 export interface SubscriptionFeatures {
   communications: boolean; // Forums/Discussions/Chat
   advancedAnalytics: boolean; // SaaS Telemetry
@@ -170,3 +172,96 @@ export const isTabLocked = (role: string, tabId: string, planName: string): bool
   return false;
 };
 
+// ─── DB-Driven Tab Lock (replaces hardcoded isTabLocked) ─────────────────────
+//
+// This function accepts the typed FeatureEntitlements object from
+// useFeatureEntitlements() and returns `true` when the tab should show a
+// PremiumLock overlay.
+//
+// Old callers that still pass planName strings continue to work via isTabLocked().
+// New callers (Sidebar, AdminPortal) should migrate to isTabLockedByEntitlements().
+
+/**
+ * DB-driven tab lock check.
+ *
+ * Returns `true` (locked/gated) when the school's current subscription does NOT
+ * include the entitlement required for the given role + tabId combination.
+ *
+ * Feature flags come from `FeatureEntitlements` (computed by `useFeatureEntitlements()`
+ * with full tier inheritance — Enterprise ⊇ Pro ⊇ Basic ⊇ Freemium).
+ *
+ * Adding a new plan tier to the DB automatically propagates through here —
+ * no code changes needed.
+ */
+export function isTabLockedByEntitlements(
+  role: string,
+  tabId: string,
+  ent: FeatureEntitlements
+): boolean {
+  // ── STUDENT ──────────────────────────────────────────────────────────────
+  if (role === 'STUDENT') {
+    if (tabId === 'materials') return !ent.hasLibraryAccess;
+    if (tabId === 'library')   return !ent.hasLibraryAccess;
+    if (tabId === 'transit')   return !ent.hasTransportAccess;
+    if (tabId === 'hostel')    return !ent.hasHostelAccess;
+    if (tabId === 'quizzes')   return !ent.hasQuizzes;
+    if (tabId === 'forums')    return !ent.hasCommunications;
+    if (tabId === 'fees')      return !ent.hasBilling;
+    if (tabId === 'ptm')       return !ent.hasPtmAccess;
+    if (tabId === 'sports')    return !ent.hasSports;
+  }
+
+  // ── PARENT ───────────────────────────────────────────────────────────────
+  if (role === 'PARENT') {
+    if (tabId === 'homework')  return !ent.hasLibraryAccess;
+    if (tabId === 'materials') return !ent.hasLibraryAccess;
+    if (tabId === 'library')   return !ent.hasLibraryAccess;
+    if (tabId === 'transit')   return !ent.hasTransportAccess;
+    if (tabId === 'hostel')    return !ent.hasHostelAccess;
+    if (tabId === 'quizzes')   return !ent.hasQuizzes;
+    if (tabId === 'forums')    return !ent.hasCommunications;
+    if (tabId === 'fees')      return !ent.hasBilling;
+    if (tabId === 'ptm')       return !ent.hasPtmAccess;
+    if (tabId === 'sports')    return !ent.hasSports;
+  }
+
+  // ── TEACHER ──────────────────────────────────────────────────────────────
+  if (role === 'TEACHER') {
+    if (tabId === 'classroster') return !ent.hasBilling;
+    if (tabId === 'attendance')  return !ent.hasBilling;
+    if (tabId === 'marksheets')  return !ent.hasQuizzes;
+    if (tabId === 'analytics')   return !ent.hasAnalyticsAccess;
+    if (tabId === 'assignments') return !ent.hasLibraryAccess;
+    if (tabId === 'quizzes')     return !ent.hasQuizzes;
+    if (tabId === 'materials')   return !ent.hasLibraryAccess;
+    if (tabId === 'forums')      return !ent.hasCommunications;
+    if (tabId === 'ptm')         return !ent.hasPtmAccess;
+    if (tabId === 'sports')      return !ent.hasSports;
+  }
+
+  // ── ADMIN ─────────────────────────────────────────────────────────────────
+  if (role === 'ADMIN') {
+    if (tabId === 'attendance')     return !ent.hasBilling;
+    if (tabId === 'fees')           return !ent.hasBilling;
+    if (tabId === 'hostel')         return !ent.hasHostelAccess;
+    if (tabId === 'communications') return !ent.hasCommunications;
+    if (tabId === 'analytics')      return !ent.hasAnalyticsAccess;
+    if (tabId === 'rbac')           return !ent.hasRbac;
+    if (tabId === 'backups')        return !ent.hasBackups;
+    if (tabId === 'ptm')            return !ent.hasPtmAccess;
+    if (tabId === 'sports')         return !ent.hasSports;
+  }
+
+  // ── COACH: Enterprise Only ────────────────────────────────────────────────
+  if (role === 'COACH') {
+    if (tabId === 'sports')    return !ent.hasCoachPortal;
+    if (tabId === 'dashboard') return !ent.hasCoachPortal;
+  }
+
+  // ── WARDEN: Enterprise Only ───────────────────────────────────────────────
+  if (role === 'WARDEN') {
+    return !ent.hasWardenPortal;
+  }
+
+  return false;
+}

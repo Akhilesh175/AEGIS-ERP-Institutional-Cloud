@@ -7,6 +7,7 @@ import { MessageSquare, Send, X, ArrowLeft, Users, Clock } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import PremiumLock from './PremiumLock';
 import { subscriptionPlans } from '../services/subscriptionConfig';
+import { useFeatureEntitlements } from '../hooks/useFeatureEntitlements';
 import { supabase } from '../lib/supabase';
 
 interface ChatDrawerProps {
@@ -20,6 +21,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
   const { session, syncSubscriptionPlan } = useStore();
   const currentPlanName = session?.schoolSubscriptionPlan || 'freemium';
   const plan = subscriptionPlans[currentPlanName] || subscriptionPlans.freemium;
+  const ent = useFeatureEntitlements();
 
   // inbox = users with existing messages (sorted by recency)
   const [inbox, setInbox] = useState<ContactWithMeta[]>([]);
@@ -225,7 +227,7 @@ export const ChatDrawer: React.FC<ChatDrawerProps> = ({ isOpen, onClose }) => {
         {/* Messaging Container */}
         <div className="flex-1 overflow-y-auto flex flex-col">
           <PremiumLock
-            isLocked={currentPlanName !== 'enterprise'}
+            isLocked={ent.tier < 3}
             requiredTier="Enterprise"
             featureName="Direct Messaging"
             customMessage="Direct Messaging Channels are available only under the Enterprise Subscription."

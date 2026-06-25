@@ -1,7 +1,8 @@
 import React from 'react';
 import { useStore } from '../store/useStore';
 import { mockDb } from '../services/mockDb';
-import { subscriptionPlans, isTabLocked } from '../services/subscriptionConfig';
+import { subscriptionPlans, isTabLockedByEntitlements } from '../services/subscriptionConfig';
+import { useFeatureEntitlements } from '../hooks/useFeatureEntitlements';
 import { supabase } from '../lib/supabase';
 import { 
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare,
@@ -128,6 +129,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
   const role = session.user.role;
   const planName = (session.schoolSubscriptionPlan || 'freemium').toLowerCase();
   const plan = subscriptionPlans[planName] || subscriptionPlans.freemium;
+  // DB-driven entitlements (live, reactive, tier-inheriting)
+  const ent = useFeatureEntitlements();
 
   // Define tab mappings per role
   const getTabs = (): Array<{ id: string; label: string; icon: any; locked?: boolean }> => {
@@ -146,7 +149,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
 
     switch (role) {
       case 'STUDENT': {
-        const lock = (tabId: string) => isTabLocked('STUDENT', tabId, planName);
+        const lock = (tabId: string) => isTabLockedByEntitlements('STUDENT', tabId, ent);
         return [
           { id: 'dashboard', label: 'Overview', icon: LayoutDashboard },
           { id: 'timetable', label: 'Schedule', icon: Calendar },
@@ -166,7 +169,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         ];
       }
       case 'PARENT': {
-        const lock = (tabId: string) => isTabLocked('PARENT', tabId, planName);
+        const lock = (tabId: string) => isTabLockedByEntitlements('PARENT', tabId, ent);
         return [
           { id: 'dashboard', label: 'Child Tracker', icon: Eye },
           { id: 'notifications', label: 'Notifications Center', icon: Bell },
@@ -187,7 +190,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         ];
       }
       case 'TEACHER': {
-        const lock = (tabId: string) => isTabLocked('TEACHER', tabId, planName);
+        const lock = (tabId: string) => isTabLockedByEntitlements('TEACHER', tabId, ent);
         return [
           { id: 'dashboard', label: 'Classes Taught', icon: LayoutDashboard },
           { id: 'timetable', label: 'Teaching Schedule', icon: Calendar },
@@ -208,7 +211,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         ];
       }
       case 'COACH': {
-        const coachLock = (tabId: string) => isTabLocked('COACH', tabId, planName);
+        const coachLock = (tabId: string) => isTabLockedByEntitlements('COACH', tabId, ent);
         return [
           { id: 'dashboard', label: 'Coach Dashboard', icon: LayoutDashboard, locked: coachLock('dashboard') },
           { id: 'sports', label: 'Sports & Activities', icon: Trophy, locked: coachLock('sports') },
@@ -217,7 +220,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         ];
       }
       case 'ADMIN': {
-        const lock = (tabId: string) => isTabLocked('ADMIN', tabId, planName);
+        const lock = (tabId: string) => isTabLockedByEntitlements('ADMIN', tabId, ent);
         return [
           { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard },
           { id: 'students', label: 'Student Directory', icon: Users },
@@ -252,10 +255,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
       case 'WARDEN':
       case 'SPORTS_ADMIN':
       case 'CUSTOM_SUB_ADMIN': {
-        const isFreemium = planName === 'freemium';
-        const isBasic = planName === 'basic';
-        const isPro = planName === 'pro';
-        const isEnterprise = planName === 'enterprise';
+        const isFreemium = ent.tier === 0;
+        const isBasic = ent.tier === 1;
+        const isPro = ent.tier === 2;
+        const isEnterprise = ent.tier === 3;
 
         const subAdminTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
           // WARDEN: dashboard locked for non-Enterprise (entire portal is Enterprise-only)
