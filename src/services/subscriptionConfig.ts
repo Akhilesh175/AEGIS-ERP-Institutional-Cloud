@@ -121,6 +121,20 @@ export const isTabLocked = (role: string, tabId: string, planName: string): bool
     // Sports & Activities: requires Enterprise only
     if (tabId === 'sports') return plan !== 'enterprise';
   }
+
+  // ─── COACH Portal: Enterprise Only ───────────────────────────────────────────
+  // The entire Coach Portal workspace is Enterprise-tier.
+  // Freemium, Basic, and Pro plans must see PremiumLock on all coach tabs.
+  if (role === 'COACH') {
+    if (tabId === 'sports') return plan !== 'enterprise';
+    if (tabId === 'dashboard') return plan !== 'enterprise';
+  }
+  // ─── WARDEN Portal: Enterprise Only ──────────────────────────────────────────
+  // The entire Warden Portal workspace is Enterprise-tier.
+  // Freemium, Basic, and Pro plans must see PremiumLock on all warden tabs.
+  if (role === 'WARDEN') {
+    return plan !== 'enterprise';
+  }
   return false;
 };
 

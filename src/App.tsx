@@ -1449,16 +1449,31 @@ export const App: React.FC = () => {
                         {session.user.role === 'PARENT' && <ParentPortal activeTab={activeTab} />}
                         {session.user.role === 'TEACHER' && <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />}
                         {/* Sub-admins: route paymentsettings to TeacherPortal (salary/banking), everything else to AdminPortal */}
+                        {/* WARDEN: Entire portal is Enterprise-only; non-Enterprise sees PremiumLock */}
                         {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN', 'DRIVER'].includes(session.user.role) && (
                           activeTab === 'paymentsettings'
                             ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
-                            : <AdminPortal activeTab={activeTab} />
+                            : session.user.role === 'WARDEN' && isTabLocked('WARDEN', activeTab, session?.schoolSubscriptionPlan || 'freemium')
+                              ? <PremiumLock
+                                  isLocked={true}
+                                  requiredTier="Enterprise"
+                                  featureName="Warden Portal"
+                                >
+                                  <AdminPortal activeTab={activeTab} />
+                                </PremiumLock>
+                              : <AdminPortal activeTab={activeTab} />
                         )}
-                        {/* Coach Portal: sports is the primary workspace; paymentsettings routes to TeacherPortal for salary/banking */}
+                        {/* Coach Portal: Enterprise-only — sports is the primary workspace; paymentsettings routes to TeacherPortal */}
                         {session.user.role === 'COACH' && (
                           activeTab === 'paymentsettings'
                             ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
-                            : <SportsManagement />
+                            : <PremiumLock
+                                isLocked={isTabLocked('COACH', activeTab, session?.schoolSubscriptionPlan || 'freemium')}
+                                requiredTier="Enterprise"
+                                featureName="Coach Portal"
+                              >
+                                <SportsManagement />
+                              </PremiumLock>
                         )}
                         {session.user.role === 'ADMIN' && <AdminPortal activeTab={activeTab} />}
                         {session.user.role === 'SUPER_ADMIN' && <SuperAdminPortal activeTab={activeTab} />}

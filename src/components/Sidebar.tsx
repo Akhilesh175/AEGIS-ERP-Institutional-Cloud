@@ -184,9 +184,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         ];
       }
       case 'COACH': {
+        const coachLock = (tabId: string) => isTabLocked('COACH', tabId, planName);
         return [
-          { id: 'dashboard', label: 'Coach Dashboard', icon: LayoutDashboard },
-          { id: 'sports', label: 'Sports & Activities', icon: Trophy },
+          { id: 'dashboard', label: 'Coach Dashboard', icon: LayoutDashboard, locked: coachLock('dashboard') },
+          { id: 'sports', label: 'Sports & Activities', icon: Trophy, locked: coachLock('sports') },
           { id: 'paymentsettings', label: 'Payment Settings', icon: DollarSign },
           { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
@@ -233,7 +234,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         const isEnterprise = planName === 'enterprise';
 
         const subAdminTabs: Array<{ id: string; label: string; icon: any; locked?: boolean }> = [
-          { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard }
+          // WARDEN: dashboard locked for non-Enterprise (entire portal is Enterprise-only)
+          { id: 'dashboard', label: 'School Registry', icon: LayoutDashboard, locked: role === 'WARDEN' ? !isEnterprise : undefined }
         ];
 
         if (role === 'ACADEMIC_ADMIN') {
@@ -293,7 +295,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         }
 
         // All sub-admins can access their own payment settings (salary / banking)
-        subAdminTabs.push({ id: 'sports', label: 'Sports & Activities', icon: Trophy });
+        // Sports & Activities is Enterprise-only for all sub-admin roles
+        subAdminTabs.push({ id: 'sports', label: 'Sports & Activities', icon: Trophy, locked: !isEnterprise });
         subAdminTabs.push({ id: 'paymentsettings', label: 'Payment Settings', icon: DollarSign });
         
         subAdminTabs.push({ id: 'support', label: 'Help & Support', icon: HelpCircle });
