@@ -48,6 +48,8 @@ SET grace_end_date = (expiry_date::TIMESTAMPTZ + INTERVAL '3 days')::DATE
 WHERE expiry_date IS NOT NULL AND grace_end_date IS NULL;
 
 -- ─── 3. Create subscription_audit_logs table ─────────────────────────
+DROP TABLE IF EXISTS public.subscription_audit_logs CASCADE;
+
 CREATE TABLE IF NOT EXISTS public.subscription_audit_logs (
   id             UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
   school_id      UUID         NOT NULL REFERENCES public.schools(id) ON DELETE CASCADE,
