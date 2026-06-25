@@ -8,7 +8,7 @@ import { ChatDrawer } from './ChatDrawer';
 import { BrandLogo } from './common/BrandLogo';
 
 export const Navbar: React.FC = () => {
-  const { session, theme, toggleTheme, setSession, isMobileMenuOpen, setMobileMenuOpen } = useStore();
+  const { session, theme, toggleTheme, setSession, isMobileMenuOpen, setMobileMenuOpen, warningLevel, daysRemaining } = useStore();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifyDrop, setShowNotifyDrop] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
@@ -259,6 +259,69 @@ export const Navbar: React.FC = () => {
 
           <BrandLogo variant="horizontal" size="sm" showTagline={true} />
         </div>
+
+        {/* Expiry Warning Banner (Center of Navbar) */}
+        {session?.user?.role === 'ADMIN' && warningLevel && (() => {
+          let text = '';
+          let bgStyle = '';
+          let textStyle = '';
+          let borderStyle = '';
+          let icon = '';
+
+          if (warningLevel === 'expired') {
+            text = 'Your subscription has expired. Premium features are now locked. Renew your subscription to restore access.';
+            bgStyle = 'bg-red-500/10';
+            textStyle = 'text-red-400';
+            borderStyle = 'border-red-500/30';
+            icon = '🚨';
+          } else if (warningLevel === 'today') {
+            text = 'Your subscription expires today. Please renew immediately.';
+            bgStyle = 'bg-red-500/10';
+            textStyle = 'text-red-400';
+            borderStyle = 'border-red-500/30';
+            icon = '🚨';
+          } else if (warningLevel === 'warning_1') {
+            text = 'Your subscription expires tomorrow. Renew now to avoid service interruption.';
+            bgStyle = 'bg-orange-500/10';
+            textStyle = 'text-orange-400';
+            borderStyle = 'border-orange-500/30';
+            icon = '⚠️';
+          } else if (warningLevel === 'warning_2') {
+            text = 'Your subscription expires in 2 days. Please renew your plan.';
+            bgStyle = 'bg-yellow-500/10';
+            textStyle = 'text-yellow-450';
+            borderStyle = 'border-yellow-500/30';
+            icon = '⚠️';
+          } else if (warningLevel === 'warning_3') {
+            text = 'Your subscription will expire in 3 days. Renew now to avoid losing access to Premium features.';
+            bgStyle = 'bg-yellow-500/8';
+            textStyle = 'text-yellow-450';
+            borderStyle = 'border-yellow-500/25';
+            icon = '⚠️';
+          }
+
+          if (!text) return null;
+
+          return (
+            <div className={`hidden lg:flex items-center gap-3 px-4 py-1.5 rounded-full border text-xs font-semibold animate-pulse ${bgStyle} ${borderStyle} ${textStyle}`}>
+              <span>{icon}</span>
+              <span>{text}</span>
+              <button
+                onClick={() => {
+                  const evt = new CustomEvent('aegis:set-tab', { detail: 'subscriptions' });
+                  window.dispatchEvent(evt);
+                }}
+                className={`px-2.5 py-1 rounded-lg text-[10px] font-bold text-white transition-all shadow-sm ${
+                  warningLevel === 'expired' || warningLevel === 'today'
+                    ? 'bg-red-600 hover:bg-red-500'
+                    : 'bg-amber-600 hover:bg-amber-500'
+                }`}
+              >
+                Renew Now
+              </button>
+            </div>
+          );
+        })()}
 
         {/* Action Controls */}
         <div className="flex items-center gap-4">

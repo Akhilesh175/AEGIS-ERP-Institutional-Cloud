@@ -179,6 +179,9 @@ export default async function handler(req: any, res: any) {
         purchase_date:       paymentDate.toISOString(),
         amount_paid:         payment.amount,
         transaction_id:      razorpayPaymentId || `mock_${Date.now()}`,
+        renewed_at:          paymentDate.toISOString(),
+        last_notification_date: null,
+        notification_sent:      null,
         updated_at:          new Date().toISOString(),
       })
       .eq('id', payment.subscription_id);
@@ -313,6 +316,58 @@ export default async function handler(req: any, res: any) {
         ip_address:  ipAddress,
         new_data:    { paymentId, invoiceNum, planCode, cycle, startDateStr, endDateStr, graceEndDateStr },
       });
+
+    // ── 10a. Send "Subscription successfully renewed." notification to School Admins
+    try {
+      const { data: admins } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('school_id', schoolId)
+        .eq('role', 'ADMIN');
+
+      if (admins && admins.length > 0) {
+        const notifRows = admins.map(admin => ({
+          school_id: schoolId,
+          user_id: admin.id,
+          recipient_id: admin.id,
+          sender_id: null,
+          recipient_role: 'ADMIN',
+          title: '🔔 Subscription successfully renewed',
+          content: 'Subscription successfully renewed.',
+          message: 'Subscription successfully renewed.',
+          type: 'SYSTEM',
+          category: 'SYSTEM',
+          priority: 'HIGH',
+          is_read: false,
+          read_status: false,
+          created_at: new Date().toISOString()
+        }));
+
+        await supabaseAdmin.from('notifications').insert(notifRows);
+      }
+    } catch (err) {
+      console.error('Failed to dispatch renewal success notification:', err);
+    }
+
+    // ── 10b. Log plan-specific activation event in subscription audit logs
+    try {
+      let activationLog = 'Subscription renewed';
+      if (planCode.toLowerCase() === 'pro') activationLog = 'Pro activated';
+      if (planCode.toLowerCase() === 'enterprise') activationLog = 'Enterprise activated';
+
+      await supabaseAdmin.from('subscription_audit_logs').insert({
+        school_id:     schoolId,
+        action:        planCode.toUpperCase() === 'PRO' ? 'PRO_ACTIVATED' : planCode.toUpperCase() === 'ENTERPRISE' ? 'ENTERPRISE_ACTIVATED' : 'RENEWED',
+        plan:          planCode,
+        billing_cycle: cycle,
+        metadata: {
+          event_type: activationLog,
+          activated_at: new Date().toISOString(),
+          payment_id: paymentId,
+          invoice_number: invoiceNum
+        }
+      });
+    } catch {}
 
     // ── 11. Broadcast realtime update for instant UI unlock ──────────
     try {

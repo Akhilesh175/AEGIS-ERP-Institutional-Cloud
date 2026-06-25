@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { AuthSession } from '../services/mockApi';
-import { PlanDefinition, PLAN_DEFINITIONS, PLAN_MAP, SubscriptionStatus } from '../services/subscriptionService';
+import { PlanDefinition, PLAN_DEFINITIONS, PLAN_MAP, SubscriptionStatus, ExpiryWarningLevel } from '../services/subscriptionService';
 
 interface SchoolERPStore {
   session: AuthSession | null;
@@ -25,6 +25,9 @@ interface SchoolERPStore {
   fetchPlans: () => Promise<void>;
   subscriptionStatus: SubscriptionStatus;
   setSubscriptionStatus: (status: SubscriptionStatus) => void;
+  warningLevel: ExpiryWarningLevel;
+  daysRemaining: number;
+  setSubscriptionLifecycleState: (state: { subscriptionStatus: SubscriptionStatus; warningLevel: ExpiryWarningLevel; daysRemaining: number }) => void;
 }
 
 export const useStore = create<SchoolERPStore>((set, get) => ({
@@ -39,6 +42,13 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
   activeAcademicSessionId: null,
   subscriptionStatus: 'trial',
   setSubscriptionStatus: (subscriptionStatus) => set({ subscriptionStatus }),
+  warningLevel: null,
+  daysRemaining: 0,
+  setSubscriptionLifecycleState: (state) => set({ 
+    subscriptionStatus: state.subscriptionStatus, 
+    warningLevel: state.warningLevel, 
+    daysRemaining: state.daysRemaining 
+  }),
 
   setMobileMenuOpen: (isOpen) => set({ isMobileMenuOpen: isOpen }),
 

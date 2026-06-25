@@ -1385,7 +1385,7 @@ export const App: React.FC = () => {
       <Navbar />
 
       {/* ── Global Subscription Warning Banner ─────────────────────── */}
-      {session && subscriptionLifecycle.warningLevel && subscriptionLifecycle.warningLevel !== 'expired' && (() => {
+      {session && session.user.role === 'ADMIN' && subscriptionLifecycle.warningLevel && (() => {
         const wl = subscriptionLifecycle.warningLevel!;
         const cfg = WARNING_BANNER_CONFIG[wl];
         return (
@@ -1396,18 +1396,16 @@ export const App: React.FC = () => {
                 {cfg.message(subscriptionLifecycle.daysRemaining)}
               </p>
             </div>
-            {session.user.role === 'ADMIN' && (
-              <button
-                onClick={() => {
-                  // Navigate to subscriptions tab
-                  const evt = new CustomEvent('aegis:set-tab', { detail: 'subscriptions' });
-                  window.dispatchEvent(evt);
-                }}
-                className="shrink-0 text-[10px] font-bold text-white bg-red-500 hover:bg-red-400 px-3 py-1.5 rounded-lg transition-all"
-              >
-                Renew Now
-              </button>
-            )}
+            <button
+              onClick={() => {
+                // Navigate to subscriptions tab
+                const evt = new CustomEvent('aegis:set-tab', { detail: 'subscriptions' });
+                window.dispatchEvent(evt);
+              }}
+              className="shrink-0 text-[10px] font-bold text-white bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 px-3 py-1.5 rounded-lg transition-all shadow-md"
+            >
+              Renew Now
+            </button>
           </div>
         );
       })()}

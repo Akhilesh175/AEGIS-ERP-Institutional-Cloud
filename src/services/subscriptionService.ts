@@ -11,7 +11,7 @@ export type BillingCycle = 'MONTHLY' | 'YEARLY';
 
 export type SubscriptionStatus = 'trial' | 'active' | 'grace_period' | 'expired' | 'cancelled';
 
-export type ExpiryWarningLevel = null | 'info' | 'warning' | 'critical' | 'urgent' | 'grace' | 'expired';
+export type ExpiryWarningLevel = null | 'warning_3' | 'warning_2' | 'warning_1' | 'today' | 'expired';
 
 export interface PlanDefinition {
   code: string;
@@ -327,12 +327,13 @@ export function getExpiryWarningLevel(
   status: SubscriptionStatus
 ): ExpiryWarningLevel {
   if (status === 'expired') return 'expired';
-  if (status === 'grace_period') return 'grace';
   if (status === 'trial') return null;
-  if (daysRemaining <= 3)  return 'urgent';
-  if (daysRemaining <= 7)  return 'critical';
-  if (daysRemaining <= 15) return 'warning';
-  if (daysRemaining <= 30) return 'info';
+  
+  if (daysRemaining === 3) return 'warning_3';
+  if (daysRemaining === 2) return 'warning_2';
+  if (daysRemaining === 1) return 'warning_1';
+  if (daysRemaining === 0) return 'today';
+  
   return null;
 }
 
@@ -347,47 +348,40 @@ export interface WarningBannerConfig {
 }
 
 export const WARNING_BANNER_CONFIG: Record<NonNullable<ExpiryWarningLevel>, WarningBannerConfig> = {
-  info: {
-    bg: 'bg-brand-500/8',
-    border: 'border-brand-500/25',
-    text: 'text-brand-300',
-    icon: '🔔',
-    message: (d) => `Your subscription expires in ${d} days. Renew now to avoid interruption.`,
-  },
-  warning: {
-    bg: 'bg-amber-500/8',
-    border: 'border-amber-500/25',
-    text: 'text-amber-300',
+  warning_3: {
+    bg: 'bg-yellow-500/10',
+    border: 'border-yellow-500/30',
+    text: 'text-yellow-400',
     icon: '⚠️',
-    message: (d) => `Subscription expires in ${d} days — Renew soon to keep all features active.`,
+    message: () => 'Your subscription will expire in 3 days. Renew now to avoid losing access to Premium features.',
   },
-  critical: {
-    bg: 'bg-orange-500/8',
-    border: 'border-orange-500/25',
-    text: 'text-orange-300',
-    icon: '🚨',
-    message: (d) => `Critical: Subscription expires in ${d} days! Features will lock after expiry.`,
+  warning_2: {
+    bg: 'bg-yellow-500/12',
+    border: 'border-yellow-500/35',
+    text: 'text-yellow-400',
+    icon: '⚠️',
+    message: () => 'Your subscription expires in 2 days. Please renew your plan.',
   },
-  urgent: {
-    bg: 'bg-red-500/10',
-    border: 'border-red-500/30',
-    text: 'text-red-300',
-    icon: '🔴',
-    message: (d) => `URGENT: Subscription expires in ${d} day${d === 1 ? '' : 's'}! Renew immediately.`,
+  warning_1: {
+    bg: 'bg-orange-500/10',
+    border: 'border-orange-500/30',
+    text: 'text-orange-400',
+    icon: '⚠️',
+    message: () => 'Your subscription expires tomorrow. Renew now to avoid service interruption.',
   },
-  grace: {
-    bg: 'bg-red-500/10',
-    border: 'border-red-500/30',
-    text: 'text-red-300',
-    icon: '⏳',
-    message: () => `Your subscription has expired. You have a 3-day grace period — renew now to avoid feature lockout.`,
-  },
-  expired: {
+  today: {
     bg: 'bg-red-500/10',
     border: 'border-red-500/30',
     text: 'text-red-400',
-    icon: '🔒',
-    message: () => `Subscription expired. Premium features are now locked. Renew to restore full access.`,
+    icon: '🚨',
+    message: () => 'Your subscription expires today. Please renew immediately.',
+  },
+  expired: {
+    bg: 'bg-red-650/12',
+    border: 'border-red-650/35',
+    text: 'text-red-400',
+    icon: '🚨',
+    message: () => 'Your subscription has expired. Premium features are now locked. Renew your subscription to restore access.',
   },
 };
 

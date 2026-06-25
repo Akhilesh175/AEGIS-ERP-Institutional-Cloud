@@ -86,7 +86,11 @@ export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
           daysRemaining: 0,
           isLoading: false,
         }));
-        useStore.getState().setSubscriptionStatus('trial');
+        useStore.getState().setSubscriptionLifecycleState({
+          subscriptionStatus: 'trial',
+          warningLevel: null,
+          daysRemaining: 0
+        });
         return;
       }
 
@@ -121,17 +125,40 @@ export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
         isLoading: false,
       });
 
-      // Sync subscription status to Zustand store
-      useStore.getState().setSubscriptionStatus(subscriptionStatus);
+      // Sync subscription state to Zustand store
+      useStore.getState().setSubscriptionLifecycleState({
+        subscriptionStatus,
+        warningLevel,
+        daysRemaining
+      });
 
-      // If client math detects expired subscription but DB still says ACTIVE (or not EXPIRED),
-      // call the /api/expire-subscriptions function to atomically update DB.
-      if (
+      const todayStr = new Date().toISOString().split('T')[0];
+      const isHardExpiredNotPersisted =
         subscriptionStatus === 'expired' &&
-        sub &&
-        (sub.status !== 'EXPIRED' || sub.subscription_status !== 'expired') &&
-        !hasTriggeredExpiry.current
-      ) {
+        (sub.status !== 'EXPIRED' || sub.subscription_status !== 'expired');
+
+      const expectedAlertLevel =
+        subscriptionStatus === 'expired'
+          ? 'EXPIRED'
+          : subscriptionStatus === 'grace_period'
+            ? 'GRACE_PERIOD'
+            : daysRemaining === 0
+              ? 'TODAY'
+              : daysRemaining === 1
+                ? '1_DAY'
+                : daysRemaining === 2
+                  ? '2_DAYS'
+                  : daysRemaining === 3
+                    ? '3_DAYS'
+                    : 'NONE';
+
+      const needsDbAlertWrite =
+        session?.user?.role === 'ADMIN' &&
+        expectedAlertLevel !== 'NONE' &&
+        expectedAlertLevel !== 'GRACE_PERIOD' &&
+        (sub.last_notification_date !== todayStr || sub.notification_sent !== expectedAlertLevel);
+
+      if ((isHardExpiredNotPersisted || needsDbAlertWrite) && !hasTriggeredExpiry.current) {
         hasTriggeredExpiry.current = true;
         fetch('/api/expire-subscriptions', {
           method: 'POST',
@@ -140,13 +167,12 @@ export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
         })
           .then(async (res) => {
             if (res.ok) {
-              // Immediately recheck to pull updated state and trigger store sync
               await check();
             }
           })
           .catch((err) => {
-            console.error('Failed to trigger subscription expiry write:', err);
-            hasTriggeredExpiry.current = false; // allow retry on next attempt
+            console.error('Failed to trigger subscription alert write:', err);
+            hasTriggeredExpiry.current = false;
           });
       }
 

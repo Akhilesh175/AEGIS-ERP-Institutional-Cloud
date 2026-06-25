@@ -19,7 +19,7 @@ interface SidebarProps {
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => {
-  const { session, isMobileMenuOpen, setMobileMenuOpen, syncSubscriptionPlan } = useStore();
+  const { session, isMobileMenuOpen, setMobileMenuOpen, syncSubscriptionPlan, warningLevel, daysRemaining } = useStore();
 
   const [permissions, setPermissions] = React.useState<Record<string, boolean>>({
     billing: false,
@@ -241,7 +241,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'rbac', label: 'Dynamic Permissions Grid', icon: Key, locked: lock('rbac') },
           { id: 'backups', label: 'SaaS Disaster Recovery', icon: Database, locked: lock('backups') },
           { id: 'impersonation', label: 'Portal Gateway', icon: Eye },
-          { id: 'subscriptions', label: 'Subscription Billing', icon: DollarSign },
+          { id: 'subscriptions', label: 'Subscription', icon: DollarSign },
           { id: 'dangerzone', label: 'Danger Zone', icon: ShieldAlert },
           { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
@@ -555,6 +555,32 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
             >
               <Icon size={18} className={isActive ? 'text-brand-500' : 'text-slate-400'} />
               <span className="flex-1 text-left">{tab.label}</span>
+              {tab.id === 'subscriptions' && warningLevel && (() => {
+                let badgeText = '';
+                let badgeStyle = '';
+                if (warningLevel === 'expired') {
+                  badgeText = 'Expired';
+                  badgeStyle = 'bg-red-500/10 border-red-500/30 text-red-400';
+                } else if (warningLevel === 'today') {
+                  badgeText = 'Expires today';
+                  badgeStyle = 'bg-red-500/10 border-red-500/30 text-red-400';
+                } else if (warningLevel === 'warning_1') {
+                  badgeText = 'Expires tomorrow';
+                  badgeStyle = 'bg-orange-500/10 border-orange-500/30 text-orange-400';
+                } else if (warningLevel === 'warning_2') {
+                  badgeText = 'Expires in 2 days';
+                  badgeStyle = 'bg-amber-500/10 border-amber-500/30 text-amber-400';
+                } else if (warningLevel === 'warning_3') {
+                  badgeText = 'Expires in 3 days';
+                  badgeStyle = 'bg-purple-500/10 border-purple-500/35 text-purple-400';
+                }
+                if (!badgeText) return null;
+                return (
+                  <span className={`px-2 py-0.5 rounded-md border text-[9px] font-bold tracking-wide shrink-0 ${badgeStyle}`}>
+                    {badgeText}
+                  </span>
+                );
+              })()}
               {isLocked && (
                 <span className="w-5 h-5 flex flex-shrink-0 items-center justify-center bg-amber-500/10 rounded-full border border-amber-500/30">
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
