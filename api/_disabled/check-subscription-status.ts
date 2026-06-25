@@ -106,7 +106,7 @@ export default async function handler(req: any, res: any) {
         // Write audit log
         await supabaseAdmin.from('subscription_audit_logs').insert({
           school_id: schoolId,
-          action:    computedStatus === 'grace_period' ? 'GRACE_PERIOD' : 'EXPIRED',
+          action:    'EXPIRED',
           plan:      sub.plan_code || 'unknown',
           billing_cycle: sub.billing_cycle,
           metadata:  { auto_detected: true, as_of: todayStr },
