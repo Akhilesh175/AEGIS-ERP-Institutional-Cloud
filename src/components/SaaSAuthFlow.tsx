@@ -228,9 +228,15 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
 
   // Submit Step 3: Plan Selection & Razorpay Checkout Integration
   const handlePlanPayment = async (planCode: string) => {
-    if (planCode === 'enterprise') {
-      // Enterprise redirects to sales support
-      window.location.hash = 'support';
+    if (planCode === 'freemium') {
+      // Freemium: no payment — mark trial active and proceed
+      setStep('success');
+      setSelectedPlanCode('freemium');
+      setPaymentAmount(0);
+      setTransactionId('trial_free_' + Date.now().toString(36));
+      setPaymentDate(new Date().toLocaleDateString('en-IN', {
+        day: 'numeric', month: 'long', year: 'numeric'
+      }));
       return;
     }
 
@@ -761,54 +767,71 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
             {/* Grid of Plans */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
               {[
-                { 
-                  name: 'Basic', 
-                  code: 'basic', 
-                  priceMonthly: 999, 
-                  priceYearly: 9590, 
-                  features: ['Student Management', 'Attendance', 'Fee Management'],
-                  desc: 'Perfect for small schools.'
+                {
+                  name: 'Freemium',
+                  code: 'freemium',
+                  priceMonthly: 0,
+                  priceYearly: 0,
+                  savingsYearly: 0,
+                  features: ['Up to 100 Students', 'Basic Attendance', 'Student Directory', 'Teacher Directory', 'Basic Notifications'],
+                  desc: 'Get started for free. No credit card needed.',
+                  cta: 'Start Free'
                 },
-                { 
-                  name: 'Standard', 
-                  code: 'standard', 
-                  priceMonthly: 2499, 
-                  priceYearly: 23990, 
-                  features: ['Everything in Basic', 'Teacher Portal', 'Parent Portal', 'Reports'],
-                  desc: 'Popular choice for growing schools.',
-                  popular: true
+                {
+                  name: 'Basic',
+                  code: 'basic',
+                  priceMonthly: 999,
+                  priceYearly: 9999,
+                  savingsYearly: 999 * 12 - 9999,
+                  features: ['Up to 500 Students', 'Fee Management', 'Timetable', 'Homework', 'Exams & Gradebook', 'Bulk Notifications'],
+                  desc: 'For small & growing schools.',
+                  cta: 'Select Plan'
                 },
-                { 
-                  name: 'Premium', 
-                  code: 'premium', 
-                  priceMonthly: 4999, 
-                  priceYearly: 47990, 
-                  features: ['Everything in Standard', 'Hostel Management', 'Library Management', 'Transport Management', 'Analytics Dashboard'],
-                  desc: 'For large institutions seeking full control.'
+                {
+                  name: 'Pro',
+                  code: 'pro',
+                  priceMonthly: 2499,
+                  priceYearly: 24999,
+                  savingsYearly: 2499 * 12 - 24999,
+                  features: ['Up to 1,000 Students', 'All Basic features +', 'PTM Meetings', 'Transport Management', 'Analytics Dashboard', 'Multi-Admin Support'],
+                  desc: 'For advanced schools.',
+                  popular: true,
+                  cta: 'Select Plan'
                 },
-                { 
-                  name: 'Enterprise', 
-                  code: 'enterprise', 
-                  priceMonthly: 'Custom', 
-                  priceYearly: 'Custom', 
-                  features: ['All Modules', 'Custom Branding', 'Priority Support', 'Multi-Campus Support'],
-                  desc: 'Bespoke integration for multi-campuses.'
+                {
+                  name: 'Enterprise',
+                  code: 'enterprise',
+                  priceMonthly: 4999,
+                  priceYearly: 49999,
+                  savingsYearly: 4999 * 12 - 49999,
+                  features: ['Unlimited Students', 'All Pro features +', 'Sports & Coach Portal', 'Hostel & Warden Portal', 'Custom Roles & Permissions', 'Audit Logs', 'Priority Support'],
+                  desc: 'For large & multi-campus institutions.',
+                  bestValue: true,
+                  cta: 'Select Plan'
                 }
               ].map((plan, idx) => {
-                const isEnterprise = plan.code === 'enterprise';
-                const displayPrice = isEnterprise 
-                  ? 'Custom' 
-                  : (billingCycle === 'MONTHLY' ? `₹${plan.priceMonthly}` : `₹${plan.priceYearly}`);
-                const displayCycle = isEnterprise ? '' : (billingCycle === 'MONTHLY' ? '/ month' : '/ year');
+                const isFree = plan.code === 'freemium';
+                const displayPrice = isFree
+                  ? 'Free'
+                  : (billingCycle === 'MONTHLY' ? `₹${plan.priceMonthly.toLocaleString('en-IN')}` : `₹${plan.priceYearly.toLocaleString('en-IN')}`);
+                const displayCycle = isFree ? 'forever' : (billingCycle === 'MONTHLY' ? '/ month' : '/ year');
+                const savings = plan.savingsYearly > 0 ? `Save ₹${plan.savingsYearly.toLocaleString('en-IN')}` : null;
 
                 return (
-                  <GlassCard 
+                  <GlassCard
                     key={idx}
-                    className={`flex flex-col justify-between p-6 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-xl relative overflow-hidden transition-all duration-300 ${plan.popular ? 'border-brand-500/30 shadow-brand-500/5 ring-1 ring-brand-500/20' : ''}`}
+                    className={`flex flex-col justify-between p-6 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-xl relative overflow-hidden transition-all duration-300
+                      ${plan.popular ? 'border-brand-500/30 shadow-brand-500/5 ring-1 ring-brand-500/20' : ''}
+                      ${plan.bestValue ? 'border-purple-500/25 shadow-purple-500/5 ring-1 ring-purple-500/15' : ''}`}
                   >
                     {plan.popular && (
                       <div className="absolute top-3 right-3">
-                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-400 font-bold uppercase tracking-wider">Popular</span>
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-brand-500/20 text-brand-400 font-bold uppercase tracking-wider">Most Popular</span>
+                      </div>
+                    )}
+                    {plan.bestValue && (
+                      <div className="absolute top-3 right-3">
+                        <span className="text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 font-bold uppercase tracking-wider">Best Value</span>
                       </div>
                     )}
 
@@ -821,28 +844,37 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
                       <div className="py-2 border-y border-slate-900">
                         <span className="text-2xl font-extrabold text-white">{displayPrice}</span>
                         <span className="text-xs text-slate-500 ml-1">{displayCycle}</span>
+                        {billingCycle === 'YEARLY' && savings && (
+                          <div className="mt-1">
+                            <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold">{savings}/yr</span>
+                          </div>
+                        )}
                       </div>
 
                       <ul className="space-y-2.5 text-xs text-slate-350 flex-1">
                         {plan.features.map((feat, fIdx) => (
                           <li key={fIdx} className="flex items-start gap-2 leading-relaxed">
-                            <span className="text-brand-400 font-bold">✓</span>
+                            <span className="text-brand-400 font-bold mt-px">✓</span>
                             <span>{feat}</span>
                           </li>
                         ))}
                       </ul>
                     </div>
 
-                    <button 
+                    <button
                       onClick={() => handlePlanPayment(plan.code)}
                       disabled={paymentLoading}
-                      className={`w-full mt-6 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5 ${plan.popular ? 'bg-brand-600 hover:bg-brand-500 text-white shadow-md' : 'bg-slate-900 border border-slate-800 hover:border-brand-500/30 text-slate-300'}`}
+                      className={`w-full mt-6 py-2.5 rounded-xl font-bold text-xs transition-all flex items-center justify-center gap-1.5
+                        ${plan.popular ? 'bg-brand-600 hover:bg-brand-500 text-white shadow-md' :
+                          plan.bestValue ? 'bg-purple-600/80 hover:bg-purple-500 text-white shadow-md' :
+                          isFree ? 'bg-emerald-600/80 hover:bg-emerald-500 text-white' :
+                          'bg-slate-900 border border-slate-800 hover:border-brand-500/30 text-slate-300'}`}
                     >
                       {paymentLoading && selectedPlanCode === plan.code ? (
                         <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                       ) : (
                         <>
-                          <span>{isEnterprise ? 'Contact Sales' : 'Select Plan'}</span>
+                          <span>{plan.cta}</span>
                           <ChevronRight size={13} />
                         </>
                       )}

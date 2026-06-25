@@ -20,6 +20,9 @@ import { InactivityWarningModal } from './components/InactivityWarningModal';
 import PremiumLock from './components/PremiumLock';
 import { AdminPortalHeader } from './components/AdminPortalHeader';
 import { isTabLocked } from './services/subscriptionConfig';
+import { SubscriptionDashboard } from './components/SubscriptionDashboard';
+import { useSubscriptionLifecycle } from './hooks/useSubscriptionLifecycle';
+import { WARNING_BANNER_CONFIG } from './services/subscriptionService';
 
 const getTabsForRole = (role: string, planName: string): string[] => {
   if (planName === 'expired') {
@@ -296,6 +299,9 @@ export const App: React.FC = () => {
   inactivityApiRef.current = inactivityApi;
   // ─────────────────────────────────────────────────────────────────────────────
 
+  // ── Subscription lifecycle: runs on session load, re-checks every 5 min ──
+  const subscriptionLifecycle = useSubscriptionLifecycle();
+
   // Auth Form states
   const [email, setEmail] = useState('');
   const [showPushPrompt, setShowPushPrompt] = useState(false);
@@ -443,6 +449,16 @@ export const App: React.FC = () => {
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
   }, [session]);
+
+  // Listen for programmatic tab navigation events (e.g. from warning banners)
+  useEffect(() => {
+    const handleSetTab = (e: Event) => {
+      const tab = (e as CustomEvent<string>).detail;
+      if (tab) updateActiveTab(tab);
+    };
+    window.addEventListener('aegis:set-tab', handleSetTab);
+    return () => window.removeEventListener('aegis:set-tab', handleSetTab);
+  }, []);
 
   useEffect(() => {
     initializeStore();
@@ -1358,6 +1374,34 @@ export const App: React.FC = () => {
       {/* Navbar Header */}
       <Navbar />
 
+      {/* ── Global Subscription Warning Banner ─────────────────────── */}
+      {session && subscriptionLifecycle.warningLevel && subscriptionLifecycle.warningLevel !== 'expired' && (() => {
+        const wl = subscriptionLifecycle.warningLevel!;
+        const cfg = WARNING_BANNER_CONFIG[wl];
+        return (
+          <div className={`flex items-center justify-between gap-3 px-6 py-2.5 border-b ${cfg.bg} ${cfg.border} shrink-0`}>
+            <div className="flex items-center gap-2">
+              <span className="text-sm leading-none">{cfg.icon}</span>
+              <p className={`text-xs font-medium ${cfg.text}`}>
+                {cfg.message(subscriptionLifecycle.daysRemaining)}
+              </p>
+            </div>
+            {session.user.role === 'ADMIN' && (
+              <button
+                onClick={() => {
+                  // Navigate to subscriptions tab
+                  const evt = new CustomEvent('aegis:set-tab', { detail: 'subscriptions' });
+                  window.dispatchEvent(evt);
+                }}
+                className="shrink-0 text-[10px] font-bold text-white bg-red-500 hover:bg-red-400 px-3 py-1.5 rounded-lg transition-all"
+              >
+                Renew Now
+              </button>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Main Workspace Frame */}
       <div className="flex-1 flex overflow-hidden">
         
@@ -1371,16 +1415,8 @@ export const App: React.FC = () => {
             {/* Active Portal Mount */}
             {activeTab === 'support' && <HelpSupportPage />}
             {activeTab === 'subscriptions' && session.user.role === 'ADMIN' && (
-              <div className="space-y-6 max-w-5xl mx-auto py-4">
-                <SaaSAuthFlow 
-                  onBackToLogin={() => {}} 
-                  theme={theme} 
-                  toggleTheme={toggleTheme} 
-                  initialStep="plans"
-                  initialSchoolId={session.user.schoolId || 'school-1'}
-                  adminEmail={session.user.email}
-                  adminPhone={session.user.phone || ''}
-                />
+              <div className="max-w-5xl mx-auto py-4">
+                <SubscriptionDashboard theme={theme} toggleTheme={toggleTheme} />
               </div>
             )}
             {activeTab !== 'support' && activeTab !== 'subscriptions' && (

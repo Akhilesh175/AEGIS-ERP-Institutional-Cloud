@@ -71,8 +71,40 @@ export const subscriptionPlans: Record<string, SubscriptionConfig> = {
   }
 };
 
+// ─── Backward-compat aliases ────────────────────────────────────────────────
+// Legacy DB rows may still have 'standard', 'premium', 'STANDARD', 'PREMIUM'.
+// These aliases redirect to the canonical plan keys.
+subscriptionPlans['standard'] = subscriptionPlans['pro'];
+subscriptionPlans['premium']  = subscriptionPlans['enterprise'];
+// 'expired' gets freemium-level access
+subscriptionPlans['expired']  = subscriptionPlans['freemium'];
+
+// ─── Plan code normalizer ───────────────────────────────────────────────────
+const PLAN_ALIAS: Record<string, string> = {
+  standard:   'pro',
+  premium:    'enterprise',
+  STANDARD:   'pro',
+  PREMIUM:    'enterprise',
+  BASIC:      'basic',
+  PRO:        'pro',
+  ENTERPRISE: 'enterprise',
+  FREEMIUM:   'freemium',
+  expired:    'freemium',
+  EXPIRED:    'freemium',
+};
+
+/**
+ * Normalizes any raw plan code to one of: freemium | basic | pro | enterprise.
+ * Safe to call with null / undefined.
+ */
+export function normalizePlanName(raw: string | null | undefined): string {
+  if (!raw) return 'freemium';
+  const lower = raw.toLowerCase();
+  return PLAN_ALIAS[raw] || PLAN_ALIAS[lower.toUpperCase()] || lower;
+}
+
 export const isTabLocked = (role: string, tabId: string, planName: string): boolean => {
-  const plan = planName.toLowerCase();
+  const plan = normalizePlanName(planName);
   if (role === 'STUDENT') {
     if (tabId === 'materials') return plan !== 'enterprise';
     if (tabId === 'library') return plan !== 'enterprise';

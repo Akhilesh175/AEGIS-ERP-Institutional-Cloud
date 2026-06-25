@@ -11150,7 +11150,17 @@ export const mockApi = {
   async getLiveSchoolSubscriptionPlan(schoolId: string): Promise<string | null> {
     if (!schoolId) return null;
     try {
-      // 1. Query subscriptions table for the latest subscription (source of truth)
+      const todayStr = new Date().toISOString().split('T')[0];
+
+      // Normalize legacy plan codes (standard→pro, premium→enterprise)
+      const normalizePlan = (raw: string): string => {
+        const lower = raw.toLowerCase();
+        if (lower === 'standard') return 'pro';
+        if (lower === 'premium')  return 'enterprise';
+        return lower;
+      };
+
+      // ── 1. Primary: query subscriptions table (source of truth) ──
       const { data: latestSub, error: subError } = await supabaseAdmin
         .from('subscriptions')
         .select('*')
@@ -11160,18 +11170,26 @@ export const mockApi = {
         .maybeSingle();
 
       let plan = 'freemium';
-      
+
       if (!subError && latestSub) {
-        const todayStr = new Date().toISOString().split('T')[0];
-        const isExpired = latestSub.status === 'EXPIRED' || (latestSub.expiry_date && latestSub.expiry_date < todayStr);
-        if (isExpired) {
-          plan = 'expired';
+        const expiryDate    = latestSub.expiry_date    as string | null;
+        const graceEndDate  = latestSub.grace_end_date as string | null;
+        const isHardExpired = latestSub.status === 'EXPIRED' ||
+          (expiryDate && todayStr > (graceEndDate || expiryDate));
+        const isInGrace     = expiryDate && todayStr > expiryDate &&
+          graceEndDate && todayStr <= graceEndDate;
+
+        if (isHardExpired) {
+          // Past grace end — full lock
+          plan = 'freemium';
+        } else if (isInGrace) {
+          // During grace period — keep plan accessible but flag status
+          plan = normalizePlan(latestSub.plan_code || 'freemium');
         } else {
-          plan = latestSub.plan_code.toLowerCase();
+          plan = normalizePlan(latestSub.plan_code || 'freemium');
         }
       } else {
-        // Fallback: Query the old school_subscriptions table for active plan
-        const todayStr = new Date().toISOString().split('T')[0];
+        // ── 2. Fallback: school_subscriptions (legacy/Super Admin path) ──
         const { data: activeSub, error: schoolSubError } = await supabaseAdmin
           .from('school_subscriptions')
           .select('*')
@@ -11182,40 +11200,43 @@ export const mockApi = {
           .maybeSingle();
 
         if (!schoolSubError && activeSub) {
-          plan = activeSub.plan.toLowerCase();
+          plan = normalizePlan(activeSub.plan);
         } else {
-          // If no subscription record exists at all, fall back to schools table
+          // ── 3. Final fallback: schools.subscription_plan ──────────
           const { data: dbSchool } = await supabaseAdmin
             .from('schools')
-            .select('*')
+            .select('subscription_plan')
             .eq('id', schoolId)
             .maybeSingle();
-            
-          if (dbSchool) {
-            plan = dbSchool.subscription_plan ? dbSchool.subscription_plan.toLowerCase() : 'freemium';
+
+          if (dbSchool?.subscription_plan) {
+            plan = normalizePlan(dbSchool.subscription_plan);
           }
         }
       }
-      
-      // Update local mockDb.schools cache in real time!
-      const schoolMapped = {
-        id: schoolId,
-        name: mockDb.schools.find(s => s.id === schoolId)?.name || 'Institution Name',
-        address: '',
-        phone: '',
-        subscriptionPlan: plan as any,
-        createdAt: new Date().toISOString()
-      };
+
+      // Sync local mockDb.schools cache
       const idx = mockDb.schools.findIndex(s => s.id === schoolId);
-      if (idx === -1) mockDb.schools.push(schoolMapped);
-      else mockDb.schools[idx].subscriptionPlan = plan as any;
+      if (idx === -1) {
+        mockDb.schools.push({
+          id: schoolId,
+          name: 'Institution',
+          address: '',
+          phone: '',
+          subscriptionPlan: plan as any,
+          createdAt: new Date().toISOString()
+        });
+      } else {
+        mockDb.schools[idx].subscriptionPlan = plan as any;
+      }
       mockDb.saveAll();
-      
+
       return plan;
     } catch {
       return 'freemium';
     }
   },
+
 
   async fetchRoles(schoolId: string): Promise<Role[]> {
     const { data, error } = await supabaseAdmin

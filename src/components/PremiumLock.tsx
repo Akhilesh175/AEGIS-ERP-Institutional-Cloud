@@ -1,5 +1,5 @@
 import React from 'react';
-import { Lock, Sparkles, ShieldAlert, ArrowRight, ShieldCheck } from 'lucide-react';
+import { Lock, Sparkles, ShieldAlert, ArrowRight, ShieldCheck, RefreshCw } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { useStore } from '../store/useStore';
 
@@ -8,10 +8,11 @@ interface PremiumLockProps {
   requiredTier: string;
   featureName: string;
   customMessage?: string;
+  isExpired?: boolean;  // When true, shows expiry-specific lock screen
   children: React.ReactNode;
 }
 
-const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featureName, customMessage, children }) => {
+const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featureName, customMessage, isExpired = false, children }) => {
   const { session } = useStore();
   const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
 
@@ -22,6 +23,54 @@ const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featu
   const currentPlan = (session?.schoolSubscriptionPlan || 'freemium').toUpperCase();
   const currentPlanName = (session?.schoolSubscriptionPlan || 'freemium').toLowerCase();
   const isEnterpriseGated = requiredTier.toUpperCase() === 'ENTERPRISE';
+
+  // ── Expired subscription lock screen ──────────────────────────────────────
+  if (isExpired || currentPlanName === 'expired') {
+    return (
+      <div className="relative w-full min-h-[400px] rounded-3xl animate-fade-in flex flex-col items-center justify-center p-3 sm:p-6 bg-slate-950/10">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-5 blur-2xl select-none rounded-3xl">{children}</div>
+        <div className="relative z-10 w-full flex flex-col items-center justify-center py-4">
+          <GlassCard className="w-full max-w-md p-5 sm:p-8 text-center border-red-500/30 bg-black/80 shadow-[0_0_50px_rgba(239,68,68,0.12)] rounded-3xl">
+            <div className="absolute top-0 inset-x-0 bg-gradient-to-r from-red-700 via-red-500 to-red-700 py-2 px-4 flex items-center justify-center gap-1.5 text-[9px] sm:text-[10px] font-bold text-white uppercase tracking-widest rounded-t-3xl">
+              <Lock size={11} className="shrink-0" />
+              <span>Subscription Expired — Access Suspended</span>
+              <Lock size={11} className="shrink-0" />
+            </div>
+
+            <div className="w-16 h-16 rounded-full bg-gradient-to-br from-red-500 to-red-700 flex items-center justify-center mx-auto mt-8 mb-5 shadow-lg shadow-red-500/20 border border-red-400/20">
+              <Lock className="w-7 h-7 text-white" />
+            </div>
+
+            <h3 className="text-xl sm:text-2xl font-bold text-white mb-2">Subscription Expired</h3>
+
+            <div className="my-4 p-3 bg-red-500/5 border border-red-500/20 rounded-xl text-left flex items-start gap-2.5">
+              <ShieldAlert className="text-red-400 shrink-0 mt-0.5" size={15} />
+              <div>
+                <p className="text-[10px] font-bold text-red-400 uppercase tracking-wide">Access Suspended</p>
+                <p className="text-[11px] text-slate-400 leading-normal mt-0.5">
+                  {customMessage || (
+                    <>Your school's subscription has expired. Access to <strong className="text-slate-200">{featureName}</strong> is temporarily suspended. Renew now to restore full access immediately.</>
+                  )}
+                </p>
+              </div>
+            </div>
+
+            <p className="text-slate-400 mb-5 text-[11px] sm:text-xs leading-relaxed">
+              Your data is safe and intact. Renewing your subscription will instantly restore access to all your school's features and data.
+            </p>
+
+            <button
+              onClick={() => { window.location.hash = 'subscriptions'; }}
+              className="px-4 sm:px-6 py-3 bg-gradient-to-r from-red-600 to-red-500 hover:from-red-500 hover:to-red-400 text-white font-bold rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-red-500/20 border border-red-400/20 w-full transition-all flex items-center justify-center gap-2"
+            >
+              <RefreshCw size={13} />
+              <span>Renew Subscription Now</span>
+            </button>
+          </GlassCard>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="relative w-full min-h-[400px] rounded-3xl animate-fade-in flex flex-col items-center justify-center p-3 sm:p-6 bg-slate-950/10">
