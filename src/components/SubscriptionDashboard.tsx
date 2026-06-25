@@ -3,8 +3,16 @@
  *
  * Admin-only subscription management dashboard. Shows current plan status,
  * billing details, expiry countdown, warning banners, and renew/upgrade flows.
+ *
+ * IMPORTANT: This component does NOT call useSubscriptionLifecycle() directly.
+ * That hook creates Supabase Realtime channels. Calling it here AND in App.tsx
+ * simultaneously causes a channel name collision error:
+ *   "cannot add 'postgres_changes' callbacks after subscribe()"
+ *
+ * Instead, this component reads warningLevel / daysRemaining / subscriptionStatus
+ * from the Zustand store, which is kept in sync by the singleton hook in App.tsx.
  */
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   CreditCard, RefreshCw, ArrowUpCircle, ArrowDownCircle, ShieldCheck,
   Clock, Calendar, TrendingUp, CheckCircle2, AlertTriangle, XCircle,
@@ -13,7 +21,7 @@ import {
 import { GlassCard } from './GlassCard';
 import { SaaSAuthFlow } from './SaaSAuthFlow';
 import { useStore } from '../store/useStore';
-import { useSubscriptionLifecycle } from '../hooks/useSubscriptionLifecycle';
+import { supabase } from '../lib/supabase';
 import {
   PLAN_DEFINITIONS,
   normalizePlanCode,
@@ -21,7 +29,8 @@ import {
   formatCycle,
   getDaysRemaining,
   WARNING_BANNER_CONFIG,
-  SubscriptionStatus
+  checkSubscriptionStatus,
+  getExpiryWarningLevel,
 } from '../services/subscriptionService';
 import jsPDF from 'jspdf';
 
@@ -33,8 +42,42 @@ interface SubscriptionDashboardProps {
 type DashView = 'dashboard' | 'renew' | 'upgrade' | 'downgrade';
 
 export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ theme, toggleTheme }) => {
-  const { session, plans: storePlans, loadingPlans } = useStore();
-  const lifecycle  = useSubscriptionLifecycle();
+  // Read subscription state from Zustand store (populated by the singleton
+  // useSubscriptionLifecycle in App.tsx — do NOT call that hook here).
+  const {
+    session,
+    plans: storePlans,
+    loadingPlans,
+    subscriptionStatus,
+    warningLevel,
+    daysRemaining,
+    setSubscriptionLifecycleState,
+  } = useStore();
+
+  // Local supplementary state for dates / billing (fetched directly, no realtime)
+  const [endDate,       setEndDate]       = useState<string | null>(null);
+  const [graceEndDate,  setGraceEndDate]  = useState<string | null>(null);
+  const [startDate,     setStartDate]     = useState<string | null>(null);
+  const [billingCycle,  setBillingCycle]  = useState<string | null>(null);
+  const [amountPaid,    setAmountPaid]    = useState<number | null>(null);
+  const [isRefreshing,  setIsRefreshing]  = useState(false);
+  const isFetchingRef = useRef(false);
+
+  // Build a lifecycle-compatible object from store values so that the JSX
+  // below does not need to be rewritten (only reads, no channel creation).
+  const lifecycle = {
+    subscriptionStatus,
+    warningLevel,
+    daysRemaining,
+    endDate,
+    graceEndDate,
+    startDate,
+    billingCycle,
+    amountPaid,
+    isLoading: isRefreshing,
+    refresh: () => { void refreshLocalData(); },
+  };
+
   const [view, setView]   = useState<DashView>('dashboard');
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
@@ -58,6 +101,46 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
   // Plan for renew / upgrade flow
   const [targetPlan, setTargetPlan] = useState<string>(currentPlanCode);
 
+  // ── Fetch subscription row directly (no realtime channels) ──────────────────
+  const refreshLocalData = useCallback(async () => {
+    const schoolId = session?.user?.schoolId;
+    if (!schoolId || isFetchingRef.current) return;
+    isFetchingRef.current = true;
+    setIsRefreshing(true);
+    try {
+      const { data: sub } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (sub) {
+        const status  = checkSubscriptionStatus(sub);
+        const days    = getDaysRemaining(sub.expiry_date);
+        const warning = getExpiryWarningLevel(days, status);
+        setEndDate(sub.expiry_date    || null);
+        setGraceEndDate(sub.grace_end_date || null);
+        setStartDate(sub.start_date   || null);
+        setBillingCycle(sub.billing_cycle || null);
+        setAmountPaid(sub.amount_paid  ?? null);
+        // Push updated values back to the Zustand store so banners stay in sync
+        setSubscriptionLifecycleState({ subscriptionStatus: status, warningLevel: warning, daysRemaining: days });
+      }
+    } catch (e) {
+      console.error('[SubscriptionDashboard] refreshLocalData error:', e);
+    } finally {
+      isFetchingRef.current = false;
+      setIsRefreshing(false);
+    }
+  }, [session?.user?.schoolId, setSubscriptionLifecycleState]);
+
+  // Fetch subscription details once on mount
+  useEffect(() => {
+    void refreshLocalData();
+  }, [refreshLocalData]);
+
   // ─── Auto-redirect from PremiumLock upgrade button ──────────────────────────
   useEffect(() => {
     const upgradeOrigin = localStorage.getItem('aegis_upgrade_origin');
@@ -72,7 +155,6 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
     const schoolId = session?.user?.schoolId;
     if (!schoolId) { setLoadingHistory(false); return; }
     try {
-      const { supabase } = await import('../lib/supabase');
       const { data } = await supabase
         .from('subscription_audit_logs')
         .select('*')
@@ -97,7 +179,6 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
     try {
       setLoadingUsage(true);
       setLoadingInvoices(true);
-      const { supabase } = await import('../lib/supabase');
       
       const [studRes, teachRes, parentRes, invRes, schoolRes] = await Promise.all([
         supabase.from('students').select('*', { count: 'exact', head: true }).eq('school_id', schoolId),
@@ -349,9 +430,9 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
         </div>
         <button
           onClick={() => {
-            lifecycle.refresh();
-            loadUsageAndInvoices();
-            loadHistory();
+              void refreshLocalData();
+              void loadUsageAndInvoices();
+              void loadHistory();
           }}
           className="p-2 rounded-xl border border-slate-800 hover:border-brand-500/30 text-slate-400 hover:text-brand-400 transition-all"
           title="Refresh subscription status"
