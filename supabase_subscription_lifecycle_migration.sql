@@ -114,28 +114,28 @@ VALUES
     'Freemium', 
     0, 
     0, 
-    ARRAY['Student Management', 'Teacher Management', 'Parent Management', 'Basic Attendance', 'Basic Reports', 'Limited Notifications', 'Up to 100 Students']
+    '["Student Management", "Teacher Management", "Parent Management", "Basic Attendance", "Basic Reports", "Limited Notifications", "Up to 100 Students"]'::jsonb
   ),
   (
     'basic', 
     'Basic', 
     999, 
     9999, 
-    ARRAY['Everything in Freemium', 'Fee Management', 'Timetable Management', 'Homework Management', 'Exam Management', 'Document Center', 'Bulk Notifications', 'Up to 500 Students']
+    '["Everything in Freemium", "Fee Management", "Timetable Management", "Homework Management", "Exam Management", "Document Center", "Bulk Notifications", "Up to 500 Students"]'::jsonb
   ),
   (
     'pro', 
     'Pro', 
     2499, 
     24999, 
-    ARRAY['Everything in Basic', 'PTM Meetings', 'Advanced Reports & Analytics', 'Transport Management', 'Communication Hub', 'Multi-Admin Support', 'Custom Report Builder', 'Up to 1,000 Students']
+    '["Everything in Basic", "PTM Meetings", "Advanced Reports & Analytics", "Transport Management", "Communication Hub", "Multi-Admin Support", "Custom Report Builder", "Up to 1,000 Students"]'::jsonb
   ),
   (
     'enterprise', 
     'Enterprise', 
     4999, 
     49999, 
-    ARRAY['Everything in Pro', 'Sports & Activities Management', 'Coach Portal', 'Warden Portal', 'Hostel Management', 'Advanced Finance & Accounting', 'Audit Logs', 'Custom Roles', 'Unlimited Students']
+    '["Everything in Pro", "Sports & Activities Management", "Coach Portal", "Warden Portal", "Hostel Management", "Advanced Finance & Accounting", "Audit Logs", "Custom Roles", "Unlimited Students"]'::jsonb
   )
 ON CONFLICT (code) DO UPDATE
   SET price_monthly = EXCLUDED.price_monthly,
