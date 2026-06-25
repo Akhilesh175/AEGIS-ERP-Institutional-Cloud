@@ -457,16 +457,28 @@ export function verifyAndApplyCoupon(
     max_uses?: number | null;
     current_uses?: number | null;
     is_active?: boolean;
+    discount_type?: string | null;
+    discount_value?: number | null;
+    max_discount?: number | null;
+    min_purchase?: number | null;
+    status?: string | null;
+    activation_date?: string | null;
+    is_deleted?: boolean | null;
   } | null,
   planCode: string,
   schoolId: string,
   originalPrice: number
 ): CouponVerifyResult {
-  if (!coupon || coupon.is_active === false) {
+  if (!coupon || coupon.is_active === false || coupon.status === 'DISABLED' || coupon.status === 'INACTIVE' || coupon.is_deleted === true) {
     return { valid: false, message: 'Invalid or inactive coupon', discountAmount: 0, finalPrice: originalPrice };
   }
 
   const todayStr = new Date().toISOString().split('T')[0];
+
+  if (coupon.activation_date && todayStr < coupon.activation_date) {
+    return { valid: false, message: 'Coupon is not active yet (scheduled)', discountAmount: 0, finalPrice: originalPrice };
+  }
+
   if (coupon.expiry_date && todayStr > coupon.expiry_date) {
     return { valid: false, message: 'Coupon has expired', discountAmount: 0, finalPrice: originalPrice };
   }
@@ -491,11 +503,24 @@ export function verifyAndApplyCoupon(
     }
   }
 
+  // Minimum Purchase check
+  const minPurchase = coupon.min_purchase !== undefined && coupon.min_purchase !== null ? Number(coupon.min_purchase) : 0;
+  if (originalPrice < minPurchase) {
+    return { valid: false, message: `Minimum purchase amount of ₹${minPurchase} not met`, discountAmount: 0, finalPrice: originalPrice };
+  }
+
   let discountAmount = 0;
-  if (coupon.discount_percent !== undefined && coupon.discount_percent !== null) {
-    discountAmount = Math.round((originalPrice * Number(coupon.discount_percent)) / 100);
-  } else if (coupon.discount_amount !== undefined && coupon.discount_amount !== null) {
-    discountAmount = Number(coupon.discount_amount);
+  const discountType = coupon.discount_type || (coupon.discount_percent !== undefined && coupon.discount_percent !== null ? 'PERCENTAGE' : 'FIXED');
+  const discountVal = coupon.discount_value !== undefined && coupon.discount_value !== null ? Number(coupon.discount_value) : (discountType === 'PERCENTAGE' ? Number(coupon.discount_percent || 0) : Number(coupon.discount_amount || 0));
+
+  if (discountType === 'PERCENTAGE') {
+    discountAmount = Math.round((originalPrice * discountVal) / 100);
+    // Cap at max discount if specified
+    if (coupon.max_discount !== undefined && coupon.max_discount !== null) {
+      discountAmount = Math.min(discountAmount, Number(coupon.max_discount));
+    }
+  } else {
+    discountAmount = discountVal;
   }
 
   // Cap discount at original price

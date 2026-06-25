@@ -238,7 +238,7 @@ export default async function handler(req: any, res: any) {
     const discountAmount = Number(metadata.discountAmount || 0);
     const originalAmount = Number(metadata.originalAmount || payment.amount);
 
-    // If coupon is used, increment its use count
+    // If coupon is used, increment its use count and write usage logs
     if (couponCode) {
       try {
         const { data: couponData } = await supabaseAdmin
@@ -252,6 +252,28 @@ export default async function handler(req: any, res: any) {
             .from('subscription_coupons')
             .update({ current_uses: (couponData.current_uses || 0) + 1 })
             .eq('id', couponData.id);
+
+          // Retrieve school admin user_id to log who used it
+          const { data: admins } = await supabaseAdmin
+            .from('users')
+            .select('id')
+            .eq('school_id', schoolId)
+            .eq('role', 'ADMIN')
+            .limit(1);
+          const adminId = admins && admins.length > 0 ? admins[0].id : null;
+
+          await supabaseAdmin
+            .from('subscription_coupon_usages')
+            .insert({
+              coupon_id: couponData.id,
+              school_id: schoolId,
+              user_id: adminId,
+              transaction_id: razorpayPaymentId || `mock_${Date.now()}`,
+              subscription_id: payment.subscription_id,
+              plan_code: planCode,
+              discount_amount: discountAmount,
+              payment_status: 'SUCCESS'
+            });
         }
       } catch (couponErr) {
         console.warn('Coupon count increment failed (non-fatal):', couponErr);

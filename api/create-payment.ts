@@ -149,6 +149,12 @@ export default async function handler(req: any, res: any) {
         const todayStr = new Date().toISOString().split('T')[0];
         let validCoupon = true;
         
+        if (couponRecord.is_deleted === true || couponRecord.status === 'DISABLED' || couponRecord.status === 'INACTIVE') {
+          validCoupon = false;
+        }
+        if (couponRecord.activation_date && todayStr < couponRecord.activation_date) {
+          validCoupon = false;
+        }
         if (couponRecord.expiry_date && todayStr > couponRecord.expiry_date) {
           validCoupon = false;
         }
@@ -169,12 +175,22 @@ export default async function handler(req: any, res: any) {
             validCoupon = false;
           }
         }
+        const minPurchase = couponRecord.min_purchase !== null && couponRecord.min_purchase !== undefined ? Number(couponRecord.min_purchase) : 0;
+        if (baseAmount < minPurchase) {
+          validCoupon = false;
+        }
 
         if (validCoupon) {
-          if (couponRecord.discount_percent !== null && couponRecord.discount_percent !== undefined) {
-            couponDiscountAmount = Math.round((baseAmount * Number(couponRecord.discount_percent)) / 100);
-          } else if (couponRecord.discount_amount !== null && couponRecord.discount_amount !== undefined) {
-            couponDiscountAmount = Number(couponRecord.discount_amount);
+          const discountType = couponRecord.discount_type || (couponRecord.discount_percent !== null && couponRecord.discount_percent !== undefined ? 'PERCENTAGE' : 'FIXED');
+          const discountVal = couponRecord.discount_value !== null && couponRecord.discount_value !== undefined ? Number(couponRecord.discount_value) : (discountType === 'PERCENTAGE' ? Number(couponRecord.discount_percent || 0) : Number(couponRecord.discount_amount || 0));
+
+          if (discountType === 'PERCENTAGE') {
+            couponDiscountAmount = Math.round((baseAmount * discountVal) / 100);
+            if (couponRecord.max_discount !== null && couponRecord.max_discount !== undefined) {
+              couponDiscountAmount = Math.min(couponDiscountAmount, Number(couponRecord.max_discount));
+            }
+          } else {
+            couponDiscountAmount = discountVal;
           }
           couponDiscountAmount = Math.min(couponDiscountAmount, baseAmount);
           appliedCouponCode = couponRecord.code;
