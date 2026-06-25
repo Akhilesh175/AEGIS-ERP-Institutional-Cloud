@@ -15,14 +15,13 @@ envContent.split('\n').forEach(line => {
 const supabaseUrl = env['VITE_SUPABASE_URL'];
 const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
 
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
 async function run() {
-  const response = await fetch(`${supabaseUrl}/rest/v1/?apikey=${supabaseServiceKey}`);
-  const schema = await response.json();
-  
-  if (schema.definitions && schema.definitions.payment_transactions) {
-    console.log('payment_transactions properties:', Object.keys(schema.definitions.payment_transactions.properties));
-  } else {
-    console.log('payment_transactions definition not found');
-  }
+  const { data: schools, error: schoolErr } = await supabaseAdmin.from('schools').select('id, name, subscription_plan');
+  console.log('Schools:', schools);
+
+  const { data: subs, error: subErr } = await supabaseAdmin.from('subscriptions').select('id, school_id, plan_code, status');
+  console.log('Subscriptions:', subs);
 }
-run().catch(console.error);
+run();

@@ -33,7 +33,7 @@ interface SubscriptionDashboardProps {
 type DashView = 'dashboard' | 'renew' | 'upgrade' | 'downgrade';
 
 export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ theme, toggleTheme }) => {
-  const { session } = useStore();
+  const { session, plans: storePlans, loadingPlans } = useStore();
   const lifecycle  = useSubscriptionLifecycle();
   const [view, setView]   = useState<DashView>('dashboard');
   const [history, setHistory] = useState<any[]>([]);
@@ -47,7 +47,9 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
   const [schoolName, setSchoolName] = useState('Your Institution');
 
   const currentPlanCode = normalizePlanCode(session?.schoolSubscriptionPlan);
-  const currentPlan     = PLAN_DEFINITIONS.find(p => p.code === currentPlanCode) || PLAN_DEFINITIONS[0];
+  // Use store plans if loaded, fall back to static PLAN_DEFINITIONS
+  const activePlans = storePlans.length > 0 ? storePlans : PLAN_DEFINITIONS;
+  const currentPlan = activePlans.find(p => p.code === currentPlanCode) || activePlans[0];
   const isExpired       = lifecycle.subscriptionStatus === 'expired';
   const isGrace         = lifecycle.subscriptionStatus === 'grace_period';
   const isActive        = lifecycle.subscriptionStatus === 'active';
@@ -55,6 +57,16 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
 
   // Plan for renew / upgrade flow
   const [targetPlan, setTargetPlan] = useState<string>(currentPlanCode);
+
+  // ─── Auto-redirect from PremiumLock upgrade button ──────────────────────────
+  useEffect(() => {
+    const upgradeOrigin = localStorage.getItem('aegis_upgrade_origin');
+    if (upgradeOrigin) {
+      localStorage.removeItem('aegis_upgrade_origin');
+      // Auto-open upgrade view so user lands directly in plan selection
+      setView(currentPlan && currentPlan.tier < 3 ? 'upgrade' : 'renew');
+    }
+  }, []);
 
   const loadHistory = useCallback(async () => {
     const schoolId = session?.user?.schoolId;
@@ -462,31 +474,37 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
           <TrendingUp size={12} className="text-brand-400" /> Available Plans
         </h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          {PLAN_DEFINITIONS.map(plan => {
-            const isCurrent = plan.code === currentPlanCode;
-            return (
-              <div
-                key={plan.code}
-                className={`p-4 rounded-2xl border transition-all ${
-                  isCurrent
-                    ? 'bg-brand-500/8 border-brand-500/30 shadow-brand-500/5'
-                    : 'bg-slate-900/30 border-slate-850 hover:border-slate-800'
-                }`}
-              >
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-200">{plan.name}</span>
-                  {isCurrent && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-brand-500/20 text-brand-400 font-bold">Current</span>}
+        {loadingPlans ? (
+          <div className="flex items-center justify-center py-6">
+            <span className="w-5 h-5 rounded-full border-2 border-brand-500/30 border-t-brand-400 animate-spin" />
+          </div>
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+            {activePlans.map(plan => {
+              const isCurrent = plan.code === currentPlanCode;
+              return (
+                <div
+                  key={plan.code}
+                  className={`p-4 rounded-2xl border transition-all ${
+                    isCurrent
+                      ? 'bg-brand-500/8 border-brand-500/30 shadow-brand-500/5'
+                      : 'bg-slate-900/30 border-slate-850 hover:border-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-200">{plan.name}</span>
+                    {isCurrent && <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-brand-500/20 text-brand-400 font-bold">Current</span>}
+                  </div>
+                  <p className="text-[10px] text-slate-500 mb-2">{plan.description}</p>
+                  <p className="text-base font-extrabold text-white">
+                    {plan.priceMonthly === 0 ? 'Free' : `₹${plan.priceMonthly.toLocaleString('en-IN')}`}
+                    {plan.priceMonthly > 0 && <span className="text-[10px] text-slate-500 font-normal">/mo</span>}
+                  </p>
                 </div>
-                <p className="text-[10px] text-slate-500 mb-2">{plan.description}</p>
-                <p className="text-base font-extrabold text-white">
-                  {plan.priceMonthly === 0 ? 'Free' : `₹${plan.priceMonthly.toLocaleString('en-IN')}`}
-                  {plan.priceMonthly > 0 && <span className="text-[10px] text-slate-500 font-normal">/mo</span>}
-                </p>
-              </div>
-            );
-          })}
-        </div>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* Plan Resource Quotas & Usage Progress */}

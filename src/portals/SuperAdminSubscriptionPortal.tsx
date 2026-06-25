@@ -21,7 +21,7 @@ interface SuperAdminSubscriptionPortalProps {
 }
 
 export const SuperAdminSubscriptionPortal: React.FC<SuperAdminSubscriptionPortalProps> = ({ activeTab }) => {
-  const { session } = useStore();
+  const { session, fetchPlans } = useStore();
   const superAdminId = session?.user?.id;
 
   // Local States
@@ -261,6 +261,8 @@ export const SuperAdminSubscriptionPortal: React.FC<SuperAdminSubscriptionPortal
 
       setShowPlanModal(false);
       setEditingPlan(null);
+      // Invalidate the global Zustand plans store so all portals see the latest data
+      await fetchPlans();
       await loadData();
       alert('Plan overrides applied successfully across all school clusters.');
     } catch (err: any) {
@@ -1298,8 +1300,50 @@ export const SuperAdminSubscriptionPortal: React.FC<SuperAdminSubscriptionPortal
       {showPlanModal && editingPlan && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 animate-fade-in text-xs overflow-y-auto">
           <GlassCard className="w-full max-w-2xl max-h-[90vh] overflow-y-auto border-brand-500/30 p-6 space-y-4 relative">
-            <h4 className="font-black text-slate-100 text-sm border-b border-slate-850 pb-2">Plan Quotas Configuration: {editingPlan.name}</h4>
+            <h4 className="font-black text-slate-100 text-sm border-b border-slate-850 pb-2">Plan Configuration: {editingPlan.name}</h4>
             <form onSubmit={handleSavePlan} className="space-y-4">
+
+              {/* Identity & Display */}
+              <div className="space-y-2 pb-3 border-b border-slate-900">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Identity &amp; Display</p>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Plan Name</label>
+                    <input type="text" value={editingPlan.name} onChange={(e) => setEditingPlan({ ...editingPlan, name: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" required />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Color Theme</label>
+                    <select value={editingPlan.color_theme || 'brand'} onChange={(e) => setEditingPlan({ ...editingPlan, color_theme: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none">
+                      <option value="slate">Slate (Freemium)</option>
+                      <option value="brand">Brand Blue (Basic)</option>
+                      <option value="indigo">Indigo (Pro)</option>
+                      <option value="purple">Purple (Enterprise)</option>
+                      <option value="emerald">Emerald</option>
+                      <option value="amber">Amber</option>
+                    </select>
+                  </div>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 uppercase">Plan Description</label>
+                  <input type="text" value={editingPlan.description || ''} onChange={(e) => setEditingPlan({ ...editingPlan, description: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" placeholder="Short description shown on plan selection screen" />
+                </div>
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase">Display Order</label>
+                    <input type="number" value={editingPlan.display_order ?? 0} onChange={(e) => setEditingPlan({ ...editingPlan, display_order: e.target.value })} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-slate-200 focus:outline-none" />
+                  </div>
+                  <div className="flex items-center gap-2 mt-4">
+                    <input type="checkbox" id="is_recommended" checked={!!editingPlan.is_recommended} onChange={(e) => setEditingPlan({ ...editingPlan, is_recommended: e.target.checked })} className="rounded border-slate-800 bg-slate-900 text-brand-500" />
+                    <label htmlFor="is_recommended" className="text-slate-300 select-none cursor-pointer">Recommended</label>
+                  </div>
+                  <div className="flex items-center gap-2 mt-4">
+                    <input type="checkbox" id="is_popular" checked={!!editingPlan.is_popular} onChange={(e) => setEditingPlan({ ...editingPlan, is_popular: e.target.checked })} className="rounded border-slate-800 bg-slate-900 text-brand-500" />
+                    <label htmlFor="is_popular" className="text-slate-300 select-none cursor-pointer">Most Popular Badge</label>
+                  </div>
+                </div>
+              </div>
+
+              {/* Pricing */}
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Monthly Price (INR)</label>
@@ -1311,6 +1355,7 @@ export const SuperAdminSubscriptionPortal: React.FC<SuperAdminSubscriptionPortal
                 </div>
               </div>
 
+              {/* Resource Quotas */}
               <div className="grid grid-cols-3 gap-4">
                 <div className="space-y-1">
                   <label className="text-[10px] font-bold text-slate-500 uppercase">Max Students</label>

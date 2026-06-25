@@ -514,3 +514,28 @@ export function verifyAndApplyCoupon(
     finalPrice
   };
 }
+
+/**
+ * Resolves the valid upgrade path plan codes based on the current plan code.
+ */
+export function getUpgradePath(currentPlanCode: string | null | undefined): string[] {
+  const norm = normalizePlanCode(currentPlanCode);
+  if (norm === 'freemium') {
+    return ['basic', 'pro', 'enterprise'];
+  }
+  if (norm === 'basic') {
+    return ['pro', 'enterprise'];
+  }
+  if (norm === 'pro') {
+    return ['enterprise'];
+  }
+  return []; // enterprise cannot upgrade further
+}
+
+/**
+ * Centrally triggers an upgrade redirection by saving originating module context
+ */
+export function handleUpgradeClick(fromTab: string) {
+  localStorage.setItem('aegis_upgrade_origin', fromTab);
+  window.location.hash = 'subscriptions';
+}

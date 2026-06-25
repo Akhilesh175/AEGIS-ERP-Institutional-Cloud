@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { BrandLogo, AEGIS_LOGO_URL } from './common/BrandLogo';
+import { PLAN_DEFINITIONS } from '../services/subscriptionService';
 
 // Dynamically load Razorpay SDK
 const loadRazorpayScript = () => {
@@ -986,60 +987,18 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
               )}
             </div>
 
-            {/* Grid of Plans */}
+            {/* Grid of Plans — dynamically loaded from Supabase via PLAN_DEFINITIONS store sync */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
-              {[
-                {
-                  name: 'Freemium',
-                  code: 'freemium',
-                  priceMonthly: 0,
-                  priceYearly: 0,
-                  savingsYearly: 0,
-                  features: ['Up to 100 Students', 'Basic Attendance', 'Student Directory', 'Teacher Directory', 'Basic Notifications'],
-                  desc: 'Get started for free. No credit card needed.',
-                  cta: 'Start Free'
-                },
-                {
-                  name: 'Basic',
-                  code: 'basic',
-                  priceMonthly: 999,
-                  priceYearly: 9999,
-                  savingsYearly: 999 * 12 - 9999,
-                  features: ['Up to 500 Students', 'Fee Management', 'Timetable', 'Homework', 'Exams & Gradebook', 'Bulk Notifications'],
-                  desc: 'For small & growing schools.',
-                  cta: 'Select Plan'
-                },
-                {
-                  name: 'Pro',
-                  code: 'pro',
-                  priceMonthly: 2499,
-                  priceYearly: 24999,
-                  savingsYearly: 2499 * 12 - 24999,
-                  features: ['Up to 1,000 Students', 'All Basic features +', 'PTM Meetings', 'Transport Management', 'Analytics Dashboard', 'Multi-Admin Support'],
-                  desc: 'For advanced schools.',
-                  popular: true,
-                  cta: 'Select Plan'
-                },
-                {
-                  name: 'Enterprise',
-                  code: 'enterprise',
-                  priceMonthly: 4999,
-                  priceYearly: 49999,
-                  savingsYearly: 4999 * 12 - 49999,
-                  features: ['Unlimited Students', 'All Pro features +', 'Sports & Coach Portal', 'Hostel & Warden Portal', 'Custom Roles & Permissions', 'Audit Logs', 'Priority Support'],
-                  desc: 'For large & multi-campus institutions.',
-                  bestValue: true,
-                  cta: 'Select Plan'
-                }
-              ].map((plan, idx) => {
+              {PLAN_DEFINITIONS.filter(p => p.isActive).sort((a, b) => a.displayOrder - b.displayOrder).map((plan, idx) => {
                 const isFree = plan.code === 'freemium';
                 const pricing = resolvePlanPrice(plan);
                 const displayCycle = isFree ? 'forever' : (billingCycle === 'MONTHLY' ? '/ month' : '/ year');
                 const savings = plan.savingsYearly > 0 ? `Save ₹${plan.savingsYearly.toLocaleString('en-IN')}` : null;
+                const planCta = isFree ? 'Start Free' : 'Select Plan';
 
                 return (
                   <GlassCard
-                    key={idx}
+                    key={plan.code}
                     className={`flex flex-col justify-between p-6 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-xl relative overflow-hidden transition-all duration-300
                       ${plan.popular ? 'border-brand-500/30 shadow-brand-500/5 ring-1 ring-brand-500/20' : ''}
                       ${plan.bestValue ? 'border-purple-500/25 shadow-purple-500/5 ring-1 ring-purple-500/15' : ''}`}
@@ -1058,7 +1017,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
                     <div className="space-y-4">
                       <div className="space-y-1">
                         <h3 className="text-base font-bold text-slate-100">{plan.name}</h3>
-                        <p className="text-[10px] text-slate-450 leading-relaxed">{plan.desc}</p>
+                        <p className="text-[10px] text-slate-450 leading-relaxed">{plan.description}</p>
                       </div>
 
                       <div className="py-2 border-y border-slate-900 flex flex-col justify-center">
@@ -1115,7 +1074,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
                         <span className="w-4 h-4 rounded-full border-2 border-white/30 border-t-white animate-spin" />
                       ) : (
                         <>
-                          <span>{plan.cta}</span>
+                          <span>{planCta}</span>
                           <ChevronRight size={13} />
                         </>
                       )}

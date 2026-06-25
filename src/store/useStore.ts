@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import { AuthSession } from '../services/mockApi';
+import { PlanDefinition, PLAN_DEFINITIONS, PLAN_MAP } from '../services/subscriptionService';
 
 interface SchoolERPStore {
   session: AuthSession | null;
@@ -19,6 +20,9 @@ interface SchoolERPStore {
   syncSubscriptionPlan: () => Promise<void>;
   syncUserSession: () => Promise<void>;
   switchActiveRole: (newRole: string) => Promise<void>;
+  plans: PlanDefinition[];
+  loadingPlans: boolean;
+  fetchPlans: () => Promise<void>;
 }
 
 export const useStore = create<SchoolERPStore>((set, get) => ({
@@ -27,6 +31,8 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
   theme: 'dark',
   activeStudentId: null,
   activeChatUserId: null,
+  plans: [],
+  loadingPlans: false,
   isMobileMenuOpen: false,
   activeAcademicSessionId: null,
 
@@ -150,7 +156,81 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
         localStorage.removeItem('aegis_session');
       }
     }
+    
+    // Fetch plans initially and subscribe to realtime updates
+    get().fetchPlans();
+    import('../lib/supabase').then(({ supabase }) => {
+      supabase
+        .channel('realtime-plans-changes')
+        .on('postgres_changes', { event: '*', schema: 'public', table: 'subscription_plans' }, () => {
+          console.log('Realtime plans update detected in Zustand! Re-fetching plans...');
+          get().fetchPlans();
+        })
+        .subscribe();
+    });
+
     set({ isInitialized: true });
+  },
+
+  fetchPlans: async () => {
+    set({ loadingPlans: true });
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data, error } = await supabase
+        .from('subscription_plans')
+        .select('*')
+        .eq('is_active', true)
+        .order('display_order', { ascending: true });
+        
+      if (error) throw error;
+      if (data) {
+        const mappedPlans: PlanDefinition[] = data.map((p: any) => ({
+          code: p.code,
+          name: p.name,
+          priceMonthly: Number(p.price_monthly),
+          priceYearly: Number(p.price_yearly),
+          savingsYearly: Number(p.price_monthly) * 12 - Number(p.price_yearly),
+          description: p.description || '',
+          features: Array.isArray(p.features) ? p.features : [],
+          tier: p.code === 'freemium' ? 0 : p.code === 'basic' ? 1 : p.code === 'pro' ? 2 : 3,
+          popular: !!p.is_popular,
+          bestValue: p.code === 'enterprise',
+          displayOrder: Number(p.display_order || 0),
+          colorTheme: p.color_theme || 'brand',
+          isRecommended: !!p.is_recommended,
+          isActive: !!p.is_active,
+          maxStudents: Number(p.max_students || 100),
+          maxTeachers: Number(p.max_teachers || 10),
+          maxParents: Number(p.max_parents || 200),
+          maxStorageGb: Number(p.max_storage_gb || 5),
+          notificationLimits: Number(p.notification_limits || 1000),
+          hasPtmAccess: !!p.has_ptm_access,
+          hasTransportAccess: !!p.has_transport_access,
+          hasLibraryAccess: !!p.has_library_access,
+          hasFinanceAccess: !!p.has_finance_access,
+          hasHostelAccess: !!p.has_hostel_access,
+          hasAnalyticsAccess: !!p.has_analytics_access,
+          hasCoachPortal: !!p.has_coach_portal,
+          hasWardenPortal: !!p.has_warden_portal
+        }));
+        set({ plans: mappedPlans });
+        
+        // Sync static definitions in-place for non-store references
+        PLAN_DEFINITIONS.length = 0;
+        PLAN_DEFINITIONS.push(...mappedPlans);
+        
+        for (const key in PLAN_MAP) {
+          delete PLAN_MAP[key];
+        }
+        mappedPlans.forEach(p => {
+          PLAN_MAP[p.code] = p;
+        });
+      }
+    } catch (e) {
+      console.error('Failed to fetch subscription plans from DB:', e);
+    } finally {
+      set({ loadingPlans: false });
+    }
   },
  
   syncSubscriptionPlan: async () => {

@@ -2,6 +2,7 @@ import React from 'react';
 import { Lock, Sparkles, ShieldAlert, ArrowRight, ShieldCheck, RefreshCw } from 'lucide-react';
 import { GlassCard } from './GlassCard';
 import { useStore } from '../store/useStore';
+import { handleUpgradeClick } from '../services/subscriptionService';
 
 interface PremiumLockProps {
   isLocked: boolean;
@@ -15,6 +16,8 @@ interface PremiumLockProps {
 const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featureName, customMessage, isExpired = false, children }) => {
   const { session } = useStore();
   const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
+  const isSchoolAdmin = session?.user?.role === 'ADMIN';
+  const currentTab = window.location.hash.substring(1) || 'dashboard';
 
   if (!isLocked || isSuperAdmin) {
     return <>{children}</>;
@@ -123,13 +126,23 @@ const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featu
             </p>
 
             {/* Upgrade CTA */}
-            <button 
-              disabled
-              className="px-4 sm:px-6 py-3.5 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-brand-500/20 border border-brand-500/30 w-full transition-all opacity-90 hover:opacity-100 flex flex-col sm:flex-row items-center justify-center gap-2 cursor-not-allowed h-auto whitespace-normal break-words"
-            >
-              <span className="text-center sm:text-left leading-normal whitespace-normal break-words flex-1">Contact Institutional Administrator to Request Enterprise Upgrade</span>
-              <ArrowRight size={14} className="shrink-0 mt-1 sm:mt-0" />
-            </button>
+            {isSchoolAdmin ? (
+              <button
+                onClick={() => handleUpgradeClick(currentTab)}
+                className="px-4 sm:px-6 py-3.5 bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white font-bold rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-brand-500/20 border border-brand-500/30 w-full transition-all flex items-center justify-center gap-2"
+              >
+                <span>Upgrade to Enterprise Plan</span>
+                <ArrowRight size={14} className="shrink-0" />
+              </button>
+            ) : (
+              <button
+                disabled
+                className="px-4 sm:px-6 py-3.5 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl text-xs uppercase tracking-wider shadow-lg shadow-brand-500/20 border border-brand-500/30 w-full transition-all opacity-90 hover:opacity-100 flex flex-col sm:flex-row items-center justify-center gap-2 cursor-not-allowed h-auto whitespace-normal break-words"
+              >
+                <span className="text-center sm:text-left leading-normal whitespace-normal break-words flex-1">Contact Institutional Administrator to Request Enterprise Upgrade</span>
+                <ArrowRight size={14} className="shrink-0 mt-1 sm:mt-0" />
+              </button>
+            )}
           </GlassCard>
         ) : (
           <GlassCard className="w-full max-w-md p-5 sm:p-8 text-center border-amber-500/30 bg-black/80 shadow-[0_0_50px_rgba(245,158,11,0.15)] rounded-3xl">
@@ -148,14 +161,26 @@ const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featu
               )}
             </p>
 
-            <button 
-              disabled
-              className="px-4 py-4 bg-slate-800 text-amber-400 rounded-lg font-bold border border-slate-700 w-full transition-all h-auto whitespace-normal break-words text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-not-allowed"
-            >
-              <span className="text-center leading-normal">
-                {currentPlanName === 'freemium' ? 'Upgrade to Pro or Enterprise' : 'Pro or Enterprise Required'}
-              </span>
-            </button>
+            {isSchoolAdmin ? (
+              <button
+                onClick={() => handleUpgradeClick(currentTab)}
+                className="px-4 py-3 bg-gradient-to-r from-amber-600 to-orange-500 hover:from-amber-500 hover:to-orange-400 text-white rounded-lg font-bold border border-amber-500/30 w-full transition-all text-xs uppercase tracking-wider flex items-center justify-center gap-2"
+              >
+                <span className="text-center leading-normal">
+                  {currentPlanName === 'freemium' ? 'Upgrade to Pro or Enterprise' : 'Pro or Enterprise Required — Upgrade Now'}
+                </span>
+                <ArrowRight size={13} className="shrink-0" />
+              </button>
+            ) : (
+              <button
+                disabled
+                className="px-4 py-4 bg-slate-800 text-amber-400 rounded-lg font-bold border border-slate-700 w-full transition-all h-auto whitespace-normal break-words text-xs uppercase tracking-wider flex items-center justify-center gap-2 cursor-not-allowed"
+              >
+                <span className="text-center leading-normal">
+                  {currentPlanName === 'freemium' ? 'Upgrade to Pro or Enterprise' : 'Pro or Enterprise Required'}
+                </span>
+              </button>
+            )}
           </GlassCard>
         )}
       </div>
