@@ -21,30 +21,15 @@ const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
 });
 
 async function run() {
-  const query = `
-    SELECT 
-      conname AS constraint_name,
-      conrelid::regclass AS table_name,
-      confrelid::regclass AS referenced_table_name,
-      pg_get_constraintdef(c.oid) AS constraint_definition
-    FROM 
-      pg_constraint c
-    JOIN 
-      pg_namespace n ON n.oid = c.connamespace
-    WHERE 
-      n.nspname = 'public' 
-      AND c.contype = 'f'
-      AND (conrelid::regclass::text = 'timetables' OR conrelid::regclass::text = 'teachers');
-  `;
-
-  const { data, error } = await supabaseAdmin.rpc('exec_sql', {
-    sql_query: query
-  });
+  const { data, error } = await supabaseAdmin
+    .from('subscription_plans')
+    .select('*')
+    .limit(1);
 
   if (error) {
-    console.error('exec_sql error:', error);
+    console.error('Error fetching subscription_plans:', error);
   } else {
-    console.log('Foreign keys on timetables & teachers:', JSON.stringify(data, null, 2));
+    console.log('subscription_plans sample row:', data);
   }
 }
 

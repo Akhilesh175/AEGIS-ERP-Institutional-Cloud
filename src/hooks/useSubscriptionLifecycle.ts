@@ -1,11 +1,14 @@
 /**
  * AEGIS ERP — useSubscriptionLifecycle
  *
- * React hook that calls /api/check-subscription-status on mount
- * (and on schoolId change), syncs Zustand store if plan has changed,
+ * React hook that directly queries the subscriptions table via Supabase
+ * (on mount and on schoolId change), syncs Zustand store if plan changed,
  * and returns warning level / days remaining for the expiry banner.
+ *
+ * Runs entirely client-side — no separate serverless function needed.
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { supabase } from '../lib/supabase';
 import { useStore } from '../store/useStore';
 import {
   SubscriptionStatus,
@@ -13,6 +16,7 @@ import {
   getDaysRemaining,
   getExpiryWarningLevel,
   normalizePlanCode,
+  checkSubscriptionStatus,
 } from '../services/subscriptionService';
 
 export interface SubscriptionLifecycleState {
@@ -29,10 +33,12 @@ export interface SubscriptionLifecycleState {
   refresh:            () => void;
 }
 
+const NORMALIZE: Record<string, string> = { standard: 'pro', premium: 'enterprise' };
+
 const REFRESH_INTERVAL_MS = 5 * 60 * 1000; // Re-check every 5 minutes
 
 export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
-  const { session, syncSubscriptionPlan, setSession } = useStore();
+  const { session, syncSubscriptionPlan } = useStore();
   const schoolId = session?.user?.schoolId;
 
   const [state, setState] = useState<Omit<SubscriptionLifecycleState, 'refresh'>>({
@@ -60,53 +66,73 @@ export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
     try {
       setState(prev => ({ ...prev, isLoading: true }));
 
-      const res = await fetch('/api/check-subscription-status', {
-        method:  'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body:    JSON.stringify({ schoolId }),
-      });
+      // Query the subscriptions table directly from the client
+      const { data: sub, error } = await supabase
+        .from('subscriptions')
+        .select('*')
+        .eq('school_id', schoolId)
+        .order('created_at', { ascending: false })
+        .limit(1)
+        .maybeSingle();
 
-      if (!res.ok) {
-        // Non-fatal — keep current state
-        setState(prev => ({ ...prev, isLoading: false }));
+      if (error || !sub) {
+        // No subscription row — freemium trial
+        setState(prev => ({
+          ...prev,
+          plan: 'freemium',
+          subscriptionStatus: 'trial',
+          warningLevel: null,
+          daysRemaining: 0,
+          isLoading: false,
+        }));
         return;
       }
 
-      const data = await res.json();
+      // Compute real-time status using client-side date math
+      const subscriptionStatus = checkSubscriptionStatus(sub);
 
-      const plan               = normalizePlanCode(data.plan);
-      const subscriptionStatus = (data.subscriptionStatus || 'trial') as SubscriptionStatus;
-      const daysRemaining      = data.daysRemaining ?? getDaysRemaining(data.endDate);
-      const warningLevel       = getExpiryWarningLevel(daysRemaining, subscriptionStatus);
+      // Normalize plan code
+      const rawPlan = (sub.plan_code || 'freemium').toLowerCase();
+      const plan = subscriptionStatus === 'expired'
+        ? 'freemium'
+        : (NORMALIZE[rawPlan] || rawPlan);
+
+      const endDate      = (sub.expiry_date    as string | null) || null;
+      const graceEndDate = (sub.grace_end_date as string | null) || null;
+      const startDate    = (sub.start_date     as string | null) || null;
+      const billingCycle = (sub.billing_cycle  as string | null) || null;
+      const amountPaid   = (sub.amount_paid    as number | null) ?? null;
+
+      const daysRemaining = getDaysRemaining(endDate);
+      const warningLevel  = getExpiryWarningLevel(daysRemaining, subscriptionStatus);
 
       setState({
         plan,
         subscriptionStatus,
         warningLevel,
         daysRemaining,
-        endDate:      data.endDate      || null,
-        graceEndDate: data.graceEndDate || null,
-        startDate:    data.startDate    || null,
-        billingCycle: data.billingCycle || null,
-        amountPaid:   data.amount       ?? null,
-        isLoading:    false,
+        endDate,
+        graceEndDate,
+        startDate,
+        billingCycle,
+        amountPaid,
+        isLoading: false,
       });
 
-      // Sync Zustand store and localStorage if plan changed on server
+      // Sync Zustand store if plan has changed
       if (plan !== lastCheckedPlan.current) {
         lastCheckedPlan.current = plan;
-
         const currentStorePlan = normalizePlanCode(useStore.getState().session?.schoolSubscriptionPlan);
         if (plan !== currentStorePlan) {
           await syncSubscriptionPlan();
         }
       }
     } catch (e) {
-      // Network error — fallback to Zustand store value
+      // Network/unexpected error — fallback to Zustand store value
       const fallbackPlan = normalizePlanCode(useStore.getState().session?.schoolSubscriptionPlan);
       setState(prev => ({
         ...prev,
-        plan:     fallbackPlan,
+        plan:      fallbackPlan,
         isLoading: false,
       }));
     }
