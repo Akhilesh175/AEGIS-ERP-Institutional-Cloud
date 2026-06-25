@@ -107,16 +107,41 @@ UPDATE public.schools SET subscription_plan = 'ENTERPRISE'  WHERE subscription_p
 
 -- ─── 7. Ensure subscription_plans table has correct rows ─────────────
 -- (Upsert canonical plan pricing records)
-INSERT INTO public.subscription_plans (code, name, price_monthly, price_yearly)
+INSERT INTO public.subscription_plans (code, name, price_monthly, price_yearly, features)
 VALUES
-  ('freemium',   'Freemium',   0,    0),
-  ('basic',      'Basic',      999,  9999),
-  ('pro',        'Pro',        2499, 24999),
-  ('enterprise', 'Enterprise', 4999, 49999)
+  (
+    'freemium', 
+    'Freemium', 
+    0, 
+    0, 
+    ARRAY['Student Management', 'Teacher Management', 'Parent Management', 'Basic Attendance', 'Basic Reports', 'Limited Notifications', 'Up to 100 Students']
+  ),
+  (
+    'basic', 
+    'Basic', 
+    999, 
+    9999, 
+    ARRAY['Everything in Freemium', 'Fee Management', 'Timetable Management', 'Homework Management', 'Exam Management', 'Document Center', 'Bulk Notifications', 'Up to 500 Students']
+  ),
+  (
+    'pro', 
+    'Pro', 
+    2499, 
+    24999, 
+    ARRAY['Everything in Basic', 'PTM Meetings', 'Advanced Reports & Analytics', 'Transport Management', 'Communication Hub', 'Multi-Admin Support', 'Custom Report Builder', 'Up to 1,000 Students']
+  ),
+  (
+    'enterprise', 
+    'Enterprise', 
+    4999, 
+    49999, 
+    ARRAY['Everything in Pro', 'Sports & Activities Management', 'Coach Portal', 'Warden Portal', 'Hostel Management', 'Advanced Finance & Accounting', 'Audit Logs', 'Custom Roles', 'Unlimited Students']
+  )
 ON CONFLICT (code) DO UPDATE
   SET price_monthly = EXCLUDED.price_monthly,
       price_yearly  = EXCLUDED.price_yearly,
-      name          = EXCLUDED.name;
+      name          = EXCLUDED.name,
+      features      = EXCLUDED.features;
 
 -- ─── 8. Useful view: current active subscription per school ──────────
 CREATE OR REPLACE VIEW public.active_school_subscriptions AS
