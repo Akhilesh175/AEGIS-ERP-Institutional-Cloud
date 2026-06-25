@@ -141,7 +141,7 @@ export default async function handler(req: any, res: any) {
       currentAlertLevel = '3_DAYS';
     }
 
-    // ── 3. Check for duplicates: has this alert level already been sent today? 
+    // ── 3. Check for duplicates: has this alert level already been sent today?
     const alreadyNotified =
       sub.last_notification_date === today &&
       sub.notification_sent === currentAlertLevel;
@@ -158,7 +158,7 @@ export default async function handler(req: any, res: any) {
           .eq('role', 'ADMIN');
 
         if (admins && admins.length > 0) {
-          const notificationRows = admins.map(admin => ({
+          const notificationRows = admins.map((admin: { id: string }) => ({
             school_id: schoolId,
             user_id: admin.id,
             recipient_id: admin.id,
@@ -186,40 +186,52 @@ export default async function handler(req: any, res: any) {
         }
 
         // Log notification event in subscription_notifications table
-        await supabaseAdmin.from('subscription_notifications').insert({
-          school_id: schoolId,
-          notification_type: 'IN_APP',
-          reminder_level: currentAlertLevel,
-          status: 'SENT',
-          payload: { daysRemaining, today, notifiedAt: now }
-        }).catch(err => console.error('[expire-subscriptions] notification logging failed:', err));
+        try {
+          await supabaseAdmin.from('subscription_notifications').insert({
+            school_id: schoolId,
+            notification_type: 'IN_APP',
+            reminder_level: currentAlertLevel,
+            status: 'SENT',
+            payload: { daysRemaining, today, notifiedAt: now }
+          });
+        } catch (err) {
+          console.error('[expire-subscriptions] notification logging failed:', err);
+        }
 
         // Record warning / alert event in subscription_audit_logs
-        await supabaseAdmin.from('subscription_audit_logs').insert({
-          school_id:     schoolId,
-          action:        cfg.auditAction === 'Subscription expired' ? 'EXPIRED' : 'EXPIRE_WARNING',
-          plan:          sub.plan_code || 'unknown',
-          billing_cycle: sub.billing_cycle,
-          metadata: {
-            alert_level:     currentAlertLevel,
-            days_remaining:  daysRemaining,
-            notified_at:     now,
-            message:         cfg.message,
-          },
-        }).catch(err => console.error('[expire-subscriptions] subscription audit write failed:', err));
+        try {
+          await supabaseAdmin.from('subscription_audit_logs').insert({
+            school_id:     schoolId,
+            action:        cfg.auditAction === 'Subscription expired' ? 'EXPIRED' : 'EXPIRE_WARNING',
+            plan:          sub.plan_code || 'unknown',
+            billing_cycle: sub.billing_cycle,
+            metadata: {
+              alert_level:     currentAlertLevel,
+              days_remaining:  daysRemaining,
+              notified_at:     now,
+              message:         cfg.message,
+            },
+          });
+        } catch (err) {
+          console.error('[expire-subscriptions] subscription audit write failed:', err);
+        }
 
         // Record in platform audit_logs
-        await supabaseAdmin.from('audit_logs').insert({
-          school_id:   schoolId,
-          action_type: cfg.auditAction === 'Subscription expired' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_EXPIRY_WARNING',
-          module_name: 'BILLING',
-          new_data: {
-            alert_level:    currentAlertLevel,
-            days_remaining: daysRemaining,
-            logged_at:      now,
-            message:        cfg.message
-          },
-        }).catch(err => console.error('[expire-subscriptions] platform audit write failed:', err));
+        try {
+          await supabaseAdmin.from('audit_logs').insert({
+            school_id:   schoolId,
+            action_type: cfg.auditAction === 'Subscription expired' ? 'SUBSCRIPTION_EXPIRED' : 'SUBSCRIPTION_EXPIRY_WARNING',
+            module_name: 'BILLING',
+            new_data: {
+              alert_level:    currentAlertLevel,
+              days_remaining: daysRemaining,
+              logged_at:      now,
+              message:        cfg.message
+            },
+          });
+        } catch (err) {
+          console.error('[expire-subscriptions] platform audit write failed:', err);
+        }
 
         // Update tracking flags on the subscription row to ensure idempotency
         await supabaseAdmin
@@ -273,28 +285,36 @@ export default async function handler(req: any, res: any) {
           .eq('status', 'ACTIVE');
 
         // Audit Log: School moved to Freemium
-        await supabaseAdmin.from('subscription_audit_logs').insert({
-          school_id:     schoolId,
-          action:        'DOWNGRADED',
-          plan:          'freemium',
-          billing_cycle: sub.billing_cycle,
-          metadata: {
-            reason:          'automated_fallback_after_expiry',
-            previous_plan:   sub.plan_code,
-            downgraded_at:   now
-          },
-        }).catch(err => console.error('[expire-subscriptions] downgrade audit failed:', err));
+        try {
+          await supabaseAdmin.from('subscription_audit_logs').insert({
+            school_id:     schoolId,
+            action:        'DOWNGRADED',
+            plan:          'freemium',
+            billing_cycle: sub.billing_cycle,
+            metadata: {
+              reason:          'automated_fallback_after_expiry',
+              previous_plan:   sub.plan_code,
+              downgraded_at:   now
+            },
+          });
+        } catch (err) {
+          console.error('[expire-subscriptions] downgrade audit failed:', err);
+        }
 
-        await supabaseAdmin.from('audit_logs').insert({
-          school_id:   schoolId,
-          action_type: 'SCHOOL_MOVED_TO_FREEMIUM',
-          module_name: 'BILLING',
-          new_data: {
-            previous_plan: sub.plan_code,
-            new_plan:      'freemium',
-            expired_at:    now
-          },
-        }).catch(err => console.error('[expire-subscriptions] platform downgrade audit failed:', err));
+        try {
+          await supabaseAdmin.from('audit_logs').insert({
+            school_id:   schoolId,
+            action_type: 'SCHOOL_MOVED_TO_FREEMIUM',
+            module_name: 'BILLING',
+            new_data: {
+              previous_plan: sub.plan_code,
+              new_plan:      'freemium',
+              expired_at:    now
+            },
+          });
+        } catch (err) {
+          console.error('[expire-subscriptions] platform downgrade audit failed:', err);
+        }
 
         console.log(`[expire-subscriptions] School ${schoolId} subscription expired. Plan fell back to freemium.`);
       }
