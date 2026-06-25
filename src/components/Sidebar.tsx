@@ -7,7 +7,8 @@ import {
   LayoutDashboard, Calendar, BookOpen, PenTool, Award, MessageSquare,
   Users, UsersRound, Layers, BookMarked, DollarSign, Activity, Settings, ShieldAlert,
   Key, Eye, EyeOff, Database, Terminal, HardDrive, CheckCircle2, Clock, AlertTriangle,
-  Mail, X, CreditCard, HelpCircle, Bell, ClipboardList, FileText, Home, Trophy
+  Mail, X, CreditCard, HelpCircle, Bell, ClipboardList, FileText, Home, Trophy,
+  ChevronDown, ChevronUp, Tag, Coins, Percent, TrendingUp, Sparkles
 } from 'lucide-react';
 import { BrandLogo } from './common/BrandLogo';
 
@@ -29,6 +30,29 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
     transport: false,
     hostel: false
   });
+
+  const [isSubscriptionMenuOpen, setSubscriptionMenuOpen] = React.useState(false);
+
+  // Lock body scroll when mobile drawer is open
+  React.useEffect(() => {
+    if (isMobileMenuOpen) {
+      document.body.style.overflow = 'hidden';
+      document.body.style.touchAction = 'none';
+    } else {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    }
+    return () => {
+      document.body.style.overflow = '';
+      document.body.style.touchAction = '';
+    };
+  }, [isMobileMenuOpen]);
+
+  React.useEffect(() => {
+    if (activeTab.startsWith('sub-')) {
+      setSubscriptionMenuOpen(true);
+    }
+  }, [activeTab]);
 
   React.useEffect(() => {
     if (!session || !session.user.schoolId) return;
@@ -321,88 +345,294 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
 
   const tabs = getTabs();
 
-  const sidebarContent = (
-    <>
-      <div className="space-y-6">
-        {/* Portal Title label */}
-        <div className="px-3 py-2 bg-slate-900/40 rounded-xl border border-slate-850">
-          <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">Console Context</p>
-          <p className="text-xs font-semibold text-slate-200 mt-1 truncate">
-            {role === 'STUDENT' && 'Student Portal'}
-            {role === 'PARENT' && 'Parent Guardian Portal'}
-            {role === 'TEACHER' && 'Teacher Portal'}
-            {role === 'COACH' && 'Coach Portal'}
-            {role === 'ADMIN' && 'Head Administrative Portal'}
-            {role === 'SUPER_ADMIN' && 'Super Admin Engine'}
-            {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN'].includes(role) && 'Sub-Admin Portal'}
-          </p>
-        </div>
-
-        {/* Dynamic Navigation Tabs */}
-        <nav className="space-y-1">
-          {tabs.map(tab => {
-            const Icon = tab.icon;
-            const isActive = activeTab === tab.id;
-            const isLocked = tab.locked;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => {
-                  setActiveTab(tab.id);
-                  setMobileMenuOpen(false); // Auto close mobile menu on tab selection
-                }}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
-                  isActive 
-                    ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold' 
-                    : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
-                }`}
-              >
-                <Icon size={18} className={isActive ? 'text-brand-500' : 'text-slate-400'} />
-                <span className="flex-1 text-left">{tab.label}</span>
-                {isLocked && (
-                  <span className="w-5 h-5 flex flex-shrink-0 items-center justify-center bg-amber-500/10 rounded-full border border-amber-500/30">
-                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </nav>
-      </div>
-
-      {/* Footer Info */}
-      <div className="p-3 bg-slate-950/40 border border-slate-850/60 rounded-xl text-center">
-        <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Version Control</p>
-        <p className="text-[10px] font-mono text-slate-400 mt-0.5">AEGIS-CORE v1.4.2</p>
-      </div>
-    </>
+  // ── Portal Context Badge (fixed header inside sidebar) ──
+  const sidebarHeader = (
+    <div className="px-3 py-2 bg-slate-900/40 rounded-xl border border-slate-850 shrink-0">
+      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest leading-none">Console Context</p>
+      <p className="text-xs font-semibold text-slate-200 mt-1 truncate">
+        {role === 'STUDENT' && 'Student Portal'}
+        {role === 'PARENT' && 'Parent Guardian Portal'}
+        {role === 'TEACHER' && 'Teacher Portal'}
+        {role === 'COACH' && 'Coach Portal'}
+        {role === 'ADMIN' && 'Head Administrative Portal'}
+        {role === 'SUPER_ADMIN' && 'Super Admin Engine'}
+        {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN'].includes(role) && 'Sub-Admin Portal'}
+      </p>
+    </div>
   );
+
+  // ── Navigation items (independently scrollable) ──
+  const sidebarNav = (
+    <nav className="space-y-1">
+      {role === 'SUPER_ADMIN' ? (
+        <>
+          {/* SaaS Telemetry */}
+          <button
+            onClick={() => { setActiveTab('dashboard'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+              activeTab === 'dashboard'
+                ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold'
+                : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+            }`}
+          >
+            <Activity size={18} className={activeTab === 'dashboard' ? 'text-brand-500' : 'text-slate-400'} />
+            <span className="flex-1 text-left">SaaS Telemetry</span>
+          </button>
+
+          {/* School Registry */}
+          <button
+            onClick={() => { setActiveTab('tenants'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+              activeTab === 'tenants'
+                ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold'
+                : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+            }`}
+          >
+            <Layers size={18} className={activeTab === 'tenants' ? 'text-brand-500' : 'text-slate-400'} />
+            <span className="flex-1 text-left">School Registry</span>
+          </button>
+
+          {/* Global User Manager */}
+          <button
+            onClick={() => { setActiveTab('users'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+              activeTab === 'users'
+                ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold'
+                : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+            }`}
+          >
+            <UsersRound size={18} className={activeTab === 'users' ? 'text-brand-500' : 'text-slate-400'} />
+            <span className="flex-1 text-left">Global User Manager</span>
+          </button>
+
+          {/* Collapsible Subscription Management */}
+          <div className="space-y-1">
+            <button
+              onClick={() => setSubscriptionMenuOpen(!isSubscriptionMenuOpen)}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+                activeTab.startsWith('sub-')
+                  ? 'bg-brand-600/5 text-brand-400 border border-brand-500/15 font-semibold'
+                  : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+              }`}
+            >
+              <CreditCard size={18} className={activeTab.startsWith('sub-') ? 'text-brand-500' : 'text-slate-400'} />
+              <span className="flex-1 text-left">Subscription Management</span>
+              {isSubscriptionMenuOpen ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+            </button>
+
+            {isSubscriptionMenuOpen && (
+              <div className="pl-4 space-y-1 border-l border-slate-800 ml-5 py-1">
+                {[
+                  { id: 'sub-dashboard', label: 'Dashboard', icon: LayoutDashboard },
+                  { id: 'sub-plans', label: 'Plan Management', icon: Sparkles },
+                  { id: 'sub-pricing', label: 'School Pricing', icon: Coins },
+                  { id: 'sub-coupons', label: 'Coupons', icon: Tag },
+                  { id: 'sub-purchases', label: 'Purchase History', icon: Clock },
+                  { id: 'sub-timeline', label: 'Subscription Timeline', icon: TrendingUp },
+                  { id: 'sub-invoices', label: 'Invoices', icon: FileText },
+                  { id: 'sub-audits', label: 'Audit Logs', icon: ClipboardList },
+                  { id: 'sub-reports', label: 'Reports', icon: FileText },
+                ].map(subTab => {
+                  const SubIcon = subTab.icon;
+                  const isSubActive = activeTab === subTab.id;
+                  return (
+                    <button
+                      key={subTab.id}
+                      onClick={() => { setActiveTab(subTab.id); setMobileMenuOpen(false); }}
+                      className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-[12px] font-medium transition-all duration-150 active:scale-[0.98] ${
+                        isSubActive
+                          ? 'bg-brand-600/10 text-brand-400 font-semibold'
+                          : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/30'
+                      }`}
+                    >
+                      <SubIcon size={14} className={isSubActive ? 'text-brand-500' : 'text-slate-500'} />
+                      <span>{subTab.label}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* SaaS Billing Gateway */}
+          <button
+            onClick={() => { setActiveTab('saas-billing'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+              activeTab === 'saas-billing'
+                ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold'
+                : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+            }`}
+          >
+            <CreditCard size={18} className={activeTab === 'saas-billing' ? 'text-brand-500' : 'text-slate-400'} />
+            <span className="flex-1 text-left">SaaS Billing Gateway</span>
+          </button>
+
+          {/* Platform Broadcasts */}
+          <button
+            onClick={() => { setActiveTab('communications'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+              activeTab === 'communications'
+                ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold'
+                : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+            }`}
+          >
+            <Mail size={18} className={activeTab === 'communications' ? 'text-brand-500' : 'text-slate-400'} />
+            <span className="flex-1 text-left">Platform Broadcasts</span>
+          </button>
+
+          {/* Global Audit Logs */}
+          <button
+            onClick={() => { setActiveTab('audits'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+              activeTab === 'audits'
+                ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold'
+                : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+            }`}
+          >
+            <Settings size={18} className={activeTab === 'audits' ? 'text-brand-500' : 'text-slate-400'} />
+            <span className="flex-1 text-left">Global Audit Logs</span>
+          </button>
+
+          {/* Disaster Recovery Panel */}
+          <button
+            onClick={() => { setActiveTab('backups'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+              activeTab === 'backups'
+                ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold'
+                : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+            }`}
+          >
+            <Database size={18} className={activeTab === 'backups' ? 'text-brand-500' : 'text-slate-400'} />
+            <span className="flex-1 text-left">Disaster Recovery Panel</span>
+          </button>
+
+          {/* Centralized Logging Console */}
+          <button
+            onClick={() => { setActiveTab('logging'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+              activeTab === 'logging'
+                ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold'
+                : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+            }`}
+          >
+            <Terminal size={18} className={activeTab === 'logging' ? 'text-brand-500' : 'text-slate-400'} />
+            <span className="flex-1 text-left">Centralized Logging Console</span>
+          </button>
+
+          {/* Help & Support */}
+          <button
+            onClick={() => { setActiveTab('support'); setMobileMenuOpen(false); }}
+            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+              activeTab === 'support'
+                ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold'
+                : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+            }`}
+          >
+            <HelpCircle size={18} className={activeTab === 'support' ? 'text-brand-500' : 'text-slate-400'} />
+            <span className="flex-1 text-left">Help & Support</span>
+          </button>
+        </>
+      ) : (
+        tabs.map(tab => {
+          const Icon = tab.icon;
+          const isActive = activeTab === tab.id;
+          const isLocked = tab.locked;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => {
+                setActiveTab(tab.id);
+                setMobileMenuOpen(false); // Auto close mobile menu on tab selection
+              }}
+              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium transition-all duration-200 active:scale-[0.98] ${
+                isActive 
+                  ? 'bg-brand-600/10 border border-brand-500/25 text-brand-400 font-semibold' 
+                  : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/45'
+              }`}
+            >
+              <Icon size={18} className={isActive ? 'text-brand-500' : 'text-slate-400'} />
+              <span className="flex-1 text-left">{tab.label}</span>
+              {isLocked && (
+                <span className="w-5 h-5 flex flex-shrink-0 items-center justify-center bg-amber-500/10 rounded-full border border-amber-500/30">
+                  <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-amber-500"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+                </span>
+              )}
+            </button>
+          );
+        })
+      )}
+    </nav>
+  );
+
+  // ── Footer version badge (fixed at bottom) ──
+  const sidebarFooter = (
+    <div className="p-3 bg-slate-950/40 border border-slate-850/60 rounded-xl text-center shrink-0">
+      <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase">Version Control</p>
+      <p className="text-[10px] font-mono text-slate-400 mt-0.5">AEGIS-CORE v1.4.2</p>
+    </div>
+  );
+
 
   return (
     <>
-      {/* Desktop Sidebar */}
-      <aside className="w-64 h-[calc(100vh-62px)] glass dark:glass-dark border-r border-slate-800 bg-[#070a13]/60 hidden md:flex flex-col justify-between p-4 z-30">
-        {sidebarContent}
+      {/* ── Desktop Sidebar ── Fixed position, independently scrollable nav */}
+      <aside className="w-64 shrink-0 hidden md:flex flex-col h-full glass dark:glass-dark border-r border-slate-800 bg-[#070a13]/60 z-30">
+        {/* Fixed header: portal context badge */}
+        <div className="px-4 pt-4 pb-3 shrink-0">
+          {sidebarHeader}
+        </div>
+
+        {/* Scrollable navigation — only this zone scrolls */}
+        <div
+          className="flex-1 min-h-0 overflow-y-auto px-4 py-1"
+          style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin', scrollbarColor: '#1e293b transparent' }}
+        >
+          {sidebarNav}
+        </div>
+
+        {/* Fixed footer: version badge */}
+        <div className="px-4 pb-4 pt-3 shrink-0">
+          {sidebarFooter}
+        </div>
       </aside>
 
-      {/* Mobile Sidebar Overlay Drawer */}
+      {/* ── Mobile Sidebar Overlay Drawer ── */}
       {isMobileMenuOpen && (
         <div className="fixed inset-0 z-50 flex md:hidden bg-black/60 backdrop-blur-sm animate-fade-in">
-          {/* Click background to close */}
+          {/* Tap backdrop to close */}
           <div className="flex-1" onClick={() => setMobileMenuOpen(false)} />
-        <div className="w-64 h-full bg-[#070a13] border-r border-slate-800 flex flex-col justify-between p-4 z-50 animate-slide-right relative">
+
+          {/* Drawer panel — independently scrollable nav */}
+          <div className="w-72 max-w-[85vw] h-full bg-[#070a13] border-l border-slate-800 flex flex-col z-50 animate-slide-right relative">
+            {/* Close button */}
             <button 
               onClick={() => setMobileMenuOpen(false)}
-              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 rounded-full transition-all"
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 rounded-full transition-all z-10"
               title="Close Menu"
             >
               <X size={18} />
             </button>
-            {/* AEGIS ERP Logo in mobile sidebar */}
-            <div className="mb-4 pt-1">
-              <BrandLogo variant="horizontal" size="xs" showTagline={true} />
+
+            {/* Fixed mobile header: logo + context badge */}
+            <div className="px-4 pt-4 pb-3 shrink-0">
+              <div className="mb-3 pt-1">
+                <BrandLogo variant="horizontal" size="xs" showTagline={true} />
+              </div>
+              {sidebarHeader}
             </div>
-            {sidebarContent}
+
+            {/* Scrollable navigation — only this zone scrolls on mobile/tablet */}
+            <div
+              className="flex-1 min-h-0 overflow-y-auto px-4 py-1"
+              style={{ WebkitOverflowScrolling: 'touch', scrollbarWidth: 'thin', scrollbarColor: '#1e293b transparent' }}
+            >
+              {sidebarNav}
+            </div>
+
+            {/* Fixed mobile footer */}
+            <div className="px-4 pb-4 pt-3 shrink-0">
+              {sidebarFooter}
+            </div>
           </div>
         </div>
       )}

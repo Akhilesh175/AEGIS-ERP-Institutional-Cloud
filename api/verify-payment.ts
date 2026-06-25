@@ -223,6 +223,38 @@ export default async function handler(req: any, res: any) {
       console.error('school_subscriptions sync warning (non-fatal):', e);
     }
 
+    // Load metadata from payment transactions
+    const { data: paymentTx } = await supabaseAdmin
+      .from('payment_transactions')
+      .select('raw_response')
+      .eq('payment_id', paymentId)
+      .maybeSingle();
+
+    const metadata = paymentTx?.raw_response?.aegis_metadata || {};
+    const couponCode = metadata.couponCode || null;
+    const discountAmount = Number(metadata.discountAmount || 0);
+    const originalAmount = Number(metadata.originalAmount || payment.amount);
+
+    // If coupon is used, increment its use count
+    if (couponCode) {
+      try {
+        const { data: couponData } = await supabaseAdmin
+          .from('subscription_coupons')
+          .select('id, current_uses')
+          .eq('code', couponCode.toUpperCase().trim())
+          .maybeSingle();
+        
+        if (couponData) {
+          await supabaseAdmin
+            .from('subscription_coupons')
+            .update({ current_uses: (couponData.current_uses || 0) + 1 })
+            .eq('id', couponData.id);
+        }
+      } catch (couponErr) {
+        console.warn('Coupon count increment failed (non-fatal):', couponErr);
+      }
+    }
+
     // ── 8. Generate Invoice ──────────────────────────────────────────
     const invoiceNum = 'INV-' + Date.now().toString().slice(-6) + Math.floor(10 + Math.random() * 90);
     await supabaseAdmin
@@ -231,12 +263,22 @@ export default async function handler(req: any, res: any) {
         school_id:       schoolId,
         payment_id:      paymentId,
         invoice_number:  invoiceNum,
-        amount:          payment.amount,
+        amount:          originalAmount,
         tax_amount:      Math.round(payment.amount * 0.18),
         total_amount:    Math.round(payment.amount * 1.18),
         status:          'PAID',
         billing_email:   payment.subscriptions?.email || 'admin@institution.edu',
         billing_address: 'AEGIS ERP Institutional Cloud',
+        plan_code:       planCode,
+        billing_cycle:   cycle,
+        discount_amount: discountAmount,
+        gst_amount:      Math.round(payment.amount * 0.18),
+        final_paid:      payment.amount,
+        metadata: {
+          couponCode,
+          originalAmount,
+          priceOverrideApplied: metadata.priceOverrideApplied || false
+        }
       });
 
     // ── 9. Subscription audit log ────────────────────────────────────
@@ -251,7 +293,14 @@ export default async function handler(req: any, res: any) {
       startDate:     startDateStr,
       endDate:       endDateStr,
       graceEndDate:  graceEndDateStr,
-      metadata:      { invoiceNum, isMock: !!isMock, ipAddress },
+      metadata:      { 
+        invoiceNum, 
+        isMock: !!isMock, 
+        ipAddress,
+        couponCode,
+        discountAmount,
+        originalAmount
+      },
     });
 
     // ── 10. General audit log ────────────────────────────────────────

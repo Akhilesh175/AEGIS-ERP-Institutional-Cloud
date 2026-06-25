@@ -24,6 +24,23 @@ export interface PlanDefinition {
   tier: number; // 0=freemium, 1=basic, 2=pro, 3=enterprise
   popular?: boolean;
   bestValue?: boolean;
+  displayOrder: number;
+  colorTheme: string;
+  isRecommended: boolean;
+  isActive: boolean;
+  maxStudents: number;
+  maxTeachers: number;
+  maxParents: number;
+  maxStorageGb: number;
+  notificationLimits: number;
+  hasPtmAccess: boolean;
+  hasTransportAccess: boolean;
+  hasLibraryAccess: boolean;
+  hasFinanceAccess: boolean;
+  hasHostelAccess: boolean;
+  hasAnalyticsAccess: boolean;
+  hasCoachPortal: boolean;
+  hasWardenPortal: boolean;
 }
 
 export const PLAN_DEFINITIONS: PlanDefinition[] = [
@@ -35,6 +52,23 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     savingsYearly: 0,
     description: 'For schools getting started',
     tier: 0,
+    displayOrder: 0,
+    colorTheme: 'slate',
+    isRecommended: false,
+    isActive: true,
+    maxStudents: 100,
+    maxTeachers: 10,
+    maxParents: 200,
+    maxStorageGb: 5,
+    notificationLimits: 1000,
+    hasPtmAccess: false,
+    hasTransportAccess: false,
+    hasLibraryAccess: false,
+    hasFinanceAccess: false,
+    hasHostelAccess: false,
+    hasAnalyticsAccess: false,
+    hasCoachPortal: false,
+    hasWardenPortal: false,
     features: [
       'Student Management',
       'Teacher Management',
@@ -53,6 +87,23 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     savingsYearly: 999 * 12 - 9999, // ₹1,989
     description: 'For small & growing schools',
     tier: 1,
+    displayOrder: 1,
+    colorTheme: 'brand',
+    isRecommended: false,
+    isActive: true,
+    maxStudents: 500,
+    maxTeachers: 50,
+    maxParents: 1000,
+    maxStorageGb: 20,
+    notificationLimits: 5000,
+    hasPtmAccess: false,
+    hasTransportAccess: false,
+    hasLibraryAccess: false,
+    hasFinanceAccess: true,
+    hasHostelAccess: false,
+    hasAnalyticsAccess: false,
+    hasCoachPortal: false,
+    hasWardenPortal: false,
     features: [
       'Everything in Freemium +',
       'Fee Management',
@@ -73,6 +124,23 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     description: 'For advanced schools',
     tier: 2,
     popular: true,
+    displayOrder: 2,
+    colorTheme: 'indigo',
+    isRecommended: true,
+    isActive: true,
+    maxStudents: 1000,
+    maxTeachers: 100,
+    maxParents: 2000,
+    maxStorageGb: 50,
+    notificationLimits: 10000,
+    hasPtmAccess: true,
+    hasTransportAccess: true,
+    hasLibraryAccess: true,
+    hasFinanceAccess: true,
+    hasHostelAccess: true,
+    hasAnalyticsAccess: true,
+    hasCoachPortal: false,
+    hasWardenPortal: false,
     features: [
       'Everything in Basic +',
       'PTM (Parent Teacher Meeting)',
@@ -94,6 +162,23 @@ export const PLAN_DEFINITIONS: PlanDefinition[] = [
     description: 'For large & multi-campus institutions',
     tier: 3,
     bestValue: true,
+    displayOrder: 3,
+    colorTheme: 'purple',
+    isRecommended: false,
+    isActive: true,
+    maxStudents: 9999999,
+    maxTeachers: 999999,
+    maxParents: 9999999,
+    maxStorageGb: 500,
+    notificationLimits: 9999999,
+    hasPtmAccess: true,
+    hasTransportAccess: true,
+    hasLibraryAccess: true,
+    hasFinanceAccess: true,
+    hasHostelAccess: true,
+    hasAnalyticsAccess: true,
+    hasCoachPortal: true,
+    hasWardenPortal: true,
     features: [
       'Everything in Pro +',
       'Sports & Activities Management',
@@ -345,4 +430,87 @@ export function formatDate(dateStr: string | null | undefined): string {
 export function formatCycle(cycle: string | null | undefined): string {
   if (!cycle) return '—';
   return cycle === 'YEARLY' ? 'Yearly' : 'Monthly';
+}
+
+export interface GSTBreakdown {
+  subtotal: number;
+  gstAmount: number;
+  total: number;
+}
+
+export function calculateGST(amount: number): GSTBreakdown {
+  const subtotal = Number(amount);
+  const gstAmount = Math.round(subtotal * 0.18);
+  const total = subtotal + gstAmount;
+  return { subtotal, gstAmount, total };
+}
+
+export interface CouponVerifyResult {
+  valid: boolean;
+  message?: string;
+  discountAmount: number;
+  finalPrice: number;
+}
+
+export function verifyAndApplyCoupon(
+  coupon: {
+    code: string;
+    discount_percent?: number | null;
+    discount_amount?: number | null;
+    applicable_plans?: string[] | null;
+    applicable_schools?: string[] | null;
+    expiry_date?: string | null;
+    max_uses?: number | null;
+    current_uses?: number | null;
+    is_active?: boolean;
+  } | null,
+  planCode: string,
+  schoolId: string,
+  originalPrice: number
+): CouponVerifyResult {
+  if (!coupon || coupon.is_active === false) {
+    return { valid: false, message: 'Invalid or inactive coupon', discountAmount: 0, finalPrice: originalPrice };
+  }
+
+  const todayStr = new Date().toISOString().split('T')[0];
+  if (coupon.expiry_date && todayStr > coupon.expiry_date) {
+    return { valid: false, message: 'Coupon has expired', discountAmount: 0, finalPrice: originalPrice };
+  }
+
+  if (coupon.max_uses !== undefined && coupon.max_uses !== null && coupon.current_uses !== undefined && coupon.current_uses !== null) {
+    if (coupon.current_uses >= coupon.max_uses) {
+      return { valid: false, message: 'Coupon usage limit reached', discountAmount: 0, finalPrice: originalPrice };
+    }
+  }
+
+  if (coupon.applicable_plans && coupon.applicable_plans.length > 0) {
+    const isPlanApplicable = coupon.applicable_plans.some(p => p.toLowerCase() === planCode.toLowerCase());
+    if (!isPlanApplicable) {
+      return { valid: false, message: 'Coupon is not applicable to this plan', discountAmount: 0, finalPrice: originalPrice };
+    }
+  }
+
+  if (coupon.applicable_schools && coupon.applicable_schools.length > 0) {
+    const isSchoolApplicable = coupon.applicable_schools.some(s => s === schoolId);
+    if (!isSchoolApplicable) {
+      return { valid: false, message: 'Coupon is not applicable to this school', discountAmount: 0, finalPrice: originalPrice };
+    }
+  }
+
+  let discountAmount = 0;
+  if (coupon.discount_percent !== undefined && coupon.discount_percent !== null) {
+    discountAmount = Math.round((originalPrice * Number(coupon.discount_percent)) / 100);
+  } else if (coupon.discount_amount !== undefined && coupon.discount_amount !== null) {
+    discountAmount = Number(coupon.discount_amount);
+  }
+
+  // Cap discount at original price
+  discountAmount = Math.min(discountAmount, originalPrice);
+  const finalPrice = Math.max(0, originalPrice - discountAmount);
+
+  return {
+    valid: true,
+    discountAmount,
+    finalPrice
+  };
 }

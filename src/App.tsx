@@ -41,7 +41,13 @@ const getTabsForRole = (role: string, planName: string): string[] => {
     case 'DRIVER':
       return ['dashboard', 'timetable', 'ptm', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'sports', 'analytics', 'paymentsettings', 'support', 'groupdiscussion'];
     case 'SUPER_ADMIN':
-      return ['dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'sports', 'ptm', 'support'];
+      return [
+        'dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'sports', 'ptm', 'support',
+        'saas-billing',
+        // Subscription Management sub-tabs
+        'sub-dashboard', 'sub-plans', 'sub-pricing', 'sub-coupons',
+        'sub-purchases', 'sub-timeline', 'sub-invoices', 'sub-audits', 'sub-reports'
+      ];
     case 'ADMIN':
       return [
         'dashboard', 'impersonation', 'dangerzone', 'subscriptions',
@@ -1370,7 +1376,7 @@ export const App: React.FC = () => {
   console.log(`[App Routing] Active tab/route: ${activeTab}, Role: ${session?.user?.role}`);
 
   return (
-    <div className="min-h-screen bg-[#070a13] flex flex-col transition-colors duration-300">
+    <div className="h-screen bg-[#070a13] flex flex-col overflow-hidden transition-colors duration-300">
       {/* Navbar Header */}
       <Navbar />
 
@@ -1403,13 +1409,13 @@ export const App: React.FC = () => {
       })()}
 
       {/* Main Workspace Frame */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden min-h-0">
         
         {/* Sidebar Navigation */}
         <Sidebar activeTab={activeTab} setActiveTab={updateActiveTab} />
 
-        {/* Dashboard Content */}
-        <main className="flex-1 overflow-y-auto px-6 py-6 md:px-8">
+        {/* Dashboard Content — independently scrollable */}
+        <main className="flex-1 min-w-0 overflow-y-auto px-6 py-6 md:px-8">
           
           <ErrorBoundary>
             {/* Active Portal Mount */}

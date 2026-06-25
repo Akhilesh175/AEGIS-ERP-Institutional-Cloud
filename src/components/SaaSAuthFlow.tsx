@@ -81,6 +81,145 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
   const [transactionId, setTransactionId] = useState('');
   const [paymentDate, setPaymentDate] = useState('');
 
+  // ── Coupon & School Pricing Override States ──
+  const [schoolOverrides, setSchoolOverrides] = useState<any[]>([]);
+  const [couponCode, setCouponCode] = useState('');
+  const [appliedCoupon, setAppliedCoupon] = useState<any | null>(null);
+  const [couponStatusMessage, setCouponStatusMessage] = useState('');
+  const [couponStatusColor, setCouponStatusColor] = useState<'success' | 'error' | null>(null);
+
+  useEffect(() => {
+    if (!provisionedSchoolId || step !== 'plans') return;
+    const fetchOverrides = async () => {
+      try {
+        const { supabase } = await import('../lib/supabase');
+        const { data } = await supabase
+          .from('subscription_discounts')
+          .select('*')
+          .eq('school_id', provisionedSchoolId)
+          .eq('is_active', true);
+        if (data) {
+          setSchoolOverrides(data);
+        }
+      } catch (err) {
+        console.warn('Failed to load pricing overrides:', err);
+      }
+    };
+    fetchOverrides();
+  }, [provisionedSchoolId, step]);
+
+  const handleApplyCoupon = async () => {
+    if (!couponCode.trim()) {
+      setCouponStatusMessage('Please enter a coupon code.');
+      setCouponStatusColor('error');
+      setAppliedCoupon(null);
+      return;
+    }
+    try {
+      const { supabase } = await import('../lib/supabase');
+      const { data, error } = await supabase
+        .from('subscription_coupons')
+        .select('*')
+        .eq('code', couponCode.toUpperCase().trim())
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (error || !data) {
+        setCouponStatusMessage('Coupon code invalid or inactive.');
+        setCouponStatusColor('error');
+        setAppliedCoupon(null);
+        return;
+      }
+
+      // Check coupon expiry
+      const todayStr = new Date().toISOString().split('T')[0];
+      if (data.expiry_date && todayStr > data.expiry_date) {
+        setCouponStatusMessage('This coupon code has expired.');
+        setCouponStatusColor('error');
+        setAppliedCoupon(null);
+        return;
+      }
+
+      // Check max uses
+      if (data.max_uses !== null && data.current_uses !== null && data.current_uses >= data.max_uses) {
+        setCouponStatusMessage('This coupon has reached its maximum usage.');
+        setCouponStatusColor('error');
+        setAppliedCoupon(null);
+        return;
+      }
+
+      // Check applicable schools
+      if (data.applicable_schools && data.applicable_schools.length > 0 && provisionedSchoolId) {
+        const schoolEligible = data.applicable_schools.includes(provisionedSchoolId);
+        if (!schoolEligible) {
+          setCouponStatusMessage('This coupon is not valid for your school.');
+          setCouponStatusColor('error');
+          setAppliedCoupon(null);
+          return;
+        }
+      }
+
+      setAppliedCoupon(data);
+      setCouponStatusMessage(`Coupon '${data.code}' applied successfully!`);
+      setCouponStatusColor('success');
+    } catch (err: any) {
+      setCouponStatusMessage('Error validating coupon code.');
+      setCouponStatusColor('error');
+      setAppliedCoupon(null);
+    }
+  };
+
+  const resolvePlanPrice = (plan: any) => {
+    const isFree = plan.code === 'freemium';
+    if (isFree) return { originalPrice: 0, overrideApplied: false, finalPrice: 0, discountAmount: 0 };
+
+    const standardPrice = billingCycle === 'MONTHLY' ? plan.priceMonthly : plan.priceYearly;
+    let basePrice = standardPrice;
+    let overrideApplied = false;
+
+    // Apply school-specific override if any
+    const override = schoolOverrides.find(o => o.plan_code.toLowerCase() === plan.code.toLowerCase());
+    if (override) {
+      const customPrice = billingCycle === 'MONTHLY' ? override.monthly_price_override : override.yearly_price_override;
+      if (customPrice !== null && customPrice !== undefined) {
+        basePrice = Number(customPrice);
+        overrideApplied = true;
+      } else if (override.discount_percent) {
+        basePrice = Math.round(standardPrice * (1 - Number(override.discount_percent) / 100));
+        overrideApplied = true;
+      } else if (override.discount_amount) {
+        basePrice = Math.max(0, standardPrice - Number(override.discount_amount));
+        overrideApplied = true;
+      }
+    }
+
+    // Apply coupon discount if eligible
+    let couponDiscount = 0;
+    if (appliedCoupon) {
+      let isPlanEligible = true;
+      if (appliedCoupon.applicable_plans && appliedCoupon.applicable_plans.length > 0) {
+        isPlanEligible = appliedCoupon.applicable_plans.some((p: string) => p.toLowerCase() === plan.code.toLowerCase());
+      }
+
+      if (isPlanEligible) {
+        if (appliedCoupon.discount_percent !== null && appliedCoupon.discount_percent !== undefined) {
+          couponDiscount = Math.round((basePrice * Number(appliedCoupon.discount_percent)) / 100);
+        } else if (appliedCoupon.discount_amount !== null && appliedCoupon.discount_amount !== undefined) {
+          couponDiscount = Number(appliedCoupon.discount_amount);
+        }
+        couponDiscount = Math.min(couponDiscount, basePrice);
+      }
+    }
+
+    const finalPrice = Math.max(0, basePrice - couponDiscount);
+    return {
+      originalPrice: standardPrice,
+      overrideApplied,
+      finalPrice,
+      discountAmount: couponDiscount + (overrideApplied ? (standardPrice - basePrice) : 0)
+    };
+  };
+
   // Count down resend timer
   useEffect(() => {
     if (step !== 'otp' || resendTimer <= 0) return;
@@ -258,7 +397,8 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
         body: JSON.stringify({
           schoolId: provisionedSchoolId,
           planCode,
-          billingCycle
+          billingCycle,
+          couponCode: appliedCoupon ? appliedCoupon.code : undefined
         })
       });
       const orderData = await res.json();
@@ -268,6 +408,39 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
       }
 
       setPaymentAmount(orderData.amount);
+
+      // 1b. Skip Razorpay if plan is 100% discounted (amount is 0)
+      if (orderData.amount === 0) {
+        const verifyRes = await fetch('/api/verify-payment', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            razorpayOrderId: orderData.orderId,
+            razorpayPaymentId: 'pay_free_discount_' + Math.random().toString(36).substring(2, 9),
+            razorpaySignature: 'free_sig_ok',
+            paymentId: orderData.paymentId,
+            isMock: true
+          })
+        });
+        const verifyData = await verifyRes.json();
+
+        if (!verifyRes.ok) {
+          throw new Error(verifyData.error || 'Payment validation failed');
+        }
+
+        setTransactionId('pay_free_discount_' + Math.random().toString(36).substring(2, 9));
+        setPaymentDate(new Date().toLocaleDateString('en-IN', {
+          day: 'numeric',
+          month: 'long',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit'
+        }));
+        
+        setPaymentLoading(false);
+        setStep('success');
+        return;
+      }
 
       // 2. Launch Razorpay Checkout
       const options = {
@@ -764,6 +937,55 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
               </div>
             )}
 
+            {/* Promotional Coupon Entry */}
+            <div className="max-w-md mx-auto p-4 bg-[#0b101d]/60 border border-slate-850 rounded-2xl flex flex-col gap-3 mb-2">
+              <div className="flex items-center justify-between">
+                <label className="text-[10px] font-bold uppercase tracking-wider text-slate-400 font-mono">
+                  Promotional Coupon / Discount Code
+                </label>
+                {appliedCoupon && (
+                  <span className="text-[9px] px-1.5 py-0.5 bg-emerald-500/10 border border-emerald-500/25 rounded-full text-emerald-400 font-bold uppercase font-sans">
+                    Code Active
+                  </span>
+                )}
+              </div>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  placeholder="WELCOME10, SAAS50, ETC."
+                  value={couponCode}
+                  onChange={(e) => setCouponCode(e.target.value)}
+                  disabled={paymentLoading || !!appliedCoupon}
+                  className="flex-1 bg-slate-950/60 border border-slate-805 text-slate-100 rounded-xl px-3 py-2 text-xs font-mono uppercase focus:outline-none focus:border-brand-500 transition-all placeholder:text-slate-700"
+                />
+                {appliedCoupon ? (
+                  <button
+                    onClick={() => {
+                      setAppliedCoupon(null);
+                      setCouponCode('');
+                      setCouponStatusMessage('');
+                    }}
+                    className="px-4 py-2 bg-rose-600/25 hover:bg-rose-600/40 text-rose-300 text-xs font-bold rounded-xl transition-all border border-rose-500/30"
+                  >
+                    Clear
+                  </button>
+                ) : (
+                  <button
+                    onClick={handleApplyCoupon}
+                    disabled={paymentLoading}
+                    className="px-5 py-2 bg-brand-600 hover:bg-brand-500 text-white text-xs font-bold rounded-xl transition-all shadow hover:shadow-brand-500/10 border border-brand-500/20"
+                  >
+                    Apply
+                  </button>
+                )}
+              </div>
+              {couponStatusMessage && (
+                <p className={`text-[10px] font-semibold text-center mt-1 ${couponStatusColor === 'success' ? 'text-emerald-400' : 'text-rose-400'}`}>
+                  {couponStatusMessage}
+                </p>
+              )}
+            </div>
+
             {/* Grid of Plans */}
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 items-stretch">
               {[
@@ -811,9 +1033,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
                 }
               ].map((plan, idx) => {
                 const isFree = plan.code === 'freemium';
-                const displayPrice = isFree
-                  ? 'Free'
-                  : (billingCycle === 'MONTHLY' ? `₹${plan.priceMonthly.toLocaleString('en-IN')}` : `₹${plan.priceYearly.toLocaleString('en-IN')}`);
+                const pricing = resolvePlanPrice(plan);
                 const displayCycle = isFree ? 'forever' : (billingCycle === 'MONTHLY' ? '/ month' : '/ year');
                 const savings = plan.savingsYearly > 0 ? `Save ₹${plan.savingsYearly.toLocaleString('en-IN')}` : null;
 
@@ -841,10 +1061,31 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
                         <p className="text-[10px] text-slate-450 leading-relaxed">{plan.desc}</p>
                       </div>
 
-                      <div className="py-2 border-y border-slate-900">
-                        <span className="text-2xl font-extrabold text-white">{displayPrice}</span>
-                        <span className="text-xs text-slate-500 ml-1">{displayCycle}</span>
-                        {billingCycle === 'YEARLY' && savings && (
+                      <div className="py-2 border-y border-slate-900 flex flex-col justify-center">
+                        {isFree ? (
+                          <div>
+                            <span className="text-2xl font-extrabold text-white">Free</span>
+                            <span className="text-xs text-slate-500 ml-1">forever</span>
+                          </div>
+                        ) : (
+                          <div>
+                            {pricing.discountAmount > 0 && (
+                              <span className="text-xs text-slate-500 line-through mr-2 font-mono">
+                                ₹{pricing.originalPrice.toLocaleString('en-IN')}
+                              </span>
+                            )}
+                            <span className="text-2xl font-extrabold text-white font-mono">
+                              ₹{pricing.finalPrice.toLocaleString('en-IN')}
+                            </span>
+                            <span className="text-xs text-slate-500 ml-1">{displayCycle}</span>
+                            {pricing.discountAmount > 0 && (
+                              <span className="text-[9px] block mt-1 text-emerald-400 font-semibold font-mono">
+                                Saved ₹{pricing.discountAmount.toLocaleString('en-IN')}!
+                              </span>
+                            )}
+                          </div>
+                        )}
+                        {billingCycle === 'YEARLY' && savings && !isFree && (
                           <div className="mt-1">
                             <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 font-semibold">{savings}/yr</span>
                           </div>

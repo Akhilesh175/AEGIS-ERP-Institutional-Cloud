@@ -6,6 +6,7 @@ import { AuditLog, School, User } from '../types';
 import { mockDb } from '../services/mockDb';
 import { GlassCard } from '../components/GlassCard';
 import { OfflineSyncManager } from '../components/OfflineSyncManager';
+import { SuperAdminSubscriptionPortal } from './SuperAdminSubscriptionPortal';
 import { 
   Activity, Building, Settings, ShieldAlert, Cpu, 
   Layers, Key, PlusCircle, Search, RefreshCw, Eye, EyeOff,
@@ -2115,6 +2116,10 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
             </GlassCard>
           </div>
         </div>
+      )}
+
+      {activeTab.startsWith('sub-') && (
+        <SuperAdminSubscriptionPortal activeTab={activeTab} />
       )}
 
     </div>

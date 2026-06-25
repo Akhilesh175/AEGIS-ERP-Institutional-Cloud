@@ -23,6 +23,7 @@ import {
   WARNING_BANNER_CONFIG,
   SubscriptionStatus
 } from '../services/subscriptionService';
+import jsPDF from 'jspdf';
 
 interface SubscriptionDashboardProps {
   theme: 'dark' | 'light';
@@ -37,6 +38,13 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
   const [view, setView]   = useState<DashView>('dashboard');
   const [history, setHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(true);
+
+  // New States for Invoice log and Progressive quotas check
+  const [invoices, setInvoices] = useState<any[]>([]);
+  const [loadingInvoices, setLoadingInvoices] = useState(true);
+  const [usage, setUsage] = useState({ students: 0, teachers: 0, parents: 0 });
+  const [loadingUsage, setLoadingUsage] = useState(true);
+  const [schoolName, setSchoolName] = useState('Your Institution');
 
   const currentPlanCode = normalizePlanCode(session?.schoolSubscriptionPlan);
   const currentPlan     = PLAN_DEFINITIONS.find(p => p.code === currentPlanCode) || PLAN_DEFINITIONS[0];
@@ -67,7 +75,159 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
     }
   }, [session?.user?.schoolId]);
 
-  useEffect(() => { loadHistory(); }, [loadHistory]);
+  const loadUsageAndInvoices = useCallback(async () => {
+    const schoolId = session?.user?.schoolId;
+    if (!schoolId) {
+      setLoadingUsage(false);
+      setLoadingInvoices(false);
+      return;
+    }
+    try {
+      setLoadingUsage(true);
+      setLoadingInvoices(true);
+      const { supabase } = await import('../lib/supabase');
+      
+      const [studRes, teachRes, parentRes, invRes, schoolRes] = await Promise.all([
+        supabase.from('students').select('*', { count: 'exact', head: true }).eq('school_id', schoolId),
+        supabase.from('teachers').select('*', { count: 'exact', head: true }).eq('school_id', schoolId),
+        supabase.from('parents').select('*', { count: 'exact', head: true }).eq('school_id', schoolId),
+        supabase.from('subscription_invoices').select('*').eq('school_id', schoolId).order('created_at', { ascending: false }),
+        supabase.from('schools').select('name').eq('id', schoolId).maybeSingle()
+      ]);
+      
+      setUsage({
+        students: studRes.count || 0,
+        teachers: teachRes.count || 0,
+        parents: parentRes.count || 0
+      });
+      setInvoices(invRes.data || []);
+      if (schoolRes.data) {
+        setSchoolName(schoolRes.data.name);
+      }
+    } catch (e) {
+      console.error('Error loading usage/invoices:', e);
+    } finally {
+      setLoadingUsage(false);
+      setLoadingInvoices(false);
+    }
+  }, [session?.user?.schoolId]);
+
+  useEffect(() => { 
+    loadHistory();
+    loadUsageAndInvoices();
+  }, [loadHistory, loadUsageAndInvoices]);
+
+  const downloadInvoicePDF = (inv: any) => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'pt',
+        format: 'a4'
+      });
+
+      const schoolNameStr = schoolName || 'Your Institution';
+      const amt = Number(inv.amount || 0);
+      const tax = Number(inv.tax_amount || 0);
+      const discount = Number(inv.discount_amount || 0);
+      const total = Number(inv.total_amount || 0);
+      const invoiceNo = inv.invoice_number;
+      const issueDate = new Date(inv.created_at).toLocaleDateString('en-IN');
+      const planCode = inv.plan_code || 'pro';
+      const cycle = inv.billing_cycle || 'MONTHLY';
+
+      // Simple premium PDF Layout
+      doc.setFillColor(7, 10, 19); // dark header banner
+      doc.rect(0, 0, 595, 120, 'F');
+
+      // Title
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(22);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('AEGIS ERP INSTITUTIONAL CLOUD', 40, 55);
+      doc.setFontSize(10);
+      doc.setFont('Helvetica', 'normal');
+      doc.setTextColor(150, 150, 150);
+      doc.text('Advanced Multi-Tenant SaaS Platform', 40, 75);
+
+      doc.setTextColor(255, 255, 255);
+      doc.setFontSize(18);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('INVOICE', 460, 55);
+      doc.setFontSize(9);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`#${invoiceNo}`, 460, 75);
+
+      // Section: Billing Info
+      doc.setTextColor(30, 30, 30);
+      doc.setFontSize(11);
+      doc.setFont('Helvetica', 'bold');
+      doc.text('BILLED TO:', 40, 170);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(schoolNameStr, 40, 190);
+      doc.text('Institutional Administrator', 40, 205);
+      doc.text(inv.billing_email || session?.user?.email || 'billing@aegiserp.xyz', 40, 220);
+
+      // Section: Invoice details
+      doc.setFont('Helvetica', 'bold');
+      doc.text('INVOICE DETAILS:', 380, 170);
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`Issue Date: ${issueDate}`, 380, 190);
+      doc.text(`Billing Cycle: ${cycle}`, 380, 205);
+      doc.text(`Plan Code: ${planCode.toUpperCase()}`, 380, 220);
+
+      // Table Header
+      doc.setFillColor(240, 243, 248);
+      doc.rect(40, 260, 515, 25, 'F');
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(9);
+      doc.text('Item Description', 50, 276);
+      doc.text('Billing Cycle', 280, 276);
+      doc.text('Original Price', 380, 276);
+      doc.text('Paid Amount', 480, 276);
+
+      // Table Row
+      doc.setFont('Helvetica', 'normal');
+      doc.text(`AEGIS ERP Subscription - ${planCode.toUpperCase()} Plan`, 50, 310);
+      doc.text(cycle, 280, 310);
+      doc.text(`INR ${amt.toLocaleString()}`, 380, 310);
+      doc.text(`INR ${total.toLocaleString()}`, 480, 310);
+
+      // Subtotals & Totals
+      doc.line(40, 340, 555, 340);
+
+      doc.text('Subtotal:', 380, 370);
+      doc.text(`INR ${amt.toLocaleString()}`, 480, 370);
+
+      if (discount > 0) {
+        doc.setTextColor(220, 50, 50);
+        doc.text('Discount Applied:', 380, 390);
+        doc.text(`- INR ${discount.toLocaleString()}`, 480, 390);
+        doc.setTextColor(30, 30, 30);
+      }
+
+      doc.text('GST (18%):', 380, 410);
+      doc.text(`INR ${tax.toLocaleString()}`, 480, 410);
+
+      doc.setFont('Helvetica', 'bold');
+      doc.setFontSize(11);
+      doc.text('Total Paid:', 380, 440);
+      doc.text(`INR ${total.toLocaleString()}`, 480, 440);
+
+      // Footer
+      doc.setFillColor(245, 247, 250);
+      doc.rect(40, 490, 515, 50, 'F');
+      doc.setFont('Helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(100, 100, 100);
+      doc.text('Note: This is a system-generated invoice for your cloud subscription renewal. All payments are verified securely.', 50, 510);
+      doc.text('For queries, write to billing@aegiserp.xyz. Thank you for choosing AEGIS ERP Institutional Cloud.', 50, 525);
+
+      doc.save(`Invoice-${invoiceNo}.pdf`);
+    } catch (e) {
+      console.error(e);
+      alert('Failed to generate PDF invoice.');
+    }
+  };
 
   // ─── Status badge ───────────────────────────────────────────────────────────
   const StatusBadge: React.FC = () => {
@@ -176,7 +336,11 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
           <p className="text-xs text-slate-400 mt-0.5">Manage your school's subscription plan and billing</p>
         </div>
         <button
-          onClick={lifecycle.refresh}
+          onClick={() => {
+            lifecycle.refresh();
+            loadUsageAndInvoices();
+            loadHistory();
+          }}
           className="p-2 rounded-xl border border-slate-800 hover:border-brand-500/30 text-slate-400 hover:text-brand-400 transition-all"
           title="Refresh subscription status"
         >
@@ -325,6 +489,131 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
         </div>
       </div>
 
+      {/* Plan Resource Quotas & Usage Progress */}
+      <div>
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <ShieldCheck size={12} className="text-brand-400" /> Platform Resource Allocation & Usage
+        </h3>
+        <GlassCard className="p-5 bg-[#0b101d]/75 border-slate-850 space-y-4">
+          {loadingUsage ? (
+            <div className="flex justify-center items-center py-4">
+              <span className="w-5 h-5 rounded-full border-2 border-brand-500/30 border-t-brand-400 animate-spin" />
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              {/* Students count */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-semibold">
+                  <span className="text-slate-400">Students strength</span>
+                  <span className="text-slate-200">
+                    {usage.students} <span className="text-slate-500">/ {currentPlan.maxStudents >= 999999 ? 'Unlimited' : currentPlan.maxStudents}</span>
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-900 overflow-hidden border border-slate-850">
+                  <div
+                    className="h-full bg-brand-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, (usage.students / (currentPlan.maxStudents || 100)) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Teachers count */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-semibold">
+                  <span className="text-slate-400">Faculty strength</span>
+                  <span className="text-slate-200">
+                    {usage.teachers} <span className="text-slate-500">/ {currentPlan.maxTeachers >= 999999 ? 'Unlimited' : currentPlan.maxTeachers}</span>
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-900 overflow-hidden border border-slate-850">
+                  <div
+                    className="h-full bg-brand-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, (usage.teachers / (currentPlan.maxTeachers || 10)) * 100)}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Parents count */}
+              <div className="space-y-1.5">
+                <div className="flex justify-between text-xs font-semibold">
+                  <span className="text-slate-400">Parent accounts</span>
+                  <span className="text-slate-200">
+                    {usage.parents} <span className="text-slate-500">/ {currentPlan.maxParents >= 999999 ? 'Unlimited' : currentPlan.maxParents}</span>
+                  </span>
+                </div>
+                <div className="h-2 rounded-full bg-slate-900 overflow-hidden border border-slate-850">
+                  <div
+                    className="h-full bg-brand-500 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, (usage.parents / (currentPlan.maxParents || 200)) * 100)}%` }}
+                  />
+                </div>
+              </div>
+            </div>
+          )}
+        </GlassCard>
+      </div>
+
+      {/* Invoices List */}
+      <div>
+        <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
+          <FileText size={12} className="text-brand-400" /> Invoices & Billing History
+        </h3>
+        <GlassCard className="p-0 overflow-hidden bg-[#0b101d]/75 border-slate-850">
+          {loadingInvoices ? (
+            <div className="flex items-center justify-center py-10">
+              <span className="w-5 h-5 rounded-full border-2 border-brand-500/30 border-t-brand-400 animate-spin" />
+            </div>
+          ) : invoices.length === 0 ? (
+            <div className="py-10 text-center text-xs text-slate-500">No invoices generated yet.</div>
+          ) : (
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-900">
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Invoice No</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Plan</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cycle</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Amount</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Discount</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tax (GST)</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Paid</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Date</th>
+                    <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Invoice</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {invoices.map((inv) => (
+                    <tr key={inv.id} className="border-b border-slate-900/50 hover:bg-slate-900/30 transition-colors">
+                      <td className="px-4 py-3 font-semibold text-slate-350">{inv.invoice_number}</td>
+                      <td className="px-4 py-3 text-slate-300 font-mono text-[10px] uppercase">{inv.plan_code || 'pro'}</td>
+                      <td className="px-4 py-3 text-slate-400">{formatCycle(inv.billing_cycle) || '—'}</td>
+                      <td className="px-4 py-3 text-slate-300 font-mono">₹{Number(inv.amount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-rose-450 font-mono">
+                        {inv.discount_amount > 0 ? `-₹${Number(inv.discount_amount).toLocaleString('en-IN')}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-400 font-mono">₹{Number(inv.tax_amount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-emerald-400 font-semibold font-mono">₹{Number(inv.total_amount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-slate-500">
+                        {new Date(inv.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+                      </td>
+                      <td className="px-4 py-3 text-center">
+                        <button
+                          onClick={() => downloadInvoicePDF(inv)}
+                          className="text-brand-400 hover:text-brand-300 p-1 bg-brand-500/5 rounded hover:bg-brand-500/10 transition-colors"
+                          title="Download PDF"
+                        >
+                          <FileText size={13} />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </GlassCard>
+      </div>
+
       {/* Audit / Transaction History */}
       <div>
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
@@ -338,42 +627,44 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
           ) : history.length === 0 ? (
             <div className="py-10 text-center text-xs text-slate-500">No subscription history yet.</div>
           ) : (
-            <table className="w-full text-xs">
-              <thead>
-                <tr className="border-b border-slate-900">
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Plan</th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cycle</th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Amount</th>
-                  <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Date</th>
-                </tr>
-              </thead>
-              <tbody>
-                {history.map((h, i) => (
-                  <tr key={h.id || i} className="border-b border-slate-900/50 hover:bg-slate-900/30 transition-colors">
-                    <td className="px-4 py-3">
-                      <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                        h.action === 'PAYMENT_SUCCESS' || h.action === 'PURCHASED' || h.action === 'RENEWED' ? 'bg-emerald-500/10 text-emerald-400' :
-                        h.action === 'UPGRADED'   ? 'bg-brand-500/10 text-brand-400' :
-                        h.action === 'EXPIRED'    ? 'bg-red-500/10 text-red-400' :
-                        h.action === 'GRACE_PERIOD'? 'bg-orange-500/10 text-orange-400' :
-                        'bg-slate-800 text-slate-400'
-                      }`}>
-                        {h.action?.replace('_', ' ')}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 text-slate-300 font-mono text-[10px] uppercase">{h.plan || '—'}</td>
-                    <td className="px-4 py-3 text-slate-400">{formatCycle(h.billing_cycle) || '—'}</td>
-                    <td className="px-4 py-3 text-slate-300 font-mono">
-                      {h.amount ? `₹${Number(h.amount).toLocaleString('en-IN')}` : '—'}
-                    </td>
-                    <td className="px-4 py-3 text-slate-500">
-                      {h.created_at ? new Date(h.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                    </td>
+            <div className="overflow-x-auto">
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="border-b border-slate-900">
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Plan</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cycle</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Amount</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Date</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {history.map((h, i) => (
+                    <tr key={h.id || i} className="border-b border-slate-900/50 hover:bg-slate-900/30 transition-colors">
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
+                          h.action === 'PAYMENT_SUCCESS' || h.action === 'PURCHASED' || h.action === 'RENEWED' ? 'bg-emerald-500/10 text-emerald-400' :
+                          h.action === 'UPGRADED'   ? 'bg-brand-500/10 text-brand-400' :
+                          h.action === 'EXPIRED'    ? 'bg-red-500/10 text-red-400' :
+                          h.action === 'GRACE_PERIOD'? 'bg-orange-500/10 text-orange-400' :
+                          'bg-slate-800 text-slate-400'
+                        }`}>
+                          {h.action?.replace('_', ' ')}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-300 font-mono text-[10px] uppercase">{h.plan || '—'}</td>
+                      <td className="px-4 py-3 text-slate-400">{formatCycle(h.billing_cycle) || '—'}</td>
+                      <td className="px-4 py-3 text-slate-300 font-mono">
+                        {h.amount ? `₹${Number(h.amount).toLocaleString('en-IN')}` : '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-500">
+                        {h.created_at ? new Date(h.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           )}
         </GlassCard>
       </div>
