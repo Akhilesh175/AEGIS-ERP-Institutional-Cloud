@@ -2,6 +2,7 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { getApps, initializeApp, cert, ServiceAccount } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
+import { requireSubscription } from './_lib/subscriptionGuard';
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || '';
@@ -61,6 +62,10 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   if (!schoolId || !targetType || !title || !content || !type) {
     return res.status(400).json({ error: 'Missing required parameters' });
   }
+
+  // Enforce subscription gate: require Basic (tier 1) or higher
+  const isAuthorized = await requireSubscription(schoolId, 1, res);
+  if (!isAuthorized) return;
 
   try {
     let targetUserIds: string[] = [];

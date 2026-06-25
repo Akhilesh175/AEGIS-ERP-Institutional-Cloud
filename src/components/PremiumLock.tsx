@@ -13,8 +13,8 @@ interface PremiumLockProps {
   children: React.ReactNode;
 }
 
-const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featureName, customMessage, isExpired = false, children }) => {
-  const { session } = useStore();
+const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featureName, customMessage, isExpired: propIsExpired = false, children }) => {
+  const { session, subscriptionStatus } = useStore();
   const isSuperAdmin = session?.user?.role === 'SUPER_ADMIN';
   const isSchoolAdmin = session?.user?.role === 'ADMIN';
   const currentTab = window.location.hash.substring(1) || 'dashboard';
@@ -27,8 +27,10 @@ const PremiumLock: React.FC<PremiumLockProps> = ({ isLocked, requiredTier, featu
   const currentPlanName = (session?.schoolSubscriptionPlan || 'freemium').toLowerCase();
   const isEnterpriseGated = requiredTier.toUpperCase() === 'ENTERPRISE';
 
+  const isExpired = propIsExpired || subscriptionStatus === 'expired' || currentPlanName === 'expired';
+
   // ── Expired subscription lock screen ──────────────────────────────────────
-  if (isExpired || currentPlanName === 'expired') {
+  if (isExpired) {
     return (
       <div className="relative w-full min-h-[400px] rounded-3xl animate-fade-in flex flex-col items-center justify-center p-3 sm:p-6 bg-slate-950/10">
         <div className="absolute inset-0 overflow-hidden pointer-events-none opacity-5 blur-2xl select-none rounded-3xl">{children}</div>

@@ -1,6 +1,6 @@
 import { create } from 'zustand';
 import { AuthSession } from '../services/mockApi';
-import { PlanDefinition, PLAN_DEFINITIONS, PLAN_MAP } from '../services/subscriptionService';
+import { PlanDefinition, PLAN_DEFINITIONS, PLAN_MAP, SubscriptionStatus } from '../services/subscriptionService';
 
 interface SchoolERPStore {
   session: AuthSession | null;
@@ -23,6 +23,8 @@ interface SchoolERPStore {
   plans: PlanDefinition[];
   loadingPlans: boolean;
   fetchPlans: () => Promise<void>;
+  subscriptionStatus: SubscriptionStatus;
+  setSubscriptionStatus: (status: SubscriptionStatus) => void;
 }
 
 export const useStore = create<SchoolERPStore>((set, get) => ({
@@ -35,6 +37,8 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
   loadingPlans: false,
   isMobileMenuOpen: false,
   activeAcademicSessionId: null,
+  subscriptionStatus: 'trial',
+  setSubscriptionStatus: (subscriptionStatus) => set({ subscriptionStatus }),
 
   setMobileMenuOpen: (isOpen) => set({ isMobileMenuOpen: isOpen }),
 

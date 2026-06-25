@@ -56,6 +56,7 @@ export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
 
   const lastCheckedPlan = useRef<string | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasTriggeredExpiry = useRef<boolean>(false);
 
   const check = useCallback(async () => {
     if (!schoolId) return;
@@ -85,6 +86,7 @@ export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
           daysRemaining: 0,
           isLoading: false,
         }));
+        useStore.getState().setSubscriptionStatus('trial');
         return;
       }
 
@@ -119,6 +121,35 @@ export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
         isLoading: false,
       });
 
+      // Sync subscription status to Zustand store
+      useStore.getState().setSubscriptionStatus(subscriptionStatus);
+
+      // If client math detects expired subscription but DB still says ACTIVE (or not EXPIRED),
+      // call the /api/expire-subscriptions function to atomically update DB.
+      if (
+        subscriptionStatus === 'expired' &&
+        sub &&
+        (sub.status !== 'EXPIRED' || sub.subscription_status !== 'expired') &&
+        !hasTriggeredExpiry.current
+      ) {
+        hasTriggeredExpiry.current = true;
+        fetch('/api/expire-subscriptions', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ schoolId }),
+        })
+          .then(async (res) => {
+            if (res.ok) {
+              // Immediately recheck to pull updated state and trigger store sync
+              await check();
+            }
+          })
+          .catch((err) => {
+            console.error('Failed to trigger subscription expiry write:', err);
+            hasTriggeredExpiry.current = false; // allow retry on next attempt
+          });
+      }
+
       // Sync Zustand store if plan has changed
       if (plan !== lastCheckedPlan.current) {
         lastCheckedPlan.current = plan;
@@ -142,6 +173,53 @@ export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
   useEffect(() => {
     check();
   }, [check]);
+
+  // Setup Realtime channels for subscription and school updates
+  useEffect(() => {
+    if (!schoolId) return;
+
+    // Reset the expiry write trigger flag when school changes
+    hasTriggeredExpiry.current = false;
+
+    // Channel for subscription changes
+    const subChannel = supabase
+      .channel(`school-subscriptions-lifecycle-${schoolId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'subscriptions',
+          filter: `school_id=eq.${schoolId}`,
+        },
+        () => {
+          check();
+        }
+      )
+      .subscribe();
+
+    // Channel for school profile changes (to update plan)
+    const schoolChannel = supabase
+      .channel(`school-details-lifecycle-${schoolId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'schools',
+          filter: `id=eq.${schoolId}`,
+        },
+        () => {
+          check();
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(subChannel);
+      supabase.removeChannel(schoolChannel);
+    };
+  }, [schoolId, check]);
 
   // Periodic re-check every 5 minutes
   useEffect(() => {
