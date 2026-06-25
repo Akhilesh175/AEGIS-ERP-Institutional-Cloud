@@ -17,7 +17,8 @@
 
 import { useMemo } from 'react';
 import { useStore } from '../store/useStore';
-import { normalizePlanCode, PlanDefinition } from '../services/subscriptionService';
+import { normalizePlanCode, PlanDefinition, PLAN_MAP, PLAN_DEFINITIONS } from '../services/subscriptionService';
+
 
 // ─── Typed Entitlements Object ───────────────────────────────────────────────
 
@@ -130,13 +131,14 @@ function accumulateEntitlements(
 
   // Derive composite feature flags from tier (for features not individually tracked per plan row)
   // These map directly to the subscriptionConfig.ts gating rules
-  const hasBilling = currentTier >= 1;          // Basic+
+  const hasBilling = hasFinanceAccess;          // Maps to Finance Office checkbox
   const hasCommunications = currentTier >= 1;   // Basic+
   const hasQuizzes = currentTier >= 2;          // Pro+
   const hasAuditLogs = currentTier >= 2;        // Pro+
   const hasRbac = currentTier >= 2;             // Pro+
   const hasBackups = currentTier >= 3;          // Enterprise only
   const hasSports = currentTier >= 3;           // Enterprise only
+
 
   return {
     hasPtmAccess,
@@ -236,3 +238,140 @@ export function getFeatureEntitlements(): FeatureEntitlements {
     tier,
   };
 }
+
+/**
+ * Standalone version for resolving entitlements for a specific plan code.
+ * Reads directly from the global PLAN_MAP synced from the database.
+ */
+export function getFeatureEntitlementsForPlan(rawPlanCode: string | null | undefined): FeatureEntitlements {
+  const planCode = normalizePlanCode(rawPlanCode);
+  const currentPlanDef = PLAN_MAP[planCode];
+
+  // If PLAN_DEFINITIONS is empty, use static/fallback plan definitions
+  const activePlans = PLAN_DEFINITIONS.length > 0 ? PLAN_DEFINITIONS : [
+    {
+      code: 'freemium',
+      name: 'Freemium',
+      priceMonthly: 0,
+      priceYearly: 0,
+      savingsYearly: 0,
+      description: 'For schools getting started',
+      tier: 0,
+      displayOrder: 0,
+      colorTheme: 'slate',
+      isRecommended: false,
+      isActive: true,
+      maxStudents: 100,
+      maxTeachers: 10,
+      maxParents: 200,
+      maxStorageGb: 5,
+      notificationLimits: 1000,
+      hasPtmAccess: false,
+      hasTransportAccess: false,
+      hasLibraryAccess: false,
+      hasFinanceAccess: false,
+      hasHostelAccess: false,
+      hasAnalyticsAccess: false,
+      hasCoachPortal: false,
+      hasWardenPortal: false,
+      features: [],
+    },
+    {
+      code: 'basic',
+      name: 'Basic',
+      priceMonthly: 999,
+      priceYearly: 9999,
+      savingsYearly: 1989,
+      description: 'For small & growing schools',
+      tier: 1,
+      displayOrder: 1,
+      colorTheme: 'brand',
+      isRecommended: false,
+      isActive: true,
+      maxStudents: 500,
+      maxTeachers: 50,
+      maxParents: 1000,
+      maxStorageGb: 20,
+      notificationLimits: 5000,
+      hasPtmAccess: false,
+      hasTransportAccess: false,
+      hasLibraryAccess: false,
+      hasFinanceAccess: true,
+      hasHostelAccess: false,
+      hasAnalyticsAccess: false,
+      hasCoachPortal: false,
+      hasWardenPortal: false,
+      features: [],
+    },
+    {
+      code: 'pro',
+      name: 'Pro',
+      priceMonthly: 2499,
+      priceYearly: 24999,
+      savingsYearly: 4989,
+      description: 'For advanced schools',
+      tier: 2,
+      displayOrder: 2,
+      colorTheme: 'indigo',
+      isRecommended: true,
+      isActive: true,
+      maxStudents: 1000,
+      maxTeachers: 100,
+      maxParents: 2000,
+      maxStorageGb: 50,
+      notificationLimits: 10000,
+      hasPtmAccess: true,
+      hasTransportAccess: true,
+      hasLibraryAccess: true,
+      hasFinanceAccess: true,
+      hasHostelAccess: true,
+      hasAnalyticsAccess: true,
+      hasCoachPortal: false,
+      hasWardenPortal: false,
+      features: [],
+    },
+    {
+      code: 'enterprise',
+      name: 'Enterprise',
+      priceMonthly: 4999,
+      priceYearly: 49999,
+      savingsYearly: 9989,
+      description: 'For large & multi-campus institutions',
+      tier: 3,
+      displayOrder: 3,
+      colorTheme: 'purple',
+      isRecommended: false,
+      isActive: true,
+      maxStudents: 9999999,
+      maxTeachers: 999999,
+      maxParents: 9999999,
+      maxStorageGb: 500,
+      notificationLimits: 9999999,
+      hasPtmAccess: true,
+      hasTransportAccess: true,
+      hasLibraryAccess: true,
+      hasFinanceAccess: true,
+      hasHostelAccess: true,
+      hasAnalyticsAccess: true,
+      hasCoachPortal: true,
+      hasWardenPortal: true,
+      features: [],
+    }
+  ];
+
+  const currentPlan = currentPlanDef || activePlans.find(p => p.code === planCode) || activePlans[0];
+  const tier = resolveTier(currentPlan);
+  const flags = accumulateEntitlements(activePlans, tier);
+
+  return {
+    ...flags,
+    maxStudents: currentPlan.maxStudents,
+    maxTeachers: currentPlan.maxTeachers,
+    maxParents: currentPlan.maxParents,
+    maxStorageGb: currentPlan.maxStorageGb,
+    notificationLimits: currentPlan.notificationLimits,
+    currentPlanCode: planCode,
+    tier,
+  };
+}
+

@@ -1,4 +1,5 @@
-import type { FeatureEntitlements } from '../hooks/useFeatureEntitlements';
+import { PLAN_MAP } from './subscriptionService';
+import { getFeatureEntitlementsForPlan, type FeatureEntitlements } from '../hooks/useFeatureEntitlements';
 
 export interface SubscriptionFeatures {
   communications: boolean; // Forums/Discussions/Chat
@@ -18,68 +19,62 @@ export interface SubscriptionConfig {
   limits: SubscriptionLimits;
 }
 
-export const subscriptionPlans: Record<string, SubscriptionConfig> = {
-  freemium: {
-    features: {
-      communications: false,
-      advancedAnalytics: false,
-      billing: false,
-      quizzes: false,
-      auditLogs: false,
-    },
-    limits: {
-      maxStudents: 50,
-      maxTeachers: 5,
-    }
-  },
-  basic: {
-    features: {
-      communications: true,
-      advancedAnalytics: false,
-      billing: true,
-      quizzes: false,
-      auditLogs: false,
-    },
-    limits: {
-      maxStudents: 500,
-      maxTeachers: 50,
-    }
-  },
-  pro: {
-    features: {
-      communications: true,
-      advancedAnalytics: true,
-      billing: true,
-      quizzes: true,
-      auditLogs: true,
-    },
-    limits: {
-      maxStudents: 2500,
-      maxTeachers: 200,
-    }
-  },
-  enterprise: {
-    features: {
-      communications: true,
-      advancedAnalytics: true,
-      billing: true,
-      quizzes: true,
-      auditLogs: true,
-    },
-    limits: {
-      maxStudents: 9999999, // practically unlimited
-      maxTeachers: 999999,
-    }
-  }
-};
+export const subscriptionPlans = new Proxy<Record<string, SubscriptionConfig>>({} as any, {
+  get(target, prop) {
+    if (typeof prop !== 'string') return undefined;
+    const plan = normalizePlanName(prop);
+    const dbPlan = PLAN_MAP[plan];
+    
+    // Fallback static definitions if database-driven ones aren't populated yet
+    const defaults: Record<string, SubscriptionConfig> = {
+      freemium: {
+        features: { communications: false, advancedAnalytics: false, billing: false, quizzes: false, auditLogs: false },
+        limits: { maxStudents: 100, maxTeachers: 10 }
+      },
+      basic: {
+        features: { communications: true, advancedAnalytics: false, billing: true, quizzes: false, auditLogs: false },
+        limits: { maxStudents: 500, maxTeachers: 50 }
+      },
+      pro: {
+        features: { communications: true, advancedAnalytics: true, billing: true, quizzes: true, auditLogs: true },
+        limits: { maxStudents: 1000, maxTeachers: 100 }
+      },
+      enterprise: {
+        features: { communications: true, advancedAnalytics: true, billing: true, quizzes: true, auditLogs: true },
+        limits: { maxStudents: 9999999, maxTeachers: 999999 }
+      }
+    };
 
-// ─── Backward-compat aliases ────────────────────────────────────────────────
-// Legacy DB rows may still have 'standard', 'premium', 'STANDARD', 'PREMIUM'.
-// These aliases redirect to the canonical plan keys.
-subscriptionPlans['standard'] = subscriptionPlans['pro'];
-subscriptionPlans['premium']  = subscriptionPlans['enterprise'];
-// 'expired' gets freemium-level access
-subscriptionPlans['expired']  = subscriptionPlans['freemium'];
+    const fallback = defaults[plan] || defaults.freemium;
+    if (!dbPlan) return fallback;
+
+    return {
+      features: {
+        communications: dbPlan.tier >= 1,
+        advancedAnalytics: !!dbPlan.hasAnalyticsAccess,
+        billing: !!dbPlan.hasFinanceAccess,
+        quizzes: dbPlan.tier >= 2,
+        auditLogs: dbPlan.tier >= 2,
+      },
+      limits: {
+        maxStudents: dbPlan.maxStudents,
+        maxTeachers: dbPlan.maxTeachers,
+      }
+    };
+  },
+  
+  ownKeys(target) {
+    return ['freemium', 'basic', 'pro', 'enterprise', 'standard', 'premium', 'expired'];
+  },
+  
+  getOwnPropertyDescriptor(target, prop) {
+    return {
+      enumerable: true,
+      configurable: true,
+    };
+  }
+});
+
 
 // ─── Plan code normalizer ───────────────────────────────────────────────────
 const PLAN_ALIAS: Record<string, string> = {
@@ -106,70 +101,8 @@ export function normalizePlanName(raw: string | null | undefined): string {
 }
 
 export const isTabLocked = (role: string, tabId: string, planName: string): boolean => {
-  const plan = normalizePlanName(planName);
-  if (role === 'STUDENT') {
-    if (tabId === 'materials') return plan !== 'enterprise';
-    if (tabId === 'library') return plan !== 'enterprise';
-    if (tabId === 'transit') return plan !== 'enterprise';
-    if (tabId === 'hostel') return plan !== 'enterprise';
-    if (tabId === 'quizzes') return plan === 'freemium' || plan === 'basic';
-    if (tabId === 'forums') return plan === 'freemium';
-    if (tabId === 'fees') return plan === 'freemium';
-    if (tabId === 'ptm') return plan === 'freemium' || plan === 'basic';
-    if (tabId === 'sports') return plan !== 'enterprise';
-  }
-  if (role === 'PARENT') {
-    if (tabId === 'homework') return plan !== 'enterprise';
-    if (tabId === 'materials') return plan !== 'enterprise';
-    if (tabId === 'library') return plan !== 'enterprise';
-    if (tabId === 'transit') return plan !== 'enterprise';
-    if (tabId === 'hostel') return plan !== 'enterprise';
-    if (tabId === 'quizzes') return plan === 'freemium' || plan === 'basic';
-    if (tabId === 'forums') return plan === 'freemium';
-    if (tabId === 'fees') return plan === 'freemium';
-    if (tabId === 'ptm') return plan === 'freemium' || plan === 'basic';
-    if (tabId === 'sports') return plan !== 'enterprise';
-  }
-  if (role === 'TEACHER') {
-    if (tabId === 'classroster') return plan === 'freemium';
-    if (tabId === 'attendance') return plan === 'freemium';
-    if (tabId === 'marksheets') return plan === 'freemium' || plan === 'basic';
-    if (tabId === 'analytics') return plan !== 'enterprise';
-    if (tabId === 'assignments') return plan !== 'enterprise';
-    if (tabId === 'quizzes') return plan === 'freemium' || plan === 'basic';
-    if (tabId === 'materials') return plan !== 'enterprise';
-    if (tabId === 'forums') return plan === 'freemium';
-    if (tabId === 'ptm') return plan === 'freemium' || plan === 'basic';
-    if (tabId === 'sports') return plan !== 'enterprise';
-  }
-  if (role === 'ADMIN') {
-    if (tabId === 'attendance') return plan === 'freemium';
-    if (tabId === 'fees') return plan === 'freemium';
-    if (tabId === 'hostel') return plan !== 'enterprise';
-    if (tabId === 'communications') return plan === 'freemium';
-    if (tabId === 'analytics') return plan === 'freemium' || plan === 'basic';
-    if (tabId === 'rbac') return plan !== 'enterprise' && plan !== 'pro';
-    if (tabId === 'backups') return plan !== 'enterprise';
-    // PTM Meetings: requires Pro or Enterprise
-    if (tabId === 'ptm') return plan === 'freemium' || plan === 'basic';
-    // Sports & Activities: requires Enterprise only
-    if (tabId === 'sports') return plan !== 'enterprise';
-  }
-
-  // ─── COACH Portal: Enterprise Only ───────────────────────────────────────────
-  // The entire Coach Portal workspace is Enterprise-tier.
-  // Freemium, Basic, and Pro plans must see PremiumLock on all coach tabs.
-  if (role === 'COACH') {
-    if (tabId === 'sports') return plan !== 'enterprise';
-    if (tabId === 'dashboard') return plan !== 'enterprise';
-  }
-  // ─── WARDEN Portal: Enterprise Only ──────────────────────────────────────────
-  // The entire Warden Portal workspace is Enterprise-tier.
-  // Freemium, Basic, and Pro plans must see PremiumLock on all warden tabs.
-  if (role === 'WARDEN') {
-    return plan !== 'enterprise';
-  }
-  return false;
+  const ent = getFeatureEntitlementsForPlan(planName);
+  return isTabLockedByEntitlements(role, tabId, ent);
 };
 
 // ─── DB-Driven Tab Lock (replaces hardcoded isTabLocked) ─────────────────────
