@@ -498,6 +498,17 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
           ondismiss: () => {
             setPaymentLoading(false);
             setPaymentError('Payment was cancelled. You can try again.');
+            // Notify backend to clean up PENDING rows — active subscription is untouched
+            if (orderData?.paymentId) {
+              fetch('/api/cancel-payment', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  paymentId: orderData.paymentId,
+                  orderId:   orderData.orderId,
+                }),
+              }).catch(() => { /* non-fatal — server will GC stale PENDING rows */ });
+            }
           },
           escape:           false,
           backdropclose:    false,

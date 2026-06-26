@@ -14,6 +14,7 @@
     { "source": "/api/create-school-account",    "destination": "/api/registration?action=create-school-account" },
     { "source": "/api/create-payment",           "destination": "/api/payments?action=create-payment" },
     { "source": "/api/verify-payment",           "destination": "/api/payments?action=verify-payment" },
+    { "source": "/api/cancel-payment",           "destination": "/api/payments?action=cancel-payment" },
     { "source": "/api/payments/webhook",         "destination": "/api/payments?action=webhook" },
     { "source": "/api/payments/refund",          "destination": "/api/payments?action=refund" },
     { "source": "/api/payments/history",         "destination": "/api/payments?action=history" },

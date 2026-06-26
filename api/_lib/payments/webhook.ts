@@ -269,6 +269,23 @@ async function processWebhookEvent(eventType: string, payload: any) {
         }).eq('id', txn.payment_id).neq('status', 'SUCCESS');
       }
 
+      // Write PAYMENT_FAILED audit log so failed attempts are visible
+      if (schoolId) {
+        await supabaseAdmin.from('subscription_audit_logs').insert({
+          school_id:  schoolId,
+          action:     'PAYMENT_FAILED',
+          plan:       null,
+          payment_id: txn?.payment_id || null,
+          metadata: {
+            razorpayPaymentId: payment.id,
+            errorCode:         payment.error_code,
+            errorDescription:  payment.error_description,
+            errorReason:       payment.error_reason,
+            amount:            payment.amount / 100,
+          },
+        }).then().catch((e: any) => console.error('[webhook] PAYMENT_FAILED audit write failed:', e));
+      }
+
       await supabaseAdmin.from('payment_orders').update({
         status:     'failed',
         updated_at: now,

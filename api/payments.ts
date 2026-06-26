@@ -1,9 +1,10 @@
-import createPayment from './_lib/payments/create-payment.js';
-import verifyPayment from './_lib/payments/verify-payment.js';
-import history from './_lib/payments/history.js';
-import invoice from './_lib/payments/invoice.js';
-import refund from './_lib/payments/refund.js';
-import webhook from './_lib/payments/webhook.js';
+import createPayment  from './_lib/payments/create-payment.js';
+import verifyPayment  from './_lib/payments/verify-payment.js';
+import cancelPayment  from './_lib/payments/cancel-payment.js';
+import history        from './_lib/payments/history.js';
+import invoice        from './_lib/payments/invoice.js';
+import refund         from './_lib/payments/refund.js';
+import webhook        from './_lib/payments/webhook.js';
 
 
 export default async function handler(req: any, res: any) {
@@ -15,6 +16,8 @@ export default async function handler(req: any, res: any) {
         return await createPayment(req, res);
       case 'verify-payment':
         return await verifyPayment(req, res);
+      case 'cancel-payment':
+        return await cancelPayment(req, res);
       case 'history':
         return await history(req, res);
       case 'invoice':

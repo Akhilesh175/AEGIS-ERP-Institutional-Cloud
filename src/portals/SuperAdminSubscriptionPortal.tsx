@@ -139,8 +139,12 @@ export const SuperAdminSubscriptionPortal: React.FC<SuperAdminSubscriptionPortal
       const { data: plansData } = await supabaseAdmin.from('subscription_plans').select('*');
       setPlans(plansData || PLAN_DEFINITIONS);
 
-      // Query subscriptions
-      const { data: subsData } = await supabaseAdmin.from('subscriptions').select('*, schools(name)');
+      // Query subscriptions — exclude in-flight PENDING/CANCELLED checkout rows
+      const { data: subsData } = await supabaseAdmin
+        .from('subscriptions')
+        .select('*, schools(name)')
+        .not('status', 'in', '("PENDING","CANCELLED")')
+        .order('created_at', { ascending: false });
       setSubscriptions(subsData || []);
 
       // Query successful payments

@@ -41,11 +41,12 @@ export default async function handler(req: any, res: any) {
   try {
     const todayStr = toDateStr(new Date());
 
-    // ── 1. Fetch latest subscription ─────────────────────────────────
+    // ── 1. Fetch latest subscription (exclude PENDING/CANCELLED checkout rows) ──
     const { data: sub, error: subErr } = await supabaseAdmin
       .from('subscriptions')
       .select('*')
       .eq('school_id', schoolId)
+      .not('status', 'in', '("PENDING","CANCELLED")')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();

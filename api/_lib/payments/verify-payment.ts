@@ -457,7 +457,64 @@ export default async function handler(req: any, res: any) {
       if (dbPlanErr) throw dbPlanErr;
       const planId = dbPlan?.id || null;
 
-      // ── Step 5: Update subscriptions status ──
+      // ── Step 5: Atomically deactivate ALL previous ACTIVE/TRIAL subscriptions ──
+      // Fetch every ACTIVE or TRIAL row for this school EXCEPT the one we are about
+      // to promote. This guarantees exactly-one-ACTIVE invariant.
+      const { data: prevActiveSubs, error: prevSubsErr } = await supabaseAdmin
+        .from('subscriptions')
+        .select('id, status, subscription_status, plan_code')
+        .eq('school_id', schoolId)
+        .in('status', ['ACTIVE', 'TRIAL'])
+        .neq('id', payment.subscription_id);
+
+      if (prevSubsErr) throw prevSubsErr;
+
+      if (prevActiveSubs && prevActiveSubs.length > 0) {
+        const prevSubIds = prevActiveSubs.map((s: any) => s.id);
+        const { error: deactivateErr } = await supabaseAdmin
+          .from('subscriptions')
+          .update({
+            status:              'EXPIRED',
+            subscription_status: 'expired',
+            updated_at:          now.toISOString(),
+          })
+          .in('id', prevSubIds);
+
+        if (deactivateErr) throw deactivateErr;
+
+        // Push restoration of previously-active subs onto rollback stack
+        rollbackStack.push(async () => {
+          for (const prev of prevActiveSubs) {
+            await supabaseAdmin
+              .from('subscriptions')
+              .update({
+                status:              prev.status,
+                subscription_status: prev.subscription_status,
+                updated_at:          now.toISOString(),
+              })
+              .eq('id', prev.id);
+          }
+        });
+
+        console.log(`[verify-payment] Deactivated ${prevActiveSubs.length} previous subscription(s) for school ${schoolId}`);
+      }
+
+      // Write PAYMENT_SUCCESS audit log
+      await supabaseAdmin.from('subscription_audit_logs').insert({
+        school_id:     schoolId,
+        action:        'PAYMENT_SUCCESS',
+        plan:          planCode,
+        billing_cycle: cycle,
+        amount:        payment.amount,
+        payment_id:    paymentId,
+        transaction_id: razorpayPaymentId || `free_${Date.now()}`,
+        metadata: {
+          razorpayOrderId,
+          deactivatedPreviousCount: prevActiveSubs?.length || 0,
+        },
+      }).then().catch((e: any) => console.error('[verify-payment] PAYMENT_SUCCESS log failed:', e));
+
+      // ── Step 6: Activate the new subscription row ──
       const { error: subErr } = await supabaseAdmin.from('subscriptions').update({
         status:               'ACTIVE',
         subscription_status:  'active',
@@ -480,9 +537,10 @@ export default async function handler(req: any, res: any) {
 
       rollbackStack.push(async () => {
         if (payment.subscriptions) {
+          // Restore the PENDING row back (undo its promotion to ACTIVE)
           await supabaseAdmin.from('subscriptions').update({
-            status:                 payment.subscriptions.status,
-            subscription_status:    payment.subscriptions.subscription_status,
+            status:                 'PENDING',
+            subscription_status:    'pending',
             plan_code:              payment.subscriptions.plan_code,
             plan_id:                payment.subscriptions.plan_id,
             billing_cycle:          payment.subscriptions.billing_cycle,
@@ -667,7 +725,7 @@ export default async function handler(req: any, res: any) {
       const oldPlan = payment.subscriptions?.plan_code;
       let purchaseAction = 'PURCHASED';
       if (oldPlan && oldPlan === planCode) purchaseAction = 'RENEWED';
-      else if (oldPlan && oldPlan !== planCode) purchaseAction = 'UPGRADED';
+      else if (oldPlan && oldPlan !== planCode) purchaseAction = 'PLAN_UPGRADED';
 
       const { data: insertedSubAudit, error: subAuditErr } = await supabaseAdmin.from('subscription_audit_logs').insert({
         school_id:      schoolId,

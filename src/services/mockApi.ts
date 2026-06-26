@@ -11139,10 +11139,13 @@ export const mockApi = {
       };
 
       // ── 1. Primary: query subscriptions table (source of truth) ──
+      // Exclude PENDING (in-flight checkout) and CANCELLED rows — only
+      // verified ACTIVE/TRIAL/EXPIRED rows represent real subscription state.
       const { data: latestSub, error: subError } = await supabaseAdmin
         .from('subscriptions')
         .select('*')
         .eq('school_id', schoolId)
+        .not('status', 'in', '("PENDING","CANCELLED")')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();

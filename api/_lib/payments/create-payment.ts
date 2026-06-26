@@ -127,16 +127,17 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'School not found. Please contact support.' });
     }
 
-    // ── 2. Fetch existing ACTIVE subscription (if any) ─────────────
-    // IMPORTANT: We do NOT block if same plan is already ACTIVE — the user
-    // may be renewing or re-subscribing after expiry. We only fetch the id
-    // to link the new payment record. We never touch plan_code/billing_cycle
-    // here; that is done exclusively by verify-payment after HMAC verification.
+    // ── 2. Fetch existing ACTIVE/TRIAL subscription (if any) ───────────
+    // IMPORTANT: We do NOT include PENDING rows here. A PENDING row means a
+    // previous checkout was initiated but not completed. We must NOT reuse it
+    // as the activeSub — doing so would link the new payment to a stale PENDING
+    // row whose plan_code/billing_cycle may be stale. We always create a fresh
+    // PENDING row for this checkout session.
     const { data: activeSub } = await supabaseAdmin
       .from('subscriptions')
       .select('id, status, subscription_status, plan_code, billing_cycle')
       .eq('school_id', schoolId)
-      .in('status', ['ACTIVE', 'TRIAL', 'PENDING'])
+      .in('status', ['ACTIVE', 'TRIAL'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
@@ -267,42 +268,37 @@ export default async function handler(req: any, res: any) {
     const totalAmount  = finalAmount + gstAmount;
     const receiptNum   = generateReceipt('');
 
-    // ── 6. Resolve subscription ID for this payment ──────────────────
+    // ── 6. Create a fresh PENDING subscription row for this checkout ──────────
     // CRITICAL SECURITY RULE:
-    // We NEVER update plan_code, billing_cycle, or status on the subscriptions
-    // table here. Those fields are ONLY written by verify-payment after successful
-    // Razorpay HMAC signature verification. Updating them here (before payment)
-    // triggers Supabase Realtime and causes the UI to show the new plan before
-    // the user has paid — the root cause of the premature subscription upgrade bug.
-    let subscriptionId: string | undefined;
+    // We ALWAYS create a new PENDING row for each checkout session — we NEVER
+    // reuse an existing ACTIVE/TRIAL row. This is essential so that verify-payment
+    // can atomically expire ALL previous ACTIVE/TRIAL rows and promote ONLY this
+    // new PENDING row to ACTIVE. If we reused the existing row, verify-payment
+    // would inadvertently expire the row it was trying to activate.
+    //
+    // The PENDING row has no effect on the UI because:
+    //  - getLiveSchoolSubscriptionPlan() skips PENDING rows
+    //  - subscriptionGuard.ts skips PENDING rows
+    //  - check-subscription-status.ts skips PENDING rows
+    // The ACTIVE row that already exists continues to grant access until payment is verified.
+    const { data: newSub, error: subErr } = await supabaseAdmin
+      .from('subscriptions')
+      .insert({
+        school_id:           schoolId,
+        plan_code:           cleanPlan,
+        billing_cycle:       cleanCycle,
+        status:              'PENDING',
+        subscription_status: 'pending',
+        expiry_date:         new Date().toISOString().split('T')[0],
+      })
+      .select('id')
+      .single();
 
-    if (activeSub) {
-      // Reuse existing subscription row — DO NOT touch any subscription fields.
-      subscriptionId = activeSub.id;
-    } else {
-      // No subscription exists at all — create a minimal PENDING row so that
-      // verify-payment has a row to update. We intentionally keep plan_code as
-      // the target plan but status as PENDING, so the lifecycle hook (which
-      // filters on ACTIVE) will not surface this to the UI.
-      const { data: newSub, error: subErr } = await supabaseAdmin
-        .from('subscriptions')
-        .insert({
-          school_id:           schoolId,
-          plan_code:           cleanPlan,
-          billing_cycle:       cleanCycle,
-          status:              'PENDING',
-          subscription_status: 'trial',
-          expiry_date:         new Date().toISOString().split('T')[0],
-        })
-        .select('id')
-        .single();
-
-      if (subErr || !newSub) {
-        console.error('[create-payment] Subscription insert failed:', subErr?.message);
-        return res.status(500).json({ error: 'Failed to initialise subscription record' });
-      }
-      subscriptionId = newSub.id;
+    if (subErr || !newSub) {
+      console.error('[create-payment] Subscription insert failed:', subErr?.message);
+      return res.status(500).json({ error: 'Failed to initialise subscription record' });
     }
+    const subscriptionId = newSub.id;
 
     // ── 7. Create payment record (PENDING) ───────────────────────────
     const { data: payment, error: payError } = await supabaseAdmin
