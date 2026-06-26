@@ -351,6 +351,7 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'schools' }, handleSuperAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'users' }, handleSuperAdminSync)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'audit_logs' }, handleSuperAdminSync)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'subscriptions' }, handleSuperAdminSync)
       .subscribe();
 
     return () => {

@@ -8254,13 +8254,44 @@ export const mockApi = {
         users!inner(email, first_name, last_name, phone, is_active)
       `);
 
+    // SOURCE OF TRUTH: Batch-fetch the latest non-PENDING subscription per school
+    // from the `subscriptions` table. This is the canonical plan for each school,
+    // overriding the stale schools.subscription_plan column.
+    const { data: allSubs } = await supabaseAdmin
+      .from('subscriptions')
+      .select('school_id, plan_code, status, expiry_date')
+      .not('status', 'eq', 'PENDING')
+      .order('created_at', { ascending: false });
+
+    // Build map: schoolId -> latest non-PENDING subscription plan_code
+    const subPlanBySchool = new Map<string, string>();
+    const todayStrStat = new Date().toISOString().split('T')[0];
+    const normPlan = (raw: string) => {
+      const l = (raw || 'freemium').toLowerCase();
+      if (l === 'standard') return 'pro';
+      if (l === 'premium')  return 'enterprise';
+      return l;
+    };
+    for (const sub of (allSubs || [])) {
+      if (!subPlanBySchool.has(sub.school_id)) {
+        // First entry per school is the most recent (ordered desc)
+        const isExpired = sub.status === 'EXPIRED' ||
+          (sub.expiry_date && todayStrStat > sub.expiry_date);
+        // Even if expired, keep the plan_code so Super Admin sees what was assigned
+        subPlanBySchool.set(sub.school_id, normPlan(sub.plan_code || 'freemium'));
+      }
+    }
+
     const mappedSchools = (schoolsData || []).map(s => {
+      // Prefer subscriptions table plan; fall back to schools.subscription_plan
+      const authoritativePlan = subPlanBySchool.get(s.id) ||
+        normPlan(s.subscription_plan || 'freemium');
       const schoolMapped: School = {
         id: s.id,
         name: s.name,
         address: s.address || '',
         phone: s.phone || '',
-        subscriptionPlan: s.subscription_plan ? (s.subscription_plan.toLowerCase() as any) : 'freemium',
+        subscriptionPlan: authoritativePlan as any,
         createdAt: s.created_at,
         country: s.country || 'USA',
         currencyCode: s.currency_code || 'USD',
@@ -8673,97 +8704,44 @@ export const mockApi = {
   },
 
   async superAdminUpdateSchoolSubscription(superAdminId: string, schoolId: string, subscriptionPlan: string): Promise<void> {
-    const { error } = await supabaseAdmin.from('schools').update({ subscription_plan: subscriptionPlan }).eq('id', schoolId);
-    if (error) throw new Error('Failed to update school subscription: ' + error.message);
-    
-    try {
-      // 1. Deactivate all existing plans for the school
-      await supabaseAdmin
-        .from('school_subscriptions')
-        .update({ status: 'INACTIVE' })
-        .eq('school_id', schoolId);
+    // PRODUCTION FIX: Delegate to /api/assign-plan which writes atomically to the
+    // subscriptions table (source of truth), schools.subscription_plan, and
+    // subscription_audit_logs. This replaces the legacy school_subscriptions write
+    // that caused Super Admin and School Admin to show different plans.
+    const res = await fetch('/api/assign-plan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        schoolId,
+        planCode:          subscriptionPlan,
+        superAdminUserId:  superAdminId,
+        billingCycle:      'YEARLY',
+      }),
+    });
 
-      // 2. If the new plan is a paid plan, insert or update it as ACTIVE
-      const upperPlan = subscriptionPlan.toUpperCase();
-      if (['BASIC', 'PRO', 'ENTERPRISE'].includes(upperPlan)) {
-        const oneYearLaterStr = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString().split('T')[0];
-        
-        // Safe check-then-insert/update flow to bypass unique constraint mismatch error 42P10
-        const { data: existing } = await supabaseAdmin
-          .from('school_subscriptions')
-          .select('*')
-          .eq('school_id', schoolId)
-          .eq('plan', upperPlan)
-          .limit(1);
-          
-        if (existing && existing.length > 0) {
-          const { error: updateErr } = await supabaseAdmin
-            .from('school_subscriptions')
-            .update({
-              status: 'ACTIVE',
-              expiry_date: oneYearLaterStr
-            })
-            .eq('id', existing[0].id);
-            
-          if (updateErr) throw updateErr;
-        } else {
-          const { error: insertErr } = await supabaseAdmin
-            .from('school_subscriptions')
-            .insert({
-              school_id: schoolId,
-              plan: upperPlan,
-              status: 'ACTIVE',
-              expiry_date: oneYearLaterStr
-            });
-            
-          if (insertErr) throw insertErr;
-        }
-      }
-    } catch (e) {
-      console.error('Failed to update school_subscriptions table in Supabase:', e);
-      throw e;
+    if (!res.ok) {
+      let errMsg = 'Failed to update subscription plan';
+      try {
+        const errData = await res.json();
+        errMsg = errData.error || errMsg;
+      } catch { /* ignore */ }
+      throw new Error(errMsg);
     }
 
-    // Invalidate cached subscription-related telemetry
-    Object.keys(attendanceAnalyticsCache).forEach((key) => {
-      if (key.startsWith(`${schoolId}_`)) {
-        delete attendanceAnalyticsCache[key];
-      }
-    });
-    this.clearHostelCache(schoolId);
-
-    // Sync local mockDb schools cache
+    // Sync local mockDb schools cache to keep UI consistent
     const idx = mockDb.schools.findIndex(s => s.id === schoolId);
     if (idx !== -1) {
       mockDb.schools[idx].subscriptionPlan = subscriptionPlan.toLowerCase() as any;
       mockDb.saveAll();
     }
 
-    // Broadcast the updated plan in real-time to all listening clients in this school
-    try {
-      const channel = supabaseAdmin.channel(`school-subscription-updates-${schoolId}`);
-      await new Promise<void>((resolve) => {
-        channel.subscribe(async (status) => {
-          if (status === 'SUBSCRIBED') {
-            await channel.send({
-              type: 'broadcast',
-              event: 'plan_updated',
-              payload: { schoolId, plan: subscriptionPlan.toLowerCase() }
-            });
-            supabaseAdmin.removeChannel(channel);
-            resolve();
-          } else {
-            // fallback timeout logic
-            setTimeout(() => {
-              supabaseAdmin.removeChannel(channel);
-              resolve();
-            }, 1000);
-          }
-        });
-      });
-    } catch (broadcastErr) {
-      console.warn('Failed to broadcast subscription change event in real-time:', broadcastErr);
-    }
+    // Invalidate analytics caches for this school
+    Object.keys(attendanceAnalyticsCache).forEach((key) => {
+      if (key.startsWith(`${schoolId}_`)) {
+        delete attendanceAnalyticsCache[key];
+      }
+    });
+    this.clearHostelCache(schoolId);
   },
 
   async superAdminDeleteAdmin(superAdminId: string, adminUserId: string): Promise<void> {
