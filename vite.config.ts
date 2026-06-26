@@ -7,19 +7,53 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+// Mirror of vercel.json rewrite rules for local dev (keep in sync with vercel.json)
+const VERCEL_REWRITES: Record<string, string> = {
+  // Auth
+  '/api/request-otp':            '/api/auth?action=request-otp',
+  '/api/verify-otp':             '/api/auth?action=verify-otp',
+  '/api/reset-password':         '/api/auth?action=reset-password',
+  '/api/change-password':        '/api/auth?action=change-password',
+  // Registration
+  '/api/register-school':            '/api/registration?action=register-school',
+  '/api/verify-registration-otp':    '/api/registration?action=verify-registration-otp',
+  '/api/create-school-account':      '/api/registration?action=create-school-account',
+  // Payments
+  '/api/create-payment':         '/api/payments?action=create-payment',
+  '/api/verify-payment':         '/api/payments?action=verify-payment',
+  '/api/payments/webhook':       '/api/payments?action=webhook',
+  '/api/payments/refund':        '/api/payments?action=refund',
+  '/api/payments/history':       '/api/payments?action=history',
+  '/api/payments/invoice':       '/api/payments?action=invoice',
+};
+
 const apiPlugin = () => ({
   name: 'api-plugin',
   configureServer(server: any) {
     server.middlewares.use(async (req: any, res: any, next: any) => {
       if (req.url && req.url.startsWith('/api/')) {
         try {
-          const url = new URL(req.url, 'http://localhost');
-          const apiName = url.pathname.slice(5); // remove /api/
+          const originalUrl = new URL(req.url, 'http://localhost');
+          const pathname = originalUrl.pathname;
+
+          // Apply Vercel-style rewrites for local dev
+          let resolvedUrl: URL;
+          if (VERCEL_REWRITES[pathname]) {
+            resolvedUrl = new URL(VERCEL_REWRITES[pathname], 'http://localhost');
+            // Merge any original query params (they override rewrite defaults)
+            originalUrl.searchParams.forEach((value, key) => {
+              resolvedUrl.searchParams.set(key, value);
+            });
+          } else {
+            resolvedUrl = originalUrl;
+          }
+
+          const apiName = resolvedUrl.pathname.slice(5); // remove /api/
           const filePath = path.resolve(__dirname, `api/${apiName}.ts`);
 
           if (fs.existsSync(filePath)) {
             const module = await server.ssrLoadModule(`/api/${apiName}.ts`);
-            
+
             // Read body
             let body = '';
             await new Promise<void>((resolve) => {
@@ -27,10 +61,15 @@ const apiPlugin = () => ({
               req.on('end', () => { resolve(); });
             });
 
-            const parsedBody = body ? JSON.parse(body) : {};
+            // Safely parse JSON body
+            let parsedBody = {};
+            if (body) {
+              try { parsedBody = JSON.parse(body); } catch { parsedBody = {}; }
+            }
+
             const vercelReq = Object.assign(req, {
               body: parsedBody,
-              query: Object.fromEntries(url.searchParams.entries())
+              query: Object.fromEntries(resolvedUrl.searchParams.entries()),
             });
 
             const vercelRes = Object.assign(res, {
@@ -52,10 +91,12 @@ const apiPlugin = () => ({
             await module.default(vercelReq, vercelRes);
           } else {
             res.statusCode = 404;
-            res.end(`API route not found: ${url.pathname}`);
+            res.setHeader('Content-Type', 'application/json');
+            res.end(JSON.stringify({ error: `API route not found: ${pathname}` }));
           }
         } catch (err: any) {
           res.statusCode = 500;
+          res.setHeader('Content-Type', 'application/json');
           res.end(JSON.stringify({ error: err.message || 'Internal Server Error' }));
         }
       } else {

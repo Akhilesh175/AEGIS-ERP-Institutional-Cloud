@@ -29,7 +29,7 @@
  * 16. Return success response
  */
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 
 const supabaseUrl        = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || '';
@@ -402,9 +402,9 @@ export default async function handler(req: any, res: any) {
     }
 
     // ── 8. Update school subscription plan ───────────────────────────
+    // Note: schools table has no updated_at column — only update subscription_plan
     await supabaseAdmin.from('schools').update({
       subscription_plan: planCode.toUpperCase(),
-      updated_at:        now.toISOString(),
     }).eq('id', schoolId);
 
     // ── 9. Sync school_subscriptions ────────────────────────────────
@@ -490,7 +490,7 @@ export default async function handler(req: any, res: any) {
       total_amount:    totalAmount,
       final_paid:      payment.amount,
       status:          'PAID',
-      billing_email:   payment.subscriptions?.email || '',
+      billing_email:   '',  // email is not stored in subscriptions; use admin user email if needed
       billing_address: 'AEGIS ERP Institutional Cloud',
       plan_code:       planCode,
       billing_cycle:   cycle,
@@ -599,13 +599,22 @@ export default async function handler(req: any, res: any) {
 
     if (resendApiKey) {
       try {
+        // Fetch school name (note: schools table has no 'email' column)
         const { data: schoolData } = await supabaseAdmin
           .from('schools')
-          .select('name, email')
+          .select('name')
           .eq('id', schoolId)
           .maybeSingle();
 
-        const recipientEmail = schoolData?.email || payment.subscriptions?.email || '';
+        // Get admin email from users table
+        const { data: adminUsers } = await supabaseAdmin
+          .from('users')
+          .select('email')
+          .eq('school_id', schoolId)
+          .eq('role', 'ADMIN')
+          .limit(1);
+
+        const recipientEmail = adminUsers?.[0]?.email || '';
         if (recipientEmail) {
           const emailHtml = buildInvoiceEmail({
             schoolName:        schoolData?.name || 'Your Institution',
@@ -642,8 +651,9 @@ export default async function handler(req: any, res: any) {
     }
 
     // ── 15. Trigger realtime UI update ──────────────────────────────
+    // Note: schools table has no updated_at column; touch subscription_plan to trigger realtime
     await supabaseAdmin.from('schools').update({
-      updated_at: now.toISOString(),
+      subscription_plan: planCode.toUpperCase(),
     }).eq('id', schoolId);
 
     // ── 16. Return success response ──────────────────────────────────

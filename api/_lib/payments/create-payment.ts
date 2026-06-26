@@ -118,7 +118,7 @@ export default async function handler(req: any, res: any) {
     // ── 1. Verify school exists ──────────────────────────────────────
     const { data: school, error: schoolError } = await supabaseAdmin
       .from('schools')
-      .select('id, name, email')
+      .select('id, name')
       .eq('id', schoolId)
       .maybeSingle();
 
