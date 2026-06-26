@@ -217,7 +217,7 @@ export default async function handler(req: any, res: any) {
   }
 
   // ── Environment validation ───────────────────────────────────────────
-  const razorpayKeyId  = process.env.RAZORPAY_KEY_ID;
+  const razorpayKeyId  = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
   const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
 
   if (!razorpaySecret) {

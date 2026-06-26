@@ -2,7 +2,8 @@ import { VercelRequest, VercelResponse } from '@vercel/node';
 import { createClient } from '@supabase/supabase-js';
 import { getApps, initializeApp, cert, ServiceAccount } from 'firebase-admin/app';
 import { getMessaging } from 'firebase-admin/messaging';
-import { requireSubscription } from './_lib/subscriptionGuard';
+import { requireSubscription } from './_lib/subscriptionGuard.js';
+
 
 const supabaseUrl = process.env.VITE_SUPABASE_URL || '';
 const supabaseServiceKey = process.env.VITE_SUPABASE_SERVICE_ROLE_KEY || '';

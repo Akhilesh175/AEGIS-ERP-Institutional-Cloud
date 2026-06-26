@@ -23,11 +23,11 @@ export default async function handler(req: any, res: any) {
     return res.status(405).json({ error: 'Method not allowed' });
   }
 
-  const razorpayKeyId  = process.env.RAZORPAY_KEY_ID;
+  const razorpayKeyId  = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
   const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
 
   if (!razorpayKeyId || !razorpaySecret) {
-    return res.status(500).json({ error: 'Payment gateway not configured' });
+    return res.status(500).json({ error: 'Payment gateway not configured (missing keys)' });
   }
 
   const { paymentId, amount, reason, speed = 'normal' } = req.body;

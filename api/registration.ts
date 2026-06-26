@@ -1,18 +1,29 @@
-import registerSchool from './_lib/registration/register-school';
-import verifyRegistrationOtp from './_lib/registration/verify-registration-otp';
-import createSchoolAccount from './_lib/registration/create-school-account';
+import registerSchool from './_lib/registration/register-school.js';
+import verifyRegistrationOtp from './_lib/registration/verify-registration-otp.js';
+import createSchoolAccount from './_lib/registration/create-school-account.js';
+
 
 export default async function handler(req: any, res: any) {
-  const action = req.query.action || req.body?.action;
+  try {
+    const action = req.query.action || req.body?.action;
 
-  switch (action) {
-    case 'register-school':
-      return registerSchool(req, res);
-    case 'verify-registration-otp':
-      return verifyRegistrationOtp(req, res);
-    case 'create-school-account':
-      return createSchoolAccount(req, res);
-    default:
-      return res.status(400).json({ error: `Invalid registration action: ${action}` });
+    switch (action) {
+      case 'register-school':
+        return await registerSchool(req, res);
+      case 'verify-registration-otp':
+        return await verifyRegistrationOtp(req, res);
+      case 'create-school-account':
+        return await createSchoolAccount(req, res);
+      default:
+        return res.status(400).json({ success: false, error: `Invalid registration action: ${action}` });
+    }
+  } catch (err: any) {
+    console.error('[registration-router] Unhandled exception:', err);
+    return res.status(500).json({
+      success: false,
+      error: 'Internal server error',
+      message: err?.message || 'An unexpected error occurred on the server',
+      code: 'UNHANDLED_EXCEPTION'
+    });
   }
 }

@@ -69,11 +69,11 @@ export default async function handler(req: any, res: any) {
   }
 
   // ── Environment validation ───────────────────────────────────────────
-  const razorpayKeyId  = process.env.RAZORPAY_KEY_ID;
+  const razorpayKeyId  = process.env.RAZORPAY_KEY_ID || process.env.VITE_RAZORPAY_KEY_ID;
   const razorpaySecret = process.env.RAZORPAY_KEY_SECRET;
 
   if (!razorpayKeyId || !razorpaySecret) {
-    console.error('[create-payment] RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not configured');
+    console.error('[create-payment] RAZORPAY_KEY_ID/VITE_RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET not configured');
     return res.status(500).json({ error: 'Payment gateway not configured. Please contact support.' });
   }
 
