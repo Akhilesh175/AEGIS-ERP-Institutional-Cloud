@@ -128,11 +128,8 @@ export default async function handler(req: any, res: any) {
     }
 
     // ── 2. Fetch existing ACTIVE/TRIAL subscription (if any) ───────────
-    // IMPORTANT: We do NOT include PENDING rows here. A PENDING row means a
-    // previous checkout was initiated but not completed. We must NOT reuse it
-    // as the activeSub — doing so would link the new payment to a stale PENDING
-    // row whose plan_code/billing_cycle may be stale. We always create a fresh
-    // PENDING row for this checkout session.
+    // NOTE: We only look at ACTIVE/TRIAL rows — PENDING rows are ignored.
+    // A PENDING row is an in-flight checkout that hasn't been paid yet.
     const { data: activeSub } = await supabaseAdmin
       .from('subscriptions')
       .select('id, status, subscription_status, plan_code, billing_cycle')
@@ -141,6 +138,28 @@ export default async function handler(req: any, res: any) {
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
+
+    // ── 2b. Reject downgrade via payment ─────────────────────────────
+    // Business rule: School Admin can only purchase a HIGHER plan via payment.
+    // Downgrades are Super Admin only (via /api/assign-plan).
+    const PLAN_TIER: Record<string, number> = {
+      freemium: 0, basic: 1, pro: 2, enterprise: 3,
+      standard: 2, premium: 3,
+    };
+    if (activeSub?.plan_code) {
+      const currentTier = PLAN_TIER[activeSub.plan_code.toLowerCase()] ?? 0;
+      const targetTier  = PLAN_TIER[cleanPlan] ?? 0;
+      if (targetTier < currentTier) {
+        const currentName = activeSub.plan_code.charAt(0).toUpperCase() + activeSub.plan_code.slice(1);
+        const targetName  = cleanPlan.charAt(0).toUpperCase() + cleanPlan.slice(1);
+        return res.status(400).json({
+          error: `Downgrade is not allowed via payment. Current plan: ${currentName}. You selected: ${targetName}. Please contact your administrator for plan changes.`,
+          code:  'DOWNGRADE_NOT_ALLOWED',
+          currentPlan: activeSub.plan_code,
+          targetPlan:  cleanPlan,
+        });
+      }
+    }
 
     // ── 3. Resolve authoritative amount from DB ──────────────────────
     let originalAmount = PLAN_PRICES[cleanPlan][cleanCycle === 'MONTHLY' ? 'monthly' : 'yearly'];
@@ -269,18 +288,15 @@ export default async function handler(req: any, res: any) {
     const receiptNum   = generateReceipt('');
 
     // ── 6. Create a fresh PENDING subscription row for this checkout ──────────
-    // CRITICAL SECURITY RULE:
-    // We ALWAYS create a new PENDING row for each checkout session — we NEVER
-    // reuse an existing ACTIVE/TRIAL row. This is essential so that verify-payment
-    // can atomically expire ALL previous ACTIVE/TRIAL rows and promote ONLY this
-    // new PENDING row to ACTIVE. If we reused the existing row, verify-payment
-    // would inadvertently expire the row it was trying to activate.
+    // SECURITY: Always create a new row. Never reuse existing ACTIVE/TRIAL rows.
+    // The ACTIVE row continues to grant access until payment is verified.
     //
-    // The PENDING row has no effect on the UI because:
-    //  - getLiveSchoolSubscriptionPlan() skips PENDING rows
-    //  - subscriptionGuard.ts skips PENDING rows
-    //  - check-subscription-status.ts skips PENDING rows
-    // The ACTIVE row that already exists continues to grant access until payment is verified.
+    // DB CONSTRAINT: subscription_status only allows:
+    //   'trial' | 'active' | 'expired' | 'cancelled' | 'grace_period'
+    // We use 'trial' for the PENDING checkout row because the status column
+    // already indicates this is a PENDING checkout (status='PENDING').
+    // The subscription_status='trial' is semantically correct — the school is
+    // in a pre-payment trial/pending state for this plan.
     const { data: newSub, error: subErr } = await supabaseAdmin
       .from('subscriptions')
       .insert({
@@ -288,7 +304,7 @@ export default async function handler(req: any, res: any) {
         plan_code:           cleanPlan,
         billing_cycle:       cleanCycle,
         status:              'PENDING',
-        subscription_status: 'pending',
+        subscription_status: 'trial',   // Only valid: trial|active|expired|cancelled|grace_period
         expiry_date:         new Date().toISOString().split('T')[0],
       })
       .select('id')

@@ -139,11 +139,11 @@ export const SuperAdminSubscriptionPortal: React.FC<SuperAdminSubscriptionPortal
       const { data: plansData } = await supabaseAdmin.from('subscription_plans').select('*');
       setPlans(plansData || PLAN_DEFINITIONS);
 
-      // Query subscriptions — exclude in-flight PENDING/CANCELLED checkout rows
+      // Query subscriptions — exclude in-flight PENDING checkout rows
       const { data: subsData } = await supabaseAdmin
         .from('subscriptions')
         .select('*, schools(name)')
-        .not('status', 'in', '("PENDING","CANCELLED")')
+        .not('status', 'eq', 'PENDING')
         .order('created_at', { ascending: false });
       setSubscriptions(subsData || []);
 

@@ -499,20 +499,22 @@ export default async function handler(req: any, res: any) {
         console.log(`[verify-payment] Deactivated ${prevActiveSubs.length} previous subscription(s) for school ${schoolId}`);
       }
 
-      // Write PAYMENT_SUCCESS audit log
-      await supabaseAdmin.from('subscription_audit_logs').insert({
-        school_id:     schoolId,
-        action:        'PAYMENT_SUCCESS',
-        plan:          planCode,
-        billing_cycle: cycle,
-        amount:        payment.amount,
-        payment_id:    paymentId,
+      // Write PAYMENT_SUCCESS audit log (fire-and-forget, non-fatal)
+      supabaseAdmin.from('subscription_audit_logs').insert({
+        school_id:      schoolId,
+        action:         'PAYMENT_SUCCESS',
+        plan:           planCode,
+        billing_cycle:  cycle,
+        amount:         payment.amount,
+        payment_id:     paymentId,
         transaction_id: razorpayPaymentId || `free_${Date.now()}`,
         metadata: {
           razorpayOrderId,
           deactivatedPreviousCount: prevActiveSubs?.length || 0,
         },
-      }).then().catch((e: any) => console.error('[verify-payment] PAYMENT_SUCCESS log failed:', e));
+      }).then(({ error: e }) => {
+        if (e) console.error('[verify-payment] PAYMENT_SUCCESS log failed:', e.message);
+      });
 
       // ── Step 6: Activate the new subscription row ──
       const { error: subErr } = await supabaseAdmin.from('subscriptions').update({

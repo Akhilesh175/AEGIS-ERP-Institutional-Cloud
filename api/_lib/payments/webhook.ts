@@ -283,7 +283,10 @@ async function processWebhookEvent(eventType: string, payload: any) {
             errorReason:       payment.error_reason,
             amount:            payment.amount / 100,
           },
-        }).then().catch((e: any) => console.error('[webhook] PAYMENT_FAILED audit write failed:', e));
+        }).then(({ error: e }) => {
+          if (e) console.error('[webhook] PAYMENT_FAILED audit write failed:', e.message);
+        });
+
       }
 
       await supabaseAdmin.from('payment_orders').update({

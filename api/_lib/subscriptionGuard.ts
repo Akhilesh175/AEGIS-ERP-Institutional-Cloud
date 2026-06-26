@@ -61,12 +61,12 @@ async function resolveSubscriptionTier(schoolId: string): Promise<{
 }> {
   const todayStr = new Date().toISOString().split('T')[0];
 
-  // Primary source: subscriptions table (exclude PENDING/CANCELLED checkout rows)
+  // Primary source: subscriptions table (exclude PENDING checkout rows)
   const { data: sub, error } = await supabaseAdmin
     .from('subscriptions')
     .select('id, plan_code, status, subscription_status, expiry_date, grace_end_date')
     .eq('school_id', schoolId)
-    .not('status', 'in', '("PENDING","CANCELLED")')
+    .not('status', 'eq', 'PENDING')
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();

@@ -85,12 +85,12 @@ export default async function handler(req: any, res: any) {
   const now   = new Date().toISOString();
 
   try {
-    // ── 1. Fetch latest subscription row (exclude PENDING/CANCELLED checkout rows) ──
+    // ── 1. Fetch latest subscription row (exclude PENDING checkout rows) ──
     const { data: sub, error: subErr } = await supabaseAdmin
       .from('subscriptions')
       .select('id, plan_code, status, subscription_status, expiry_date, grace_end_date, billing_cycle, last_notification_date, notification_sent')
       .eq('school_id', schoolId)
-      .not('status', 'in', '("PENDING","CANCELLED")')
+      .not('status', 'eq', 'PENDING')
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
