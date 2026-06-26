@@ -1,17 +1,25 @@
 {
   "functions": {
     "api/**/*.ts": {
-      "runtime": "nodejs20.x",
       "maxDuration": 30
     }
   },
   "rewrites": [
-    { "source": "/api/payments/webhook", "destination": "/api/payments/webhook" },
-    { "source": "/api/payments/refund",  "destination": "/api/payments/refund"  },
-    { "source": "/api/payments/history", "destination": "/api/payments/history" },
-    { "source": "/api/payments/invoice", "destination": "/api/payments/invoice" },
-    { "source": "/api/:path*",           "destination": "/api/:path*"           },
-    { "source": "/(.*)",                 "destination": "/index.html"           }
+    { "source": "/api/request-otp",             "destination": "/api/auth?action=request-otp" },
+    { "source": "/api/verify-otp",              "destination": "/api/auth?action=verify-otp" },
+    { "source": "/api/reset-password",           "destination": "/api/auth?action=reset-password" },
+    { "source": "/api/change-password",          "destination": "/api/auth?action=change-password" },
+    { "source": "/api/register-school",          "destination": "/api/registration?action=register-school" },
+    { "source": "/api/verify-registration-otp",  "destination": "/api/registration?action=verify-registration-otp" },
+    { "source": "/api/create-school-account",    "destination": "/api/registration?action=create-school-account" },
+    { "source": "/api/create-payment",           "destination": "/api/payments?action=create-payment" },
+    { "source": "/api/verify-payment",           "destination": "/api/payments?action=verify-payment" },
+    { "source": "/api/payments/webhook",         "destination": "/api/payments?action=webhook" },
+    { "source": "/api/payments/refund",          "destination": "/api/payments?action=refund" },
+    { "source": "/api/payments/history",         "destination": "/api/payments?action=history" },
+    { "source": "/api/payments/invoice",         "destination": "/api/payments?action=invoice" },
+    { "source": "/api/:path*",                   "destination": "/api/:path*" },
+    { "source": "/(.*)",                         "destination": "/index.html" }
   ],
   "headers": [
     {
