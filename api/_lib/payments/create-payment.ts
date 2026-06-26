@@ -127,25 +127,19 @@ export default async function handler(req: any, res: any) {
       return res.status(400).json({ error: 'School not found. Please contact support.' });
     }
 
-    // ── 2. Duplicate subscription protection ────────────────────────
+    // ── 2. Fetch existing ACTIVE subscription (if any) ─────────────
+    // IMPORTANT: We do NOT block if same plan is already ACTIVE — the user
+    // may be renewing or re-subscribing after expiry. We only fetch the id
+    // to link the new payment record. We never touch plan_code/billing_cycle
+    // here; that is done exclusively by verify-payment after HMAC verification.
     const { data: activeSub } = await supabaseAdmin
       .from('subscriptions')
       .select('id, status, subscription_status, plan_code, billing_cycle')
       .eq('school_id', schoolId)
-      .in('status', ['PENDING', 'ACTIVE'])
+      .in('status', ['ACTIVE', 'TRIAL', 'PENDING'])
       .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-
-    if (activeSub &&
-        activeSub.status === 'ACTIVE' &&
-        activeSub.subscription_status === 'active' &&
-        activeSub.plan_code === cleanPlan) {
-      return res.status(409).json({
-        error: 'An active subscription for this plan already exists. Please use Renew or Upgrade.',
-        code: 'DUPLICATE_SUBSCRIPTION'
-      });
-    }
 
     // ── 3. Resolve authoritative amount from DB ──────────────────────
     let originalAmount = PLAN_PRICES[cleanPlan][cleanCycle === 'MONTHLY' ? 'monthly' : 'yearly'];
@@ -273,19 +267,23 @@ export default async function handler(req: any, res: any) {
     const totalAmount  = finalAmount + gstAmount;
     const receiptNum   = generateReceipt('');
 
-    // ── 6. Upsert subscription record (PENDING) ──────────────────────
+    // ── 6. Resolve subscription ID for this payment ──────────────────
+    // CRITICAL SECURITY RULE:
+    // We NEVER update plan_code, billing_cycle, or status on the subscriptions
+    // table here. Those fields are ONLY written by verify-payment after successful
+    // Razorpay HMAC signature verification. Updating them here (before payment)
+    // triggers Supabase Realtime and causes the UI to show the new plan before
+    // the user has paid — the root cause of the premature subscription upgrade bug.
     let subscriptionId: string | undefined;
 
     if (activeSub) {
+      // Reuse existing subscription row — DO NOT touch any subscription fields.
       subscriptionId = activeSub.id;
-      await supabaseAdmin.from('subscriptions').update({
-        plan_code:    cleanPlan,
-        billing_cycle: cleanCycle,
-        status:       'PENDING',
-        subscription_status: 'trial',
-        updated_at:   new Date().toISOString(),
-      }).eq('id', subscriptionId);
     } else {
+      // No subscription exists at all — create a minimal PENDING row so that
+      // verify-payment has a row to update. We intentionally keep plan_code as
+      // the target plan but status as PENDING, so the lifecycle hook (which
+      // filters on ACTIVE) will not surface this to the UI.
       const { data: newSub, error: subErr } = await supabaseAdmin
         .from('subscriptions')
         .insert({

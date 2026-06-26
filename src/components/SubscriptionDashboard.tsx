@@ -112,6 +112,7 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
         .from('subscriptions')
         .select('*')
         .eq('school_id', schoolId)
+        .not('status', 'eq', 'PENDING')
         .order('created_at', { ascending: false })
         .limit(1)
         .maybeSingle();
