@@ -9,6 +9,25 @@ import { GlassCard } from './GlassCard';
 import { BrandLogo, AEGIS_LOGO_URL } from './common/BrandLogo';
 import { PLAN_DEFINITIONS } from '../services/subscriptionService';
 
+// Broadcast a plan_updated event on the school's realtime channel
+// so any already-logged-in admin session gets a live sidebar refresh.
+async function broadcastPlanUpdated(schoolId: string, planCode: string) {
+  if (!schoolId) return;
+  try {
+    const { supabase } = await import('../lib/supabase');
+    const channel = supabase.channel(`school:${schoolId}:subscription`);
+    await channel.send({
+      type: 'broadcast',
+      event: 'plan_updated',
+      payload: { schoolId, planCode, ts: Date.now() },
+    });
+    supabase.removeChannel(channel);
+  } catch (e) {
+    // Non-critical — silently ignore if broadcast fails
+    console.warn('[SaaSAuthFlow] post-payment broadcast failed:', e);
+  }
+}
+
 // Dynamically load Razorpay SDK
 const loadRazorpayScript = () => {
   return new Promise<boolean>((resolve) => {
@@ -370,13 +389,14 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
   const handlePlanPayment = async (planCode: string) => {
     if (planCode === 'freemium') {
       // Freemium: no payment — mark trial active and proceed
-      setStep('success');
       setSelectedPlanCode('freemium');
       setPaymentAmount(0);
       setTransactionId('trial_free_' + Date.now().toString(36));
       setPaymentDate(new Date().toLocaleDateString('en-IN', {
         day: 'numeric', month: 'long', year: 'numeric'
       }));
+      setStep('success');
+      broadcastPlanUpdated(provisionedSchoolId, 'freemium');
       return;
     }
 
@@ -388,7 +408,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
       // Load Razorpay Script
       const scriptLoaded = await loadRazorpayScript();
       if (!scriptLoaded) {
-        throw new Error('Razorpay payment gateway failed to load. Please check your internet connection.');
+        throw new Error('Razorpay payment gateway failed to load. Please check your internet connection and try again.');
       }
 
       // 1. Create Payment Order on backend
@@ -396,7 +416,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          schoolId: provisionedSchoolId,
+          schoolId:   provisionedSchoolId,
           planCode,
           billingCycle,
           couponCode: appliedCoupon ? appliedCoupon.code : undefined
@@ -405,108 +425,120 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
       const orderData = await res.json();
 
       if (!res.ok) {
-        throw new Error(orderData.error || 'Failed to initialize payment transaction');
+        throw new Error(orderData.error || 'Failed to initialize payment. Please try again.');
       }
 
       setPaymentAmount(orderData.amount);
 
       // 1b. Skip Razorpay if plan is 100% discounted (amount is 0)
-      if (orderData.amount === 0) {
+      if (orderData.amount === 0 || orderData.isFree) {
         const verifyRes = await fetch('/api/verify-payment', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            razorpayOrderId: orderData.orderId,
-            razorpayPaymentId: 'pay_free_discount_' + Math.random().toString(36).substring(2, 9),
-            razorpaySignature: 'free_sig_ok',
-            paymentId: orderData.paymentId,
-            isMock: true
+            razorpayOrderId:  orderData.orderId,
+            razorpayPaymentId: 'pay_free_' + Date.now().toString(36),
+            razorpaySignature: 'free_order_no_sig',
+            paymentId:        orderData.paymentId,
+            isFree:           true
           })
         });
         const verifyData = await verifyRes.json();
 
         if (!verifyRes.ok) {
-          throw new Error(verifyData.error || 'Payment validation failed');
+          throw new Error(verifyData.error || 'Subscription activation failed. Please contact support.');
         }
 
-        setTransactionId('pay_free_discount_' + Math.random().toString(36).substring(2, 9));
+        setTransactionId('pay_free_' + Date.now().toString(36));
         setPaymentDate(new Date().toLocaleDateString('en-IN', {
-          day: 'numeric',
-          month: 'long',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit'
+          day: 'numeric', month: 'long', year: 'numeric',
+          hour: '2-digit', minute: '2-digit'
         }));
-        
         setPaymentLoading(false);
         setStep('success');
+        broadcastPlanUpdated(provisionedSchoolId, planCode);
         return;
       }
 
-      // 2. Launch Razorpay Checkout
+      // 2. Launch Razorpay Checkout (LIVE)
       const options = {
-        key: orderData.keyId,
-        amount: orderData.amount * 100, // paise
-        currency: orderData.currency,
-        name: 'Aegis ERP',
-        description: `${planCode.toUpperCase()} Subscription (${billingCycle})`,
-        image: AEGIS_LOGO_URL,
-        order_id: orderData.orderId,
+        key:         orderData.keyId,                  // VITE_RAZORPAY_KEY_ID (public)
+        amount:      orderData.totalAmount * 100,      // paise (including GST)
+        currency:    orderData.currency || 'INR',
+        name:        'AEGIS ERP Institutional Cloud',
+        description: `${planCode.toUpperCase()} Subscription — ${billingCycle}`,
+        image:       AEGIS_LOGO_URL,
+        order_id:    orderData.orderId,
+        prefill: {
+          name:    principalName,
+          email:   email,
+          contact: phone
+        },
+        notes: {
+          plan:          planCode,
+          billing_cycle: billingCycle,
+          school_id:     provisionedSchoolId,
+        },
+        theme:     { color: '#0ea0eb' },
+        modal: {
+          ondismiss: () => {
+            setPaymentLoading(false);
+            setPaymentError('Payment was cancelled. You can try again.');
+          },
+          escape:           false,
+          backdropclose:    false,
+          animation:        true,
+          handleback:       true,
+          confirm_close:    true,
+        },
+        retry:      { enabled: true, max_count: 3 },
+        timeout:    900,   // 15 minutes
         handler: async function (response: any) {
           try {
             setPaymentLoading(true);
-            
-            // 3. Verify Payment on backend
+
+            // 3. Verify Payment on backend (HMAC-SHA256)
             const verifyRes = await fetch('/api/verify-payment', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({
-                razorpayOrderId: response.razorpay_order_id || orderData.orderId,
-                razorpayPaymentId: response.razorpay_payment_id || 'mock_payment_id',
-                razorpaySignature: response.razorpay_signature || 'mock_sig',
-                paymentId: orderData.paymentId,
-                isMock: orderData.isMock
+                razorpayOrderId:   response.razorpay_order_id,
+                razorpayPaymentId: response.razorpay_payment_id,
+                razorpaySignature: response.razorpay_signature,
+                paymentId:         orderData.paymentId,
+                isFree:            false
               })
             });
             const verifyData = await verifyRes.json();
 
             if (!verifyRes.ok) {
-              throw new Error(verifyData.error || 'Payment validation failed');
+              throw new Error(verifyData.error || 'Payment verification failed. Please contact support.');
             }
 
-            setTransactionId(response.razorpay_payment_id || 'pay_mock_' + Math.random().toString(36).substring(2, 9));
+            setTransactionId(response.razorpay_payment_id);
             setPaymentDate(new Date().toLocaleDateString('en-IN', {
-              day: 'numeric',
-              month: 'long',
-              year: 'numeric',
-              hour: '2-digit',
-              minute: '2-digit'
+              day: 'numeric', month: 'long', year: 'numeric',
+              hour: '2-digit', minute: '2-digit'
             }));
-            
             setPaymentLoading(false);
             setStep('success');
+            broadcastPlanUpdated(provisionedSchoolId, planCode);
           } catch (err: any) {
-            setPaymentError(err.message || 'Failed to activate subscription');
+            setPaymentError(err.message || 'Payment verification failed. Please contact support at billing@aegiserp.xyz');
             setPaymentLoading(false);
           }
         },
-        prefill: {
-          name: principalName,
-          email: email,
-          contact: phone
-        },
-        theme: {
-          color: '#0ea0eb'
-        }
       };
 
       const rzp = new (window as any).Razorpay(options);
       rzp.on('payment.failed', function (response: any) {
-        setPaymentError('Payment failed: ' + response.error.description);
+        const errMsg = response.error?.description || response.error?.reason || 'Payment failed';
+        setPaymentError(`Payment failed: ${errMsg}. Please try again or use a different payment method.`);
+        setPaymentLoading(false);
       });
       rzp.open();
     } catch (err: any) {
-      setPaymentError(err.message || 'Payment initiation failed');
+      setPaymentError(err.message || 'Payment could not be initiated. Please try again.');
       setPaymentLoading(false);
     }
   };

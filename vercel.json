@@ -1,5 +1,29 @@
 {
+  "functions": {
+    "api/**/*.ts": {
+      "runtime": "nodejs20.x",
+      "maxDuration": 30
+    }
+  },
   "rewrites": [
-    { "source": "/(.*)", "destination": "/index.html" }
+    { "source": "/api/payments/webhook", "destination": "/api/payments/webhook" },
+    { "source": "/api/payments/refund",  "destination": "/api/payments/refund"  },
+    { "source": "/api/payments/history", "destination": "/api/payments/history" },
+    { "source": "/api/payments/invoice", "destination": "/api/payments/invoice" },
+    { "source": "/api/:path*",           "destination": "/api/:path*"           },
+    { "source": "/(.*)",                 "destination": "/index.html"           }
+  ],
+  "headers": [
+    {
+      "source": "/api/:path*",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin",  "value": "https://www.aegiserp.xyz" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET,POST,PUT,DELETE,OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type,Authorization,x-razorpay-signature" },
+        { "key": "X-Content-Type-Options",       "value": "nosniff" },
+        { "key": "X-Frame-Options",              "value": "DENY" },
+        { "key": "X-XSS-Protection",             "value": "1; mode=block" }
+      ]
+    }
   ]
 }
