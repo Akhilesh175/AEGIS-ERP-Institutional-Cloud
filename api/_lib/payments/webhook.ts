@@ -26,7 +26,7 @@
  *   Secret: value of RAZORPAY_WEBHOOK_SECRET env var
  */
 import { createClient } from '@supabase/supabase-js';
-import crypto from 'crypto';
+import * as crypto from 'crypto';
 
 const supabaseAdmin = createClient(
   process.env.VITE_SUPABASE_URL || '',

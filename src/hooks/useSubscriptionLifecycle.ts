@@ -260,7 +260,7 @@ export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
       .on(
         'postgres_changes',
         {
-          event: 'UPDATE',
+          event: '*',
           schema: 'public',
           table: 'subscriptions',
           filter: `school_id=eq.${schoolId}`,

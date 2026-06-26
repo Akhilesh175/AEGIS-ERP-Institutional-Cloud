@@ -171,6 +171,26 @@ export default async function handler(req: any, res: any) {
 
     if (subError) {
       console.error('Error creating default subscription:', subError.message);
+    } else {
+      // Create School Account Created Audit Log
+      await supabaseAdmin.from('subscription_audit_logs').insert({
+        school_id: school.id,
+        action: 'SCHOOL_ACCOUNT_CREATED',
+        plan: 'basic',
+        billing_cycle: 'TRIAL',
+        amount: 0,
+        metadata: { notes: 'School account created and initialized.' }
+      });
+      
+      // Create Trial Started Audit Log
+      await supabaseAdmin.from('subscription_audit_logs').insert({
+        school_id: school.id,
+        action: 'TRIAL_STARTED',
+        plan: 'basic',
+        billing_cycle: 'TRIAL',
+        amount: 0,
+        metadata: { notes: '14-day free trial activated.' }
+      });
     }
 
     // 9. Send welcome success email using Resend

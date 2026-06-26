@@ -43,6 +43,20 @@ const loadRazorpayScript = () => {
   });
 };
 
+// Robust helper to safely parse JSON responses from the serverless API routes
+async function safeJsonParse(response: Response): Promise<any> {
+  const text = await response.text();
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    const cleanSnippet = text.trim();
+    if (cleanSnippet.startsWith('<') || cleanSnippet.toLowerCase().includes('server error') || cleanSnippet.toLowerCase().includes('unexpected token')) {
+      throw new Error('The server encountered an error and could not complete your request. Please try again later.');
+    }
+    throw new Error(cleanSnippet.slice(0, 150) || 'The server returned an empty or invalid response.');
+  }
+}
+
 interface SaaSAuthFlowProps {
   onBackToLogin: () => void;
   theme: 'dark' | 'light';
@@ -289,7 +303,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       });
-      const data = await res.json();
+      const data = await safeJsonParse(res);
 
       if (!res.ok) {
         throw new Error(data.error || 'Failed to register school email');
@@ -316,7 +330,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email })
       });
-      const data = await res.json();
+      const data = await safeJsonParse(res);
       if (!res.ok) throw new Error(data.error || 'Failed to resend verification code');
       setOtpSuccess('A new verification code has been delivered.');
       setResendTimer(45);
@@ -345,7 +359,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, otpCode })
       });
-      const verifyData = await verifyRes.json();
+      const verifyData = await safeJsonParse(verifyRes);
 
       if (!verifyRes.ok) {
         throw new Error(verifyData.error || 'OTP verification failed');
@@ -370,7 +384,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
           password
         })
       });
-      const createData = await createRes.json();
+      const createData = await safeJsonParse(createRes);
 
       if (!createRes.ok) {
         throw new Error(createData.error || 'Failed to create school account');
@@ -422,7 +436,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
           couponCode: appliedCoupon ? appliedCoupon.code : undefined
         })
       });
-      const orderData = await res.json();
+      const orderData = await safeJsonParse(res);
 
       if (!res.ok) {
         throw new Error(orderData.error || 'Failed to initialize payment. Please try again.');
@@ -443,7 +457,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
             isFree:           true
           })
         });
-        const verifyData = await verifyRes.json();
+        const verifyData = await safeJsonParse(verifyRes);
 
         if (!verifyRes.ok) {
           throw new Error(verifyData.error || 'Subscription activation failed. Please contact support.');
@@ -509,7 +523,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
                 isFree:            false
               })
             });
-            const verifyData = await verifyRes.json();
+            const verifyData = await safeJsonParse(verifyRes);
 
             if (!verifyRes.ok) {
               throw new Error(verifyData.error || 'Payment verification failed. Please contact support.');

@@ -328,7 +328,7 @@ export default async function handler(req: any, res: any) {
     // ── 4. Load transaction metadata ────────────────────────────────
     const { data: paymentTx } = await supabaseAdmin
       .from('payment_transactions')
-      .select('raw_response')
+      .select('*')
       .eq('payment_id', paymentId)
       .maybeSingle();
 
@@ -339,33 +339,7 @@ export default async function handler(req: any, res: any) {
     const gstAmount       = Number(payment.gst_amount || metadata.gstAmount || Math.round(payment.amount * 0.18));
     const totalAmount     = payment.amount + gstAmount;
 
-    // ── 5. Update payment record to SUCCESS ──────────────────────────
-    await supabaseAdmin.from('payments').update({
-      status:              'SUCCESS',
-      razorpay_order_id:   razorpayOrderId,
-      razorpay_payment_id: razorpayPaymentId || `free_${Date.now()}`,
-      razorpay_signature:  razorpaySignature  || 'free_order',
-      payment_method:      isFree ? 'FREE_DISCOUNT' : 'RAZORPAY',
-      updated_at:          new Date().toISOString(),
-    }).eq('id', paymentId);
-
-    // Update payment_transaction
-    await supabaseAdmin.from('payment_transactions').update({
-      status:             'SUCCESS',
-      gateway_payment_id: razorpayPaymentId || `free_${Date.now()}`,
-      gateway_signature:  razorpaySignature  || 'free_order',
-      updated_at:         new Date().toISOString(),
-    }).eq('payment_id', paymentId);
-
-    // Update payment_order status
-    if (razorpayOrderId) {
-      await supabaseAdmin.from('payment_orders').update({
-        status:     'paid',
-        updated_at: new Date().toISOString(),
-      }).eq('razorpay_order_id', razorpayOrderId).neq('status', 'paid');
-    }
-
-    // ── 6. Compute subscription dates ────────────────────────────────
+    // ── 5. Update payment record to SUCCESS and run in transaction flow ──────────────────────────
     const cycle      = (payment.subscriptions?.billing_cycle || 'MONTHLY') as 'MONTHLY' | 'YEARLY';
     const planCode   = payment.subscriptions?.plan_code || payment.plan_code || 'basic';
     const schoolId   = payment.school_id;
@@ -373,84 +347,240 @@ export default async function handler(req: any, res: any) {
 
     const { startDateStr, endDateStr, graceEndDateStr } = computeDates(now, cycle);
 
-    // ── 7. Activate subscription ─────────────────────────────────────
-    const oldPlan  = payment.subscriptions?.plan_code;
-    let action = 'PURCHASED';
-    if (oldPlan && oldPlan === planCode) action = 'RENEWED';
-    else if (oldPlan && oldPlan !== planCode) action = 'UPGRADED';
+    // Fetch school data early to know the previous subscription_plan for rollback
+    const { data: schoolData, error: schoolFetchErr } = await supabaseAdmin
+      .from('schools')
+      .select('name, subscription_plan')
+      .eq('id', schoolId)
+      .maybeSingle();
 
-    const { error: subErr } = await supabaseAdmin.from('subscriptions').update({
-      status:               'ACTIVE',
-      subscription_status:  'active',
-      plan_code:            planCode,
-      billing_cycle:        cycle,
-      start_date:           startDateStr,
-      expiry_date:          endDateStr,
-      grace_end_date:       graceEndDateStr,
-      purchase_date:        now.toISOString(),
-      amount_paid:          payment.amount,
-      transaction_id:       razorpayPaymentId || `free_${Date.now()}`,
-      renewed_at:           now.toISOString(),
-      last_notification_date: null,
-      notification_sent:      null,
-      updated_at:           now.toISOString(),
-    }).eq('id', payment.subscription_id);
-
-    if (subErr) {
-      console.error('[verify-payment] Subscription activation failed:', subErr.message);
-      return res.status(500).json({ error: 'Failed to activate subscription. Please contact support.' });
+    if (schoolFetchErr) {
+      console.error('[verify-payment] School fetch failed:', schoolFetchErr.message);
+      return res.status(400).json({ error: 'Failed to retrieve school details' });
     }
 
-    // ── 8. Update school subscription plan ───────────────────────────
-    // Note: schools table has no updated_at column — only update subscription_plan
-    await supabaseAdmin.from('schools').update({
-      subscription_plan: planCode.toUpperCase(),
-    }).eq('id', schoolId);
+    const rollbackStack: Array<() => Promise<void>> = [];
 
-    // ── 9. Sync school_subscriptions ────────────────────────────────
+    const executeRollback = async () => {
+      console.log('[verify-payment] Initiating database transaction rollback...');
+      while (rollbackStack.length > 0) {
+        const rollbackFn = rollbackStack.pop();
+        if (rollbackFn) {
+          try {
+            await rollbackFn();
+          } catch (rErr: any) {
+            console.error('[verify-payment] Rollback step failed:', rErr?.message || rErr);
+          }
+        }
+      }
+    };
+
     try {
-      const upperPlan = planCode.toUpperCase();
-      const { data: existingSub } = await supabaseAdmin
-        .from('school_subscriptions')
-        .select('id')
-        .eq('school_id', schoolId)
-        .limit(1);
+      // ── Step 1: Update payment record ──
+      const { error: payUpdateErr } = await supabaseAdmin.from('payments').update({
+        status:              'SUCCESS',
+        razorpay_order_id:   razorpayOrderId,
+        razorpay_payment_id: razorpayPaymentId || `free_${Date.now()}`,
+        razorpay_signature:  razorpaySignature  || 'free_order',
+        payment_method:      isFree ? 'FREE_DISCOUNT' : 'RAZORPAY',
+        updated_at:          now.toISOString(),
+      }).eq('id', paymentId);
 
-      if (existingSub && existingSub.length > 0) {
-        await supabaseAdmin.from('school_subscriptions').update({
+      if (payUpdateErr) throw payUpdateErr;
+
+      rollbackStack.push(async () => {
+        await supabaseAdmin.from('payments').update({
+          status:              payment.status,
+          razorpay_order_id:   payment.razorpay_order_id,
+          razorpay_payment_id: payment.razorpay_payment_id,
+          razorpay_signature:  payment.razorpay_signature,
+          payment_method:      payment.payment_method,
+          invoice_number:      payment.invoice_number,
+          updated_at:          payment.updated_at,
+        }).eq('id', paymentId);
+      });
+
+      // ── Step 2: Update payment_transaction ──
+      const { error: payTxErr } = await supabaseAdmin.from('payment_transactions').update({
+        status:             'SUCCESS',
+        gateway_payment_id: razorpayPaymentId || `free_${Date.now()}`,
+        gateway_signature:  razorpaySignature  || 'free_order',
+        updated_at:         now.toISOString(),
+      }).eq('payment_id', paymentId);
+
+      if (payTxErr) throw payTxErr;
+
+      rollbackStack.push(async () => {
+        if (paymentTx) {
+          await supabaseAdmin.from('payment_transactions').update({
+            status:             paymentTx.status,
+            gateway_payment_id: paymentTx.gateway_payment_id,
+            gateway_signature:  paymentTx.gateway_signature,
+            updated_at:         paymentTx.updated_at,
+          }).eq('payment_id', paymentId);
+        }
+      });
+
+      // ── Step 3: Update payment_order status ──
+      if (razorpayOrderId) {
+        const { data: orderData } = await supabaseAdmin
+          .from('payment_orders')
+          .select('status, updated_at')
+          .eq('razorpay_order_id', razorpayOrderId)
+          .maybeSingle();
+
+        const { error: orderUpdateErr } = await supabaseAdmin.from('payment_orders').update({
+          status:     'paid',
+          updated_at: now.toISOString(),
+        }).eq('razorpay_order_id', razorpayOrderId).neq('status', 'paid');
+
+        if (orderUpdateErr) throw orderUpdateErr;
+
+        rollbackStack.push(async () => {
+          if (orderData) {
+            await supabaseAdmin.from('payment_orders').update({
+              status:     orderData.status,
+              updated_at: orderData.updated_at,
+            }).eq('razorpay_order_id', razorpayOrderId);
+          }
+        });
+      }
+
+      // ── Step 4: Resolve plan_id from subscription_plans ──
+      const { data: dbPlan, error: dbPlanErr } = await supabaseAdmin
+        .from('subscription_plans')
+        .select('id, name')
+        .eq('code', planCode.toLowerCase())
+        .eq('is_active', true)
+        .maybeSingle();
+
+      if (dbPlanErr) throw dbPlanErr;
+      const planId = dbPlan?.id || null;
+
+      // ── Step 5: Update subscriptions status ──
+      const { error: subErr } = await supabaseAdmin.from('subscriptions').update({
+        status:               'ACTIVE',
+        subscription_status:  'active',
+        plan_code:            planCode,
+        plan_id:              planId,
+        billing_cycle:        cycle,
+        start_date:           startDateStr,
+        expiry_date:          endDateStr,
+        grace_end_date:       graceEndDateStr,
+        purchase_date:        now.toISOString(),
+        amount_paid:          payment.amount,
+        transaction_id:       razorpayPaymentId || `free_${Date.now()}`,
+        renewed_at:           now.toISOString(),
+        last_notification_date: null,
+        notification_sent:      null,
+        updated_at:           now.toISOString(),
+      }).eq('id', payment.subscription_id);
+
+      if (subErr) throw subErr;
+
+      rollbackStack.push(async () => {
+        if (payment.subscriptions) {
+          await supabaseAdmin.from('subscriptions').update({
+            status:                 payment.subscriptions.status,
+            subscription_status:    payment.subscriptions.subscription_status,
+            plan_code:              payment.subscriptions.plan_code,
+            plan_id:                payment.subscriptions.plan_id,
+            billing_cycle:          payment.subscriptions.billing_cycle,
+            start_date:             payment.subscriptions.start_date,
+            expiry_date:            payment.subscriptions.expiry_date,
+            grace_end_date:         payment.subscriptions.grace_end_date,
+            purchase_date:          payment.subscriptions.purchase_date,
+            amount_paid:            payment.subscriptions.amount_paid,
+            transaction_id:         payment.subscriptions.transaction_id,
+            renewed_at:             payment.subscriptions.renewed_at,
+            last_notification_date: payment.subscriptions.last_notification_date,
+            notification_sent:      payment.subscriptions.notification_sent,
+            updated_at:             payment.subscriptions.updated_at,
+          }).eq('id', payment.subscription_id);
+        }
+      });
+
+      // ── Step 6: Update schools subscription_plan ──
+      const { error: schoolUpdateErr } = await supabaseAdmin.from('schools').update({
+        subscription_plan: planCode.toUpperCase(),
+      }).eq('id', schoolId);
+
+      if (schoolUpdateErr) throw schoolUpdateErr;
+
+      rollbackStack.push(async () => {
+        if (schoolData) {
+          await supabaseAdmin.from('schools').update({
+            subscription_plan: schoolData.subscription_plan,
+          }).eq('id', schoolId);
+        }
+      });
+
+      // ── Step 7: Sync school_subscriptions ──
+      const { data: prevSchoolSubs, error: prevSchoolSubsErr } = await supabaseAdmin
+        .from('school_subscriptions')
+        .select('*')
+        .eq('school_id', schoolId);
+
+      if (prevSchoolSubsErr) throw prevSchoolSubsErr;
+
+      const upperPlan = planCode.toUpperCase();
+      const existingSub = prevSchoolSubs?.[0];
+
+      if (existingSub) {
+        const { error: schoolSubErr } = await supabaseAdmin.from('school_subscriptions').update({
           status:      'ACTIVE',
           plan:        upperPlan,
           expiry_date: endDateStr,
-        }).eq('id', existingSub[0].id);
+        }).eq('id', existingSub.id);
+
+        if (schoolSubErr) throw schoolSubErr;
       } else {
-        await supabaseAdmin.from('school_subscriptions').update({
-          status: 'INACTIVE',
-        }).eq('school_id', schoolId);
-        await supabaseAdmin.from('school_subscriptions').insert({
+        const { error: schoolSubErr } = await supabaseAdmin.from('school_subscriptions').insert({
           school_id:   schoolId,
           plan:        upperPlan,
           status:      'ACTIVE',
           expiry_date: endDateStr,
         });
-      }
-    } catch (syncErr) {
-      console.warn('[verify-payment] school_subscriptions sync (non-fatal):', syncErr);
-    }
 
-    // ── 10. Coupon usage tracking ────────────────────────────────────
-    if (couponCode) {
-      try {
-        const { data: couponData } = await supabaseAdmin
+        if (schoolSubErr) throw schoolSubErr;
+      }
+
+      rollbackStack.push(async () => {
+        const prevIds = prevSchoolSubs?.map(x => x.id) || [];
+        if (prevIds.length > 0) {
+          await supabaseAdmin.from('school_subscriptions').delete().eq('school_id', schoolId).not('id', 'in', `(${prevIds.join(',')})`);
+        } else {
+          await supabaseAdmin.from('school_subscriptions').delete().eq('school_id', schoolId);
+        }
+        if (prevSchoolSubs) {
+          for (const sub of prevSchoolSubs) {
+            await supabaseAdmin.from('school_subscriptions').update({
+              status: sub.status,
+              plan: sub.plan,
+              expiry_date: sub.expiry_date,
+            }).eq('id', sub.id);
+          }
+        }
+      });
+
+      // ── Step 8: Coupon usage tracking ──
+      let insertedCouponUsageId: string | null = null;
+      if (couponCode) {
+        const { data: couponData, error: couponDataErr } = await supabaseAdmin
           .from('subscription_coupons')
-          .select('id, current_uses')
+          .select('id, current_uses, updated_at')
           .eq('code', couponCode.toUpperCase().trim())
           .maybeSingle();
 
+        if (couponDataErr) throw couponDataErr;
+
         if (couponData) {
-          await supabaseAdmin.from('subscription_coupons').update({
+          const { error: couponUpdateErr } = await supabaseAdmin.from('subscription_coupons').update({
             current_uses: (Number(couponData.current_uses) || 0) + 1,
             updated_at:   now.toISOString(),
           }).eq('id', couponData.id);
+
+          if (couponUpdateErr) throw couponUpdateErr;
 
           const { data: admins } = await supabaseAdmin
             .from('users')
@@ -459,7 +589,7 @@ export default async function handler(req: any, res: any) {
             .eq('role', 'ADMIN')
             .limit(1);
 
-          await supabaseAdmin.from('subscription_coupon_usages').insert({
+          const { data: insertedUsage, error: couponUsageErr } = await supabaseAdmin.from('subscription_coupon_usages').insert({
             coupon_id:       couponData.id,
             school_id:       schoolId,
             user_id:         admins?.[0]?.id || null,
@@ -468,100 +598,143 @@ export default async function handler(req: any, res: any) {
             plan_code:       planCode,
             discount_amount: discountAmount,
             payment_status:  'SUCCESS',
+          }).select('id').single();
+
+          if (couponUsageErr) throw couponUsageErr;
+          if (insertedUsage) insertedCouponUsageId = insertedUsage.id;
+
+          rollbackStack.push(async () => {
+            await supabaseAdmin.from('subscription_coupons').update({
+              current_uses: couponData.current_uses,
+              updated_at:   couponData.updated_at,
+            }).eq('id', couponData.id);
+
+            if (insertedCouponUsageId) {
+              await supabaseAdmin.from('subscription_coupon_usages').delete().eq('id', insertedCouponUsageId);
+            }
           });
         }
-      } catch (couponErr) {
-        console.warn('[verify-payment] Coupon tracking (non-fatal):', couponErr);
       }
-    }
 
-    // ── 11. Generate invoice ────────────────────────────────────────
-    const invoiceNum   = generateInvoiceNumber();
-    const receiptNum   = payment.receipt_number || `AEGIS-${Date.now().toString(36).toUpperCase()}`;
+      // ── Step 9: Generate invoice ──
+      const invoiceNum   = generateInvoiceNumber();
+      const receiptNum   = payment.receipt_number || `AEGIS-${Date.now().toString(36).toUpperCase()}`;
 
-    await supabaseAdmin.from('subscription_invoices').insert({
-      school_id:       schoolId,
-      payment_id:      paymentId,
-      invoice_number:  invoiceNum,
-      amount:          originalAmount,
-      discount_amount: discountAmount,
-      gst_amount:      gstAmount,
-      tax_amount:      gstAmount,
-      total_amount:    totalAmount,
-      final_paid:      payment.amount,
-      status:          'PAID',
-      billing_email:   '',  // email is not stored in subscriptions; use admin user email if needed
-      billing_address: 'AEGIS ERP Institutional Cloud',
-      plan_code:       planCode,
-      billing_cycle:   cycle,
-      metadata: {
-        couponCode,
-        originalAmount,
-        discountAmount,
-        razorpayPaymentId,
-        razorpayOrderId,
-        receipt: receiptNum,
-        priceOverrideApplied: metadata.priceOverrideApplied || false,
-      },
-    });
+      const { data: newInvoice, error: invoiceErr } = await supabaseAdmin.from('subscription_invoices').insert({
+        school_id:       schoolId,
+        payment_id:      paymentId,
+        invoice_number:  invoiceNum,
+        amount:          originalAmount,
+        discount_amount: discountAmount,
+        gst_amount:      gstAmount,
+        tax_amount:      gstAmount,
+        total_amount:    totalAmount,
+        final_paid:      payment.amount,
+        status:          'PAID',
+        billing_email:   '',
+        billing_address: 'AEGIS ERP Institutional Cloud',
+        plan_code:       planCode,
+        billing_cycle:   cycle,
+        metadata: {
+          couponCode,
+          originalAmount,
+          discountAmount,
+          razorpayPaymentId,
+          razorpayOrderId,
+          receipt: receiptNum,
+          priceOverrideApplied: metadata.priceOverrideApplied || false,
+        },
+      }).select('id').single();
 
-    // Update payment with invoice number
-    await supabaseAdmin.from('payments').update({
-      invoice_number: invoiceNum,
-    }).eq('id', paymentId);
+      if (invoiceErr) throw invoiceErr;
 
-    // ── 12. Audit logs ───────────────────────────────────────────────
-    await writeAuditLog({
-      schoolId,
-      action,
-      plan:         planCode,
-      billingCycle: cycle,
-      amount:       payment.amount,
-      paymentId,
-      transactionId: razorpayPaymentId || `free_${Date.now()}`,
-      startDate:    startDateStr,
-      endDate:      endDateStr,
-      graceEndDate: graceEndDateStr,
-      metadata: {
-        invoiceNum,
-        receiptNum,
-        ipAddress,
-        couponCode,
-        discountAmount,
-        originalAmount,
-        gstAmount,
-        totalAmount,
-        isFree: !!isFree,
-      },
-    });
+      const insertedInvoiceId = newInvoice?.id || null;
 
-    await supabaseAdmin.from('audit_logs').insert({
-      school_id:   schoolId,
-      action_type: 'SUBSCRIPTION_PAYMENT_SUCCESS',
-      module_name: 'BILLING',
-      ip_address:  ipAddress,
-      new_data: {
-        paymentId, invoiceNum, planCode, cycle,
-        startDateStr, endDateStr, graceEndDateStr,
-        razorpayPaymentId, razorpayOrderId,
-      },
-    });
+      rollbackStack.push(async () => {
+        if (insertedInvoiceId) {
+          await supabaseAdmin.from('subscription_invoices').delete().eq('id', insertedInvoiceId);
+        }
+      });
 
-    await supabaseAdmin.from('payment_audit_logs').insert({
-      payment_id:          paymentId,
-      school_id:           schoolId,
-      event_type:          'PAYMENT_VERIFIED',
-      action:              'PAYMENT_VERIFIED',
-      razorpay_order_id:   razorpayOrderId,
-      razorpay_payment_id: razorpayPaymentId,
-      amount:              payment.amount,
-      ip_address:          ipAddress,
-      metadata:            { invoiceNum, planCode, cycle, startDateStr, endDateStr },
-      performed_at:        now.toISOString(),
-    });
+      // Update payment with invoice number
+      const { error: payInvoiceUpdateErr } = await supabaseAdmin.from('payments').update({
+        invoice_number: invoiceNum,
+      }).eq('id', paymentId);
 
-    // ── 13. Notify school admins ────────────────────────────────────
-    try {
+      if (payInvoiceUpdateErr) throw payInvoiceUpdateErr;
+
+      // ── Step 10: Audit logs ──
+      const oldPlan = payment.subscriptions?.plan_code;
+      let purchaseAction = 'PURCHASED';
+      if (oldPlan && oldPlan === planCode) purchaseAction = 'RENEWED';
+      else if (oldPlan && oldPlan !== planCode) purchaseAction = 'UPGRADED';
+
+      const { data: insertedSubAudit, error: subAuditErr } = await supabaseAdmin.from('subscription_audit_logs').insert({
+        school_id:      schoolId,
+        action:         purchaseAction,
+        plan:           planCode,
+        billing_cycle:  cycle,
+        amount:         payment.amount,
+        payment_id:     paymentId,
+        transaction_id: razorpayPaymentId || `free_${Date.now()}`,
+        start_date:     startDateStr,
+        end_date:       endDateStr,
+        grace_end_date: graceEndDateStr,
+        metadata: {
+          invoiceNum,
+          receiptNum,
+          ipAddress,
+          couponCode,
+          discountAmount,
+          originalAmount,
+          gstAmount,
+          totalAmount,
+          isFree: !!isFree,
+        },
+      }).select('id').single();
+
+      if (subAuditErr) throw subAuditErr;
+      const subAuditLogId = insertedSubAudit?.id || null;
+
+      const { data: insertedAudit, error: auditErr } = await supabaseAdmin.from('audit_logs').insert({
+        school_id:   schoolId,
+        action_type: 'SUBSCRIPTION_PAYMENT_SUCCESS',
+        module_name: 'BILLING',
+        ip_address:  ipAddress,
+        new_data: {
+          paymentId, invoiceNum, planCode, cycle,
+          startDateStr, endDateStr, graceEndDateStr,
+          razorpayPaymentId, razorpayOrderId,
+        },
+      }).select('id').single();
+
+      if (auditErr) throw auditErr;
+      const auditLogId = insertedAudit?.id || null;
+
+      const { data: insertedPayAudit, error: payAuditErr } = await supabaseAdmin.from('payment_audit_logs').insert({
+        payment_id:          paymentId,
+        school_id:           schoolId,
+        event_type:          'PAYMENT_VERIFIED',
+        action:              'PAYMENT_VERIFIED',
+        razorpay_order_id:   razorpayOrderId,
+        razorpay_payment_id: razorpayPaymentId,
+        amount:              payment.amount,
+        ip_address:          ipAddress,
+        metadata:            { invoiceNum, planCode, cycle, startDateStr, endDateStr },
+        performed_at:        now.toISOString(),
+      }).select('id').single();
+
+      if (payAuditErr) throw payAuditErr;
+      const paymentAuditLogId = insertedPayAudit?.id || null;
+
+      rollbackStack.push(async () => {
+        if (subAuditLogId) await supabaseAdmin.from('subscription_audit_logs').delete().eq('id', subAuditLogId);
+        if (auditLogId) await supabaseAdmin.from('audit_logs').delete().eq('id', auditLogId);
+        if (paymentAuditLogId) await supabaseAdmin.from('payment_audit_logs').delete().eq('id', paymentAuditLogId);
+      });
+
+      // ── Step 11: Notify school admins ──
+      let insertedNotificationIds: string[] = [];
       const { data: admins } = await supabaseAdmin
         .from('users')
         .select('id')
@@ -570,7 +743,7 @@ export default async function handler(req: any, res: any) {
 
       if (admins && admins.length > 0) {
         const planLabel = planCode.charAt(0).toUpperCase() + planCode.slice(1);
-        await supabaseAdmin.from('notifications').insert(
+        const { data: insertedNotifs, error: notifErr } = await supabaseAdmin.from('notifications').insert(
           admins.map(admin => ({
             school_id:      schoolId,
             user_id:        admin.id,
@@ -587,91 +760,98 @@ export default async function handler(req: any, res: any) {
             read_status:    false,
             created_at:     now.toISOString(),
           }))
-        );
-      }
-    } catch (notifErr) {
-      console.warn('[verify-payment] Notification dispatch (non-fatal):', notifErr);
-    }
+        ).select('id');
 
-    // ── 14. Send invoice email ───────────────────────────────────────
-    const resendApiKey = process.env.RESEND_API_KEY;
-    const supportEmail = process.env.SUPPORT_EMAIL || 'billing@aegiserp.xyz';
-
-    if (resendApiKey) {
-      try {
-        // Fetch school name (note: schools table has no 'email' column)
-        const { data: schoolData } = await supabaseAdmin
-          .from('schools')
-          .select('name')
-          .eq('id', schoolId)
-          .maybeSingle();
-
-        // Get admin email from users table
-        const { data: adminUsers } = await supabaseAdmin
-          .from('users')
-          .select('email')
-          .eq('school_id', schoolId)
-          .eq('role', 'ADMIN')
-          .limit(1);
-
-        const recipientEmail = adminUsers?.[0]?.email || '';
-        if (recipientEmail) {
-          const emailHtml = buildInvoiceEmail({
-            schoolName:        schoolData?.name || 'Your Institution',
-            planCode,
-            cycle,
-            baseAmount:        originalAmount - discountAmount,
-            gstAmount,
-            totalAmount,
-            discountAmount,
-            invoiceNum,
-            receiptNumber:     receiptNum,
-            startDateStr,
-            endDateStr,
-            razorpayPaymentId: razorpayPaymentId || 'FREE',
-          });
-
-          await fetch('https://api.resend.com/emails', {
-            method:  'POST',
-            headers: {
-              'Authorization': `Bearer ${resendApiKey}`,
-              'Content-Type':  'application/json',
-            },
-            body: JSON.stringify({
-              from:    `AEGIS ERP Billing <${supportEmail}>`,
-              to:      [recipientEmail],
-              subject: `✅ Payment Confirmed — ${invoiceNum} | ${schoolData?.name || 'AEGIS ERP'}`,
-              html:    emailHtml,
-            }),
-          });
+        if (notifErr) throw notifErr;
+        if (insertedNotifs) {
+          insertedNotificationIds = insertedNotifs.map(n => n.id);
         }
-      } catch (emailErr) {
-        console.warn('[verify-payment] Invoice email (non-fatal):', emailErr);
+
+        rollbackStack.push(async () => {
+          if (insertedNotificationIds.length > 0) {
+            await supabaseAdmin.from('notifications').delete().in('id', insertedNotificationIds);
+          }
+        });
       }
+
+      // ── Step 12: Send invoice email ──
+      const resendApiKey = process.env.RESEND_API_KEY;
+      const supportEmail = process.env.SUPPORT_EMAIL || 'billing@aegiserp.xyz';
+
+      if (resendApiKey) {
+        try {
+          const { data: adminUsers } = await supabaseAdmin
+            .from('users')
+            .select('email')
+            .eq('school_id', schoolId)
+            .eq('role', 'ADMIN')
+            .limit(1);
+
+          const recipientEmail = adminUsers?.[0]?.email || '';
+          if (recipientEmail) {
+            const emailHtml = buildInvoiceEmail({
+              schoolName:        schoolData?.name || 'Your Institution',
+              planCode,
+              cycle,
+              baseAmount:        originalAmount - discountAmount,
+              gstAmount,
+              totalAmount,
+              discountAmount,
+              invoiceNum,
+              receiptNumber:     receiptNum,
+              startDateStr,
+              endDateStr,
+              razorpayPaymentId: razorpayPaymentId || 'FREE',
+            });
+
+            await fetch('https://api.resend.com/emails', {
+              method:  'POST',
+              headers: {
+                'Authorization': `Bearer ${resendApiKey}`,
+                'Content-Type':  'application/json',
+              },
+              body: JSON.stringify({
+                from:    `AEGIS ERP Billing <${supportEmail}>`,
+                to:      [recipientEmail],
+                subject: `✅ Payment Confirmed — ${invoiceNum} | ${schoolData?.name || 'AEGIS ERP'}`,
+                html:    emailHtml,
+              }),
+            });
+          }
+        } catch (emailErr) {
+          console.warn('[verify-payment] Invoice email send failed (non-fatal):', emailErr);
+        }
+      }
+
+      // ── Step 13: Touch subscription_plan on schools table to trigger realtime updates ──
+      const { error: rtTouchErr } = await supabaseAdmin.from('schools').update({
+        subscription_plan: planCode.toUpperCase(),
+      }).eq('id', schoolId);
+
+      if (rtTouchErr) throw rtTouchErr;
+
+      // Return success response
+      return res.status(200).json({
+        success:        true,
+        message:        'Payment verified. Subscription activated successfully.',
+        invoiceNumber:  invoiceNum,
+        receiptNumber:  receiptNum,
+        plan:           planCode,
+        billingCycle:   cycle,
+        startDate:      startDateStr,
+        endDate:        endDateStr,
+        graceEndDate:   graceEndDateStr,
+        totalPaid:      totalAmount,
+      });
+
+    } catch (txnError: any) {
+      await executeRollback();
+      console.error('[verify-payment] Transaction failed and rolled back:', txnError?.message || txnError);
+      return res.status(500).json({ error: 'Database transaction failed. All changes rolled back.' });
     }
-
-    // ── 15. Trigger realtime UI update ──────────────────────────────
-    // Note: schools table has no updated_at column; touch subscription_plan to trigger realtime
-    await supabaseAdmin.from('schools').update({
-      subscription_plan: planCode.toUpperCase(),
-    }).eq('id', schoolId);
-
-    // ── 16. Return success response ──────────────────────────────────
-    return res.status(200).json({
-      success:        true,
-      message:        'Payment verified. Subscription activated successfully.',
-      invoiceNumber:  invoiceNum,
-      receiptNumber:  receiptNum,
-      plan:           planCode,
-      billingCycle:   cycle,
-      startDate:      startDateStr,
-      endDate:        endDateStr,
-      graceEndDate:   graceEndDateStr,
-      totalPaid:      totalAmount,
-    });
-
   } catch (err: any) {
     console.error('[verify-payment] Unhandled error:', err?.message || err);
     return res.status(500).json({ error: 'Internal server error. Please contact support.' });
   }
 }
+

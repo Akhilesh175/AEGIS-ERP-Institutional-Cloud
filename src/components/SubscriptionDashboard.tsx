@@ -208,7 +208,7 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
   useEffect(() => { 
     loadHistory();
     loadUsageAndInvoices();
-  }, [loadHistory, loadUsageAndInvoices]);
+  }, [subscriptionStatus, daysRemaining, loadHistory, loadUsageAndInvoices]);
 
   const downloadInvoicePDF = (inv: any) => {
     try {
@@ -405,7 +405,12 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
           </button>
         </div>
         <SaaSAuthFlow
-          onBackToLogin={() => setView('dashboard')}
+          onBackToLogin={async () => {
+            setView('dashboard');
+            await refreshLocalData();
+            await loadUsageAndInvoices();
+            await loadHistory();
+          }}
           theme={theme}
           toggleTheme={toggleTheme}
           initialStep="plans"
@@ -462,10 +467,10 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
             </div>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 text-xs">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
             <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-850">
               <p className="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Billing Cycle</p>
-              <p className="text-slate-200 font-semibold">{formatCycle(lifecycle.billingCycle) || 'Trial'}</p>
+              <p className="text-slate-200 font-semibold">{lifecycle.billingCycle === 'TRIAL' ? 'Trial' : (formatCycle(lifecycle.billingCycle) || 'Trial')}</p>
             </div>
             <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-850">
               <p className="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Start Date</p>
@@ -477,21 +482,31 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
                 {formatDate(lifecycle.endDate) || '—'}
               </p>
             </div>
-            {lifecycle.graceEndDate && (
-              <div className="p-3 rounded-xl bg-orange-500/5 border border-orange-500/20">
-                <p className="text-orange-500 text-[10px] uppercase tracking-wider mb-1">Grace End</p>
-                <p className="text-orange-400 font-semibold">{formatDate(lifecycle.graceEndDate)}</p>
-              </div>
-            )}
-            {lifecycle.amountPaid !== null && (
-              <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-850">
-                <p className="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Last Payment</p>
-                <p className="text-emerald-400 font-semibold font-mono">
-                  {lifecycle.amountPaid === 0 ? 'Free' : `₹${lifecycle.amountPaid.toLocaleString('en-IN')}`}
-                </p>
-              </div>
-            )}
+            <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-850">
+              <p className="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Days Remaining</p>
+              <p className={`font-semibold ${isExpired ? 'text-red-400' : 'text-emerald-400'}`}>
+                {isExpired ? 'Expired' : `${lifecycle.daysRemaining} Day${lifecycle.daysRemaining === 1 ? '' : 's'}`}
+              </p>
+            </div>
           </div>
+          {(lifecycle.graceEndDate || lifecycle.amountPaid !== null) && (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 text-xs mt-3">
+              {lifecycle.graceEndDate && (
+                <div className="p-3 rounded-xl bg-orange-500/5 border border-orange-500/20">
+                  <p className="text-orange-500 text-[10px] uppercase tracking-wider mb-1">Grace End</p>
+                  <p className="text-orange-400 font-semibold">{formatDate(lifecycle.graceEndDate)}</p>
+                </div>
+              )}
+              {lifecycle.amountPaid !== null && (
+                <div className="p-3 rounded-xl bg-slate-900/50 border border-slate-850">
+                  <p className="text-slate-500 text-[10px] uppercase tracking-wider mb-1">Last Payment</p>
+                  <p className="text-emerald-400 font-semibold font-mono">
+                    {lifecycle.amountPaid === 0 ? 'Free' : `₹${lifecycle.amountPaid.toLocaleString('en-IN')}`}
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Feature Access List */}
           <div className="mt-4 pt-4 border-t border-slate-900">
@@ -669,15 +684,15 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
               <table className="w-full text-xs">
                 <thead>
                   <tr className="border-b border-slate-900">
-                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Invoice No</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Invoice #</th>
                     <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Plan</th>
-                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cycle</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Billing Cycle</th>
                     <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Amount</th>
-                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Discount</th>
-                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tax (GST)</th>
-                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total Paid</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">GST (18%)</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Total</th>
+                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Status</th>
                     <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Date</th>
-                    <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Invoice</th>
+                    <th className="text-center px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -685,13 +700,17 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
                     <tr key={inv.id} className="border-b border-slate-900/50 hover:bg-slate-900/30 transition-colors">
                       <td className="px-4 py-3 font-semibold text-slate-350">{inv.invoice_number}</td>
                       <td className="px-4 py-3 text-slate-300 font-mono text-[10px] uppercase">{inv.plan_code || 'pro'}</td>
-                      <td className="px-4 py-3 text-slate-400">{formatCycle(inv.billing_cycle) || '—'}</td>
+                      <td className="px-4 py-3 text-slate-400">{inv.billing_cycle === 'TRIAL' ? 'Trial' : (formatCycle(inv.billing_cycle) || '—')}</td>
                       <td className="px-4 py-3 text-slate-300 font-mono">₹{Number(inv.amount || 0).toLocaleString('en-IN')}</td>
-                      <td className="px-4 py-3 text-rose-450 font-mono">
-                        {inv.discount_amount > 0 ? `-₹${Number(inv.discount_amount).toLocaleString('en-IN')}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-400 font-mono">₹{Number(inv.tax_amount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3 text-slate-400 font-mono">₹{Number(inv.tax_amount || inv.gst_amount || 0).toLocaleString('en-IN')}</td>
                       <td className="px-4 py-3 text-emerald-400 font-semibold font-mono">₹{Number(inv.total_amount || 0).toLocaleString('en-IN')}</td>
+                      <td className="px-4 py-3">
+                        <span className={`inline-flex items-center px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase ${
+                          inv.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-400' : 'bg-brand-500/10 text-brand-400'
+                        }`}>
+                          {inv.status || 'PAID'}
+                        </span>
+                      </td>
                       <td className="px-4 py-3 text-slate-500">
                         {new Date(inv.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
                       </td>
@@ -713,12 +732,12 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
         </GlassCard>
       </div>
 
-      {/* Audit / Transaction History */}
+      {/* Subscription History timeline */}
       <div>
         <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest mb-3 flex items-center gap-2">
-          <FileText size={12} className="text-brand-400" /> Subscription History
+          <Clock size={12} className="text-brand-400" /> Subscription History
         </h3>
-        <GlassCard className="p-0 overflow-hidden bg-[#0b101d]/75 border-slate-850">
+        <GlassCard className="p-6 bg-[#0b101d]/75 border-slate-850">
           {loadingHistory ? (
             <div className="flex items-center justify-center py-10">
               <span className="w-5 h-5 rounded-full border-2 border-brand-500/30 border-t-brand-400 animate-spin" />
@@ -726,43 +745,90 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
           ) : history.length === 0 ? (
             <div className="py-10 text-center text-xs text-slate-500">No subscription history yet.</div>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full text-xs">
-                <thead>
-                  <tr className="border-b border-slate-900">
-                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Action</th>
-                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Plan</th>
-                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Cycle</th>
-                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Amount</th>
-                    <th className="text-left px-4 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-wider">Date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {history.map((h, i) => (
-                    <tr key={h.id || i} className="border-b border-slate-900/50 hover:bg-slate-900/30 transition-colors">
-                      <td className="px-4 py-3">
-                        <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-bold uppercase ${
-                          h.action === 'PAYMENT_SUCCESS' || h.action === 'PURCHASED' || h.action === 'RENEWED' ? 'bg-emerald-500/10 text-emerald-400' :
-                          h.action === 'UPGRADED'   ? 'bg-brand-500/10 text-brand-400' :
-                          h.action === 'EXPIRED'    ? 'bg-red-500/10 text-red-400' :
-                          h.action === 'GRACE_PERIOD'? 'bg-orange-500/10 text-orange-400' :
-                          'bg-slate-800 text-slate-400'
-                        }`}>
-                          {h.action?.replace('_', ' ')}
-                        </span>
-                      </td>
-                      <td className="px-4 py-3 text-slate-300 font-mono text-[10px] uppercase">{h.plan || '—'}</td>
-                      <td className="px-4 py-3 text-slate-400">{formatCycle(h.billing_cycle) || '—'}</td>
-                      <td className="px-4 py-3 text-slate-300 font-mono">
-                        {h.amount ? `₹${Number(h.amount).toLocaleString('en-IN')}` : '—'}
-                      </td>
-                      <td className="px-4 py-3 text-slate-500">
-                        {h.created_at ? new Date(h.created_at).toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+            <div className="relative pl-6 border-l border-slate-800 space-y-6">
+              {history.map((h, i) => {
+                const action = h.action || '';
+                const dateStr = h.created_at
+                  ? new Date(h.created_at).toLocaleDateString('en-IN', {
+                      day: 'numeric',
+                      month: 'short',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })
+                  : '—';
+
+                let dotColor = 'bg-slate-500';
+                let ringColor = 'ring-slate-500/20';
+                let actionLabel = action.replace(/_/g, ' ');
+
+                if (action === 'SCHOOL_ACCOUNT_CREATED') {
+                  dotColor = 'bg-purple-500';
+                  ringColor = 'ring-purple-500/20';
+                  actionLabel = 'School Account Created';
+                } else if (action === 'TRIAL_STARTED') {
+                  dotColor = 'bg-blue-500';
+                  ringColor = 'ring-blue-500/20';
+                  actionLabel = 'Trial Started';
+                } else if (action === 'PAYMENT_SUCCESS' || action === 'PAYMENT_VERIFIED') {
+                  dotColor = 'bg-emerald-500';
+                  ringColor = 'ring-emerald-500/20';
+                  actionLabel = 'Payment Successful';
+                } else if (action === 'PURCHASED' || action === 'PLAN_PURCHASED') {
+                  dotColor = 'bg-emerald-500';
+                  ringColor = 'ring-emerald-500/20';
+                  actionLabel = 'Plan Purchased';
+                } else if (action === 'RENEWED') {
+                  dotColor = 'bg-emerald-500';
+                  ringColor = 'ring-emerald-500/20';
+                  actionLabel = 'Subscription Renewed';
+                } else if (action === 'UPGRADED') {
+                  dotColor = 'bg-indigo-500';
+                  ringColor = 'ring-indigo-500/20';
+                  actionLabel = 'Plan Upgraded';
+                } else if (action === 'DOWNGRADED') {
+                  dotColor = 'bg-amber-500';
+                  ringColor = 'ring-amber-500/20';
+                  actionLabel = 'Plan Downgraded';
+                } else if (action === 'EXPIRED') {
+                  dotColor = 'bg-red-500';
+                  ringColor = 'ring-red-500/20';
+                  actionLabel = 'Subscription Expired';
+                } else if (action === 'CANCELLED') {
+                  dotColor = 'bg-red-650';
+                  ringColor = 'ring-red-650/20';
+                  actionLabel = 'Subscription Cancelled';
+                }
+
+                return (
+                  <div key={h.id || i} className="relative flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+                    <div className={`absolute -left-[31px] top-1.5 w-2.5 h-2.5 rounded-full ${dotColor} ring-4 ${ringColor}`} />
+                    
+                    <div className="space-y-0.5">
+                      <p className="font-bold text-slate-200 text-sm tracking-wide">{actionLabel}</p>
+                      <p className="text-slate-400">
+                        Plan: <span className="font-semibold uppercase text-slate-300">{h.plan || '—'}</span>
+                        {h.billing_cycle && (
+                          <>
+                            {' • '}
+                            Cycle: <span className="font-semibold text-slate-300">{h.billing_cycle === 'TRIAL' ? 'Trial' : formatCycle(h.billing_cycle)}</span>
+                          </>
+                        )}
+                        {h.amount !== undefined && h.amount !== null && (
+                          <>
+                            {' • '}
+                            Amount: <span className="font-semibold font-mono text-emerald-400">₹{Number(h.amount).toLocaleString('en-IN')}</span>
+                          </>
+                        )}
+                      </p>
+                    </div>
+                    
+                    <div className="text-slate-500 font-medium text-[11px] sm:text-right shrink-0">
+                      {dateStr}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           )}
         </GlassCard>

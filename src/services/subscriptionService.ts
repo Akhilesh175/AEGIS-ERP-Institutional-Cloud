@@ -285,13 +285,24 @@ export function checkSubscriptionStatus(sub: SubscriptionRecord): SubscriptionSt
   const endDate = sub.expiry_date;
   const graceEndDate = sub.grace_end_date;
 
+  const isTrialRecord = 
+    sub.status === 'TRIAL' || 
+    sub.subscription_status === 'trial' || 
+    sub.billing_cycle === 'TRIAL';
+
   if (!endDate) {
-    // No expiry date — treat as trial
-    return (sub.subscription_status as SubscriptionStatus) || 'trial';
+    return isTrialRecord ? 'trial' : 'expired';
   }
 
   if (todayStr > (graceEndDate || endDate)) {
     return 'expired';
+  }
+
+  if (isTrialRecord) {
+    if (todayStr > endDate) {
+      return 'expired';
+    }
+    return 'trial';
   }
 
   if (todayStr > endDate) {
