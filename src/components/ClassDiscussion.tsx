@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { 
   Send, Search, Paperclip, Pin, Bell, Volume2, Mic, Square, Smile, CornerUpLeft, 
   Trash2, X, Download, FileText, Shield, Check, UserMinus, VolumeX, Volume2 as VolumeIcon,
-  ChevronRight, Calendar, User, SearchIcon, Clock, ChevronDown, ListFilter, AlertCircle, FileSpreadsheet
+  ChevronRight, Calendar, User, SearchIcon, Clock, ChevronDown, ListFilter, AlertCircle, FileSpreadsheet, ArrowLeft
 } from 'lucide-react';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
@@ -568,7 +568,7 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
   return (
     <div className="flex h-[calc(100vh-80px)] w-full overflow-hidden bg-slate-950/20 text-slate-100 rounded-3xl backdrop-blur-xl border border-slate-800/80 shadow-2xl">
       {/* ── LEFT PANEL: CLASS GROUPS ────────────────────────────────────────── */}
-      <div className="w-80 border-r border-slate-850 bg-slate-900/60 flex flex-col h-full">
+      <div className={`w-full md:w-80 border-r border-slate-850 bg-slate-900/60 flex flex-col h-full ${selectedGroup ? 'hidden md:flex' : 'flex'}`}>
         {/* Search */}
         <div className="p-4 border-b border-slate-800/60">
           <div className="relative">
@@ -608,7 +608,7 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
                   }`}
                 >
                   <div className="flex items-center justify-between w-full">
-                    <span className="font-semibold text-sm truncate pr-2">{g.name}</span>
+                     <span className="font-semibold text-sm truncate pr-2">{g.name}</span>
                     <ChevronRight className={`h-4 w-4 text-slate-500 transition-transform ${isSelected ? 'rotate-90 text-cyan-400' : ''}`} />
                   </div>
                   <span className="text-xs text-slate-500 mt-1">Class Discussion Group</span>
@@ -620,23 +620,33 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
       </div>
 
       {/* ── MIDDLE PANEL: CHAT WORKSPACE ────────────────────────────────────── */}
-      <div className="flex-1 flex flex-col bg-slate-950/35 h-full relative border-r border-slate-850">
+      <div className={`flex-1 flex flex-col bg-slate-950/35 h-full relative border-r border-slate-850 ${selectedGroup ? 'flex' : 'hidden md:flex'}`}>
         {selectedGroup ? (
           <>
             {/* Header Area */}
-            <div className="px-6 py-4 bg-slate-900/40 border-b border-slate-800/60 flex items-center justify-between">
-              <div>
-                <h2 className="text-lg font-bold text-slate-100 flex items-center gap-2">
-                  {selectedGroup.name}
-                  {canPerformStaffActions && (
-                    <span className="text-xs px-2.5 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-medium">
-                      Staff Controls
-                    </span>
-                  )}
-                </h2>
-                <div className="text-xs text-slate-400 mt-0.5 flex items-center gap-1.5">
-                  <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
-                  {Object.keys(onlineUsers).length} active members online
+            <div className="px-4 py-4 md:px-6 bg-slate-900/40 border-b border-slate-800/60 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={() => setSelectedGroup(null)}
+                  className="md:hidden flex items-center justify-center w-9 h-9 p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/40 rounded-xl transition-all duration-200 border border-slate-800/60"
+                  title="Back to Group List"
+                >
+                  <ArrowLeft className="h-5 w-5" />
+                </button>
+                <div>
+                  <h2 className="text-sm md:text-lg font-bold text-slate-105 flex items-center gap-2">
+                    {selectedGroup.name}
+                    {canPerformStaffActions && (
+                      <span className="text-[10px] md:text-xs px-2 py-0.5 rounded-full bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 font-medium">
+                        Staff
+                      </span>
+                    )}
+                  </h2>
+                  <div className="text-[10px] md:text-xs text-slate-450 mt-0.5 flex items-center gap-1.5">
+                    <span className="inline-block h-2 w-2 rounded-full bg-emerald-400" />
+                    {Object.keys(onlineUsers).length} active
+                  </div>
                 </div>
               </div>
               <div className="flex items-center gap-3">
@@ -1063,7 +1073,7 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
 
       {/* ── RIGHT PANEL: CHAT INFO & OPERATIONAL CONTROLS ───────────────────── */}
       {selectedGroup && (
-        <div className="w-80 bg-slate-900/60 flex flex-col h-full">
+        <div className="hidden md:flex w-80 bg-slate-900/60 flex-col h-full border-l border-slate-850">
           {/* Panel Tabs */}
           <div className="flex border-b border-slate-800/60 text-xs">
             <button

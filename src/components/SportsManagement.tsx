@@ -54,7 +54,15 @@ class FinanceErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 }
 
-export const SportsManagement: React.FC = () => {
+interface SportsManagementProps {
+  activeTab?: string;
+  setActiveTab?: (tab: string) => void;
+}
+
+export const SportsManagement: React.FC<SportsManagementProps> = ({
+  activeTab = 'sports',
+  setActiveTab
+}) => {
   const { session } = useStore();
   const schoolId = session?.user?.schoolId || '';
   const academicSessionId = session?.user?.academicSessionId || '';
@@ -62,7 +70,20 @@ export const SportsManagement: React.FC = () => {
   const userId = session?.user?.id || '';
 
   // Active sub-tab state
-  const [activeSubTab, setActiveSubTab] = useState<string>('dashboard');
+  const [internalActiveSubTab, setInternalActiveSubTab] = useState<string>('dashboard');
+  
+  const activeSubTab = activeTab.includes('/') 
+    ? (activeTab.split('/')[1] || 'dashboard') 
+    : (activeTab === 'sports' ? 'dashboard' : internalActiveSubTab);
+
+  const setActiveSubTab = (subTab: string) => {
+    if (setActiveTab) {
+      setActiveTab(`sports/${subTab}`);
+    } else {
+      setInternalActiveSubTab(subTab);
+    }
+  };
+
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
 

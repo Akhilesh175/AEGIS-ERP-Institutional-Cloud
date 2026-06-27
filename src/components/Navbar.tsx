@@ -400,14 +400,15 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab = 'dashboard', onBack 
       <header className="sticky top-0 z-40 w-full glass dark:glass-dark border-b border-slate-800 bg-[#070a13]/85 backdrop-blur-md px-6 py-3 flex items-center justify-between">
         {/* Branding Title — AEGIS ERP Official Logo */}
         <div className="flex items-center gap-3">
-          {activeTab !== 'dashboard' && (
+          {activeTab !== 'dashboard' && activeTab !== 'sports' && activeTab !== 'sports/dashboard' && (
             <button
               onClick={onBack}
-              className="flex items-center justify-center w-9 h-9 p-2 text-slate-300 hover:text-white hover:bg-slate-800/60 active:bg-slate-700/60 border border-slate-800 hover:border-slate-700 rounded-lg transition-all duration-200"
+              className="flex items-center justify-center gap-1.5 h-9 px-3 text-slate-300 hover:text-white hover:bg-slate-800/60 active:bg-slate-700/60 border border-slate-800 hover:border-slate-700 rounded-lg transition-all duration-200"
               title="Go Back"
               id="header-back-button"
             >
               <ArrowLeft size={16} />
+              <span className="text-xs font-semibold">Back</span>
             </button>
           )}
 

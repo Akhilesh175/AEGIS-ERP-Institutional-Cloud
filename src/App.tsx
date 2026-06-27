@@ -438,13 +438,17 @@ export const App: React.FC = () => {
   };
 
   const handleNavigateBack = useCallback(() => {
+    if (activeTab.startsWith('sports/') && activeTab !== 'sports/dashboard') {
+      updateActiveTab('sports');
+      return;
+    }
     if (historyStack.length > 1) {
       const prevTab = historyStack[historyStack.length - 2];
       updateActiveTab(prevTab);
     } else {
       updateActiveTab('dashboard');
     }
-  }, [historyStack]);
+  }, [historyStack, activeTab]);
 
   // Sync active tab to hash on change (safeguard)
   useEffect(() => {
@@ -1546,7 +1550,7 @@ export const App: React.FC = () => {
                           requiredTier="Enterprise"
                           featureName="Sports & Activities"
                         >
-                          <SportsManagement />
+                          <SportsManagement activeTab={activeTab} setActiveTab={updateActiveTab} />
                         </PremiumLock>
                       </div>
                     ) : (
@@ -1578,7 +1582,7 @@ export const App: React.FC = () => {
                                 requiredTier="Enterprise"
                                 featureName="Coach Portal"
                               >
-                                <SportsManagement />
+                                <SportsManagement activeTab={activeTab} setActiveTab={updateActiveTab} />
                               </PremiumLock>
                         )}
                         {session.user.role === 'ADMIN' && <AdminPortal activeTab={activeTab} />}
