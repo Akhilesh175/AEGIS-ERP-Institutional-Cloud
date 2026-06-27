@@ -875,7 +875,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
 
         {/* Step 2: Email Verification (OTP Entry) */}
         {step === 'otp' && (
-          <GlassCard className="max-w-md mx-auto p-8 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-2xl relative overflow-hidden group">
+          <GlassCard className="max-w-md mx-auto p-4 sm:p-8 bg-[#0b101d]/75 border-slate-850 hover:border-slate-800/80 shadow-2xl relative overflow-hidden group">
             <div className="absolute top-0 left-0 w-full h-[3px] bg-gradient-to-r from-brand-600 via-brand-400 to-brand-600 opacity-80" />
             
             <div className="space-y-6 text-center">
@@ -905,7 +905,7 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
               )}
 
               <form onSubmit={handleOtpVerifySubmit} className="space-y-5">
-                <div className="flex justify-between items-center gap-2 max-w-xs mx-auto">
+                <div className="grid grid-cols-6 gap-1.5 sm:gap-2 max-w-[260px] xs:max-w-[280px] sm:max-w-xs mx-auto w-full">
                   {otpArray.map((digit, idx) => (
                     <input 
                       key={idx}
@@ -915,7 +915,13 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
                       value={digit}
                       onChange={(e) => handleOtpChange(idx, e.target.value)}
                       onKeyDown={(e) => handleOtpKeyDown(idx, e)}
-                      className="w-12 h-12 bg-[#0a0e1a] border border-slate-805 text-slate-100 text-xl font-bold text-center rounded-xl focus:outline-none focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_12px_rgba(14,160,235,0.15)] transition-all duration-200"
+                      className={`w-full aspect-square bg-[#0a0e1a] border text-slate-100 text-lg sm:text-xl font-bold text-center rounded-xl focus:outline-none transition-all duration-200 ${
+                        otpError 
+                          ? 'border-red-500/60 focus:border-red-500 focus:ring-1 focus:ring-red-500 focus:shadow-[0_0_12px_rgba(239,68,68,0.15)]' 
+                          : otpSuccess 
+                            ? 'border-emerald-500/60 focus:border-emerald-500 focus:ring-1 focus:ring-emerald-500 focus:shadow-[0_0_12px_rgba(16,185,129,0.15)]' 
+                            : 'border-slate-805 focus:border-brand-500 focus:ring-1 focus:ring-brand-500 focus:shadow-[0_0_12px_rgba(14,160,235,0.15)]'
+                      }`}
                     />
                   ))}
                 </div>
