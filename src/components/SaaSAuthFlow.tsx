@@ -593,11 +593,11 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
                 else if (step === 'plans') setStep('otp');
                 else if (step === 'success') setStep('plans');
               }}
-              className="flex items-center justify-center w-9 h-9 p-2 text-slate-350 hover:text-white hover:bg-slate-900/60 active:bg-slate-800/60 border border-slate-800 hover:border-slate-700 rounded-lg transition-all duration-200"
+              className="flex items-center justify-center w-9 h-9 text-slate-350 hover:text-white hover:bg-slate-800/60 active:bg-slate-700/60 border border-slate-800 hover:border-slate-700 rounded-lg transition-all duration-200 shadow-md"
               title="Go Back"
               id="saas-header-back-button"
             >
-              <ArrowLeft size={16} />
+              <ArrowLeft size={18} />
             </button>
           )}
           <BrandLogo variant="horizontal" size="md" showTagline={true} />

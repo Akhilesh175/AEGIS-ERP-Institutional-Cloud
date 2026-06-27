@@ -430,6 +430,11 @@ export const App: React.FC = () => {
     historyStackRef.current = historyStack;
   }, [historyStack]);
 
+  const sessionRef = React.useRef(session);
+  React.useEffect(() => {
+    sessionRef.current = session;
+  }, [session]);
+
   const prevUserIdRef = React.useRef<string | undefined>(undefined);
 
   const updateActiveTab = (tab: string) => {
@@ -438,17 +443,12 @@ export const App: React.FC = () => {
   };
 
   const handleNavigateBack = useCallback(() => {
-    if (activeTab.startsWith('sports/') && activeTab !== 'sports/dashboard') {
+    if (sessionRef.current?.user?.role === 'COACH') {
       updateActiveTab('sports');
-      return;
-    }
-    if (historyStack.length > 1) {
-      const prevTab = historyStack[historyStack.length - 2];
-      updateActiveTab(prevTab);
     } else {
       updateActiveTab('dashboard');
     }
-  }, [historyStack, activeTab]);
+  }, []);
 
   // Sync active tab to hash on change (safeguard)
   useEffect(() => {
@@ -481,11 +481,17 @@ export const App: React.FC = () => {
       if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
         try {
           activeListener = await CapApp.addListener('backButton', () => {
-            if (historyStackRef.current.length > 1) {
-              const prevTab = historyStackRef.current[historyStackRef.current.length - 2];
-              updateActiveTab(prevTab);
-            } else {
+            const currentTab = window.location.hash.substring(1) || 'dashboard';
+            const role = sessionRef.current?.user?.role || '';
+            const isDashboard = role === 'COACH'
+              ? (currentTab === 'sports' || currentTab === 'sports/dashboard')
+              : (currentTab === 'dashboard');
+
+            if (isDashboard) {
               CapApp.exitApp();
+            } else {
+              const target = role === 'COACH' ? 'sports' : 'dashboard';
+              updateActiveTab(target);
             }
           });
         } catch (err) {
