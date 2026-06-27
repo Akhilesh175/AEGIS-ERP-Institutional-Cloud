@@ -297,7 +297,7 @@ export const App: React.FC = () => {
   const inactivityApi = useInactivityTimeout({
     timeoutMs: 5 * 60 * 1000,   // 5 minutes total idle
     warningMs: 60 * 1000,       // warn 60 s before expiry (at 4-min mark)
-    isActive: !!session,         // only track when a session is live
+    isActive: !!session && !(typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()), // only track on web when a session is live
     onWarn: handleInactivityWarn,
     onResume: handleInactivityResume,
     onExpire: handleInactivityExpire,

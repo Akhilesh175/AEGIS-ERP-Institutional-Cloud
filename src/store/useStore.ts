@@ -174,6 +174,28 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
     // Fetch plans initially and subscribe to realtime updates
     get().fetchPlans();
     import('../lib/supabase').then(({ supabase }) => {
+      // 1. Verify Supabase session validity on startup
+      supabase.auth.getSession().then(({ data: { session: sbSession } }) => {
+        if (!sbSession && localStorage.getItem('aegis_session')) {
+          console.warn('[Session Recovery] No active Supabase session found. Wiping local auth state...');
+          set({ session: null });
+          localStorage.removeItem('aegis_session');
+        }
+      }).catch(err => {
+        console.error('[Session Recovery] Supabase session validation failed:', err);
+      });
+
+      // 2. Listen for auth changes (token refresh, password changes, sign out)
+      supabase.auth.onAuthStateChange((event, sbSession) => {
+        console.log('[Supabase Auth Change]', event);
+        if (event === 'SIGNED_OUT' || (event === 'USER_UPDATED' && !sbSession)) {
+          console.warn(`[Supabase Auth Change] Clearing auth state due to ${event}`);
+          set({ session: null });
+          localStorage.removeItem('aegis_session');
+        }
+      });
+
+      // 3. Subscribe to realtime subscription plans changes
       supabase
         .channel('realtime-plans-changes')
         .on('postgres_changes', { event: '*', schema: 'public', table: 'subscription_plans' }, () => {
