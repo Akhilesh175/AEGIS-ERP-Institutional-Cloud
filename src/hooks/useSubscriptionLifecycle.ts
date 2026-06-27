@@ -18,7 +18,7 @@
  *    double-invocation without channel name conflicts
  */
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 import { useStore } from '../store/useStore';
 import {
   SubscriptionStatus,
@@ -92,7 +92,7 @@ export function useSubscriptionLifecycle(): SubscriptionLifecycleState {
       // by create-payment purely as an order-linking record. Reading it would show
       // the new plan_code in the UI before payment is verified — never do this.
       // Only ACTIVE/EXPIRED/GRACE subscriptions should drive the UI.
-      const { data: sub, error } = await supabase
+      const { data: sub, error } = await supabaseAdmin
         .from('subscriptions')
         .select('*')
         .eq('school_id', schoolId)

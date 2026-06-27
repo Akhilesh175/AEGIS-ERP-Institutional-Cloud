@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
@@ -22,6 +22,12 @@ export const Navbar: React.FC = () => {
   const [prefSMS, setPrefSMS] = useState(false);
   const [showProfileDrop, setShowProfileDrop] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
+
+  const profileRef = useRef<HTMLDivElement>(null);
+  const profileButtonRef = useRef<HTMLButtonElement>(null);
+  const notifyRef = useRef<HTMLDivElement>(null);
+  const notifyButtonRef = useRef<HTMLButtonElement>(null);
+  const loadTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   const [isPhotoModalOpen, setIsPhotoModalOpen] = useState(false);
   const [isChangePasswordOpen, setIsChangePasswordOpen] = useState(false);
@@ -118,26 +124,35 @@ export const Navbar: React.FC = () => {
     }
   };
 
+  const loadNotificationsDebounced = () => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+    }
+    loadTimeoutRef.current = setTimeout(() => {
+      loadNotifications();
+    }, 150);
+  };
+
   useEffect(() => {
     if (!session?.user?.id) return;
     loadNotifications();
     
-    // Subscribe to real-time notification changes
+    // Subscribe to real-time notification changes (wildcard: INSERT, UPDATE, DELETE)
     const channel = supabase
       .channel(`user-notifications-${session.user.id}`)
       .on(
         'postgres_changes',
         {
-          event: 'INSERT',
+          event: '*',
           schema: 'public',
           table: 'notifications',
           filter: `user_id=eq.${session.user.id}`
         },
         (payload) => {
-          console.log('Realtime notification received:', payload.new);
-          loadNotifications();
+          console.log('Realtime notification event:', payload.eventType, payload);
+          loadNotificationsDebounced();
           
-          if (Notification.permission === 'granted' && document.hidden) {
+          if (payload.eventType === 'INSERT' && Notification.permission === 'granted' && document.hidden) {
             new Notification(payload.new.title, {
               body: payload.new.content,
               icon: '/aegis-logo.png'
@@ -151,8 +166,139 @@ export const Navbar: React.FC = () => {
     return () => {
       supabase.removeChannel(channel);
       clearInterval(interval);
+      if (loadTimeoutRef.current) {
+        clearTimeout(loadTimeoutRef.current);
+      }
     };
   }, [session]);
+
+  // Outside Click / Touch handler for both dropdowns
+  useEffect(() => {
+    const handleOutsideClick = (e: MouseEvent | TouchEvent) => {
+      // Profile Dropdown
+      if (
+        showProfileDrop &&
+        profileRef.current &&
+        !profileRef.current.contains(e.target as Node)
+      ) {
+        setShowProfileDrop(false);
+      }
+      // Notification Dropdown
+      if (
+        showNotifyDrop &&
+        notifyRef.current &&
+        !notifyRef.current.contains(e.target as Node)
+      ) {
+        setShowNotifyDrop(false);
+      }
+    };
+
+    document.addEventListener('pointerdown', handleOutsideClick);
+    document.addEventListener('touchstart', handleOutsideClick);
+    return () => {
+      document.removeEventListener('pointerdown', handleOutsideClick);
+      document.removeEventListener('touchstart', handleOutsideClick);
+    };
+  }, [showProfileDrop, showNotifyDrop]);
+
+  // Profile dropdown accessibility (Issue 6)
+  useEffect(() => {
+    if (!showProfileDrop) {
+      // Restore focus to button when closed, if we were focused inside or just closed it
+      if (document.activeElement && profileRef.current?.contains(document.activeElement)) {
+        profileButtonRef.current?.focus();
+      }
+      return;
+    }
+
+    // Focus the first focusable element inside profile dropdown when opened
+    const focusable = profileRef.current?.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>(
+      'button:not([disabled]), a:not([disabled])'
+    );
+    if (focusable && focusable.length > 0) {
+      focusable[0].focus();
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowProfileDrop(false);
+        profileButtonRef.current?.focus();
+      } else if (e.key === 'Tab') {
+        const elements = profileRef.current?.querySelectorAll<HTMLButtonElement | HTMLAnchorElement>(
+          'button:not([disabled]), a:not([disabled])'
+        );
+        if (!elements || elements.length === 0) return;
+        const first = elements[0];
+        const last = elements[elements.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            last.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (document.activeElement === last) {
+            first.focus();
+            e.preventDefault();
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showProfileDrop]);
+
+  // Notification dropdown accessibility (Issue 7)
+  useEffect(() => {
+    if (!showNotifyDrop) {
+      if (document.activeElement && notifyRef.current?.contains(document.activeElement)) {
+        notifyButtonRef.current?.focus();
+      }
+      return;
+    }
+
+    // Focus the first focusable element inside notification dropdown when opened
+    const focusable = notifyRef.current?.querySelectorAll<HTMLButtonElement | HTMLAnchorElement | HTMLInputElement>(
+      'button:not([disabled]), a:not([disabled]), input:not([disabled])'
+    );
+    if (focusable && focusable.length > 0) {
+      focusable[0].focus();
+    }
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setShowNotifyDrop(false);
+        notifyButtonRef.current?.focus();
+      } else if (e.key === 'Tab') {
+        const elements = notifyRef.current?.querySelectorAll<HTMLButtonElement | HTMLAnchorElement | HTMLInputElement>(
+          'button:not([disabled]), a:not([disabled]), input:not([disabled])'
+        );
+        if (!elements || elements.length === 0) return;
+        const first = elements[0];
+        const last = elements[elements.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            last.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (document.activeElement === last) {
+            first.focus();
+            e.preventDefault();
+          }
+        }
+      }
+    };
+
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [showNotifyDrop]);
 
   const handlePushToggle = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const checked = e.target.checked;
@@ -346,12 +492,25 @@ export const Navbar: React.FC = () => {
           </button>
 
           {/* Notification Bell */}
-          <div className="relative">
+          <div ref={notifyRef} className="relative">
             <button 
-              onClick={() => {
-                setShowNotifyDrop(!showNotifyDrop);
+              ref={notifyButtonRef}
+              onClick={async () => {
+                const isOpening = !showNotifyDrop;
+                setShowNotifyDrop(isOpening);
                 setShowProfileDrop(false);
+                if (isOpening && session?.user?.id) {
+                  try {
+                    await mockApi.markAllNotificationsRead(session.user.id);
+                    await loadNotifications();
+                  } catch (err) {
+                    console.error('Failed to mark notifications read:', err);
+                  }
+                }
               }}
+              aria-haspopup="true"
+              aria-expanded={showNotifyDrop}
+              aria-label="Notifications panel"
               className="p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/40 rounded-xl transition-all duration-200 relative"
               title="Notifications"
             >
@@ -365,7 +524,11 @@ export const Navbar: React.FC = () => {
 
             {/* Notifications Dropdown */}
             {showNotifyDrop && (
-              <div className="absolute right-0 mt-3 w-80 rounded-2xl glass-dark border border-slate-800 shadow-2xl p-4 animate-slide-up z-50">
+              <div 
+                role="region"
+                aria-label="Notifications list"
+                className="absolute right-0 mt-3 w-80 rounded-2xl glass-dark border border-slate-800 shadow-2xl p-4 animate-slide-up z-50"
+              >
                 <div className="flex items-center justify-between border-b border-slate-850 pb-2 mb-3">
                   <div className="flex items-center gap-2">
                     <h4 className="font-semibold text-sm text-slate-200">Alert Center</h4>
@@ -467,12 +630,16 @@ export const Navbar: React.FC = () => {
           </div>
 
           {/* User Profile Block */}
-          <div className="relative">
+          <div ref={profileRef} className="relative">
             <button 
+              ref={profileButtonRef}
               onClick={() => {
                 setShowProfileDrop(!showProfileDrop);
                 setShowNotifyDrop(false);
               }}
+              aria-haspopup="menu"
+              aria-expanded={showProfileDrop}
+              aria-label="Profile menu"
               className="flex items-center gap-2 hover:bg-slate-800/40 p-1.5 pr-2 rounded-xl transition-all duration-200"
             >
               <img 
@@ -489,7 +656,11 @@ export const Navbar: React.FC = () => {
 
             {/* Profile Dropdown */}
             {showProfileDrop && (
-              <div className="absolute right-0 mt-3 w-56 rounded-2xl glass-dark border border-slate-800 shadow-2xl p-3 animate-slide-up z-50">
+              <div 
+                role="menu"
+                aria-label="Profile actions"
+                className="absolute right-0 mt-3 w-56 rounded-2xl glass-dark border border-slate-800 shadow-2xl p-3 animate-slide-up z-50"
+              >
                 <div className="p-2 border-b border-slate-850 mb-2">
                   <p className="text-xs font-bold text-slate-100">{session.user.firstName} {session.user.lastName}</p>
                   <p className="text-[10px] text-slate-400 truncate mt-0.5">{session.user.email}</p>

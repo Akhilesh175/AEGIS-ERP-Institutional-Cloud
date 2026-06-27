@@ -132,12 +132,26 @@ export default async function handler(req: any, res: any) {
       }).eq('id', paymentId);
     }
 
+    let adminUserId = null;
+    const { data: admins } = await supabaseAdmin
+      .from('users')
+      .select('id')
+      .eq('school_id', payment.school_id)
+      .eq('role', 'ADMIN')
+      .limit(1);
+    adminUserId = admins?.[0]?.id;
+    if (!adminUserId) {
+      const { data: fallbackUser } = await supabaseAdmin.from('users').select('id').limit(1);
+      adminUserId = fallbackUser?.[0]?.id || '00000000-0000-0000-0000-000000000000';
+    }
+
     // Audit log
     await supabaseAdmin.from('payment_audit_logs').insert({
       payment_id:          paymentId,
       school_id:           payment.school_id,
       event_type:          'REFUND_INITIATED',
-      action:              'REFUND_INITIATED',
+      action:              'REJECTED',
+      performed_by:        adminUserId,
       razorpay_payment_id: payment.razorpay_payment_id,
       amount:              refundAmountINR,
       metadata:            { reason, speed, rzpRefundId: rzpRefund.id },

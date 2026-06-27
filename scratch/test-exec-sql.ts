@@ -15,14 +15,14 @@ envContent.split('\n').forEach(line => {
 const supabaseUrl = env['VITE_SUPABASE_URL'];
 const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
 
+const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey);
+
 async function run() {
-  const response = await fetch(`${supabaseUrl}/rest/v1/?apikey=${supabaseServiceKey}`);
-  const schema = await response.json();
-  
-  if (schema.definitions && schema.definitions.payment_transactions) {
-    console.log('payment_transactions properties:', Object.keys(schema.definitions.payment_transactions.properties));
-  } else {
-    console.log('payment_transactions definition not found');
-  }
+  const sql = `
+    ALTER TABLE public.notifications ADD COLUMN IF NOT EXISTS read_at TIMESTAMP WITH TIME ZONE;
+  `;
+  const { data, error } = await supabaseAdmin.rpc('exec_sql', { sql_query: sql });
+  console.log("exec_sql response:", { data, error });
 }
+
 run().catch(console.error);

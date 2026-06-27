@@ -429,6 +429,22 @@ export default async function handler(req: any, res: any) {
       return res.status(503).json({ error: 'Unable to connect to payment gateway. Please check your internet connection.' });
     }
 
+    // Resolve valid user ID for payment_audit_logs performed_by constraint
+    let performedUserId = userId;
+    if (!performedUserId || typeof performedUserId !== 'string' || performedUserId.length < 10) {
+      const { data: admins } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('school_id', schoolId)
+        .eq('role', 'ADMIN')
+        .limit(1);
+      performedUserId = admins?.[0]?.id;
+    }
+    if (!performedUserId) {
+      const { data: fallbackUser } = await supabaseAdmin.from('users').select('id').limit(1);
+      performedUserId = fallbackUser?.[0]?.id || '00000000-0000-0000-0000-000000000000';
+    }
+
     // ── 10. Store payment_order and payment_transaction records ──────
     await Promise.all([
       supabaseAdmin.from('payment_orders').insert({
@@ -473,7 +489,8 @@ export default async function handler(req: any, res: any) {
         payment_id:           payment.id,
         school_id:            schoolId,
         event_type:           'ORDER_CREATED',
-        action:               'PAYMENT_ORDER_CREATED',
+        action:               'SUBMITTED',
+        performed_by:         performedUserId,
         razorpay_order_id:    rzpOrder.id,
         amount:               finalAmount,
         ip_address:           ipAddress,

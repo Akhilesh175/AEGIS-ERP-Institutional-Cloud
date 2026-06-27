@@ -1,5 +1,7 @@
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { getMessaging, getToken, onMessage, Messaging } from 'firebase/messaging';
+import { PushNotifications } from '@capacitor/push-notifications';
+import { Capacitor } from '@capacitor/core';
 
 const firebaseConfig = {
   apiKey: import.meta.env.VITE_FIREBASE_API_KEY || '',
@@ -32,6 +34,56 @@ export { messaging, isFirebaseSupported, firebaseConfig };
  * generates the FCM Web Push token, and saves it to the database.
  */
 export const requestNotificationPermission = async (userId: string, role: string): Promise<string | null> => {
+  if (Capacitor.isNativePlatform()) {
+    try {
+      let permStatus = await PushNotifications.checkPermissions();
+      if (permStatus.receive === 'prompt') {
+        permStatus = await PushNotifications.requestPermissions();
+      }
+      if (permStatus.receive === 'granted') {
+        await PushNotifications.register();
+
+        return new Promise((resolve) => {
+          PushNotifications.addListener('registration', async (token) => {
+            console.log('Native Push Registration success, token:', token.value);
+            try {
+              const res = await fetch('/api/register-fcm-token', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId, role, token: token.value })
+              });
+              if (!res.ok) {
+                console.error('Failed to sync native FCM token with registry database.');
+              }
+            } catch (err) {
+              console.error('Error registering native FCM token:', err);
+            }
+            resolve(token.value);
+          });
+
+          PushNotifications.addListener('registrationError', (error: any) => {
+            console.error('Error on native registration: ' + JSON.stringify(error));
+            resolve(null);
+          });
+
+          PushNotifications.addListener('pushNotificationReceived', (notification) => {
+            console.log('Push notification received in foreground: ', notification);
+          });
+
+          PushNotifications.addListener('pushNotificationActionPerformed', (notification) => {
+            console.log('Push notification action performed: ', notification);
+          });
+        });
+      } else {
+        console.warn('Native push notifications permission denied.');
+        return null;
+      }
+    } catch (e) {
+      console.error('Failed to register native push notifications:', e);
+      return null;
+    }
+  }
+
   if (!isFirebaseSupported || !messaging) {
     console.warn('FCM Registration Skipped: Firebase Messaging config not found or unsupported.');
     return null;

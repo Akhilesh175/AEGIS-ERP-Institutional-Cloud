@@ -87,8 +87,6 @@ const SEED_ACADEMIC_SESSIONS = [
 ];
 
 const SEED_USERS: User[] = [
-  // Super Admin
-  { id: 'u-superadmin', email: 'superadmin@aegis.com', role: 'SUPER_ADMIN', firstName: 'Sarah', lastName: 'Vance', phone: '+1 (555) 999-0000', avatarUrl: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=150', isActive: true, password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   // Admins
   { id: 'u-admin1', email: 'admin@aegis.com', role: 'ADMIN', firstName: 'Richard', lastName: 'Hendricks', phone: '+1 (555) 888-1111', avatarUrl: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?w=150', isActive: true, schoolId: 'school-1', password: 'password', createdAt: new Date().toISOString(), updatedAt: new Date().toISOString() },
   // Teachers
@@ -611,6 +609,11 @@ class MockDatabase {
 
   constructor() {
     this.users = getStorage<User[]>('users', SEED_USERS);
+    const originalLength = this.users.length;
+    this.users = this.users.filter(u => u.firstName !== 'Sarah' || u.lastName !== 'Vance');
+    if (this.users.length !== originalLength) {
+      setStorage('users', this.users);
+    }
     this.schools = getStorage<School[]>('schools', [SEED_SCHOOL]);
     let schoolsMigrated = false;
     this.schools.forEach((s, idx) => {

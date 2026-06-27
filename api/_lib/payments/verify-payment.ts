@@ -376,6 +376,20 @@ export default async function handler(req: any, res: any) {
     };
 
     try {
+      // Fetch admin user ID for payment_audit_logs performed_by constraint
+      const { data: admins } = await supabaseAdmin
+        .from('users')
+        .select('id')
+        .eq('school_id', schoolId)
+        .eq('role', 'ADMIN')
+        .limit(1);
+
+      let adminUserId = admins?.[0]?.id;
+      if (!adminUserId) {
+        const { data: fallbackUser } = await supabaseAdmin.from('users').select('id').limit(1);
+        adminUserId = fallbackUser?.[0]?.id || '00000000-0000-0000-0000-000000000000';
+      }
+
       // ── Step 1: Update payment record ──
       const { error: payUpdateErr } = await supabaseAdmin.from('payments').update({
         status:              'SUCCESS',
@@ -584,13 +598,13 @@ export default async function handler(req: any, res: any) {
       if (prevSchoolSubsErr) throw prevSchoolSubsErr;
 
       const upperPlan = planCode.toUpperCase();
-      const existingSub = prevSchoolSubs?.[0];
+      const existingSub = prevSchoolSubs?.find((s: any) => s.plan === upperPlan);
 
       if (existingSub) {
         const { error: schoolSubErr } = await supabaseAdmin.from('school_subscriptions').update({
           status:      'ACTIVE',
-          plan:        upperPlan,
           expiry_date: endDateStr,
+          updated_at:  now.toISOString(),
         }).eq('id', existingSub.id);
 
         if (schoolSubErr) throw schoolSubErr;
@@ -603,6 +617,21 @@ export default async function handler(req: any, res: any) {
         });
 
         if (schoolSubErr) throw schoolSubErr;
+      }
+
+      // Deactivate all other plan rows for this school
+      const otherSubs = prevSchoolSubs?.filter((s: any) => s.plan !== upperPlan) || [];
+      if (otherSubs.length > 0) {
+        const otherSubIds = otherSubs.map((s: any) => s.id);
+        const { error: deactivateErr } = await supabaseAdmin
+          .from('school_subscriptions')
+          .update({
+            status:     'INACTIVE',
+            updated_at: now.toISOString(),
+          })
+          .in('id', otherSubIds);
+
+        if (deactivateErr) throw deactivateErr;
       }
 
       rollbackStack.push(async () => {
@@ -775,7 +804,8 @@ export default async function handler(req: any, res: any) {
         payment_id:          paymentId,
         school_id:           schoolId,
         event_type:          'PAYMENT_VERIFIED',
-        action:              'PAYMENT_VERIFIED',
+        action:              'APPROVED',
+        performed_by:        adminUserId,
         razorpay_order_id:   razorpayOrderId,
         razorpay_payment_id: razorpayPaymentId,
         amount:              payment.amount,
@@ -795,12 +825,6 @@ export default async function handler(req: any, res: any) {
 
       // ── Step 11: Notify school admins ──
       let insertedNotificationIds: string[] = [];
-      const { data: admins } = await supabaseAdmin
-        .from('users')
-        .select('id')
-        .eq('school_id', schoolId)
-        .eq('role', 'ADMIN');
-
       if (admins && admins.length > 0) {
         const planLabel = planCode.charAt(0).toUpperCase() + planCode.slice(1);
         const { data: insertedNotifs, error: notifErr } = await supabaseAdmin.from('notifications').insert(

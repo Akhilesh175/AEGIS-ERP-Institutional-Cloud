@@ -10450,8 +10450,12 @@ export const mockApi = {
       if (m.receiverId === userId) activeContactIds.add(m.senderId);
     });
 
+    // Fetch all user IDs in the database to restrict communicator to database-only users
+    const { data: dbAllUsers } = await supabaseAdmin.from('users').select('id');
+    const dbUserIds = new Set(dbAllUsers?.map(u => u.id) || []);
+
     // Filter contacts based on permission matrix and active conversations
-    const chats = mockDb.users.filter(u => activeContactIds.has(u.id) && checkChatAllowed(currentUsr, u));
+    const chats = mockDb.users.filter(u => dbUserIds.has(u.id) && activeContactIds.has(u.id) && checkChatAllowed(currentUsr, u));
 
     return chats.map(u => {
       const msgs = mockDb.chatMessages.filter(
@@ -10535,7 +10539,11 @@ export const mockApi = {
       ]);
     }
 
-    const allowed = mockDb.users.filter(u => checkChatAllowed(currentUsr!, u));
+    // Fetch all user IDs in the database to restrict communicator to database-only users
+    const { data: dbAllUsers } = await supabaseAdmin.from('users').select('id');
+    const dbUserIds = new Set(dbAllUsers?.map(u => u.id) || []);
+
+    const allowed = mockDb.users.filter(u => dbUserIds.has(u.id) && checkChatAllowed(currentUsr!, u));
     console.log('[getAllowedContacts] contacts allowed for role', currentUsr.role, ':', allowed.length, allowed.map(u => u.role + ':' + u.firstName));
     return allowed;
   },
@@ -10979,19 +10987,67 @@ export const mockApi = {
   },
 
   async markNotificationRead(notificationId: string): Promise<void> {
+    const updatePayload: any = { is_read: true, read_status: true };
     try {
-      await supabaseAdmin
+      const { error: testErr } = await supabaseAdmin
         .from('notifications')
-        .update({ is_read: true })
-        .eq('id', notificationId);
+        .update({ read_at: new Date().toISOString() })
+        .eq('id', '00000000-0000-0000-0000-000000000000');
+      if (!testErr || testErr.code !== 'PGRST204') {
+        updatePayload.read_at = new Date().toISOString();
+      }
     } catch (e) {
-      console.error('Failed to mark notification as read in DB:', e);
+      // ignore
     }
+
+    const { error } = await supabaseAdmin
+      .from('notifications')
+      .update(updatePayload)
+      .eq('id', notificationId);
+
+    if (error) {
+      console.error('Failed to mark notification as read in DB:', error);
+      throw new Error(`Failed to mark notification as read in database: ${error.message}`);
+    }
+
     const idx = mockDb.notifications.findIndex(n => n.id === notificationId);
     if (idx !== -1) {
       mockDb.notifications[idx].isRead = true;
       mockDb.saveAll();
     }
+  },
+
+  async markAllNotificationsRead(userId: string): Promise<void> {
+    const updatePayload: any = { is_read: true, read_status: true };
+    try {
+      const { error: testErr } = await supabaseAdmin
+        .from('notifications')
+        .update({ read_at: new Date().toISOString() })
+        .eq('id', '00000000-0000-0000-0000-000000000000');
+      if (!testErr || testErr.code !== 'PGRST204') {
+        updatePayload.read_at = new Date().toISOString();
+      }
+    } catch (e) {
+      // ignore
+    }
+
+    const { error } = await supabaseAdmin
+      .from('notifications')
+      .update(updatePayload)
+      .eq('user_id', userId)
+      .eq('is_read', false);
+
+    if (error) {
+      console.error('Failed to mark all notifications as read in DB:', error);
+      throw new Error(`Failed to mark all notifications as read in database: ${error.message}`);
+    }
+
+    mockDb.notifications.forEach(n => {
+      if (n.userId === userId) {
+        n.isRead = true;
+      }
+    });
+    mockDb.saveAll();
   },
 
   async checkEnterpriseSubscription(schoolId: string): Promise<boolean> {

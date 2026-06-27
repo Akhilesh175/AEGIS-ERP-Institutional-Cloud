@@ -1,5 +1,3 @@
-import './mock-localStorage';
-import { createClient } from '@supabase/supabase-js';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -16,31 +14,36 @@ envContent.split('\n').forEach(line => {
 const supabaseUrl = env['VITE_SUPABASE_URL'];
 const supabaseServiceKey = env['VITE_SUPABASE_SERVICE_ROLE_KEY'];
 
-const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey, {
-  auth: { autoRefreshToken: false, persistSession: false }
-});
-
 async function run() {
-  const { data, error } = await supabaseAdmin.rpc('get_tables');
-  if (error) {
-    // Fallback: Query pg_catalog
-    const { data: tablesData, error: pgError } = await supabaseAdmin.from('pg_tables' as any).select('tablename').eq('schemaname', 'public');
-    if (pgError) {
-      // Direct query using schema inspection or simple SELECT on pg_class
-      const { data: rawData, error: rawError } = await supabaseAdmin.rpc('execute_sql', {
-        sql_query: "SELECT tablename FROM pg_catalog.pg_tables WHERE schemaname = 'public'"
-      });
-      if (rawError) {
-        console.error("Failed to fetch tables:", rawError);
+  const response = await fetch(`${supabaseUrl}/rest/v1/?apikey=${supabaseServiceKey}`);
+  const schema = await response.json();
+  if (schema && schema.definitions) {
+    const targetTables = [
+      'payment_orders',
+      'payment_transactions',
+      'subscription_payments',
+      'subscription_plans',
+      'payment_audit_logs',
+      'payment_failures',
+      'refunds',
+      'webhook_logs',
+      'payments',
+      'subscriptions',
+      'subscription_invoices',
+      'subscription_coupons',
+      'subscription_coupon_usages',
+      'subscription_audit_logs'
+    ];
+
+    for (const t of targetTables) {
+      if (schema.definitions[t]) {
+        console.log(`Table [${t}] exists. Columns:`, Object.keys(schema.definitions[t].properties));
       } else {
-        console.log("Tables list:", rawData);
+        console.log(`Table [${t}] DOES NOT exist.`);
       }
-    } else {
-      console.log("Tables list (pg_tables):", tablesData);
     }
   } else {
-    console.log("Tables list (get_tables RPC):", data);
+    console.log('Could not load definitions:', schema);
   }
 }
-
 run().catch(console.error);

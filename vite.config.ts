@@ -112,6 +112,17 @@ export default defineConfig(({ mode }) => {
   // Expose env vars to process.env for local API runner
   Object.assign(process.env, env);
 
+  const maskKey = (key: string | undefined) => {
+    if (!key) return 'empty';
+    if (key.length <= 12) return '***';
+    return `${key.slice(0, 6)}...${key.slice(-6)}`;
+  };
+
+  console.log(`\n======================================================`);
+  console.log(`[Vite Config] Resolved VITE_SUPABASE_URL: ${env.VITE_SUPABASE_URL || process.env.VITE_SUPABASE_URL}`);
+  console.log(`[Vite Config] Resolved VITE_SUPABASE_ANON_KEY: ${maskKey(env.VITE_SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY)}`);
+  console.log(`======================================================\n`);
+
   return {
     plugins: [react(), apiPlugin()],
     server: {

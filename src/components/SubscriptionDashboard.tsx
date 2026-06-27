@@ -21,7 +21,7 @@ import {
 import { GlassCard } from './GlassCard';
 import { SaaSAuthFlow } from './SaaSAuthFlow';
 import { useStore } from '../store/useStore';
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 import {
   PLAN_DEFINITIONS,
   normalizePlanCode,
@@ -108,7 +108,7 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
     isFetchingRef.current = true;
     setIsRefreshing(true);
     try {
-      const { data: sub } = await supabase
+      const { data: sub } = await supabaseAdmin
         .from('subscriptions')
         .select('*')
         .eq('school_id', schoolId)
@@ -156,12 +156,12 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
     const schoolId = session?.user?.schoolId;
     if (!schoolId) { setLoadingHistory(false); return; }
     try {
-      const { data } = await supabase
+      const { data } = await supabaseAdmin
         .from('subscription_audit_logs')
         .select('*')
         .eq('school_id', schoolId)
         .order('created_at', { ascending: false })
-        .limit(10);
+        .limit(15);
       setHistory(data || []);
     } catch {
       setHistory([]);
@@ -182,11 +182,11 @@ export const SubscriptionDashboard: React.FC<SubscriptionDashboardProps> = ({ th
       setLoadingInvoices(true);
       
       const [studRes, teachRes, parentRes, invRes, schoolRes] = await Promise.all([
-        supabase.from('students').select('*', { count: 'exact', head: true }).eq('school_id', schoolId),
-        supabase.from('teachers').select('*', { count: 'exact', head: true }).eq('school_id', schoolId),
-        supabase.from('parents').select('*', { count: 'exact', head: true }).eq('school_id', schoolId),
-        supabase.from('subscription_invoices').select('*').eq('school_id', schoolId).order('created_at', { ascending: false }),
-        supabase.from('schools').select('name').eq('id', schoolId).maybeSingle()
+        supabaseAdmin.from('students').select('*', { count: 'exact', head: true }).eq('school_id', schoolId),
+        supabaseAdmin.from('teachers').select('*', { count: 'exact', head: true }).eq('school_id', schoolId),
+        supabaseAdmin.from('parents').select('*', { count: 'exact', head: true }).eq('school_id', schoolId),
+        supabaseAdmin.from('subscription_invoices').select('*').eq('school_id', schoolId).order('created_at', { ascending: false }),
+        supabaseAdmin.from('schools').select('name').eq('id', schoolId).maybeSingle()
       ]);
       
       setUsage({

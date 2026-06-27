@@ -26,7 +26,7 @@ async function run() {
     process.exit(1);
   }
   console.log("Executing SQL:", sql);
-  const { data, error } = await supabaseAdmin.rpc('exec_sql', { sql });
+  const { data, error } = await supabaseAdmin.rpc('exec_sql', { sql_query: sql });
   if (error) {
     console.error("Failed to execute SQL:", error);
   } else {

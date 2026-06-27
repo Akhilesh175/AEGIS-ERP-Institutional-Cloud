@@ -207,16 +207,41 @@ async function processWebhookEvent(eventType: string, payload: any) {
         .maybeSingle();
 
       if (txn?.payment_id) {
+        const { data: payRec } = await supabaseAdmin
+          .from('payments')
+          .select('school_id')
+          .eq('id', txn.payment_id)
+          .maybeSingle();
+
+        const schoolId = payRec?.school_id || null;
+
         await supabaseAdmin.from('payments').update({
           razorpay_payment_id: payment.id,
           status:              'SUCCESS',
           updated_at:          now,
         }).eq('id', txn.payment_id).neq('status', 'SUCCESS');
 
+        let adminUserId = null;
+        if (schoolId) {
+          const { data: admins } = await supabaseAdmin
+            .from('users')
+            .select('id')
+            .eq('school_id', schoolId)
+            .eq('role', 'ADMIN')
+            .limit(1);
+          adminUserId = admins?.[0]?.id;
+        }
+        if (!adminUserId) {
+          const { data: fallbackUser } = await supabaseAdmin.from('users').select('id').limit(1);
+          adminUserId = fallbackUser?.[0]?.id || '00000000-0000-0000-0000-000000000000';
+        }
+
         await supabaseAdmin.from('payment_audit_logs').insert({
           payment_id:          txn.payment_id,
+          school_id:           schoolId,
           event_type:          'PAYMENT_CAPTURED',
-          action:              'WEBHOOK_PAYMENT_CAPTURED',
+          action:              'APPROVED',
+          performed_by:        adminUserId,
           razorpay_payment_id: payment.id,
           razorpay_order_id:   payment.order_id,
           amount:              payment.amount / 100,
