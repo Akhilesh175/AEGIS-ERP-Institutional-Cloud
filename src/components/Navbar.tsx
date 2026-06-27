@@ -3,11 +3,16 @@ import { useStore } from '../store/useStore';
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
 import type { Notification } from '../types';
-import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, Camera, Upload, Trash2, X, Check, Menu, Settings, Key, Lock, Eye, EyeOff, Layers } from 'lucide-react';
+import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, Camera, Upload, Trash2, X, Check, Menu, Settings, Key, Lock, Eye, EyeOff, Layers, ArrowLeft } from 'lucide-react';
 import { ChatDrawer } from './ChatDrawer';
 import { BrandLogo } from './common/BrandLogo';
 
-export const Navbar: React.FC = () => {
+interface NavbarProps {
+  activeTab?: string;
+  onBack?: () => void;
+}
+
+export const Navbar: React.FC<NavbarProps> = ({ activeTab = 'dashboard', onBack }) => {
   const { session, theme, toggleTheme, setSession, isMobileMenuOpen, setMobileMenuOpen, warningLevel, daysRemaining } = useStore();
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifyDrop, setShowNotifyDrop] = useState(false);
@@ -394,7 +399,18 @@ export const Navbar: React.FC = () => {
     <>
       <header className="sticky top-0 z-40 w-full glass dark:glass-dark border-b border-slate-800 bg-[#070a13]/85 backdrop-blur-md px-6 py-3 flex items-center justify-between">
         {/* Branding Title — AEGIS ERP Official Logo */}
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-3">
+          {activeTab !== 'dashboard' && (
+            <button
+              onClick={onBack}
+              className="flex items-center justify-center w-9 h-9 p-2 text-slate-300 hover:text-white hover:bg-slate-800/60 active:bg-slate-700/60 border border-slate-800 hover:border-slate-700 rounded-lg transition-all duration-200"
+              title="Go Back"
+              id="header-back-button"
+            >
+              <ArrowLeft size={16} />
+            </button>
+          )}
+
           <button 
             onClick={() => setMobileMenuOpen(!isMobileMenuOpen)}
             className="p-2 -ml-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/40 rounded-xl transition-all duration-200 md:hidden"

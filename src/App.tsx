@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from './store/useStore';
+import { App as CapApp } from '@capacitor/app';
 import { mockApi } from './services/mockApi';
 import { supabase } from './lib/supabase';
 import { Navbar } from './components/Navbar';
@@ -421,6 +422,14 @@ export const App: React.FC = () => {
     return hash || 'dashboard';
   });
 
+  const [historyStack, setHistoryStack] = useState<string[]>(['dashboard']);
+  const historyStackRef = useRef<string[]>(['dashboard']);
+
+  // Sync ref with state
+  useEffect(() => {
+    historyStackRef.current = historyStack;
+  }, [historyStack]);
+
   const prevUserIdRef = React.useRef<string | undefined>(undefined);
 
   const updateActiveTab = (tab: string) => {
@@ -428,12 +437,65 @@ export const App: React.FC = () => {
     window.location.hash = tab;
   };
 
+  const handleNavigateBack = useCallback(() => {
+    if (historyStack.length > 1) {
+      const prevTab = historyStack[historyStack.length - 2];
+      updateActiveTab(prevTab);
+    } else {
+      updateActiveTab('dashboard');
+    }
+  }, [historyStack]);
+
   // Sync active tab to hash on change (safeguard)
   useEffect(() => {
     if (activeTab) {
       window.location.hash = activeTab;
     }
   }, [activeTab]);
+
+  // Track activeTab changes to sync history stack
+  useEffect(() => {
+    if (!session) {
+      setHistoryStack(['dashboard']);
+      return;
+    }
+    const cleanTab = activeTab.split('/')[0] || 'dashboard';
+    setHistoryStack(prev => {
+      if (prev.length === 0) return [cleanTab];
+      if (prev[prev.length - 1] === cleanTab) return prev;
+      if (prev.length > 1 && prev[prev.length - 2] === cleanTab) {
+        return prev.slice(0, prev.length - 1);
+      }
+      return [...prev, cleanTab];
+    });
+  }, [activeTab, session]);
+
+  // Android Back Button Hardware Listener
+  useEffect(() => {
+    let activeListener: any = null;
+    const setupBackButtonListener = async () => {
+      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
+        try {
+          activeListener = await CapApp.addListener('backButton', () => {
+            if (historyStackRef.current.length > 1) {
+              const prevTab = historyStackRef.current[historyStackRef.current.length - 2];
+              updateActiveTab(prevTab);
+            } else {
+              CapApp.exitApp();
+            }
+          });
+        } catch (err) {
+          console.error('[Capacitor BackButton Listener] error:', err);
+        }
+      }
+    };
+    setupBackButtonListener();
+    return () => {
+      if (activeListener) {
+        activeListener.remove();
+      }
+    };
+  }, []);
 
   // Synchronize browser history (back/forward) with the active tab state
   useEffect(() => {
@@ -1382,7 +1444,7 @@ export const App: React.FC = () => {
   return (
     <div className="h-screen bg-[#070a13] flex flex-col overflow-hidden transition-colors duration-300">
       {/* Navbar Header */}
-      <Navbar />
+      <Navbar activeTab={activeTab} onBack={handleNavigateBack} />
 
       {/* ── Global Subscription Warning Banner ─────────────────────── */}
       {session && session.user.role === 'ADMIN' && subscriptionLifecycle.warningLevel && (() => {

@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { 
   Shield, Phone, User, MapPin, Globe, Users, 
-  ArrowRight, CheckCircle2, ShieldAlert, Key, Mail, 
+  ArrowRight, CheckCircle2, ShieldAlert, Key, Mail, ArrowLeft, 
   Landmark, MessageSquare, Clock, CreditCard, ChevronRight, Lock, 
   Sparkles, HelpCircle, Sun, Moon, Building2
 } from 'lucide-react';
@@ -585,7 +585,23 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
 
       {/* Brand Header — Official AEGIS ERP Logo */}
       <div className="w-full flex justify-between items-center max-w-6xl mx-auto mb-6 relative z-10 shrink-0">
-        <BrandLogo variant="horizontal" size="md" showTagline={true} />
+        <div className="flex items-center gap-3">
+          {step !== 'register' && (
+            <button
+              onClick={() => {
+                if (step === 'otp') setStep('register');
+                else if (step === 'plans') setStep('otp');
+                else if (step === 'success') setStep('plans');
+              }}
+              className="flex items-center justify-center w-9 h-9 p-2 text-slate-350 hover:text-white hover:bg-slate-900/60 active:bg-slate-800/60 border border-slate-800 hover:border-slate-700 rounded-lg transition-all duration-200"
+              title="Go Back"
+              id="saas-header-back-button"
+            >
+              <ArrowLeft size={16} />
+            </button>
+          )}
+          <BrandLogo variant="horizontal" size="md" showTagline={true} />
+        </div>
         
         <button 
           onClick={toggleTheme}
