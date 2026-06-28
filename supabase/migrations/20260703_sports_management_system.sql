@@ -1,3 +1,7 @@
+-- Extend user_role ENUM to support sports roles
+ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'COACH';
+ALTER TYPE public.user_role ADD VALUE IF NOT EXISTS 'SPORTS_ADMIN';
+
 -- ─────────────────────────────────────────────────────────────────
 -- 1. ATHLETE ATTENDANCE SCHEMAS
 -- ─────────────────────────────────────────────────────────────────
