@@ -115,7 +115,7 @@ DECLARE
   v_remarks TEXT;
   v_success_count INT := 0;
 BEGIN
-  SELECT u.school_id, u.role, concat(u.first_name, ' ', u.last_name)
+  SELECT u.school_id, u.role::text, concat(u.first_name, ' ', u.last_name)
   INTO v_school_id, v_user_role, v_user_name
   FROM public.users u
   WHERE u.id = p_user_id;
@@ -242,7 +242,7 @@ DECLARE
   v_student_id UUID;
   v_result JSONB;
 BEGIN
-  SELECT u.school_id, u.role
+  SELECT u.school_id, u.role::text
   INTO v_school_id, v_user_role
   FROM public.users u
   WHERE u.id = p_user_id;
@@ -411,7 +411,7 @@ DECLARE
   v_user_role TEXT;
   v_achievement_id UUID;
 BEGIN
-  SELECT u.school_id, u.role
+  SELECT u.school_id, u.role::text
   INTO v_school_id, v_user_role
   FROM public.users u
   WHERE u.id = p_user_id;
@@ -480,7 +480,7 @@ DECLARE
   v_user_role TEXT;
   v_certificate_id UUID;
 BEGIN
-  SELECT u.school_id, u.role
+  SELECT u.school_id, u.role::text
   INTO v_school_id, v_user_role
   FROM public.users u
   WHERE u.id = p_user_id;
@@ -566,7 +566,7 @@ DECLARE
   v_medical_record_id UUID;
   v_result public.sports_medical_records;
 BEGIN
-  SELECT u.school_id, u.role
+  SELECT u.school_id, u.role::text
   INTO v_school_id, v_user_role
   FROM public.users u
   WHERE u.id = p_user_id;
@@ -628,7 +628,7 @@ BEGIN
     IF TG_OP = 'INSERT' THEN
       v_school_id := NEW.school_id;
       -- Notify admins
-      FOR v_user_row IN SELECT id FROM public.users WHERE school_id = v_school_id AND role IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN') LOOP
+      FOR v_user_row IN SELECT id FROM public.users WHERE school_id = v_school_id AND role::text IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN') LOOP
         INSERT INTO public.sports_notifications (school_id, user_id, title, message, channel)
         VALUES (v_school_id, v_user_row.id, 'New Tournament Scheduled', concat('A new tournament "', NEW.name, '" has been scheduled at ', NEW.venue, '.'), 'SPORTS');
       END LOOP;
@@ -668,7 +668,7 @@ BEGIN
       END LOOP;
 
       -- Notify admins
-      FOR v_user_row IN SELECT id FROM public.users WHERE school_id = v_school_id AND role IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN') LOOP
+      FOR v_user_row IN SELECT id FROM public.users WHERE school_id = v_school_id AND role::text IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN') LOOP
         INSERT INTO public.sports_notifications (school_id, user_id, title, message, channel)
         VALUES (v_school_id, v_user_row.id, 'Student Achievement Added', concat('A new achievement "', NEW.title, '" has been added for student.'), 'SPORTS');
       END LOOP;
@@ -691,7 +691,7 @@ BEGIN
       END LOOP;
 
       -- Notify admins
-      FOR v_user_row IN SELECT id FROM public.users WHERE school_id = v_school_id AND role IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN') LOOP
+      FOR v_user_row IN SELECT id FROM public.users WHERE school_id = v_school_id AND role::text IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN') LOOP
         INSERT INTO public.sports_notifications (school_id, user_id, title, message, channel)
         VALUES (v_school_id, v_user_row.id, 'Sports Certificate Issued', concat('Certificate ', NEW.certificate_number, ' has been issued to student.'), 'SPORTS');
       END LOOP;
@@ -731,7 +731,7 @@ BEGIN
       END LOOP;
 
       -- Notify admins
-      FOR v_user_row IN SELECT id FROM public.users WHERE school_id = v_school_id AND role IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN') LOOP
+      FOR v_user_row IN SELECT id FROM public.users WHERE school_id = v_school_id AND role::text IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN') LOOP
         INSERT INTO public.sports_notifications (school_id, user_id, title, message, channel)
         VALUES (v_school_id, v_user_row.id, 'Student Medical Profile Update', concat('A student''s medical profile status was updated to: ', COALESCE(NEW.status, 'Fit'), '.'), 'SPORTS');
       END LOOP;
@@ -776,10 +776,10 @@ DROP POLICY IF EXISTS "Select sports_attendance policy" ON public.sports_attenda
 CREATE POLICY "Select sports_attendance policy" ON public.sports_attendance
 FOR SELECT USING (
   -- Admins
-  (SELECT role FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
   OR
   -- Coach
-  (SELECT role FROM public.users WHERE id = auth.uid()) = 'COACH'
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) = 'COACH'
   OR
   -- Student (own)
   student_id = (SELECT id FROM public.students WHERE user_id = auth.uid())
@@ -792,9 +792,9 @@ FOR SELECT USING (
 DROP POLICY IF EXISTS "Select sports_attendance_audit policy" ON public.sports_attendance_audit;
 CREATE POLICY "Select sports_attendance_audit policy" ON public.sports_attendance_audit
 FOR SELECT USING (
-  (SELECT role FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
   OR
-  (SELECT role FROM public.users WHERE id = auth.uid()) = 'COACH'
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) = 'COACH'
   OR
   student_id = (SELECT id FROM public.students WHERE user_id = auth.uid())
   OR
@@ -805,9 +805,9 @@ FOR SELECT USING (
 DROP POLICY IF EXISTS "Select sports_tournaments policy" ON public.sports_tournaments;
 CREATE POLICY "Select sports_tournaments policy" ON public.sports_tournaments
 FOR SELECT USING (
-  (SELECT role FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
   OR
-  (SELECT role FROM public.users WHERE id = auth.uid()) = 'COACH'
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) = 'COACH'
   OR
   EXISTS (
     SELECT 1 FROM public.sports_tournament_players p 
@@ -829,9 +829,9 @@ FOR SELECT USING (
 DROP POLICY IF EXISTS "Select sports_achievements policy" ON public.sports_achievements;
 CREATE POLICY "Select sports_achievements policy" ON public.sports_achievements
 FOR SELECT USING (
-  (SELECT role FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
   OR
-  (SELECT role FROM public.users WHERE id = auth.uid()) = 'COACH'
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) = 'COACH'
   OR
   student_id = (SELECT id FROM public.students WHERE user_id = auth.uid())
   OR
@@ -842,9 +842,9 @@ FOR SELECT USING (
 DROP POLICY IF EXISTS "Select sports_certificates policy" ON public.sports_certificates;
 CREATE POLICY "Select sports_certificates policy" ON public.sports_certificates
 FOR SELECT USING (
-  (SELECT role FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
   OR
-  (SELECT role FROM public.users WHERE id = auth.uid()) = 'COACH'
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) = 'COACH'
   OR
   student_id = (SELECT id FROM public.students WHERE user_id = auth.uid())
   OR
@@ -855,9 +855,9 @@ FOR SELECT USING (
 DROP POLICY IF EXISTS "Select sports_medical_records policy" ON public.sports_medical_records;
 CREATE POLICY "Select sports_medical_records policy" ON public.sports_medical_records
 FOR SELECT USING (
-  (SELECT role FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'ACADEMIC_ADMIN', 'SUPER_ADMIN')
   OR
-  (SELECT role FROM public.users WHERE id = auth.uid()) = 'COACH'
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) = 'COACH'
   OR
   student_id = (SELECT id FROM public.students WHERE user_id = auth.uid())
   OR
@@ -879,7 +879,7 @@ DROP POLICY IF EXISTS "Allow coaches and admins to upload certificates" ON stora
 CREATE POLICY "Allow coaches and admins to upload certificates" ON storage.objects
 FOR INSERT WITH CHECK (
   bucket_id = 'sports-certificates' AND
-  (SELECT role FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'COACH', 'SUPER_ADMIN')
+  (SELECT role::text FROM public.users WHERE id = auth.uid()) IN ('ADMIN', 'SPORTS_ADMIN', 'COACH', 'SUPER_ADMIN')
 );
 
 DROP POLICY IF EXISTS "Allow authenticated users to read certificates" ON storage.objects;
