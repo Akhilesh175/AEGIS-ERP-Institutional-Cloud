@@ -18052,31 +18052,53 @@ export const mockApi = {
     }));
   },
 
-  async markSportsAttendance(attendanceList: any[]): Promise<any[]> {
-    if (!attendanceList || attendanceList.length === 0) return [];
-    const schoolId = attendanceList[0].schoolId;
-    validateSchoolId(schoolId, 'markSportsAttendance');
-    
-    const results = [];
-    for (const att of attendanceList) {
-      const { data, error } = await supabaseAdmin
-        .from('sports_attendance')
-        .upsert({
-          school_id: att.schoolId,
-          session_id: att.sessionId,
-          student_id: att.studentId,
-          status: att.status,
-          remarks: att.remarks || null,
-          marked_by: att.markedBy,
-          date: att.date || new Date().toISOString().split('T')[0]
-        }, { onConflict: 'session_id, student_id' })
-        .select()
-        .single();
-      if (error) throw error;
-      results.push(data);
-    }
-    return results;
+  async markSportsAttendance(userId: string, sessionId: string, date: string, attendanceList: any[], device?: string, ip?: string): Promise<any> {
+    if (!userId) throw new Error('User ID is required');
+    if (!sessionId) throw new Error('Session ID is required');
+    if (!date) throw new Error('Date is required');
+    if (!attendanceList || attendanceList.length === 0) return { success: true, count: 0 };
+
+    const records = attendanceList.map(a => ({
+      student_id: a.studentId,
+      status: a.status,
+      remarks: a.remarks || null
+    }));
+
+    const { data, error } = await supabaseAdmin
+      .rpc('save_attendance', {
+        p_user_id: userId,
+        p_session_id: sessionId,
+        p_date: date,
+        p_attendance_records: records,
+        p_device: device || null,
+        p_ip: ip || null
+      });
+
+    if (error) throw error;
+    return data;
   },
+
+  async fetchSportsAttendanceHistory(schoolId: string, sessionId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchSportsAttendanceHistory');
+    const { data, error } = await supabase
+      .from('sports_attendance_audit')
+      .select('*, students(*, users(first_name, last_name))')
+      .eq('school_id', schoolId)
+      .eq('session_id', sessionId)
+      .order('created_at', { ascending: false });
+    if (error) throw error;
+    return (data || []).map(r => ({
+      id: r.id,
+      date: r.date,
+      createdAt: r.created_at,
+      oldStatus: r.old_status,
+      newStatus: r.new_status,
+      remarks: r.remarks,
+      editorName: r.editor_name || 'System',
+      studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student'
+    }));
+  },
+
 
   async fetchSportsPerformanceMetrics(schoolId: string, academicSessionId: string, studentId?: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchSportsPerformanceMetrics');
@@ -18148,7 +18170,7 @@ export const mockApi = {
 
   async fetchSportsTournaments(schoolId: string, academicSessionId: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchSportsTournaments');
-    const { data, error } = await supabaseAdmin
+    const { data, error } = await supabase
       .from('sports_tournaments')
       .select('*, sports(name)')
       .eq('school_id', schoolId)
@@ -18165,27 +18187,33 @@ export const mockApi = {
       endDate: r.end_date,
       venue: r.venue,
       status: r.status,
-      sportName: r.sports?.name || 'Unknown Sport'
+      sportName: r.sports?.name || 'Unknown Sport',
+      opponent: r.opponent,
+      startTime: r.start_time,
+      endTime: r.end_time,
+      description: r.description,
+      banner: r.banner,
+      result: r.result
     }));
   },
 
-  async createSportsTournament(tournament: any): Promise<any> {
-    validateSchoolId(tournament.schoolId, 'createSportsTournament');
+  async createSportsTournament(userId: string, tournament: any): Promise<any> {
     const { data, error } = await supabaseAdmin
-      .from('sports_tournaments')
-      .insert({
-        school_id: tournament.schoolId,
-        academic_session_id: tournament.academicSessionId,
-        sport_id: tournament.sportId,
-        name: tournament.name,
-        format: tournament.format,
-        start_date: tournament.startDate,
-        end_date: tournament.endDate,
-        venue: tournament.venue,
-        status: tournament.status || 'UPCOMING'
-      })
-      .select()
-      .single();
+      .rpc('create_tournament', {
+        p_user_id: userId,
+        p_name: tournament.name,
+        p_sport_id: tournament.sportId,
+        p_team_ids: tournament.teamIds || [],
+        p_student_ids: tournament.studentIds || [],
+        p_opponent: tournament.opponent || '',
+        p_venue: tournament.venue,
+        p_start_date: tournament.startDate,
+        p_end_date: tournament.endDate,
+        p_start_time: tournament.startTime || '09:00:00',
+        p_end_time: tournament.endTime || '17:00:00',
+        p_description: tournament.description || null,
+        p_banner: tournament.banner || null
+      });
     if (error) throw error;
     return data;
   },
@@ -18334,7 +18362,7 @@ export const mockApi = {
 
   async fetchSportsCertificates(schoolId: string, studentId?: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchSportsCertificates');
-    let query = supabaseAdmin
+    let query = supabase
       .from('sports_certificates')
       .select('*, students(*, users(first_name, last_name)), sports(name), sports_tournaments(name)')
       .eq('school_id', schoolId);
@@ -18357,37 +18385,49 @@ export const mockApi = {
       issueDate: r.issue_date,
       fileUrl: r.file_url,
       verificationQrCode: r.verification_qr_code,
+      verificationUrl: r.verification_url,
       studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
       sportName: r.sports?.name || 'Unknown Sport',
       tournamentName: r.sports_tournaments?.name || 'General Event'
     }));
   },
 
-  async issueSportsCertificate(cert: any): Promise<any> {
-    validateSchoolId(cert.schoolId, 'issueSportsCertificate');
+  async issueSportsCertificate(userId: string, cert: any): Promise<any> {
     const { data, error } = await supabaseAdmin
-      .from('sports_certificates')
-      .insert({
-        school_id: cert.schoolId,
-        academic_session_id: cert.academicSessionId,
-        student_id: cert.studentId,
-        sport_id: cert.sportId,
-        tournament_id: cert.tournamentId || null,
-        category: cert.category,
-        certificate_number: cert.certificateNumber || `AEGIS-SP-${cert.schoolId.substring(0,4)}-${Math.floor(Math.random() * 90000 + 10000)}`,
-        issue_date: cert.issueDate || new Date().toISOString().split('T')[0],
-        file_url: cert.fileUrl || 'https://placeholder.aegis.com/certificates/sample.pdf',
-        verification_qr_code: cert.verificationQrCode || `AEGIS-QR-VERIFY-${cert.studentId}`
-      })
-      .select()
-      .single();
+      .rpc('issue_certificate', {
+        p_user_id: userId,
+        p_student_id: cert.studentId,
+        p_sport_id: cert.sportId,
+        p_tournament_id: cert.tournamentId || null,
+        p_category: cert.category,
+        p_certificate_number: cert.certificateNumber || `AEGIS-SP-${cert.schoolId.substring(0,4)}-${Math.floor(Math.random() * 90000 + 10000)}`,
+        p_issue_date: cert.issueDate || new Date().toISOString().split('T')[0],
+        p_file_url: cert.fileUrl || '',
+        p_verification_qr_code: cert.verificationQrCode || '',
+        p_verification_url: cert.verificationUrl || ''
+      });
     if (error) throw error;
     return data;
   },
 
+  async uploadCertificatePDF(fileName: string, pdfBlob: Blob): Promise<string> {
+    const { data, error } = await supabase.storage
+      .from('sports-certificates')
+      .upload(fileName, pdfBlob, {
+        contentType: 'application/pdf',
+        cacheControl: '3600',
+        upsert: true
+      });
+    if (error) throw error;
+    const { data: urlData } = supabase.storage
+      .from('sports-certificates')
+      .getPublicUrl(fileName);
+    return urlData.publicUrl;
+  },
+
   async fetchSportsAchievements(schoolId: string, studentId?: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchSportsAchievements');
-    let query = supabaseAdmin
+    let query = supabase
       .from('sports_achievements')
       .select('*, students(*, users(first_name, last_name)), sports(name)')
       .eq('school_id', schoolId);
@@ -18410,34 +18450,39 @@ export const mockApi = {
       description: r.description,
       dateAwarded: r.date_awarded,
       studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student',
-      sportName: r.sports?.name || 'Unknown Sport'
+      sportName: r.sports?.name || 'Unknown Sport',
+      medal: r.medal,
+      rank: r.rank,
+      position: r.position,
+      certificateEligible: r.certificate_eligible,
+      images: r.images || []
     }));
   },
 
-  async addSportsAchievement(ach: any): Promise<any> {
-    validateSchoolId(ach.schoolId, 'addSportsAchievement');
+  async addSportsAchievement(userId: string, ach: any): Promise<any> {
     const { data, error } = await supabaseAdmin
-      .from('sports_achievements')
-      .insert({
-        school_id: ach.schoolId,
-        academic_session_id: ach.academicSessionId,
-        student_id: ach.studentId,
-        sport_id: ach.sportId,
-        type: ach.type,
-        level: ach.level,
-        title: ach.title,
-        description: ach.description,
-        date_awarded: ach.dateAwarded || new Date().toISOString().split('T')[0]
-      })
-      .select()
-      .single();
+      .rpc('create_achievement', {
+        p_user_id: userId,
+        p_title: ach.title,
+        p_tournament_id: ach.tournamentId || null,
+        p_student_id: ach.studentId,
+        p_team_id: ach.teamId || null,
+        p_sport_id: ach.sportId,
+        p_position: ach.position || '',
+        p_medal: ach.medal || '',
+        p_rank: ach.rank || '',
+        p_level: ach.level || 'District',
+        p_certificate_eligible: ach.certificateEligible || false,
+        p_description: ach.description || null,
+        p_images: ach.images || []
+      });
     if (error) throw error;
     return data;
   },
 
   async fetchSportsMedicalRecords(schoolId: string, studentId?: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchSportsMedicalRecords');
-    let query = supabaseAdmin
+    let query = supabase
       .from('sports_medical_records')
       .select('*, students(*, users(first_name, last_name))')
       .eq('school_id', schoolId);
@@ -18455,29 +18500,33 @@ export const mockApi = {
       bloodGroup: r.blood_group,
       medicalConditions: r.medical_conditions,
       emergencyContact: r.emergency_contact,
-      injuryHistory: typeof r.injury_history === 'string' ? JSON.parse(r.injury_history) : r.injury_history,
-      recoveryStatus: r.recovery_status,
       fitnessExpiryDate: r.fitness_expiry_date,
+      height: r.height,
+      weight: r.weight,
+      bmi: r.bmi,
+      allergies: r.allergies,
+      doctor: r.doctor,
+      status: r.status,
       studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student'
     }));
   },
 
-  async upsertSportsMedicalRecord(record: any): Promise<any> {
-    validateSchoolId(record.schoolId, 'upsertSportsMedicalRecord');
+  async upsertSportsMedicalRecord(userId: string, record: any): Promise<any> {
     const { data, error } = await supabaseAdmin
-      .from('sports_medical_records')
-      .upsert({
-        school_id: record.schoolId,
-        student_id: record.studentId,
-        blood_group: record.bloodGroup,
-        medical_conditions: record.medicalConditions,
-        emergency_contact: record.emergencyContact,
-        injury_history: record.injuryHistory || [],
-        recovery_status: record.recoveryStatus || 'FIT',
-        fitness_expiry_date: record.fitnessExpiryDate
-      }, { onConflict: 'student_id' })
-      .select()
-      .single();
+      .rpc('save_medical_fitness', {
+        p_user_id: userId,
+        p_student_id: record.studentId,
+        p_blood_group: record.bloodGroup,
+        p_height: record.height ? parseFloat(record.height) : 0,
+        p_weight: record.weight ? parseFloat(record.weight) : 0,
+        p_bmi: record.bmi ? parseFloat(record.bmi) : 0,
+        p_allergies: record.allergies || '',
+        p_medical_conditions: record.medicalConditions || '',
+        p_emergency_contact: record.emergencyContact || '',
+        p_doctor: record.doctor || '',
+        p_fitness_expiry_date: record.fitnessExpiryDate,
+        p_status: record.status || 'FIT'
+      });
     if (error) throw error;
     return data;
   },

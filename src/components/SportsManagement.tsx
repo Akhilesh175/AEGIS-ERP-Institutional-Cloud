@@ -187,6 +187,24 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
   const [showSchedulePractice, setShowSchedulePractice] = useState(false);
   const [newSession, setNewSession] = useState({ sessionName: '', sportId: '', teamId: '', coachId: '', sessionDate: '', startTime: '04:00 PM', endTime: '06:00 PM', venue: '', recurrence: 'NONE' });
 
+  // State properties for new Sports modules
+  const [selectedSessionId, setSelectedSessionId] = useState<string>('');
+  const [selectedAttendanceDate, setSelectedAttendanceDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [sportsAttendanceHistoryLogs, setSportsAttendanceHistoryLogs] = useState<any[]>([]);
+
+  const [showCreateTournament, setShowCreateTournament] = useState(false);
+  const [newTournament, setNewTournament] = useState({ name: '', sportId: '', opponent: '', venue: '', startDate: '', endDate: '', startTime: '09:00', endTime: '17:00', description: '', banner: '', teamIds: [] as string[], studentIds: [] as string[] });
+
+  const [showCreateAchievement, setShowCreateAchievement] = useState(false);
+  const [newAchievement, setNewAchievement] = useState({ title: '', tournamentId: '', studentId: '', teamId: '', sportId: '', position: '', medal: 'GOLD', rank: '', level: 'District', certificateEligible: false, description: '', images: [] as string[] });
+
+  const [showCreateCertificate, setShowCreateCertificate] = useState(false);
+  const [newCertificate, setNewCertificate] = useState({ studentId: '', sportId: '', tournamentId: '', category: 'Winner', certificateNumber: '', issueDate: new Date().toISOString().split('T')[0], fileUrl: '', verificationQrCode: '', verificationUrl: '' });
+
+  const [showCreateMedicalRecord, setShowCreateMedicalRecord] = useState(false);
+  const [newMedicalRecord, setNewMedicalRecord] = useState({ studentId: '', bloodGroup: 'O+', height: '', weight: '', bmi: 0, allergies: '', medicalConditions: '', emergencyContact: '', doctor: '', fitnessExpiryDate: '', status: 'FIT' });
+
+
   const [showFeePayment, setShowFeePayment] = useState(false);
   const [paymentForm, setPaymentForm] = useState({ sportsFeeId: '', paymentMethod: 'UPI', transactionId: '', utrNumber: '', screenshotUrl: '', remarks: '' });
   const [showAddInvoice, setShowAddInvoice] = useState(false);
@@ -401,6 +419,10 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
           }));
         }
       }
+      if (selectedSessionId) {
+        const auditLogs = await mockApi.fetchSportsAttendanceHistory(schoolId, selectedSessionId);
+        setSportsAttendanceHistoryLogs(auditLogs);
+      }
     } catch (e: any) {
       console.error('Failed to load Sports module records:', e);
       setError(e.message || 'Failed to load Sports module records');
@@ -419,6 +441,12 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_enrollments' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_fee_payments' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_attendance' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_attendance_audit' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_tournaments' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_achievements' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_certificates' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_medical_records' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_notifications' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_fixtures' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_teams' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_performance_metrics' }, () => { loadData(true); })
@@ -3123,41 +3151,67 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
             
             {['SCHOOL_ADMIN', 'COACH', 'SPORTS_ADMIN'].includes(portalRole) ? (
               <div className="space-y-6">
-                <div>
-                  <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-2 font-mono">Select Session to Mark Athlete Attendance</label>
-                  <select 
-                    onChange={async (e) => {
-                      const sessId = e.target.value;
-                      if (sessId) {
-                        const att = await mockApi.fetchSportsAttendance(schoolId, sessId);
-                        if (att.length === 0) {
+                <div className="flex flex-wrap gap-4 items-end">
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1 font-mono">Select Session to Mark Athlete Attendance</label>
+                    <select 
+                      value={selectedSessionId}
+                      onChange={async (e) => {
+                        const sessId = e.target.value;
+                        setSelectedSessionId(sessId);
+                        if (sessId) {
                           const targetSess = sessions.find(s => s.id === sessId);
-                          if (targetSess && targetSess.teamId) {
-                            const roster = await mockApi.fetchSportsTeamMembers(schoolId, targetSess.teamId);
-                            const preAtt = roster.map(r => ({
-                              studentId: r.studentId,
-                              studentName: r.studentName,
-                              status: 'PRESENT',
-                              remarks: ''
-                            }));
-                            setPerformance(preAtt);
+                          if (targetSess) {
+                            if (targetSess.sessionDate) {
+                              setSelectedAttendanceDate(targetSess.sessionDate);
+                            }
                           }
+                          const att = await mockApi.fetchSportsAttendance(schoolId, sessId);
+                          if (att.length === 0) {
+                            if (targetSess && targetSess.teamId) {
+                              const roster = await mockApi.fetchSportsTeamMembers(schoolId, targetSess.teamId);
+                              const preAtt = roster.map(r => ({
+                                studentId: r.studentId,
+                                studentName: r.studentName,
+                                status: 'PRESENT',
+                                remarks: ''
+                              }));
+                              setPerformance(preAtt);
+                            } else {
+                              setPerformance([]);
+                            }
+                          } else {
+                            setPerformance(att);
+                          }
+                          const historyLogs = await mockApi.fetchSportsAttendanceHistory(schoolId, sessId);
+                          setSportsAttendanceHistoryLogs(historyLogs);
                         } else {
-                          setPerformance(att);
+                          setPerformance([]);
+                          setSportsAttendanceHistoryLogs([]);
                         }
-                      }
-                    }}
-                    className="w-64 px-4 py-2.5 text-xs bg-slate-900 border border-slate-800 rounded-xl focus:outline-none"
-                  >
-                    <option value="">-- Choose practice session --</option>
-                    {sessions.map(s => (
-                      <option key={s.id} value={s.id}>{s.sessionName} ({s.sessionDate})</option>
-                    ))}
-                  </select>
+                      }}
+                      className="w-64 px-4 py-2.5 text-xs bg-slate-900 border border-slate-800 rounded-xl focus:outline-none"
+                    >
+                      <option value="">-- Choose practice session --</option>
+                      {sessions.map(s => (
+                        <option key={s.id} value={s.id}>{s.sessionName} ({s.sessionDate})</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="block text-xs font-bold uppercase tracking-wider text-slate-400 mb-1 font-mono">Attendance Date</label>
+                    <input 
+                      type="date"
+                      value={selectedAttendanceDate}
+                      onChange={(e) => setSelectedAttendanceDate(e.target.value)}
+                      className="w-48 px-4 py-2.5 text-xs bg-slate-900 border border-slate-800 rounded-xl focus:outline-none text-white font-mono"
+                    />
+                  </div>
                 </div>
 
                 {performance.length > 0 && (
-                  <div className="overflow-x-auto border-t border-slate-800 pt-4">
+                  <div className="overflow-x-auto border-t border-slate-800 pt-4 space-y-6">
                     <table className="w-full text-left text-xs border-collapse">
                       <thead>
                         <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
@@ -3196,7 +3250,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                                   setPerformance(updated);
                                 }}
                                 placeholder="Add notes..."
-                                className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs w-64"
+                                className="px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-xs w-64 text-white"
                               />
                             </td>
                           </tr>
@@ -3207,13 +3261,84 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                     <div className="flex justify-end pt-4">
                       <button
                         onClick={async () => {
-                          alert("Attendance records updated successfully!");
-                          loadData(true);
+                          try {
+                            if (!selectedSessionId) {
+                              alert("Please select a session first.");
+                              return;
+                            }
+                            await mockApi.markSportsAttendance(
+                              userId,
+                              selectedSessionId,
+                              selectedAttendanceDate,
+                              performance,
+                              navigator.userAgent,
+                              "127.0.0.1"
+                            );
+                            alert("Attendance records updated successfully!");
+                            const historyLogs = await mockApi.fetchSportsAttendanceHistory(schoolId, selectedSessionId);
+                            setSportsAttendanceHistoryLogs(historyLogs);
+                            loadData(true);
+                          } catch (err: any) {
+                            alert(`Error saving attendance: ${err.message}`);
+                          }
                         }}
                         className="bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold text-xs px-5 py-2 rounded-xl"
                       >
                         Submit Attendance
                       </button>
+                    </div>
+                  </div>
+                )}
+
+                {selectedSessionId && (
+                  <div className="border-t border-slate-800 pt-6 space-y-4">
+                    <h3 className="text-xs font-bold text-slate-100 uppercase tracking-wider font-mono">Athlete Practice Attendance Audit History</h3>
+                    <div className="overflow-x-auto bg-slate-900/40 border border-slate-850 rounded-xl p-4">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                            <th className="py-2.5 px-4 font-bold">Date & Time</th>
+                            <th className="py-2.5 px-4 font-bold">Student Name</th>
+                            <th className="py-2.5 px-4 font-bold">Previous Status</th>
+                            <th className="py-2.5 px-4 font-bold">New Status</th>
+                            <th className="py-2.5 px-4 font-bold">Edited By</th>
+                            <th className="py-2.5 px-4 font-bold">Remarks</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-850 text-slate-300">
+                          {sportsAttendanceHistoryLogs.map((log) => (
+                            <tr key={log.id} className="hover:bg-slate-900/20">
+                              <td className="py-2.5 px-4 text-slate-400 font-mono">
+                                {new Date(log.createdAt).toLocaleString()}
+                              </td>
+                              <td className="py-2.5 px-4 font-semibold text-slate-100">{log.studentName}</td>
+                              <td className="py-2.5 px-4">
+                                {log.oldStatus ? (
+                                  <span className="px-2 py-0.5 rounded text-[10px] bg-slate-800 text-slate-400">{log.oldStatus}</span>
+                                ) : (
+                                  <span className="text-slate-500 italic">None</span>
+                                )}
+                              </td>
+                              <td className="py-2.5 px-4">
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                  log.newStatus === 'PRESENT' ? 'bg-emerald-500/10 text-emerald-400' :
+                                  log.newStatus === 'LATE' ? 'bg-amber-500/10 text-amber-500' :
+                                  'bg-red-500/10 text-red-400'
+                                }`}>
+                                  {log.newStatus}
+                                </span>
+                              </td>
+                              <td className="py-2.5 px-4 text-slate-300 font-medium">{log.editorName}</td>
+                              <td className="py-2.5 px-4 text-slate-400 italic">{log.remarks || 'No remarks'}</td>
+                            </tr>
+                          ))}
+                          {sportsAttendanceHistoryLogs.length === 0 && (
+                            <tr>
+                              <td colSpan={6} className="py-6 text-center text-slate-500">No modification logs recorded for this session.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
                     </div>
                   </div>
                 )}
@@ -3269,7 +3394,20 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
               
               {/* Left Bracket List */}
               <div className="lg:col-span-2 space-y-4">
-                <h3 className="text-xs font-bold text-slate-100 uppercase tracking-wider font-mono">Tournament Fixtures & Brackets</h3>
+                <div className="flex justify-between items-center mb-2">
+                  <h3 className="text-xs font-bold text-slate-100 uppercase tracking-wider font-mono">Tournament Fixtures & Brackets</h3>
+                  {['SCHOOL_ADMIN', 'COACH', 'SPORTS_ADMIN'].includes(portalRole) && (
+                    <button
+                      onClick={() => {
+                        setNewTournament({ name: '', sportId: '', opponent: '', venue: '', startDate: '', endDate: '', startTime: '09:00', endTime: '17:00', description: '', banner: '', teamIds: [], studentIds: [] });
+                        setShowCreateTournament(true);
+                      }}
+                      className="bg-brand-600 hover:bg-brand-500 text-white font-bold text-[10px] px-3.5 py-1.5 rounded-lg border border-brand-400/20"
+                    >
+                      + Schedule Tournament
+                    </button>
+                  )}
+                </div>
                 {tournaments.map(t => (
                   <div key={t.id} className="bg-slate-900/60 border border-slate-850 p-4 rounded-xl space-y-3">
                     <div className="flex justify-between items-center border-b border-slate-800 pb-2">
@@ -3334,6 +3472,19 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
             ───────────────────────────────────────────────────────────────── */}
         {activeSubTab === 'achievements' && (
           <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+            {['SCHOOL_ADMIN', 'COACH', 'SPORTS_ADMIN'].includes(portalRole) && (
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={() => {
+                    setNewAchievement({ title: '', tournamentId: '', studentId: '', teamId: '', sportId: '', position: '', medal: 'GOLD', rank: '', level: 'District', certificateEligible: false, description: '', images: [] });
+                    setShowCreateAchievement(true);
+                  }}
+                  className="bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs px-4 py-2 rounded-xl border border-brand-400/20"
+                >
+                  + Log Student Achievement
+                </button>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {achievements.map(ach => (
                 <div key={ach.id} className="bg-slate-900/60 border border-slate-850 p-5 rounded-2xl flex flex-col justify-between gap-4">
@@ -3383,6 +3534,19 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
             ───────────────────────────────────────────────────────────────── */}
         {activeSubTab === 'certificates' && (
           <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+            {['SCHOOL_ADMIN', 'COACH', 'SPORTS_ADMIN'].includes(portalRole) && (
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={() => {
+                    setNewCertificate({ studentId: '', sportId: '', tournamentId: '', category: 'Winner', certificateNumber: '', issueDate: new Date().toISOString().split('T')[0], fileUrl: '', verificationQrCode: '', verificationUrl: '' });
+                    setShowCreateCertificate(true);
+                  }}
+                  className="bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs px-4 py-2 rounded-xl border border-brand-400/20"
+                >
+                  + Issue Sports Certificate
+                </button>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {certificates.map(cert => (
                 <div key={cert.id} className="bg-slate-900/60 border border-slate-850 p-5 rounded-2xl flex items-center justify-between">
@@ -3516,6 +3680,19 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
             ───────────────────────────────────────────────────────────────── */}
         {activeSubTab === 'medical' && (
           <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+            {['SCHOOL_ADMIN', 'COACH', 'SPORTS_ADMIN'].includes(portalRole) && (
+              <div className="flex justify-end mb-2">
+                <button
+                  onClick={() => {
+                    setNewMedicalRecord({ studentId: '', bloodGroup: 'O+', height: '', weight: '', bmi: 0, allergies: '', medicalConditions: '', emergencyContact: '', doctor: '', fitnessExpiryDate: '', status: 'FIT' });
+                    setShowCreateMedicalRecord(true);
+                  }}
+                  className="bg-brand-600 hover:bg-brand-500 text-white font-bold text-xs px-4 py-2 rounded-xl border border-brand-400/20"
+                >
+                  + Configure Medical Profile
+                </button>
+              </div>
+            )}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
               {medicalRecords.map(med => (
                 <div key={med.id} className="bg-slate-900/60 border border-slate-850 p-5 rounded-2xl space-y-4">
@@ -6667,6 +6844,761 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                 Close View
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {showCreateTournament && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-4 my-8">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Schedule New Tournament / Match</h3>
+              <button onClick={() => setShowCreateTournament(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await mockApi.createSportsTournament(userId, {
+                  name: newTournament.name,
+                  sportId: newTournament.sportId,
+                  opponent: newTournament.opponent,
+                  venue: newTournament.venue,
+                  startDate: newTournament.startDate,
+                  endDate: newTournament.endDate,
+                  startTime: newTournament.startTime,
+                  endTime: newTournament.endTime,
+                  description: newTournament.description,
+                  banner: newTournament.banner,
+                  teamIds: newTournament.teamIds,
+                  studentIds: newTournament.studentIds
+                });
+                alert("Tournament/Match scheduled successfully!");
+                setShowCreateTournament(false);
+                loadData(true);
+              } catch (err: any) {
+                alert(`Error creating tournament: ${err.message}`);
+              }
+            }} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Tournament / Match Name</label>
+                <input 
+                  type="text" 
+                  value={newTournament.name}
+                  onChange={(e) => setNewTournament(prev => ({ ...prev, name: e.target.value }))}
+                  required 
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  placeholder="e.g. Annual Inter-School Cricket Championship"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Sport</label>
+                  <select 
+                    value={newTournament.sportId}
+                    onChange={(e) => setNewTournament(prev => ({ ...prev, sportId: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="">-- Choose Sport --</option>
+                    {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Opponent</label>
+                  <input 
+                    type="text" 
+                    value={newTournament.opponent}
+                    onChange={(e) => setNewTournament(prev => ({ ...prev, opponent: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                    placeholder="e.g. St. Xavier High School"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Start Date</label>
+                  <input 
+                    type="date" 
+                    value={newTournament.startDate}
+                    onChange={(e) => setNewTournament(prev => ({ ...prev, startDate: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">End Date</label>
+                  <input 
+                    type="date" 
+                    value={newTournament.endDate}
+                    onChange={(e) => setNewTournament(prev => ({ ...prev, endDate: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Start Time</label>
+                  <input 
+                    type="time" 
+                    value={newTournament.startTime}
+                    onChange={(e) => setNewTournament(prev => ({ ...prev, startTime: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">End Time</label>
+                  <input 
+                    type="time" 
+                    value={newTournament.endTime}
+                    onChange={(e) => setNewTournament(prev => ({ ...prev, endTime: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Venue</label>
+                  <input 
+                    type="text" 
+                    value={newTournament.venue}
+                    onChange={(e) => setNewTournament(prev => ({ ...prev, venue: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                    placeholder="e.g. Main Stadium"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Banner Image URL</label>
+                  <input 
+                    type="text" 
+                    value={newTournament.banner}
+                    onChange={(e) => setNewTournament(prev => ({ ...prev, banner: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                    placeholder="https://image-link.png"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Assign Teams</label>
+                  <select 
+                    multiple
+                    value={newTournament.teamIds}
+                    onChange={(e) => {
+                      const options = e.target.options;
+                      const value: string[] = [];
+                      for (let i = 0; i < options.length; i++) {
+                        if (options[i].selected) {
+                          value.push(options[i].value);
+                        }
+                      }
+                      setNewTournament(prev => ({ ...prev, teamIds: value }));
+                    }}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none h-24"
+                  >
+                    {teams.map(t => <option key={t.id} value={t.id}>{t.teamName}</option>)}
+                  </select>
+                  <span className="text-[10px] text-slate-500">Hold Ctrl/Cmd to select multiple</span>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Assign Players</label>
+                  <select 
+                    multiple
+                    value={newTournament.studentIds}
+                    onChange={(e) => {
+                      const options = e.target.options;
+                      const value: string[] = [];
+                      for (let i = 0; i < options.length; i++) {
+                        if (options[i].selected) {
+                          value.push(options[i].value);
+                        }
+                      }
+                      setNewTournament(prev => ({ ...prev, studentIds: value }));
+                    }}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none h-24"
+                  >
+                    {allStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                  <span className="text-[10px] text-slate-500">Hold Ctrl/Cmd to select multiple</span>
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Description</label>
+                <textarea 
+                  value={newTournament.description}
+                  onChange={(e) => setNewTournament(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  rows={2}
+                  placeholder="Match format and details..."
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                className="w-full py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl border border-brand-400/25"
+              >
+                Schedule Tournament / Match
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showCreateAchievement && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 my-8">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Log Student Achievement</h3>
+              <button onClick={() => setShowCreateAchievement(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await mockApi.addSportsAchievement(userId, {
+                  title: newAchievement.title,
+                  tournamentId: newAchievement.tournamentId || null,
+                  studentId: newAchievement.studentId,
+                  teamId: newAchievement.teamId || null,
+                  sportId: newAchievement.sportId,
+                  position: newAchievement.position,
+                  medal: newAchievement.medal,
+                  rank: newAchievement.rank,
+                  level: newAchievement.level,
+                  certificateEligible: newAchievement.certificateEligible,
+                  description: newAchievement.description,
+                  images: newAchievement.images
+                });
+                alert("Achievement recorded successfully!");
+                setShowCreateAchievement(false);
+                loadData(true);
+              } catch (err: any) {
+                alert(`Error logging achievement: ${err.message}`);
+              }
+            }} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Achievement Name / Title</label>
+                <input 
+                  type="text" 
+                  value={newAchievement.title}
+                  onChange={(e) => setNewAchievement(prev => ({ ...prev, title: e.target.value }))}
+                  required 
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  placeholder="e.g. Best Batsman of the Match"
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Student Athlete</label>
+                  <select 
+                    value={newAchievement.studentId}
+                    onChange={(e) => setNewAchievement(prev => ({ ...prev, studentId: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="">-- Select Athlete --</option>
+                    {allStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Sport</label>
+                  <select 
+                    value={newAchievement.sportId}
+                    onChange={(e) => setNewAchievement(prev => ({ ...prev, sportId: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="">-- Select Sport --</option>
+                    {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Tournament / Event</label>
+                  <select 
+                    value={newAchievement.tournamentId}
+                    onChange={(e) => setNewAchievement(prev => ({ ...prev, tournamentId: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="">-- General / Non-Tournament --</option>
+                    {tournaments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Team (Optional)</label>
+                  <select 
+                    value={newAchievement.teamId}
+                    onChange={(e) => setNewAchievement(prev => ({ ...prev, teamId: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="">-- Individual --</option>
+                    {teams.map(t => <option key={t.id} value={t.id}>{t.teamName}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Medal Type</label>
+                  <select 
+                    value={newAchievement.medal}
+                    onChange={(e) => setNewAchievement(prev => ({ ...prev, medal: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="GOLD">Gold</option>
+                    <option value="SILVER">Silver</option>
+                    <option value="BRONZE">Bronze</option>
+                    <option value="NONE">None</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Position</label>
+                  <input 
+                    type="text" 
+                    value={newAchievement.position}
+                    onChange={(e) => setNewAchievement(prev => ({ ...prev, position: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                    placeholder="e.g. Winner, 1st Runner Up"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Rank (Optional)</label>
+                  <input 
+                    type="text" 
+                    value={newAchievement.rank}
+                    onChange={(e) => setNewAchievement(prev => ({ ...prev, rank: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                    placeholder="e.g. Rank 1"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Level</label>
+                  <select 
+                    value={newAchievement.level}
+                    onChange={(e) => setNewAchievement(prev => ({ ...prev, level: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="District">District</option>
+                    <option value="State">State</option>
+                    <option value="National">National</option>
+                    <option value="International">International</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <input 
+                  type="checkbox" 
+                  checked={newAchievement.certificateEligible}
+                  onChange={(e) => setNewAchievement(prev => ({ ...prev, certificateEligible: e.target.checked }))}
+                  id="certificateEligible"
+                  className="rounded bg-slate-900 border-slate-800 text-brand-500 focus:ring-0"
+                />
+                <label htmlFor="certificateEligible" className="text-slate-400 select-none cursor-pointer">Eligible for Certificate</label>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Description</label>
+                <textarea 
+                  value={newAchievement.description}
+                  onChange={(e) => setNewAchievement(prev => ({ ...prev, description: e.target.value }))}
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  rows={2}
+                  placeholder="Detail match conditions, records broken..."
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                className="w-full py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl border border-brand-400/25"
+              >
+                Log Achievement
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showCreateCertificate && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 my-8">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Generate Sports Certificate</h3>
+              <button onClick={() => setShowCreateCertificate(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                setUploading(true);
+                const targetStudent = allStudents.find(s => s.id === newCertificate.studentId);
+                const targetSport = sports.find(s => s.id === newCertificate.sportId);
+                const targetTournament = tournaments.find(t => t.id === newCertificate.tournamentId);
+
+                const studentName = targetStudent ? targetStudent.name : "Student Athlete";
+                const sportName = targetSport ? targetSport.name : "Sports Module";
+                const certNumber = newCertificate.certificateNumber || `AEGIS-SP-${schoolId.substring(0,4)}-${Math.floor(Math.random() * 90000 + 10000)}`;
+                const verificationUrl = `https://www.aegiserp.xyz/verify/certificate/${certNumber}`;
+                const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(verificationUrl)}`;
+
+                // Generate PDF using jsPDF
+                const doc = new jsPDF({ orientation: 'landscape' });
+                doc.setFillColor(7, 10, 19);
+                doc.rect(0, 0, 297, 210, 'F');
+                doc.setDrawColor(59, 130, 246);
+                doc.setLineWidth(4);
+                doc.rect(10, 10, 277, 190);
+                
+                doc.setTextColor(255, 255, 255);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(28);
+                doc.text('AEGIS ERP SPORTS ECOSYSTEM', 148, 45, { align: 'center' });
+                
+                doc.setTextColor(59, 130, 246);
+                doc.setFontSize(20);
+                doc.text('CERTIFICATE OF ACCOMPLISHMENT', 148, 65, { align: 'center' });
+                
+                doc.setTextColor(226, 232, 240);
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(14);
+                doc.text('This is proudly awarded to', 148, 90, { align: 'center' });
+                
+                doc.setTextColor(255, 255, 255);
+                doc.setFont('Helvetica', 'bold');
+                doc.setFontSize(24);
+                doc.text(studentName.toUpperCase(), 148, 110, { align: 'center' });
+                
+                doc.setTextColor(226, 232, 240);
+                doc.setFont('Helvetica', 'normal');
+                doc.setFontSize(14);
+                doc.text(`for outstanding performance and excellence in ${sportName}`, 148, 125, { align: 'center' });
+                doc.text(`under the category of ${newCertificate.category.replace('_', ' ')}`, 148, 135, { align: 'center' });
+                
+                doc.setFontSize(9);
+                doc.setTextColor(148, 163, 184);
+                doc.text(`Verification ID: ${certNumber}`, 148, 170, { align: 'center' });
+                doc.text(`Issued Date: ${newCertificate.issueDate}`, 148, 177, { align: 'center' });
+                doc.text(`Verification URL: ${verificationUrl}`, 148, 184, { align: 'center' });
+
+                const pdfBlob = doc.output('blob');
+                
+                // Upload Blob to Supabase Storage
+                const fileName = `cert_${certNumber}.pdf`;
+                const fileUrl = await mockApi.uploadCertificatePDF(fileName, pdfBlob);
+
+                // Save record in database
+                await mockApi.issueSportsCertificate(userId, {
+                  studentId: newCertificate.studentId,
+                  sportId: newCertificate.sportId,
+                  tournamentId: newCertificate.tournamentId || null,
+                  category: newCertificate.category,
+                  certificateNumber: certNumber,
+                  issueDate: newCertificate.issueDate,
+                  fileUrl: fileUrl,
+                  verificationQrCode: qrUrl,
+                  verificationUrl: verificationUrl
+                });
+
+                alert("Sports Certificate generated and archived in Supabase Cloud!");
+                setShowCreateCertificate(false);
+                loadData(true);
+              } catch (err: any) {
+                alert(`Error issuing certificate: ${err.message}`);
+              } finally {
+                setUploading(false);
+              }
+            }} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Student Athlete</label>
+                <select 
+                  value={newCertificate.studentId}
+                  onChange={(e) => setNewCertificate(prev => ({ ...prev, studentId: e.target.value }))}
+                  required
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                >
+                  <option value="">-- Choose Athlete --</option>
+                  {allStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Sport</label>
+                  <select 
+                    value={newCertificate.sportId}
+                    onChange={(e) => setNewCertificate(prev => ({ ...prev, sportId: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="">-- Select Sport --</option>
+                    {sports.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Tournament (Optional)</label>
+                  <select 
+                    value={newCertificate.tournamentId}
+                    onChange={(e) => setNewCertificate(prev => ({ ...prev, tournamentId: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="">-- Non-Tournament Event --</option>
+                    {tournaments.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Certificate Type</label>
+                  <select 
+                    value={newCertificate.category}
+                    onChange={(e) => setNewCertificate(prev => ({ ...prev, category: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="Participation">Participation</option>
+                    <option value="Winner">Winner</option>
+                    <option value="Runner Up">Runner Up</option>
+                    <option value="Best Player">Best Player</option>
+                    <option value="Attendance">Attendance</option>
+                    <option value="Excellence">Excellence</option>
+                    <option value="Appreciation">Appreciation</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Issue Date</label>
+                  <input 
+                    type="date" 
+                    value={newCertificate.issueDate}
+                    onChange={(e) => setNewCertificate(prev => ({ ...prev, issueDate: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Certificate Number (Optional)</label>
+                <input 
+                  type="text" 
+                  value={newCertificate.certificateNumber}
+                  onChange={(e) => setNewCertificate(prev => ({ ...prev, certificateNumber: e.target.value }))}
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                  placeholder="e.g. CERT-SP-2026-000123 (Auto-generated if empty)"
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                disabled={uploading}
+                className="w-full py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl border border-brand-400/25 disabled:opacity-50"
+              >
+                {uploading ? "Generating PDF & Uploading..." : "Generate & Save Certificate"}
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {showCreateMedicalRecord && (
+        <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 overflow-y-auto">
+          <div className="bg-[#0b101d] border border-slate-800 rounded-2xl max-w-md w-full p-6 shadow-2xl space-y-4 my-8">
+            <div className="flex justify-between items-center border-b border-slate-800 pb-3">
+              <h3 className="text-sm font-bold text-white font-mono uppercase tracking-wider">Configure Medical Fitness Profile</h3>
+              <button onClick={() => setShowCreateMedicalRecord(false)} className="text-slate-400 hover:text-white"><X size={18} /></button>
+            </div>
+            
+            <form onSubmit={async (e) => {
+              e.preventDefault();
+              try {
+                await mockApi.upsertSportsMedicalRecord(userId, {
+                  studentId: newMedicalRecord.studentId,
+                  bloodGroup: newMedicalRecord.bloodGroup,
+                  height: newMedicalRecord.height,
+                  weight: newMedicalRecord.weight,
+                  bmi: newMedicalRecord.bmi,
+                  allergies: newMedicalRecord.allergies,
+                  medicalConditions: newMedicalRecord.medicalConditions,
+                  emergencyContact: newMedicalRecord.emergencyContact,
+                  doctor: newMedicalRecord.doctor,
+                  fitnessExpiryDate: newMedicalRecord.fitnessExpiryDate,
+                  status: newMedicalRecord.status
+                });
+                alert("Medical Fitness Profile successfully synchronized!");
+                setShowCreateMedicalRecord(false);
+                loadData(true);
+              } catch (err: any) {
+                alert(`Error saving medical record: ${err.message}`);
+              }
+            }} className="space-y-4 text-xs">
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Student Athlete</label>
+                <select 
+                  value={newMedicalRecord.studentId}
+                  onChange={(e) => setNewMedicalRecord(prev => ({ ...prev, studentId: e.target.value }))}
+                  required
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                >
+                  <option value="">-- Choose Athlete --</option>
+                  {allStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Blood Group</label>
+                  <select 
+                    value={newMedicalRecord.bloodGroup}
+                    onChange={(e) => setNewMedicalRecord(prev => ({ ...prev, bloodGroup: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                  >
+                    <option value="A+">A+</option>
+                    <option value="A-">A-</option>
+                    <option value="B+">B+</option>
+                    <option value="B-">B-</option>
+                    <option value="AB+">AB+</option>
+                    <option value="AB-">AB-</option>
+                    <option value="O+">O+</option>
+                    <option value="O-">O-</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Fitness Status</label>
+                  <select 
+                    value={newMedicalRecord.status}
+                    onChange={(e) => setNewMedicalRecord(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  >
+                    <option value="FIT">Fit</option>
+                    <option value="UNFIT">Unfit</option>
+                    <option value="TEMPORARILY_UNFIT">Temporarily Unfit</option>
+                    <option value="MEDICAL_LEAVE">Medical Leave</option>
+                  </select>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-3 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Height (cm)</label>
+                  <input 
+                    type="number" 
+                    value={newMedicalRecord.height}
+                    onChange={(e) => {
+                      const h = e.target.value;
+                      const w = newMedicalRecord.weight;
+                      const bmiVal = (h && w) ? parseFloat((parseFloat(w) / Math.pow(parseFloat(h) / 100, 2)).toFixed(1)) : 0;
+                      setNewMedicalRecord(prev => ({ ...prev, height: h, bmi: bmiVal }));
+                    }}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                    placeholder="e.g. 170"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Weight (kg)</label>
+                  <input 
+                    type="number" 
+                    value={newMedicalRecord.weight}
+                    onChange={(e) => {
+                      const w = e.target.value;
+                      const h = newMedicalRecord.height;
+                      const bmiVal = (h && w) ? parseFloat((parseFloat(w) / Math.pow(parseFloat(h) / 100, 2)).toFixed(1)) : 0;
+                      setNewMedicalRecord(prev => ({ ...prev, weight: w, bmi: bmiVal }));
+                    }}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                    placeholder="e.g. 65"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">BMI (Auto)</label>
+                  <input 
+                    type="number" 
+                    value={newMedicalRecord.bmi}
+                    readOnly
+                    className="w-full px-4 py-2 bg-slate-950/60 border border-slate-800 rounded-xl text-emerald-400 focus:outline-none font-bold font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Allergies</label>
+                  <input 
+                    type="text" 
+                    value={newMedicalRecord.allergies}
+                    onChange={(e) => setNewMedicalRecord(prev => ({ ...prev, allergies: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                    placeholder="e.g. Peanuts, Pollen"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Doctor Name</label>
+                  <input 
+                    type="text" 
+                    value={newMedicalRecord.doctor}
+                    onChange={(e) => setNewMedicalRecord(prev => ({ ...prev, doctor: e.target.value }))}
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                    placeholder="e.g. Dr. Jane Smith"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Emergency Contact</label>
+                  <input 
+                    type="text" 
+                    value={newMedicalRecord.emergencyContact}
+                    onChange={(e) => setNewMedicalRecord(prev => ({ ...prev, emergencyContact: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                    placeholder="e.g. +91 9876543210"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="block text-slate-400 font-semibold">Fitness Expiry Date</label>
+                  <input 
+                    type="date" 
+                    value={newMedicalRecord.fitnessExpiryDate}
+                    onChange={(e) => setNewMedicalRecord(prev => ({ ...prev, fitnessExpiryDate: e.target.value }))}
+                    required
+                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Medical Conditions</label>
+                <textarea 
+                  value={newMedicalRecord.medicalConditions}
+                  onChange={(e) => setNewMedicalRecord(prev => ({ ...prev, medicalConditions: e.target.value }))}
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  rows={2}
+                  placeholder="e.g. Minor asthma, recovering from knee sprain..."
+                />
+              </div>
+
+              <button 
+                type="submit" 
+                className="w-full py-3 bg-gradient-to-r from-brand-600 to-brand-500 text-white font-bold rounded-xl border border-brand-400/25"
+              >
+                Save Medical Fitness Profile
+              </button>
+            </form>
           </div>
         </div>
       )}
