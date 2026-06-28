@@ -726,7 +726,17 @@ class MockDatabase {
     this.paymentAuditLogs = getStorage<PaymentAuditLog[]>('payment_audit_logs', []);
   }
 
+  private saveTimeout: any = null;
+
   saveAll() {
+    if (this.saveTimeout) return;
+    this.saveTimeout = setTimeout(() => {
+      this.saveTimeout = null;
+      this.performSave();
+    }, 0);
+  }
+
+  performSave() {
     setStorage('users', this.users);
     setStorage('schools', this.schools);
     setStorage('classes', this.classes);

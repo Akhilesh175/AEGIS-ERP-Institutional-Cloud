@@ -696,17 +696,19 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
       const schoolId = session?.user.schoolId;
       if (schoolId) {
         try {
-          await mockApi.syncSchoolsData(schoolId);
-          await mockApi.syncClassesData(schoolId);
-          await mockApi.syncTeachersData(schoolId);
-          await mockApi.syncSubjectsData(schoolId);
-          await mockApi.syncTeacherClassSubjectMappingsData(schoolId);
-          await mockApi.syncAcademicSessionsData(schoolId);
-          await mockApi.syncStudentsData(schoolId);
-          await mockApi.syncTimetablesData(schoolId).catch(console.error);
+          await Promise.all([
+            mockApi.syncSchoolsData(schoolId),
+            mockApi.syncClassesData(schoolId),
+            mockApi.syncTeachersData(schoolId),
+            mockApi.syncSubjectsData(schoolId),
+            mockApi.syncTeacherClassSubjectMappingsData(schoolId),
+            mockApi.syncAcademicSessionsData(schoolId),
+            mockApi.syncStudentsData(schoolId),
+            mockApi.syncTimetablesData(schoolId).catch(console.error),
+            mockApi.syncQuizzesData(schoolId).catch(console.error)
+          ]);
           
           mockApi.classTeacherGetExams(schoolId).then(setHmExams);
-          mockApi.syncQuizzesData(schoolId).catch(console.error);
 
           if (teacherId) {
             const { data: tcRow } = await supabase

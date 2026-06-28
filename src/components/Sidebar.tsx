@@ -205,7 +205,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'quizzes', label: 'Quizzes', icon: PenTool, locked: lock('quizzes') },
           { id: 'materials', label: 'Upload Materials', icon: BookOpen, locked: lock('materials') },
           { id: 'forums', label: 'Discussions', icon: MessageSquare, locked: lock('forums') },
-          { id: 'sports', label: 'Sports & Activities', icon: Trophy, locked: lock('sports') },
           { id: 'paymentsettings', label: 'Payment Settings', icon: DollarSign },
           { id: 'support', label: 'Help & Support', icon: HelpCircle }
         ];
@@ -322,8 +321,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
         }
 
         // All sub-admins can access their own payment settings (salary / banking)
-        // Sports & Activities is Enterprise-only for all sub-admin roles
-        subAdminTabs.push({ id: 'sports', label: 'Sports & Activities', icon: Trophy, locked: !isEnterprise });
+        // Sports & Activities is Enterprise-only for all authorized sub-admin roles
+        if (['SPORTS_ADMIN', 'FINANCE_ADMIN', 'ACADEMIC_ADMIN'].includes(role)) {
+          subAdminTabs.push({ id: 'sports', label: 'Sports & Activities', icon: Trophy, locked: !isEnterprise });
+        }
         subAdminTabs.push({ id: 'paymentsettings', label: 'Payment Settings', icon: DollarSign });
         
         subAdminTabs.push({ id: 'support', label: 'Help & Support', icon: HelpCircle });

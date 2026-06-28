@@ -20696,7 +20696,7 @@ export const mockApi = {
   async fetchCoachAttendance(schoolId: string, date?: string, coachId?: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchCoachAttendance');
     let query = supabaseAdmin
-      .from('sports_coach_attendance')
+      .from('coach_attendance')
       .select('*, sports_coaches(*, users(email))')
       .eq('school_id', schoolId)
       .is('deleted_at', null); // Soft delete filter
@@ -20735,12 +20735,17 @@ export const mockApi = {
   },
 
   async markCoachAttendance(userId: string, record: any): Promise<any> {
+    if (!userId) throw new Error('Logged User is required');
     const { data: user } = await supabaseAdmin.from('users').select('school_id, role').eq('id', userId).single();
-    if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+    if (!user || !user.school_id) throw new Error('School is required');
+    if (!['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
+    if (!record || !record.coachId) throw new Error('Coach is required');
+    if (!record.attendanceDate) throw new Error('Attendance Date is required');
+    if (!record.status) throw new Error('Attendance Status is required');
 
-    // Fetch the current record (if any) so we can diff for history logging
+    // Fetch the current record (if any) so we can determine if it is an update
     const { data: existing } = await supabaseAdmin
-      .from('sports_coach_attendance')
+      .from('coach_attendance')
       .select('*')
       .eq('school_id', user.school_id)
       .eq('coach_id', record.coachId)
@@ -20748,101 +20753,46 @@ export const mockApi = {
       .is('deleted_at', null)
       .maybeSingle();
 
-    // ─── Atomic upsert — eliminates duplicate key race conditions ──────────────
-    // Using onConflict: 'coach_id,attendance_date' so the DB handles INSERT vs
-    // UPDATE atomically, even under concurrent requests.
-    const { data, error } = await supabaseAdmin
-      .from('sports_coach_attendance')
-      .upsert({
-        school_id: user.school_id,
-        coach_id: record.coachId,
-        attendance_date: record.attendanceDate,
-        status: record.status,
-        check_in: record.checkIn || null,
-        check_out: record.checkOut || null,
-        working_hours: Number(record.workingHours || 0),
-        remarks: record.remarks || null,
-        device_id: record.deviceId || existing?.device_id || null,
-        ip_address: record.ipAddress || existing?.ip_address || null,
-        latitude: record.latitude || existing?.latitude || null,
-        longitude: record.longitude || existing?.longitude || null,
-        attendance_source: record.attendanceSource || existing?.attendance_source || 'MANUAL',
-        updated_at: new Date().toISOString(),
-        // Only set created_by on first insert; upsert merges so this is safe
-        created_by: existing?.created_by || userId,
-      }, { onConflict: 'coach_id,attendance_date', ignoreDuplicates: false })
-      .select()
-      .single();
-
-    if (error) throw error;
-
-    // Write audit history only when there were actual changes
-    if (existing) {
-      const hasChanges =
-        existing.status !== record.status ||
-        existing.check_in !== (record.checkIn || null) ||
-        existing.check_out !== (record.checkOut || null) ||
-        existing.working_hours !== Number(record.workingHours || 0) ||
-        existing.remarks !== (record.remarks || null);
-
-      if (hasChanges) {
-        const oldValueStr = JSON.stringify({
-          status: existing.status,
-          check_in: existing.check_in,
-          check_out: existing.check_out,
-          working_hours: existing.working_hours,
-          remarks: existing.remarks
+    try {
+      const { data: upsertData, error } = await supabaseAdmin
+        .rpc('save_coach_attendance', {
+          p_user_id: userId,
+          p_coach_id: record.coachId,
+          p_attendance_date: record.attendanceDate,
+          p_status: record.status,
+          p_check_in: record.checkIn || null,
+          p_check_out: record.checkOut || null,
+          p_working_hours: Number(record.workingHours || 0),
+          p_remarks: record.remarks || null,
+          p_edit_reason: record.editReason || null,
+          p_device_info: record.deviceId || existing?.device_id || null,
+          p_ip_address: record.ipAddress || existing?.ip_address || null,
+          p_latitude: record.latitude || existing?.latitude || null,
+          p_longitude: record.longitude || existing?.longitude || null,
+          p_attendance_source: record.attendanceSource || existing?.attendance_source || 'MANUAL'
         });
-        const newValueStr = JSON.stringify({
-          status: record.status,
-          check_in: record.checkIn || null,
-          check_out: record.checkOut || null,
-          working_hours: Number(record.workingHours || 0),
-          remarks: record.remarks || null
-        });
-        await supabaseAdmin
-          .from('sports_coach_attendance_history')
-          .insert({
-            school_id: user.school_id,
-            attendance_id: data.id,
-            old_value: oldValueStr,
-            new_value: newValueStr,
-            edited_by: userId,
-            edit_reason: record.editReason || 'Administrative update'
-          });
-      }
-    } else {
-      // First-time insert — write a "created" history entry so history is
-      // immediately visible without having to make an edit first.
-      await supabaseAdmin
-        .from('sports_coach_attendance_history')
-        .insert({
-          school_id: user.school_id,
-          attendance_id: data.id,
-          old_value: 'NEW',
-          new_value: JSON.stringify({
-            status: record.status,
-            check_in: record.checkIn || null,
-            check_out: record.checkOut || null,
-            working_hours: Number(record.workingHours || 0),
-            remarks: record.remarks || null
-          }),
-          edited_by: userId,
-          edit_reason: 'Initial attendance record created'
-        });
+
+      if (error) throw error;
+
+      await this.logSportsActivity(
+        user.school_id,
+        userId,
+        user.role,
+        'MARK_COACH_ATTENDANCE',
+        `Marked attendance for coach on ${record.attendanceDate} as ${record.status}`,
+        undefined,
+        undefined,
+        { attendanceId: upsertData.id }
+      );
+
+      return {
+        ...upsertData,
+        isUpdate: !!existing
+      };
+    } catch (dbError: any) {
+      console.error('Coach Attendance DB save error:', dbError);
+      throw new Error(dbError?.message || 'Unable to save attendance. Please try again.');
     }
-
-    await this.logSportsActivity(
-      user.school_id,
-      userId,
-      user.role,
-      'MARK_COACH_ATTENDANCE',
-      `Marked attendance for coach on ${record.attendanceDate} as ${record.status}`,
-      undefined,
-      undefined,
-      { attendanceId: data.id }
-    );
-    return data;
   },
 
   async fetchCoachLeaves(schoolId: string, coachId?: string): Promise<any[]> {
@@ -21031,7 +20981,7 @@ export const mockApi = {
     const totalHours = Number((totalMinutes / 60).toFixed(2));
 
     const { data: existingAttendance } = await supabaseAdmin
-      .from('sports_coach_attendance')
+      .from('coach_attendance')
       .select('id, created_by')
       .eq('coach_id', coachProfile.id)
       .eq('attendance_date', logData.logDate)
@@ -21040,7 +20990,7 @@ export const mockApi = {
 
     // Atomic upsert — prevents duplicate key violations from concurrent check-ins
     await supabaseAdmin
-      .from('sports_coach_attendance')
+      .from('coach_attendance')
       .upsert({
         school_id: user.school_id,
         coach_id: coachProfile.id,
@@ -21063,7 +21013,7 @@ export const mockApi = {
     validateSchoolId(schoolId, 'fetchCoachAttendanceCorrections');
     const { data, error } = await supabaseAdmin
       .from('sports_coach_attendance_corrections')
-      .select('*, sports_coach_attendance(attendance_date, sports_coaches(coach_name))')
+      .select('*, coach_attendance(attendance_date, sports_coaches(coach_name))')
       .eq('school_id', schoolId)
       .order('created_at', { ascending: false });
     
@@ -21081,8 +21031,8 @@ export const mockApi = {
       approvedBy: r.approved_by,
       createdAt: r.created_at,
       updatedAt: r.updated_at,
-      coachName: r.sports_coach_attendance?.sports_coaches?.coach_name || 'Unknown Coach',
-      attendanceDate: r.sports_coach_attendance?.attendance_date
+      coachName: r.coach_attendance?.sports_coaches?.coach_name || 'Unknown Coach',
+      attendanceDate: r.coach_attendance?.attendance_date
     }));
   },
 
@@ -21154,7 +21104,7 @@ export const mockApi = {
       }
 
       await supabaseAdmin
-        .from('sports_coach_attendance')
+        .from('coach_attendance')
         .update({
           status: corr.requested_status,
           check_in: corr.requested_check_in || null,
@@ -21183,7 +21133,7 @@ export const mockApi = {
     if (!user || !['ADMIN', 'SPORTS_ADMIN'].includes(user.role)) throw new Error('Unauthorized');
 
     const { data: existing } = await supabaseAdmin
-      .from('sports_coach_attendance')
+      .from('coach_attendance')
       .select('*')
       .eq('id', attendanceId)
       .is('deleted_at', null)
@@ -21192,7 +21142,7 @@ export const mockApi = {
     if (!existing) throw new Error('Attendance record not found or already deleted');
 
     const { data, error } = await supabaseAdmin
-      .from('sports_coach_attendance')
+      .from('coach_attendance')
       .update({
         deleted_at: new Date().toISOString(),
         deleted_by: userId,
@@ -21203,18 +21153,6 @@ export const mockApi = {
       .single();
 
     if (error) throw error;
-
-    // Log the edit history for soft deletes
-    await supabaseAdmin
-      .from('sports_coach_attendance_history')
-      .insert({
-        school_id: user.school_id,
-        attendance_id: attendanceId,
-        old_value: JSON.stringify(existing),
-        new_value: 'SOFT_DELETED',
-        edited_by: userId,
-        edit_reason: reason
-      });
 
     await this.logSportsActivity(
       user.school_id,
@@ -21232,27 +21170,34 @@ export const mockApi = {
   async fetchCoachAttendanceHistory(schoolId: string, attendanceId?: string): Promise<any[]> {
     validateSchoolId(schoolId, 'fetchCoachAttendanceHistory');
     let query = supabaseAdmin
-      .from('sports_coach_attendance_history')
-      .select('*, users(first_name, last_name)')
+      .from('coach_attendance_audit')
+      .select('*, sports_coaches(coach_name)')
       .eq('school_id', schoolId);
     
     if (attendanceId) {
       query = query.eq('attendance_id', attendanceId);
     }
     
-    const { data, error } = await query.order('edited_at', { ascending: false });
+    const { data, error } = await query.order('created_at', { ascending: false });
     if (error) throw error;
     
     return (data || []).map(r => ({
       id: r.id,
       schoolId: r.school_id,
       attendanceId: r.attendance_id,
-      oldValue: r.old_value,
-      newValue: r.new_value,
-      editedBy: r.edited_by,
-      editedAt: r.edited_at,
-      editReason: r.edit_reason,
-      editorName: r.users ? `${r.users.first_name} ${r.users.last_name}` : 'System'
+      oldValue: r.old_status ? JSON.stringify({ status: r.old_status }) : 'NEW',
+      newValue: r.new_status === 'DELETED' ? 'SOFT_DELETED' : JSON.stringify({
+        status: r.new_status,
+        check_in: r.new_check_in,
+        check_out: r.new_check_out,
+        working_hours: r.new_working_hours,
+        remarks: r.remarks
+      }),
+      editedBy: r.editor_id,
+      editedAt: r.created_at,
+      editReason: r.reason || r.remarks || 'N/A',
+      editorName: r.editor_name || 'System',
+      coachName: r.sports_coaches?.coach_name || 'Coach'
     }));
   },
 
@@ -21296,7 +21241,7 @@ export const mockApi = {
     const { count: sessionCount } = await supabaseAdmin.from('sports_training_sessions').select('*', { count: 'exact', head: true }).eq('coach_id', coachId);
     if (sessionCount && sessionCount > 0) throw new Error("Cannot delete this record because related records exist.");
 
-    const { count: attCount } = await supabaseAdmin.from('sports_coach_attendance').select('*', { count: 'exact', head: true }).eq('coach_id', coachId);
+    const { count: attCount } = await supabaseAdmin.from('coach_attendance').select('*', { count: 'exact', head: true }).eq('coach_id', coachId);
     if (attCount && attCount > 0) throw new Error("Cannot delete this record because related records exist.");
 
     const { count: salaryCount } = await supabaseAdmin.from('sports_salary_requests').select('*', { count: 'exact', head: true }).eq('employee_id', coach.user_id);

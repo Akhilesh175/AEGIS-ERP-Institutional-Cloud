@@ -443,7 +443,8 @@ export const App: React.FC = () => {
   };
 
   const handleNavigateBack = useCallback(() => {
-    if (sessionRef.current?.user?.role === 'COACH') {
+    const currentTab = window.location.hash.substring(1) || 'dashboard';
+    if (currentTab.startsWith('sports/')) {
       updateActiveTab('sports');
     } else {
       updateActiveTab('dashboard');
@@ -482,16 +483,15 @@ export const App: React.FC = () => {
         try {
           activeListener = await CapApp.addListener('backButton', () => {
             const currentTab = window.location.hash.substring(1) || 'dashboard';
-            const role = sessionRef.current?.user?.role || '';
-            const isDashboard = role === 'COACH'
-              ? (currentTab === 'sports' || currentTab === 'sports/dashboard')
-              : (currentTab === 'dashboard');
-
-            if (isDashboard) {
+            
+            if (currentTab === 'dashboard') {
               CapApp.exitApp();
+            } else if (currentTab.startsWith('sports/')) {
+              updateActiveTab('sports');
+            } else if (currentTab === 'sports') {
+              updateActiveTab('dashboard');
             } else {
-              const target = role === 'COACH' ? 'sports' : 'dashboard';
-              updateActiveTab(target);
+              updateActiveTab('dashboard');
             }
           });
         } catch (err) {
@@ -1546,7 +1546,7 @@ export const App: React.FC = () => {
                   )
                 ) : (
                   <>
-                    {activeTab === 'sports' ? (
+                    {activeTab.startsWith('sports') && ['ADMIN', 'STUDENT', 'PARENT', 'COACH', 'SPORTS_ADMIN', 'FINANCE_ADMIN', 'ACADEMIC_ADMIN'].includes(session.user.role) ? (
                       <div className="space-y-6">
                         {(session.user.role === 'ADMIN' || ['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN', 'DRIVER'].includes(session.user.role)) && (
                           <AdminPortalHeader />

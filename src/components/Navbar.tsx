@@ -7,6 +7,28 @@ import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, Camera, Upload, Tr
 import { ChatDrawer } from './ChatDrawer';
 import { BrandLogo } from './common/BrandLogo';
 
+const SPORTS_TAB_TITLES: Record<string, string> = {
+  'sports': 'Sports & Activities',
+  'dashboard': 'Sports Dashboard',
+  'registry': 'Sports Registry',
+  'coaches': 'Coach Directory',
+  'coach-attendance': 'Coach Attendance',
+  'enrollment': 'Sports Enrollment',
+  'teams': 'Teams & Groups',
+  'schedule': 'Training Schedule',
+  'attendance': 'Athlete Attendance',
+  'tournaments': 'Tournaments Engine',
+  'achievements': 'Achievements',
+  'certificates': 'Certificates Center',
+  'performance': 'Athlete Performance',
+  'medical': 'Medical Fitness',
+  'equipment': 'Equipment Inventory',
+  'finance': 'Finance Control',
+  'fees': 'Sports Invoices',
+  'reports': 'Reports & Analytics',
+  'audit-logs': 'Audit Logs'
+};
+
 interface NavbarProps {
   activeTab?: string;
   onBack?: () => void;
@@ -401,6 +423,20 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab = 'dashboard', onBack 
         {/* Branding Title — AEGIS ERP Official Logo */}
         <div className="flex items-center gap-3">
           {(() => {
+            const isSports = activeTab.startsWith('sports');
+            if (isSports && typeof window !== 'undefined' && window.innerWidth < 768) {
+              return (
+                <button
+                  onClick={onBack}
+                  className="flex items-center justify-center w-9 h-9 text-slate-350 hover:text-white hover:bg-slate-800/60 active:bg-slate-700/60 border border-slate-800 hover:border-slate-700 rounded-lg transition-all duration-200 shadow-md"
+                  title="Go Back"
+                  id="header-sports-back-button"
+                >
+                  <ArrowLeft size={18} />
+                </button>
+              );
+            }
+
             const isDashboard = session?.user?.role === 'COACH'
               ? (activeTab === 'sports' || activeTab === 'sports/dashboard')
               : (activeTab === 'dashboard');
@@ -430,7 +466,17 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab = 'dashboard', onBack 
             }
           })()}
 
-          <BrandLogo variant="horizontal" size="sm" showTagline={true} />
+          {typeof window !== 'undefined' && window.innerWidth < 768 && activeTab.startsWith('sports/') ? (
+            <span className="text-sm font-bold text-slate-100 ml-1 truncate max-w-[150px]">
+              {SPORTS_TAB_TITLES[activeTab.split('/')[1]] || 'Sports'}
+            </span>
+          ) : typeof window !== 'undefined' && window.innerWidth < 768 && activeTab === 'sports' ? (
+            <span className="text-sm font-bold text-slate-100 ml-1 truncate max-w-[150px]">
+              {SPORTS_TAB_TITLES['sports']}
+            </span>
+          ) : (
+            <BrandLogo variant="horizontal" size="sm" showTagline={true} />
+          )}
         </div>
 
         {/* Expiry Warning Banner (Center of Navbar) */}

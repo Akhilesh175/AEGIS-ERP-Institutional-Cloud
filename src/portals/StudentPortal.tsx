@@ -161,13 +161,15 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
       const schoolId = session?.user?.schoolId || '';
       if (schoolId) {
         // Sync core database state first to avoid empty/null profile lookup errors
-        await mockApi.syncSchoolsData(schoolId);
-        await mockApi.syncClassesData(schoolId);
-        await mockApi.syncTeachersData(schoolId);
-        await mockApi.syncSubjectsData(schoolId);
-        await mockApi.syncTeacherClassSubjectMappingsData(schoolId);
-        await mockApi.syncAcademicSessionsData(schoolId);
-        await mockApi.syncStudentsData(schoolId);
+        await Promise.all([
+          mockApi.syncSchoolsData(schoolId),
+          mockApi.syncClassesData(schoolId),
+          mockApi.syncTeachersData(schoolId),
+          mockApi.syncSubjectsData(schoolId),
+          mockApi.syncTeacherClassSubjectMappingsData(schoolId),
+          mockApi.syncAcademicSessionsData(schoolId),
+          mockApi.syncStudentsData(schoolId)
+        ]);
       }
 
       if (!studentId) return;
@@ -347,26 +349,26 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
     if (activeTab !== 'forums') return;
 
     const handleForumsSync = () => {
-      mockApi.syncStudentsData(session?.user?.schoolId || '').then(() => {
-        mockApi.syncForumCategoriesData(session?.user?.schoolId || '').then(() => {
-          mockApi.syncForumPostsData(session?.user?.schoolId || '').then(() => {
-            mockApi.syncForumRepliesData(session?.user?.schoolId || '').then(() => {
-              mockApi.getForumPosts().then(posts => {
-                mockApi.getForumCategories(session?.user?.schoolId).then(cats => {
-                  const studentObj = mockDb.students.find(s => s.id === studentId);
-                  const allowedCats = cats.filter(c => c.classId === studentObj?.classId || !c.classId);
-                  const allowedCatIds = allowedCats.map(c => c.id);
-                  const filtered = posts.filter(p => allowedCatIds.includes(p.categoryId));
-                  // Deduplicate realtime forum posts by id
-                  setForumPosts(Array.from(new Map(filtered.map(p => [p.id, p])).values()));
-                });
-              });
-              if (selectedPost) {
-                mockApi.getForumPostReplies(selectedPost.id).then(reps => setPostReplies(reps));
-              }
-            });
-          });
+      Promise.all([
+        mockApi.syncStudentsData(session?.user?.schoolId || ''),
+        mockApi.syncForumCategoriesData(session?.user?.schoolId || '').catch(() => {}),
+        mockApi.syncForumPostsData(session?.user?.schoolId || '').catch(() => {}),
+        mockApi.syncForumRepliesData(session?.user?.schoolId || '').catch(() => {})
+      ]).then(() => {
+        Promise.all([
+          mockApi.getForumPosts().catch(() => []),
+          mockApi.getForumCategories(session?.user?.schoolId).catch(() => [])
+        ]).then(([posts, cats]) => {
+          const studentObj = mockDb.students.find(s => s.id === studentId);
+          const allowedCats = cats.filter(c => c.classId === studentObj?.classId || !c.classId);
+          const allowedCatIds = allowedCats.map(c => c.id);
+          const filtered = posts.filter(p => allowedCatIds.includes(p.categoryId));
+          // Deduplicate realtime forum posts by id
+          setForumPosts(Array.from(new Map(filtered.map(p => [p.id, p])).values()));
         });
+        if (selectedPost) {
+          mockApi.getForumPostReplies(selectedPost.id).then(reps => setPostReplies(reps));
+        }
       });
     };
 
@@ -463,24 +465,24 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
     const interval = setInterval(() => {
       syncSubscriptionPlan();
       if (activeTab === 'forums') {
-        mockApi.syncStudentsData(session?.user?.schoolId || '').then(() => {
-          mockApi.syncForumCategoriesData(session?.user?.schoolId || '').then(() => {
-            mockApi.syncForumPostsData(session?.user?.schoolId || '').then(() => {
-              mockApi.syncForumRepliesData(session?.user?.schoolId || '').then(() => {
-                mockApi.getForumPosts().then(posts => {
-                  mockApi.getForumCategories(session?.user?.schoolId).then(cats => {
-                    const studentObj = mockDb.students.find(s => s.id === studentId);
-                    const allowedCats = cats.filter(c => c.classId === studentObj?.classId || !c.classId);
-                    const allowedCatIds = allowedCats.map(c => c.id);
-                    setForumPosts(posts.filter(p => allowedCatIds.includes(p.categoryId)));
-                  });
-                });
-                if (selectedPost) {
-                  mockApi.getForumPostReplies(selectedPost.id).then(reps => setPostReplies(reps));
-                }
-              });
-            });
+        Promise.all([
+          mockApi.syncStudentsData(session?.user?.schoolId || ''),
+          mockApi.syncForumCategoriesData(session?.user?.schoolId || '').catch(() => {}),
+          mockApi.syncForumPostsData(session?.user?.schoolId || '').catch(() => {}),
+          mockApi.syncForumRepliesData(session?.user?.schoolId || '').catch(() => {})
+        ]).then(() => {
+          Promise.all([
+            mockApi.getForumPosts().catch(() => []),
+            mockApi.getForumCategories(session?.user?.schoolId).catch(() => [])
+          ]).then(([posts, cats]) => {
+            const studentObj = mockDb.students.find(s => s.id === studentId);
+            const allowedCats = cats.filter(c => c.classId === studentObj?.classId || !c.classId);
+            const allowedCatIds = allowedCats.map(c => c.id);
+            setForumPosts(posts.filter(p => allowedCatIds.includes(p.categoryId)));
           });
+          if (selectedPost) {
+            mockApi.getForumPostReplies(selectedPost.id).then(reps => setPostReplies(reps));
+          }
         });
       }
     }, 10000);

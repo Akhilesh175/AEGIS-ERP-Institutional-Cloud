@@ -54,6 +54,8 @@ class FinanceErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
   }
 }
 
+let sportsMenuScrollPosition = 0;
+
 interface SportsManagementProps {
   activeTab?: string;
   setActiveTab?: (tab: string) => void;
@@ -72,6 +74,34 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
   // Active sub-tab state
   const [internalActiveSubTab, setInternalActiveSubTab] = useState<string>('dashboard');
   
+  const [isMobile, setIsMobile] = useState(typeof window !== 'undefined' ? window.innerWidth < 768 : false);
+  useEffect(() => {
+    const handleResize = () => setIsMobile(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMobileSportsMenuOpen = isMobile && activeTab === 'sports';
+  const navRef = React.useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (isMobileSportsMenuOpen && navRef.current) {
+      navRef.current.scrollTop = sportsMenuScrollPosition;
+    }
+  }, [isMobileSportsMenuOpen]);
+
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+    sportsMenuScrollPosition = e.currentTarget.scrollTop;
+  };
+
+  const handleCloseMobileMenu = () => {
+    if (setActiveTab) {
+      setActiveTab('dashboard');
+    } else {
+      window.location.hash = 'dashboard';
+    }
+  };
+  
   const activeSubTab = activeTab.includes('/') 
     ? (activeTab.split('/')[1] || 'dashboard') 
     : (activeTab === 'sports' ? 'dashboard' : internalActiveSubTab);
@@ -86,6 +116,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
 
   const [loading, setLoading] = useState<boolean>(true);
   const [refreshing, setRefreshing] = useState<boolean>(false);
+  const [error, setError] = useState<string | null>(null);
 
   // Core Database Entities
   const [categories, setCategories] = useState<any[]>([]);
@@ -232,6 +263,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
 
   const loadData = async (silent = false, overrideStudentId?: string) => {
     if (!silent) setLoading(true);
+    setError(null);
     try {
       if (!schoolId) return;
 
@@ -369,8 +401,9 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
           }));
         }
       }
-    } catch (e) {
+    } catch (e: any) {
       console.error('Failed to load Sports module records:', e);
+      setError(e.message || 'Failed to load Sports module records');
     } finally {
       setLoading(false);
       setRefreshing(false);
@@ -401,10 +434,11 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_expense_requests' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_fines' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_fine_payments' }, () => { loadData(true); })
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coach_attendance' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'coach_attendance' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coach_leaves' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coach_work_logs' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_coach_attendance_corrections' }, () => { loadData(true); })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'coach_attendance_audit' }, () => { loadData(true); })
       .on('postgres_changes', { event: '*', schema: 'public', table: 'sports_expense_history' }, () => { loadData(true); })
       .subscribe();
 
@@ -1013,7 +1047,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
         const date = new Date(a.attendanceDate);
         return months[date.getMonth()] === m;
       });
-      if (filtered.length === 0) return { name: m, rate: 85 }; // fallback logic to prevent empty area
+      if (filtered.length === 0) return { name: m, rate: 0 }; // Return 0 when no records found in database
       const present = filtered.filter(a => ['PRESENT', 'TRAINING_DUTY', 'TOURNAMENT_DUTY', 'LATE'].includes(a.status)).length;
       return { name: m, rate: Math.round((present / filtered.length) * 100) };
     });
@@ -1059,11 +1093,11 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
       ];
     }
     return [
-      { subject: 'Speed', A: 80, fullMark: 100 },
-      { subject: 'Stamina', A: 80, fullMark: 100 },
-      { subject: 'Strength', A: 80, fullMark: 100 },
-      { subject: 'Agility', A: 80, fullMark: 100 },
-      { subject: 'Teamwork', A: 80, fullMark: 100 }
+      { subject: 'Speed', A: 0, fullMark: 100 },
+      { subject: 'Stamina', A: 0, fullMark: 100 },
+      { subject: 'Strength', A: 0, fullMark: 100 },
+      { subject: 'Agility', A: 0, fullMark: 100 },
+      { subject: 'Teamwork', A: 0, fullMark: 100 }
     ];
   };
 
@@ -1212,13 +1246,30 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
     );
   }
 
+  if (error) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] gap-3 text-slate-400 bg-[#0b101d]/60 border border-red-500/20 rounded-2xl p-8 max-w-lg mx-auto mt-12 text-center shadow-2xl">
+        <AlertTriangle className="w-8 h-8 text-red-500 animate-bounce" />
+        <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">Failed to load Sports data</h3>
+        <p className="text-xs text-slate-400">{error}</p>
+        <button
+          onClick={() => { setError(null); loadData(); }}
+          className="mt-2 px-4 py-2 bg-slate-900 border border-slate-800 text-slate-350 hover:text-white rounded-xl text-xs font-bold font-mono transition-all active:scale-95 cursor-pointer"
+        >
+          Try Again
+        </button>
+      </div>
+    );
+  }
+
   return (
     <div className="flex gap-6 min-h-[calc(100vh-100px)] text-slate-300">
       
       {/* ─────────────────────────────────────────────────────────────────
           SPORTS MODULE SUB-SIDEBAR (MATCHING IMAGES)
           ───────────────────────────────────────────────────────────────── */}
-      <aside className="w-60 bg-[#070a13]/85 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shrink-0">
+      {/* Desktop sports sub-sidebar */}
+      <aside className="hidden md:flex w-60 bg-[#070a13]/85 border border-slate-800 rounded-2xl p-4 flex flex-col justify-between shrink-0">
         <div className="space-y-6">
           <div className="flex items-center gap-3 px-2.5 py-2 bg-brand-500/10 border border-brand-500/20 rounded-xl">
             <BrandLogo variant="icon-only" size="xs" className="opacity-90" />
@@ -1287,10 +1338,105 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
         </div>
       </aside>
 
+      {/* Mobile sports sub-sidebar overlay drawer */}
+      {isMobileSportsMenuOpen && (
+        <div className="fixed inset-0 z-50 flex md:hidden bg-black/60 backdrop-blur-sm animate-fade-in">
+          {/* Tap backdrop to close */}
+          <div className="flex-1" onClick={handleCloseMobileMenu} />
+
+          {/* Drawer panel */}
+          <aside className="w-72 max-w-[85vw] h-full bg-[#070a13] border-r border-slate-850 flex flex-col justify-between p-4 z-50 animate-slide-in-left relative">
+            {/* Close button */}
+            <button 
+              onClick={handleCloseMobileMenu}
+              className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-100 hover:bg-slate-800/50 rounded-full transition-all"
+              title="Close Menu"
+            >
+              <X size={18} />
+            </button>
+
+            {/* Sidebar content */}
+            <div className="space-y-6">
+              <div className="flex items-center gap-3 px-2.5 py-2 bg-brand-500/10 border border-brand-500/20 rounded-xl mt-4">
+                <BrandLogo variant="icon-only" size="xs" className="opacity-90" />
+                <div>
+                  <p className="text-[10px] font-bold text-slate-500 uppercase font-mono tracking-widest leading-none">AEGIS SPORTS</p>
+                  <p className="text-xs font-semibold text-slate-200 mt-1 truncate">
+                    {portalRole === 'STUDENT' && 'Student Portal'}
+                    {portalRole === 'PARENT' && 'Parent Portal'}
+                    {portalRole === 'COACH' && 'Coach Portal'}
+                    {portalRole === 'TEACHER' && 'Sports Teacher'}
+                    {portalRole === 'SCHOOL_ADMIN' && 'Admin Console'}
+                    {portalRole === 'SPORTS_ADMIN' && 'Sports Admin'}
+                    {portalRole === 'FINANCE_ADMIN' && 'Finance Portal'}
+                    {portalRole === 'SUPER_ADMIN' && 'Super Admin'}
+                  </p>
+                </div>
+              </div>
+
+              <div 
+                ref={navRef}
+                onScroll={handleScroll}
+                className="space-y-1 overflow-y-auto max-h-[calc(100vh-180px)] pr-1"
+                style={{ scrollbarWidth: 'thin' }}
+              >
+                <nav className="space-y-1">
+                  {[
+                    { id: 'dashboard', label: 'Sports Dashboard', icon: Trophy, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'registry', label: 'Sports Registry', icon: Settings, roles: ['SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'coaches', label: 'Coach Directory', icon: Users, roles: ['SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'coach-attendance', label: 'Coach Attendance', icon: Clock, roles: ['SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN', 'COACH', 'FINANCE_ADMIN'] },
+                    { id: 'enrollment', label: 'Sports Enrollment', icon: ChevronRight, roles: ['STUDENT', 'PARENT', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'teams', label: 'Teams & Groups', icon: Users, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'schedule', label: 'Training Schedule', icon: Calendar, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'attendance', label: 'Athlete Attendance', icon: Activity, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'tournaments', label: 'Tournaments Engine', icon: Trophy, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'achievements', label: 'Achievements', icon: Award, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'certificates', label: 'Certificates Center', icon: FileText, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'performance', label: 'Athlete Performance', icon: BarChart3, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'medical', label: 'Medical Fitness', icon: Heart, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'equipment', label: 'Equipment Inventory', icon: Package, roles: ['COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'finance', label: 'Finance Control', icon: DollarSign, roles: ['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'fees', label: 'Sports Invoices', icon: DollarSign, roles: ['STUDENT', 'PARENT', 'SPORTS_ADMIN', 'FINANCE_ADMIN', 'SCHOOL_ADMIN', 'SUPER_ADMIN'] },
+                    { id: 'reports', label: 'Reports & Analytics', icon: FileText, roles: ['SCHOOL_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'audit-logs', label: 'Audit Logs', icon: ShieldCheck, roles: ['SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] }
+                  ].map(tab => {
+                    if (!tab.roles.includes(portalRole)) return null;
+                    const Icon = tab.icon;
+                    const isActive = activeSubTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setActiveSubTab(tab.id)}
+                        className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all active:scale-[0.98] ${
+                          isActive 
+                            ? 'bg-brand-600/10 border border-brand-500/20 text-brand-400 font-bold shadow-lg shadow-brand-500/5' 
+                            : 'border border-transparent text-slate-400 hover:text-slate-100 hover:bg-slate-900/40'
+                        }`}
+                      >
+                        <Icon size={16} className={isActive ? 'text-brand-500' : 'text-slate-400'} />
+                        <span>{tab.label}</span>
+                      </button>
+                    );
+                  })}
+                </nav>
+              </div>
+            </div>
+
+            <div className="p-3 bg-slate-950/40 border border-slate-800 rounded-xl text-center">
+              <p className="text-[10px] font-bold tracking-widest text-slate-500 uppercase leading-none">Status</p>
+              <p className="text-[10px] font-mono text-emerald-400 mt-1 flex items-center justify-center gap-1">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-ping inline-block" /> Live Database Sync
+              </p>
+            </div>
+          </aside>
+        </div>
+      )}
+
       {/* ─────────────────────────────────────────────────────────────────
           CONTENT VIEWPORT
           ───────────────────────────────────────────────────────────────── */}
-      <section className="flex-1 space-y-6">
+      <section className="flex-1 space-y-6 animate-fade-slide-in" key={activeSubTab}>
         
         {/* Top Header Banner */}
         <div className="flex items-center justify-between bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-5 shadow-xl">
@@ -2046,7 +2192,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                                       return;
                                     }
                                     try {
-                                      await mockApi.markCoachAttendance(userId, {
+                                      const res = await mockApi.markCoachAttendance(userId, {
                                         coachId: coach.id,
                                         attendanceDate,
                                         status,
@@ -2056,12 +2202,12 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                                         remarks,
                                         editReason: existingAtt ? editReason.trim() : undefined
                                       });
-                                      alert('Daily Attendance logged!');
+                                      alert(res?.isUpdate ? 'Attendance updated successfully.' : 'Attendance saved successfully.');
                                       // Clear editReason
                                       updateField('editReason', '');
                                       loadData(true);
                                     } catch (err: any) {
-                                      alert(`Error: ${err.message}`);
+                                      alert(err?.message?.includes('required') ? err.message : 'Unable to save attendance. Please try again.');
                                     }
                                   }}
                                   className="px-3.5 py-1.5 bg-brand-600 hover:bg-brand-500 text-white text-[10px] font-bold rounded-lg transition-all"
@@ -2350,6 +2496,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                         <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
                           <th className="py-2.5 px-4 font-bold">Edited At</th>
                           <th className="py-2.5 px-4 font-bold">Editor Name</th>
+                          <th className="py-2.5 px-4 font-bold">Coach Name</th>
                           <th className="py-2.5 px-4 font-bold">Old Status</th>
                           <th className="py-2.5 px-4 font-bold">New Status</th>
                           <th className="py-2.5 px-4 font-bold">Check In / Out</th>
@@ -2390,6 +2537,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                                 {new Date(hist.editedAt).toLocaleString()}
                               </td>
                               <td className="py-2.5 px-4 font-semibold text-slate-200">{hist.editorName || 'System'}</td>
+                              <td className="py-2.5 px-4 font-semibold text-slate-200">{hist.coachName || '—'}</td>
                               <td className="py-2.5 px-4">
                                 {isNew
                                   ? <span className="text-[10px] text-emerald-400 font-mono font-bold">NEW RECORD</span>
@@ -2412,7 +2560,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                         })}
                         {attendanceHistory.length === 0 && (
                           <tr>
-                            <td colSpan={7} className="py-6 text-center text-slate-500 italic">No attendance audit edits recorded yet.</td>
+                            <td colSpan={8} className="py-6 text-center text-slate-500 italic">No attendance audit edits recorded yet.</td>
                           </tr>
                         )}
                       </tbody>
@@ -2551,6 +2699,12 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
             ───────────────────────────────────────────────────────────────── */}
         {activeSubTab === 'enrollment' && (
           <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
+            {enrollments.length === 0 && (
+              <div className="bg-brand-500/5 border border-brand-500/20 rounded-xl p-4 flex items-center gap-3 text-brand-400">
+                <AlertTriangle size={18} className="text-brand-500" />
+                <span className="text-xs font-semibold">No Sports Enrollment records found.</span>
+              </div>
+            )}
             
             {['STUDENT', 'PARENT'].includes(portalRole) ? (
               <div className="space-y-6">
