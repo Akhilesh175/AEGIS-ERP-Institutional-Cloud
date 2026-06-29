@@ -56,6 +56,139 @@ class FinanceErrorBoundary extends React.Component<ErrorBoundaryProps, ErrorBoun
 
 let sportsMenuScrollPosition = 0;
 
+interface MultiSelectOption {
+  id: string;
+  name: string;
+}
+
+interface MultiSelectProps {
+  label: string;
+  placeholder: string;
+  options: MultiSelectOption[];
+  selectedIds: string[];
+  onChange: (ids: string[]) => void;
+  searchPlaceholder?: string;
+}
+
+const MultiSelect: React.FC<MultiSelectProps> = ({
+  label,
+  placeholder,
+  options,
+  selectedIds,
+  onChange,
+  searchPlaceholder = 'Search...'
+}) => {
+  const [searchTerm, setSearchTerm] = useState('');
+  const [isOpen, setIsOpen] = useState(false);
+  const containerRef = React.useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
+        setIsOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  const filteredOptions = (options || []).filter(opt =>
+    (opt.name || 'Unnamed').toLowerCase().includes(searchTerm.toLowerCase())
+  );
+
+  const toggleOption = (id: string, e?: React.MouseEvent) => {
+    if (e) {
+      e.stopPropagation();
+      e.preventDefault();
+    }
+    if (selectedIds.includes(id)) {
+      onChange(selectedIds.filter(x => x !== id));
+    } else {
+      onChange([...selectedIds, id]);
+    }
+  };
+
+  const selectedItems = (options || []).filter(opt => selectedIds.includes(opt.id));
+
+  return (
+    <div className="space-y-1 relative w-full text-xs" ref={containerRef}>
+      <label className="block text-slate-400 font-semibold">{label}</label>
+      
+      {/* Selected Chips Area */}
+      <div 
+        onClick={() => setIsOpen(!isOpen)}
+        className="flex flex-wrap gap-1.5 min-h-[38px] p-2 bg-slate-900 border border-slate-800 rounded-xl w-full cursor-pointer focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent select-none items-center"
+      >
+        {selectedItems.map(item => (
+          <div
+            key={item.id}
+            onClick={(e) => e.stopPropagation()}
+            className="flex items-center gap-1 bg-[#2563EB] text-[#FFFFFF] border border-[#3B82F6] px-2 py-0.5 rounded text-[10px] font-semibold hover:bg-[#1D4ED8] transition-colors"
+          >
+            <span>{item.name}</span>
+            <button
+              type="button"
+              onClick={(e) => toggleOption(item.id, e)}
+              className="hover:text-red-300 focus:outline-none ml-1 text-xs font-bold leading-none"
+            >
+              &times;
+            </button>
+          </div>
+        ))}
+        {selectedItems.length === 0 && (
+          <span className="text-slate-500 text-xs self-center px-1">{placeholder}</span>
+        )}
+        <span className="ml-auto text-slate-500 text-[10px] select-none pl-1">
+          {isOpen ? '▲' : '▼'}
+        </span>
+      </div>
+
+      {/* Dropdown Options */}
+      {isOpen && (
+        <div className="absolute z-50 w-full mt-1 bg-[#0b101d] border border-slate-800 rounded-xl shadow-2xl overflow-hidden">
+          <div className="p-2 border-b border-slate-850 bg-slate-900/50">
+            <input
+              type="text"
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              placeholder={searchPlaceholder}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full px-3 py-1.5 bg-slate-900 border border-slate-800 rounded-lg text-white focus:outline-none placeholder-slate-500 text-xs focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div className="max-h-40 overflow-y-auto p-1 divide-y divide-slate-850 scrollbar-thin scrollbar-thumb-slate-800">
+            {filteredOptions.map(opt => {
+              const isSelected = selectedIds.includes(opt.id);
+              return (
+                <div
+                  key={opt.id}
+                  onClick={(e) => toggleOption(opt.id, e)}
+                  className={`flex items-center gap-2 px-3 py-2 cursor-pointer transition-colors select-none ${
+                    isSelected 
+                      ? 'bg-[#1E293B] text-white hover:bg-slate-800' 
+                      : 'text-slate-300 hover:bg-slate-800/50'
+                  }`}
+                >
+                  <input
+                    type="checkbox"
+                    checked={isSelected}
+                    onChange={() => {}} // dummy handler as parent onClick manages state
+                    className="rounded border-slate-800 text-blue-600 focus:ring-blue-500 bg-slate-900"
+                  />
+                  <span className="font-medium text-xs">{opt.name}</span>
+                </div>
+              );
+            })}
+            {filteredOptions.length === 0 && (
+              <div className="p-3 text-center text-slate-500 italic text-[11px]">No matching records found</div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+};
+
 interface SportsManagementProps {
   activeTab?: string;
   setActiveTab?: (tab: string) => void;
@@ -7101,48 +7234,22 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
               </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-1">
-                  <label className="block text-slate-400 font-semibold">Assign Teams</label>
-                  <select 
-                    multiple
-                    value={newTournament.teamIds}
-                    onChange={(e) => {
-                      const options = e.target.options;
-                      const value: string[] = [];
-                      for (let i = 0; i < options.length; i++) {
-                        if (options[i].selected) {
-                          value.push(options[i].value);
-                        }
-                      }
-                      setNewTournament(prev => ({ ...prev, teamIds: value }));
-                    }}
-                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none h-24"
-                  >
-                    {teams.map(t => <option key={t.id} value={t.id}>{t.teamName}</option>)}
-                  </select>
-                  <span className="text-[10px] text-slate-500">Hold Ctrl/Cmd to select multiple</span>
-                </div>
-                <div className="space-y-1">
-                  <label className="block text-slate-400 font-semibold">Assign Players</label>
-                  <select 
-                    multiple
-                    value={newTournament.studentIds}
-                    onChange={(e) => {
-                      const options = e.target.options;
-                      const value: string[] = [];
-                      for (let i = 0; i < options.length; i++) {
-                        if (options[i].selected) {
-                          value.push(options[i].value);
-                        }
-                      }
-                      setNewTournament(prev => ({ ...prev, studentIds: value }));
-                    }}
-                    className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none h-24"
-                  >
-                    {allStudents.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
-                  </select>
-                  <span className="text-[10px] text-slate-500">Hold Ctrl/Cmd to select multiple</span>
-                </div>
+                <MultiSelect
+                  label="Assign Teams"
+                  placeholder="Select Teams..."
+                  searchPlaceholder="Search teams..."
+                  options={teams.map(t => ({ id: t.id, name: t.teamName || 'Unnamed Team' }))}
+                  selectedIds={newTournament.teamIds}
+                  onChange={(ids) => setNewTournament(prev => ({ ...prev, teamIds: ids }))}
+                />
+                <MultiSelect
+                  label="Assign Players"
+                  placeholder="Select Players..."
+                  searchPlaceholder="Search players..."
+                  options={allStudents.map(s => ({ id: s.id, name: s.name || 'Unnamed Player' }))}
+                  selectedIds={newTournament.studentIds}
+                  onChange={(ids) => setNewTournament(prev => ({ ...prev, studentIds: ids }))}
+                />
               </div>
 
               <div className="space-y-1">
