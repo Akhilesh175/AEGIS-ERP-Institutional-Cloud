@@ -7238,7 +7238,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                   label="Assign Teams"
                   placeholder="Select Teams..."
                   searchPlaceholder="Search teams..."
-                  options={teams.map(t => ({ id: t.id, name: t.teamName || 'Unnamed Team' }))}
+                  options={teams.map(t => ({ id: t.id, name: t.name || 'Unnamed Team' }))}
                   selectedIds={newTournament.teamIds}
                   onChange={(ids) => setNewTournament(prev => ({ ...prev, teamIds: ids }))}
                 />
@@ -7365,7 +7365,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                     className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
                   >
                     <option value="">-- Individual --</option>
-                    {teams.map(t => <option key={t.id} value={t.id}>{t.teamName}</option>)}
+                    {teams.map(t => <option key={t.id} value={t.id}>{t.name || 'Unnamed Team'}</option>)}
                   </select>
                 </div>
               </div>
