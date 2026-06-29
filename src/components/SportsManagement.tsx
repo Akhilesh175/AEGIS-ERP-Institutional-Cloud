@@ -196,7 +196,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
   const [attendanceHistorySessionFilter, setAttendanceHistorySessionFilter] = useState('');
 
   const [showCreateTournament, setShowCreateTournament] = useState(false);
-  const [newTournament, setNewTournament] = useState({ name: '', sportId: '', opponent: '', venue: '', startDate: '', endDate: '', startTime: '09:00', endTime: '17:00', description: '', banner: '', teamIds: [] as string[], studentIds: [] as string[] });
+  const [newTournament, setNewTournament] = useState({ name: '', sportId: '', opponent: '', venue: '', startDate: '', endDate: '', startTime: '09:00', endTime: '17:00', description: '', banner: '', format: 'LEAGUE', teamIds: [] as string[], studentIds: [] as string[] });
 
   const [showCreateAchievement, setShowCreateAchievement] = useState(false);
   const [newAchievement, setNewAchievement] = useState({ title: '', tournamentId: '', studentId: '', teamId: '', sportId: '', position: '', medal: 'GOLD', rank: '', level: 'District', certificateEligible: false, description: '', images: [] as string[] });
@@ -3497,7 +3497,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                   {['SCHOOL_ADMIN', 'COACH', 'SPORTS_ADMIN'].includes(portalRole) && (
                     <button
                       onClick={() => {
-                        setNewTournament({ name: '', sportId: '', opponent: '', venue: '', startDate: '', endDate: '', startTime: '09:00', endTime: '17:00', description: '', banner: '', teamIds: [], studentIds: [] });
+                        setNewTournament({ name: '', sportId: '', opponent: '', venue: '', startDate: '', endDate: '', startTime: '09:00', endTime: '17:00', description: '', banner: '', format: 'LEAGUE', teamIds: [], studentIds: [] });
                         setShowCreateTournament(true);
                       }}
                       className="bg-brand-600 hover:bg-brand-500 text-white font-bold text-[10px] px-3.5 py-1.5 rounded-lg border border-brand-400/20"
@@ -6968,6 +6968,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                   endTime: newTournament.endTime,
                   description: newTournament.description,
                   banner: newTournament.banner,
+                  format: newTournament.format,
                   teamIds: newTournament.teamIds,
                   studentIds: newTournament.studentIds
                 });
@@ -7072,15 +7073,31 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="block text-slate-400 font-semibold">Banner Image URL</label>
-                  <input 
-                    type="text" 
-                    value={newTournament.banner}
-                    onChange={(e) => setNewTournament(prev => ({ ...prev, banner: e.target.value }))}
+                  <label className="block text-slate-400 font-semibold">Tournament Format</label>
+                  <select 
+                    value={newTournament.format}
+                    onChange={(e) => setNewTournament(prev => ({ ...prev, format: e.target.value }))}
+                    required
                     className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
-                    placeholder="https://image-link.png"
-                  />
+                  >
+                    <option value="LEAGUE">League</option>
+                    <option value="KNOCKOUT">Knockout</option>
+                    <option value="ROUND_ROBIN">Round Robin</option>
+                    <option value="GROUP_STAGE">Group Stage</option>
+                    <option value="HYBRID">Hybrid</option>
+                  </select>
                 </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="block text-slate-400 font-semibold">Banner Image URL</label>
+                <input 
+                  type="text" 
+                  value={newTournament.banner}
+                  onChange={(e) => setNewTournament(prev => ({ ...prev, banner: e.target.value }))}
+                  className="w-full px-4 py-2 bg-slate-900 border border-slate-800 rounded-xl text-white focus:outline-none"
+                  placeholder="e.g. https://example.com/banner.png"
+                />
               </div>
 
               <div className="grid grid-cols-2 gap-4">

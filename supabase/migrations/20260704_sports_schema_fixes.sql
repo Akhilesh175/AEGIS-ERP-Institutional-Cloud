@@ -136,7 +136,7 @@ BEGIN
 END;
 $$ LANGUAGE plpgsql SECURITY DEFINER;
 
--- 3. Fix active academic session lookup in create_tournament() RPC
+-- 3. Fix active academic session lookup in create_tournament() RPC and add format support
 CREATE OR REPLACE FUNCTION public.create_tournament(
   p_user_id UUID,
   p_name TEXT,
@@ -150,7 +150,8 @@ CREATE OR REPLACE FUNCTION public.create_tournament(
   p_start_time TIME,
   p_end_time TIME,
   p_description TEXT DEFAULT NULL,
-  p_banner TEXT DEFAULT NULL
+  p_banner TEXT DEFAULT NULL,
+  p_format TEXT DEFAULT 'LEAGUE'
 )
 RETURNS JSONB AS $$
 DECLARE
@@ -184,10 +185,10 @@ BEGIN
   -- Insert Tournament record
   INSERT INTO public.sports_tournaments (
     school_id, academic_session_id, sport_id, name, start_date, end_date, venue, status,
-    opponent, start_time, end_time, description, banner, created_by, created_at, updated_at
+    opponent, start_time, end_time, description, banner, format, created_by, created_at, updated_at
   ) VALUES (
     v_school_id, v_academic_session_id, p_sport_id, p_name, p_start_date, p_end_date, p_venue, 'UPCOMING',
-    p_opponent, p_start_time, p_end_time, p_description, p_banner, p_user_id, now(), now()
+    p_opponent, p_start_time, p_end_time, p_description, p_banner, p_format, p_user_id, now(), now()
   ) RETURNING id INTO v_tournament_id;
 
   -- Insert assigned teams
@@ -328,3 +329,122 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 ALTER TABLE public.sports_certificates ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 ALTER TABLE public.sports_achievements ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
 ALTER TABLE public.sports_coaches ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+-- 7. Add foreign key constraints to sports_attendance_audit to allow relational mapping queries
+ALTER TABLE public.sports_attendance_audit DROP CONSTRAINT IF EXISTS fk_sports_attendance_audit_student;
+ALTER TABLE public.sports_attendance_audit
+  ADD CONSTRAINT fk_sports_attendance_audit_student
+  FOREIGN KEY (student_id) REFERENCES public.students(id) ON DELETE CASCADE;
+
+ALTER TABLE public.sports_attendance_audit DROP CONSTRAINT IF EXISTS fk_sports_attendance_audit_session;
+ALTER TABLE public.sports_attendance_audit
+  ADD CONSTRAINT fk_sports_attendance_audit_session
+  FOREIGN KEY (session_id) REFERENCES public.sports_training_sessions(id) ON DELETE CASCADE;
+
+ALTER TABLE public.sports_attendance_audit DROP CONSTRAINT IF EXISTS fk_sports_attendance_audit_school;
+ALTER TABLE public.sports_attendance_audit
+  ADD CONSTRAINT fk_sports_attendance_audit_school
+  FOREIGN KEY (school_id) REFERENCES public.schools(id) ON DELETE CASCADE;
+
+ALTER TABLE public.sports_attendance_audit DROP CONSTRAINT IF EXISTS fk_sports_attendance_audit_editor;
+ALTER TABLE public.sports_attendance_audit
+  ADD CONSTRAINT fk_sports_attendance_audit_editor
+  FOREIGN KEY (edited_by) REFERENCES public.users(id) ON DELETE SET NULL;
+
+-- 8. Fix sports_certificates category check constraint to accept both uppercase and frontend camelcase values
+ALTER TABLE public.sports_certificates DROP CONSTRAINT IF EXISTS sports_certificates_category_check;
+ALTER TABLE public.sports_certificates ADD CONSTRAINT sports_certificates_category_check
+  CHECK (category IN ('PARTICIPATION', 'WINNER', 'RUNNER_UP', 'BEST_PLAYER', 'SPORTS_EXCELLENCE', 'Participation', 'Winner', 'Runner Up', 'Best Player', 'Attendance', 'Excellence', 'Appreciation'));
+
+-- 9. Fix sports_achievements level and type check constraints to accept both uppercase and frontend camelcase values
+ALTER TABLE public.sports_achievements DROP CONSTRAINT IF EXISTS sports_achievements_level_check;
+ALTER TABLE public.sports_achievements ADD CONSTRAINT sports_achievements_level_check
+  CHECK (level IN ('SCHOOL', 'DISTRICT', 'STATE', 'NATIONAL', 'INTERNATIONAL', 'School', 'District', 'State', 'National', 'International'));
+
+ALTER TABLE public.sports_achievements DROP CONSTRAINT IF EXISTS sports_achievements_type_check;
+ALTER TABLE public.sports_achievements ADD CONSTRAINT sports_achievements_type_check
+  CHECK (type IN ('GOLD', 'SILVER', 'BRONZE', 'PARTICIPATION', 'WINNER', 'RUNNER_UP', 'BEST_PLAYER', 'SPORTS_EXCELLENCE', 'Gold', 'Silver', 'Bronze', 'Participation', 'Winner', 'Runner Up', 'Best Player', 'Excellence'));
+
+-- 10. Update save_medical_fitness() RPC to keep status & recovery_status fully synchronized and add check constraint
+ALTER TABLE public.sports_medical_records DROP CONSTRAINT IF EXISTS sports_medical_records_status_check;
+ALTER TABLE public.sports_medical_records ADD CONSTRAINT sports_medical_records_status_check
+  CHECK (status IN ('FIT', 'UNFIT', 'TEMPORARILY_UNFIT', 'MEDICAL_LEAVE'));
+
+CREATE OR REPLACE FUNCTION public.save_medical_fitness(
+  p_user_id UUID,
+  p_student_id UUID,
+  p_blood_group TEXT,
+  p_height NUMERIC,
+  p_weight NUMERIC,
+  p_bmi NUMERIC,
+  p_allergies TEXT,
+  p_medical_conditions TEXT,
+  p_emergency_contact TEXT,
+  p_doctor TEXT,
+  p_fitness_expiry_date DATE,
+  p_status TEXT
+)
+RETURNS JSONB AS $$
+DECLARE
+  v_school_id UUID;
+  v_user_role TEXT;
+  v_medical_record_id UUID;
+  v_recovery_status TEXT;
+BEGIN
+  SELECT u.school_id, u.role::text
+  INTO v_school_id, v_user_role
+  FROM public.users u
+  WHERE u.id = p_user_id;
+
+  IF v_school_id IS NULL THEN
+    RAISE EXCEPTION 'User does not exist or has no school associated';
+  END IF;
+
+  IF v_user_role NOT IN ('ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN', 'COACH') THEN
+    RAISE EXCEPTION 'Unauthorized: User does not have permissions to manage medical fitness profiles';
+  END IF;
+
+  -- Determine recovery_status from status for backwards compatibility
+  IF p_status = 'FIT' THEN
+    v_recovery_status := 'FIT';
+  ELSIF p_status = 'UNFIT' THEN
+    v_recovery_status := 'INJURED';
+  ELSE
+    v_recovery_status := 'RECOVERING';
+  END IF;
+
+  INSERT INTO public.sports_medical_records (
+    school_id, student_id, blood_group, medical_conditions, emergency_contact,
+    fitness_expiry_date, height, weight, bmi, allergies, doctor, status, recovery_status, created_by, created_at, updated_at
+  ) VALUES (
+    v_school_id, p_student_id, p_blood_group, p_medical_conditions, p_emergency_contact,
+    p_fitness_expiry_date, p_height, p_weight, p_bmi, p_allergies, p_doctor, p_status, v_recovery_status, p_user_id, now(), now()
+  )
+  ON CONFLICT (student_id)
+  DO UPDATE SET
+    blood_group = EXCLUDED.blood_group,
+    medical_conditions = EXCLUDED.medical_conditions,
+    emergency_contact = EXCLUDED.emergency_contact,
+    fitness_expiry_date = EXCLUDED.fitness_expiry_date,
+    height = EXCLUDED.height,
+    weight = EXCLUDED.weight,
+    bmi = EXCLUDED.bmi,
+    allergies = EXCLUDED.allergies,
+    doctor = EXCLUDED.doctor,
+    status = EXCLUDED.status,
+    recovery_status = EXCLUDED.recovery_status,
+    updated_at = now();
+
+  RETURN jsonb_build_object('success', true);
+EXCEPTION
+  WHEN OTHERS THEN
+    RAISE EXCEPTION '%', SQLERRM;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+
+-- 11. Add public read access policy to storage objects bucket 'sports-certificates' for guest verification
+DROP POLICY IF EXISTS "Allow public to read certificates" ON storage.objects;
+CREATE POLICY "Allow public to read certificates" ON storage.objects
+FOR SELECT USING (
+  bucket_id = 'sports-certificates'
+);

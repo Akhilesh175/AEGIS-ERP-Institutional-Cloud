@@ -18306,7 +18306,8 @@ export const mockApi = {
         p_start_time: tournament.startTime || '09:00:00',
         p_end_time: tournament.endTime || '17:00:00',
         p_description: tournament.description || null,
-        p_banner: tournament.banner || null
+        p_banner: tournament.banner || null,
+        p_format: tournament.format || 'LEAGUE'
       });
     if (error) throw error;
     return data;
