@@ -8929,214 +8929,159 @@ export const mockApi = {
     mockDb.examMarks = mockDb.examMarks.filter(m => m.studentId === studentId ? isUUID(m.id) : true);
 
     const resolvedScheduleIds: Record<string, string> = {};
-    const saveErrors: string[] = [];
+    const marksPayload: any[] = [];
 
     for (const data of marksData) {
-      try {
-        let dbScheduleId: string | null = null;
-        let dbSubjectId: string | null = null;
-        let localMaxMarks = 100;
+      let dbSubjectId: string | null = null;
+      let localMaxMarks = 100;
 
-        if (isUUID(data.scheduleId)) {
-          dbScheduleId = data.scheduleId;
-          const sched = mockDb.examSchedules.find(s => s.id === data.scheduleId);
-          dbSubjectId = sched?.subjectId || null;
-          localMaxMarks = sched?.maxMarks || 100;
-        } else {
-          // Resolve mock schedule (e.g. es-1) to DB entities
-          const localSched = mockDb.examSchedules.find(s => s.id === data.scheduleId) || SEED_EXAM_SCHEDULES.find(s => s.id === data.scheduleId);
-          if (localSched) {
-            localMaxMarks = localSched.maxMarks || 100;
-            const localSubject = mockDb.subjects.find(s => s.id === localSched.subjectId);
-            if (localSubject) {
-              let dbSubject = mockDb.subjects.find(s => s.schoolId === cls.schoolId && isUUID(s.id) && s.name.toLowerCase() === localSubject.name.toLowerCase());
+      if (isUUID(data.scheduleId)) {
+        const sched = mockDb.examSchedules.find(s => s.id === data.scheduleId);
+        dbSubjectId = sched?.subjectId || null;
+        localMaxMarks = sched?.maxMarks || 100;
+      } else {
+        // Resolve mock schedule (e.g. es-1) to DB entities
+        const localSched = mockDb.examSchedules.find(s => s.id === data.scheduleId) || SEED_EXAM_SCHEDULES.find(s => s.id === data.scheduleId);
+        if (localSched) {
+          localMaxMarks = localSched.maxMarks || 100;
+          const localSubject = mockDb.subjects.find(s => s.id === localSched.subjectId);
+          if (localSubject) {
+            let dbSubject = mockDb.subjects.find(s => s.schoolId === cls.schoolId && isUUID(s.id) && s.name.toLowerCase() === localSubject.name.toLowerCase());
+            if (!dbSubject) {
+              const { data: dbSubjects } = await supabaseAdmin.from('subjects').select('*').eq('school_id', cls.schoolId);
+              dbSubject = dbSubjects?.find((s: any) => s.name.toLowerCase() === localSubject.name.toLowerCase());
               if (!dbSubject) {
-                const { data: dbSubjects } = await supabaseAdmin.from('subjects').select('*').eq('school_id', cls.schoolId);
-                dbSubject = dbSubjects?.find((s: any) => s.name.toLowerCase() === localSubject.name.toLowerCase());
-                if (!dbSubject) {
-                  // Auto-create missing subject in database
-                  const { data: newSub, error: newSubErr } = await supabaseAdmin.from('subjects').insert({
-                    school_id: cls.schoolId,
-                    name: localSubject.name,
-                    code: localSubject.code || localSubject.name.substring(0, 3).toUpperCase(),
-                    description: localSubject.description || ''
-                  }).select().single();
-                  if (newSubErr) {
-                    throw new Error(`Failed to create missing subject "${localSubject.name}": ${newSubErr.message}`);
-                  }
-                  dbSubject = newSub;
-                  // Sync local cache
-                  if (dbSubject) {
-                    const localSubObj = {
-                      id: dbSubject.id,
-                      schoolId: cls.schoolId,
-                      name: dbSubject.name,
-                      code: dbSubject.code,
-                      description: dbSubject.description || ''
-                    };
-                    mockDb.subjects.push(localSubObj);
-                    mockDb.saveAll();
-                  }
+                // Auto-create missing subject in database
+                const { data: newSub, error: newSubErr } = await supabaseAdmin.from('subjects').insert({
+                  school_id: cls.schoolId,
+                  name: localSubject.name,
+                  code: localSubject.code || localSubject.name.substring(0, 3).toUpperCase(),
+                  description: localSubject.description || ''
+                }).select().single();
+                if (newSubErr) {
+                  throw new Error(`Failed to create missing subject "${localSubject.name}": ${newSubErr.message}`);
+                }
+                dbSubject = newSub;
+                // Sync local cache
+                if (dbSubject) {
+                  const localSubObj = {
+                    id: dbSubject.id,
+                    schoolId: cls.schoolId,
+                    name: dbSubject.name,
+                    code: dbSubject.code,
+                    description: dbSubject.description || ''
+                  };
+                  mockDb.subjects.push(localSubObj);
+                  mockDb.saveAll();
                 }
               }
-              if (dbSubject) {
-                dbSubjectId = dbSubject.id;
-              }
+            }
+            if (dbSubject) {
+              dbSubjectId = dbSubject.id;
             }
           }
         }
-
-        if (!dbSubjectId) {
-          throw new Error(`Unable to resolve subject ID for schedule: ${data.scheduleId}`);
-        }
-
-        // Ensure exam_subjects mapping exists
-        const { data: existingES } = await supabaseAdmin.from('exam_subjects').select('id').eq('exam_id', dbExamId).eq('subject_id', dbSubjectId).eq('school_id', cls.schoolId);
-        if (!existingES || existingES.length === 0) {
-          const { error: esErr } = await supabaseAdmin.from('exam_subjects').insert({
-            school_id: cls.schoolId,
-            exam_id: dbExamId,
-            subject_id: dbSubjectId,
-            max_marks: localMaxMarks,
-            passing_marks: Math.round(localMaxMarks * 0.4)
-          });
-          if (esErr) {
-            throw new Error(`Failed to map exam subject: ${esErr.message}`);
-          }
-        }
-
-        // Resolve or create exam_schedules row via UPSERT to prevent race conditions
-        if (!dbScheduleId) {
-          const { data: existingSched } = await supabaseAdmin.from('exam_schedules').select('id').eq('exam_id', dbExamId).eq('class_id', classId).eq('subject_id', dbSubjectId);
-          if (existingSched && existingSched.length > 0) {
-            dbScheduleId = existingSched[0].id;
-          } else {
-            const { data: newSched, error: newSchedErr } = await supabaseAdmin.from('exam_schedules').upsert({
-              exam_id: dbExamId,
-              class_id: classId,
-              subject_id: dbSubjectId,
-              max_marks: localMaxMarks,
-              date: new Date().toISOString().split('T')[0],
-              start_time: '09:00',
-              end_time: '12:00',
-              classroom: 'Classroom'
-            }, { onConflict: 'exam_id,class_id,subject_id' }).select().maybeSingle();
-            
-            if (newSchedErr) {
-              throw new Error(`Failed to create exam schedule: ${newSchedErr.message}`);
-            }
-            dbScheduleId = newSched?.id || null;
-          }
-        }
-
-        if (!dbScheduleId) {
-          throw new Error(`Unable to resolve or create exam schedule for subject ID ${dbSubjectId}`);
-        }
-
-        // Save mock mapping
-        resolvedScheduleIds[data.scheduleId] = dbScheduleId;
-
-        // Save to exam_marks using atomic UPSERT
-        const { data: upsertedMark, error: upsertErr } = await supabaseAdmin
-          .from('exam_marks')
-          .upsert({
-            exam_schedule_id: dbScheduleId,
-            student_id: studentId,
-            marks_obtained: Number(data.marksObtained || 0),
-            remarks: data.remarks || '',
-            graded_by: teacherId
-          }, { onConflict: 'exam_schedule_id,student_id' })
-          .select()
-          .maybeSingle();
-
-        if (upsertErr) {
-          throw new Error(`Failed to upsert exam mark: ${upsertErr.message}`);
-        }
-
-        const resolvedMarkId = upsertedMark?.id || ('em-' + Math.random().toString(36).substr(2, 9));
-
-        // Instantly sync to mockDb.examMarks in-memory cache
-        const localMark = {
-          id: resolvedMarkId,
-          examScheduleId: dbScheduleId,
-          studentId: studentId,
-          marksObtained: Number(data.marksObtained || 0),
-          remarks: data.remarks || '',
-          gradedBy: teacherId,
-          createdAt: new Date().toISOString()
-        };
-        const mIdx = mockDb.examMarks.findIndex(m => m.examScheduleId === dbScheduleId && m.studentId === studentId);
-        if (mIdx === -1) {
-          mockDb.examMarks.push(localMark);
-        } else {
-          mockDb.examMarks[mIdx] = localMark;
-        }
-        mockDb.saveAll();
-
-        // Save to student_marks
-        await this.enterStudentMarks(cls.schoolId, dbExamId, dbSubjectId, studentId, data.marksObtained, data.remarks);
-      } catch (err: any) {
-        console.error('Failed to save exam mark in database:', err);
-        saveErrors.push(err.message || String(err));
       }
+
+      if (!dbSubjectId || !isUUID(dbSubjectId)) {
+        throw new Error(`Unable to resolve subject ID for schedule: ${data.scheduleId}`);
+      }
+
+      marksPayload.push({
+        subject_id: dbSubjectId,
+        max_marks: localMaxMarks,
+        marks_obtained: Number(data.marksObtained || 0),
+        remarks: data.remarks || '',
+        schedule_id: isUUID(data.scheduleId) ? data.scheduleId : null
+      });
     }
 
-    if (saveErrors.length > 0) {
-      throw new Error(`Failed to save marks for one or more subjects: ${saveErrors.join('; ')}`);
+    // Resolve Report Card GPA, Attendance, Remarks, Term
+    const resolvedSessionId = await this.resolveActiveSessionId(cls.schoolId);
+    if (!resolvedSessionId || !isUUID(resolvedSessionId)) {
+      throw new Error('Unable to resolve active academic session.');
     }
 
-    // Upsert Report Card term summary record
-    try {
-      const resolvedSessionId = await this.resolveActiveSessionId(cls.schoolId);
-      const totalMax = marksData.reduce((sum, item) => {
-        const lookupId = resolvedScheduleIds[item.scheduleId] || item.scheduleId;
-        const sched = mockDb.examSchedules.find(s => s.id === lookupId) || SEED_EXAM_SCHEDULES.find(s => s.id === lookupId);
-        return sum + (sched?.maxMarks || 100);
-      }, 0);
-      const totalObtained = marksData.reduce((sum, item) => sum + (item.marksObtained || 0), 0);
-      const gpa = totalMax > 0 ? (totalObtained / totalMax) * 10 : 0;
+    const totalMax = marksData.reduce((sum, item) => {
+      const lookupId = resolvedScheduleIds[item.scheduleId] || item.scheduleId;
+      const sched = mockDb.examSchedules.find(s => s.id === lookupId) || SEED_EXAM_SCHEDULES.find(s => s.id === lookupId);
+      return sum + (sched?.maxMarks || 100);
+    }, 0);
+    const totalObtained = marksData.reduce((sum, item) => sum + (item.marksObtained || 0), 0);
+    const gpa = totalMax > 0 ? (totalObtained / totalMax) * 10 : 0;
 
-      const studentAtt = mockDb.attendance.filter(a => a.studentId === studentId);
-      const totalDays = studentAtt.length;
-      const presentDays = studentAtt.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
-      const attendancePercent = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 95;
+    const studentAtt = mockDb.attendance.filter(a => a.studentId === studentId);
+    const totalDays = studentAtt.length;
+    const presentDays = studentAtt.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
+    const attendancePercent = totalDays > 0 ? Math.round((presentDays / totalDays) * 100) : 95;
 
-      const summaryRemarks = marksData.map(m => m.remarks).filter(Boolean).join('; ') || 'Satisfactory midterm progress.';
+    const summaryRemarks = marksData.map(m => m.remarks).filter(Boolean).join('; ') || 'Satisfactory midterm progress.';
 
-      const examObj = mockDb.exams.find(e => e.id === dbExamId);
-      const termName = examObj?.term || 'TERM 1';
+    const examObj = mockDb.exams.find(e => e.id === dbExamId);
+    const termName = examObj?.term || 'TERM 1';
 
-      const { data: existingRC } = await supabaseAdmin
-        .from('report_cards')
-        .select('id')
-        .eq('school_id', cls.schoolId)
-        .eq('student_id', studentId)
-        .eq('term', termName);
+    // Invoke atomic report card transaction RPC
+    const { data: rpcRes, error: rpcErr } = await supabaseAdmin.rpc('save_report_card_transaction', {
+      p_teacher_id: teacherId,
+      p_class_id: classId,
+      p_student_id: studentId,
+      p_exam_id: dbExamId,
+      p_school_id: cls.schoolId,
+      p_marks_data: marksPayload,
+      p_term: termName,
+      p_gpa: gpa,
+      p_attendance_percent: attendancePercent,
+      p_summary_remarks: summaryRemarks,
+      p_academic_session_id: resolvedSessionId
+    });
 
-      if (existingRC && existingRC.length > 0) {
-        await supabaseAdmin.from('report_cards').update({
-          grade_point_average: gpa,
-          attendance_percentage: attendancePercent,
-          remarks: summaryRemarks,
-          academic_session_id: resolvedSessionId
-        }).eq('id', existingRC[0].id);
+    if (rpcErr || !rpcRes) {
+      throw new Error(`Failed to save report card transaction: ${rpcErr?.message || 'Empty response'}`);
+    }
+
+    // Sync mockDb caches
+    const returnedExamMarks = rpcRes.exam_marks || [];
+    returnedExamMarks.forEach((em: any) => {
+      const examMarkObj = {
+        id: em.id,
+        examScheduleId: em.exam_schedule_id,
+        studentId: em.student_id,
+        marksObtained: Number(em.marks_obtained || 0),
+        remarks: em.remarks || '',
+        gradedBy: teacherId,
+        createdAt: em.created_at
+      };
+      const idx = mockDb.examMarks.findIndex(x => x.examScheduleId === em.exam_schedule_id && x.studentId === em.student_id);
+      if (idx === -1) {
+        mockDb.examMarks.push(examMarkObj);
       } else {
-        await supabaseAdmin.from('report_cards').insert({
-          school_id: cls.schoolId,
-          academic_session_id: resolvedSessionId,
-          student_id: studentId,
-          term: termName,
-          grade_point_average: gpa,
-          attendance_percentage: attendancePercent,
-          remarks: summaryRemarks,
-          file_url: ''
-        });
+        mockDb.examMarks[idx] = examMarkObj;
       }
+    });
 
-      await this.fetchReportCards(cls.schoolId, studentId);
-    } catch (rcErr) {
-      console.error('Failed to create/update report card summary in database:', rcErr);
-    }
+    const returnedStudentMarks = rpcRes.student_marks || [];
+    returnedStudentMarks.forEach((sm: any) => {
+      const studentMarkObj = {
+        id: sm.id,
+        schoolId: sm.school_id,
+        examId: sm.exam_id,
+        subjectId: sm.subject_id,
+        studentId: sm.student_id,
+        examSubjectId: sm.exam_subject_id,
+        marksObtained: Number(sm.marks_obtained || 0),
+        remarks: sm.remarks || '',
+        createdAt: sm.created_at
+      };
+      const idx = mockDb.studentMarks.findIndex(x => x.examId === sm.exam_id && x.subjectId === sm.subject_id && x.studentId === sm.student_id);
+      if (idx === -1) {
+        mockDb.studentMarks.push(studentMarkObj);
+      } else {
+        mockDb.studentMarks[idx] = studentMarkObj;
+      }
+    });
+
+    // Sync report card fetch cache
+    await this.fetchReportCards(cls.schoolId, studentId);
 
     mockDb.addLog(mockDb.teachers.find(t => t.id === teacherId)?.userId || null, 'CLASS_TEACHER_UPDATE_REPORT_CARD', { classId, studentId });
     mockDb.saveAll();
