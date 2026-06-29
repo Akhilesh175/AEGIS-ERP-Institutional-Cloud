@@ -8877,8 +8877,53 @@ export const mockApi = {
 
     const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
     
-    const dbExamId = examId;
-    if (!dbExamId) throw new Error('Unable to resolve active exam reference in database.');
+    let dbExamId: string | null = null;
+    if (isUUID(examId)) {
+      dbExamId = examId;
+    } else {
+      const localExam = mockDb.exams.find(e => e.id === examId) || SEED_EXAMS.find(e => e.id === examId);
+      if (localExam) {
+        let dbExam: any = mockDb.exams.find(e => e.schoolId === cls.schoolId && isUUID(e.id) && e.name.toLowerCase() === localExam.name.toLowerCase());
+        if (!dbExam) {
+          const { data: dbExams } = await supabaseAdmin.from('exams').select('*').eq('school_id', cls.schoolId);
+          dbExam = dbExams?.find((e: any) => e.name.toLowerCase() === localExam.name.toLowerCase());
+          if (!dbExam) {
+            // Auto-create missing exam in database
+            const activeSessionId = await this.resolveActiveSessionId(cls.schoolId);
+            const { data: newExam, error: newExamErr } = await supabaseAdmin.from('exams').insert({
+              school_id: cls.schoolId,
+              academic_session_id: activeSessionId,
+              name: localExam.name,
+              start_date: localExam.startDate || new Date().toISOString().split('T')[0],
+              end_date: localExam.endDate || new Date().toISOString().split('T')[0]
+            }).select().single();
+            if (newExamErr) {
+              throw new Error(`Failed to create missing exam "${localExam.name}": ${newExamErr.message}`);
+            }
+            dbExam = newExam;
+            // Sync local cache
+            if (dbExam) {
+              mockDb.exams.push({
+                id: dbExam.id,
+                schoolId: cls.schoolId,
+                academicSessionId: dbExam.academic_session_id || 'session-1',
+                name: dbExam.name,
+                startDate: dbExam.start_date,
+                endDate: dbExam.end_date
+              });
+              mockDb.saveAll();
+            }
+          }
+        }
+        if (dbExam) {
+          dbExamId = dbExam.id;
+        }
+      }
+    }
+
+    if (!dbExamId || !isUUID(dbExamId)) {
+      throw new Error('Unable to resolve active exam reference in database.');
+    }
 
     // Keep local exam marks clean for this student but preserve seed marks for others
     mockDb.examMarks = mockDb.examMarks.filter(m => m.studentId === studentId ? isUUID(m.id) : true);
@@ -13320,11 +13365,52 @@ export const mockApi = {
   },
 
   async enterStudentMarks(schoolId: string, examId: string, subjectId: string, studentId: string, marksObtained: number, remarks: string): Promise<void> {
+    const isUUID = (str: string) => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(str);
+    if (!isUUID(schoolId) || !isUUID(examId) || !isUUID(subjectId) || !isUUID(studentId)) {
+      throw new Error(`Invalid UUID: schoolId=${schoolId}, examId=${examId}, subjectId=${subjectId}, studentId=${studentId}`);
+    }
+
+    // 1. Resolve exam_subjects.id
+    let examSubjectId: string | null = null;
+    const { data: esData, error: esError } = await supabaseAdmin
+      .from('exam_subjects')
+      .select('id')
+      .eq('exam_id', examId)
+      .eq('subject_id', subjectId)
+      .eq('school_id', schoolId)
+      .maybeSingle();
+
+    if (esData) {
+      examSubjectId = esData.id;
+    } else {
+      const { data: newEs, error: newEsErr } = await supabaseAdmin
+        .from('exam_subjects')
+        .insert({
+          school_id: schoolId,
+          exam_id: examId,
+          subject_id: subjectId,
+          max_marks: 100,
+          passing_marks: 40
+        })
+        .select('id')
+        .single();
+      if (newEsErr) {
+        throw new Error(`Failed to create exam subject mapping: ${newEsErr.message}`);
+      }
+      examSubjectId = newEs.id;
+    }
+
+    if (!examSubjectId || !isUUID(examSubjectId)) {
+      throw new Error(`Failed to resolve exam subject mapping for examId=${examId}, subjectId=${subjectId}`);
+    }
+
+    // 2. Upsert student_marks including exam_subject_id
     const { data, error } = await supabaseAdmin.from('student_marks').upsert({
       school_id: schoolId,
       exam_id: examId,
       subject_id: subjectId,
       student_id: studentId,
+      exam_subject_id: examSubjectId,
       marks_obtained: marksObtained,
       remarks
     }, { onConflict: 'exam_id,subject_id,student_id' }).select().single();

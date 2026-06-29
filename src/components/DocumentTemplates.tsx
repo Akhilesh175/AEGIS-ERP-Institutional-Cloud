@@ -1,5 +1,7 @@
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import { Capacitor } from '@capacitor/core';
+import { downloadFile } from '../utils/downloadHelper';
 
 /** AEGIS ERP official logo for PDF/certificate watermark footers */
 const AEGIS_LOGO_URL = '/aegis-logo.png';
@@ -166,8 +168,13 @@ export const downloadStudentIdCardPdf = async (
       format: [85.6, 54] // Standard credit card size is 85.6mm x 54mm
     });
 
-    pdf.addImage(imgData, 'PNG', 0, 0, 54, 85.6);
-    pdf.save(`idcard_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`);
+    const fileName = `idcard_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
+    if (Capacitor.isNativePlatform()) {
+      const pdfBlob = pdf.output('blob');
+      await downloadFile(pdfBlob, fileName);
+    } else {
+      pdf.save(fileName);
+    }
   } catch (err) {
     console.error('Failed to export Student ID Card:', err);
     alert('An error occurred while generating the ID Card PDF.');
@@ -331,8 +338,13 @@ export const downloadAdmissionFormPdf = async (
       format: 'a4'
     });
 
-    pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
-    pdf.save(`admission_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`);
+    const fileName = `admission_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
+    if (Capacitor.isNativePlatform()) {
+      const pdfBlob = pdf.output('blob');
+      await downloadFile(pdfBlob, fileName);
+    } else {
+      pdf.save(fileName);
+    }
   } catch (err) {
     console.error('Failed to export Admission Form:', err);
     alert('An error occurred while building the PDF admission form.');
@@ -448,8 +460,13 @@ export const downloadTransferCertificatePdf = async (
       format: 'a4'
     });
 
-    pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
-    pdf.save(`transfer_certificate_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`);
+    const fileName = `transfer_certificate_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
+    if (Capacitor.isNativePlatform()) {
+      const pdfBlob = pdf.output('blob');
+      await downloadFile(pdfBlob, fileName);
+    } else {
+      pdf.save(fileName);
+    }
   } catch (err) {
     console.error('Failed to export Transfer Certificate:', err);
     alert('An error occurred while building the Transfer Certificate PDF.');
@@ -542,8 +559,13 @@ export const downloadBonafideCertificatePdf = async (
       format: 'a4'
     });
 
-    pdf.addImage(imgData, 'PNG', 0, 0, 210, 297);
-    pdf.save(`bonafide_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`);
+    const fileName = `bonafide_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
+    if (Capacitor.isNativePlatform()) {
+      const pdfBlob = pdf.output('blob');
+      await downloadFile(pdfBlob, fileName);
+    } else {
+      pdf.save(fileName);
+    }
   } catch (err) {
     console.error('Failed to export Bonafide Certificate:', err);
     alert('An error occurred while building the Bonafide Certificate PDF.');
@@ -645,8 +667,13 @@ export const downloadCertificateOfExcellencePdf = async (
     });
 
     // A4 Landscape is 297mm x 210mm
-    pdf.addImage(imgData, 'PNG', 0, 0, 297, 210);
-    pdf.save(`excellence_certificate_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`);
+    const fileName = `excellence_certificate_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
+    if (Capacitor.isNativePlatform()) {
+      const pdfBlob = pdf.output('blob');
+      await downloadFile(pdfBlob, fileName);
+    } else {
+      pdf.save(fileName);
+    }
   } catch (err) {
     console.error('Failed to export Certificate of Excellence:', err);
     alert('An error occurred while building the Certificate of Excellence.');

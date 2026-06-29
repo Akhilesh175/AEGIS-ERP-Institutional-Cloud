@@ -6,7 +6,7 @@ import type { Notification } from '../types';
 import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, Camera, Upload, Trash2, X, Check, Menu, Settings, Key, Lock, Eye, EyeOff, Layers, ArrowLeft } from 'lucide-react';
 import { ChatDrawer } from './ChatDrawer';
 import { BrandLogo } from './common/BrandLogo';
-import { useCoachNavigation } from '../store/useCoachNavigation';
+import { useNavigationStore } from '../store/useNavigationStore';
 
 const SPORTS_TAB_TITLES: Record<string, string> = {
   'sports': 'Sports & Activities',
@@ -37,7 +37,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab = 'dashboard', onBack }) => {
   const { session, theme, toggleTheme, setSession, isMobileMenuOpen, setMobileMenuOpen, warningLevel, daysRemaining } = useStore();
-  const coachStack = useCoachNavigation(state => state.stack);
+  const navStack = useNavigationStore(state => state.stack);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifyDrop, setShowNotifyDrop] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
@@ -426,7 +426,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab = 'dashboard', onBack 
         <div className="flex items-center gap-3">
           {(() => {
             if (session?.user?.role === 'COACH') {
-              if (coachStack.length === 1) {
+              if (navStack.length === 1) {
                 return (
                   <button
                     onClick={() => setMobileMenuOpen(!isMobileMenuOpen)}

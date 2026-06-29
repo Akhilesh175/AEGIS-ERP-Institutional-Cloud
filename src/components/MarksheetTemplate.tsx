@@ -2,6 +2,8 @@ import React from 'react';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import { Award, ShieldAlert, CheckCircle2 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { downloadFile } from '../utils/downloadHelper';
 
 interface MarksheetSubject {
   subjectId: string;
@@ -792,7 +794,13 @@ export const downloadMarksheetPdf = async (studentName: string, term: string, ma
       pageIndex++;
     }
 
-    pdf.save(`marksheet_${studentName.toLowerCase().replace(/\s+/g, '_')}_${term.toLowerCase().replace(/\s+/g, '_')}.pdf`);
+    const fileName = `marksheet_${studentName.toLowerCase().replace(/\s+/g, '_')}_${term.toLowerCase().replace(/\s+/g, '_')}.pdf`;
+    if (Capacitor.isNativePlatform()) {
+      const pdfBlob = pdf.output('blob');
+      await downloadFile(pdfBlob, fileName);
+    } else {
+      pdf.save(fileName);
+    }
   } catch (err) {
     console.error('Failed to export PDF:', err);
     alert('An error occurred while building the PDF marksheet. Please try again.');

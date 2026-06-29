@@ -14,6 +14,7 @@ import { SuperAdminPortal } from './portals/SuperAdminPortal';
 import { SportsManagement } from './components/SportsManagement';
 import { AegisMeet } from './components/AegisMeet';
 import { useCoachNavigation } from './store/useCoachNavigation';
+import { useNavigationStore } from './store/useNavigationStore';
 import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff, Building2, GraduationCap, Users, BookOpen, Home, Key, UserCheck, Phone, MessageSquare, Instagram, CheckCircle2, ShieldAlert, Database, Network, Layers, FileText, CheckSquare, HelpCircle, Globe, Laptop, ArrowRight, ShieldCheck, Bell } from 'lucide-react';
 import { BrandLogo } from './components/common/BrandLogo';
 import { GlassCard } from './components/GlassCard';
@@ -441,44 +442,50 @@ export const App: React.FC = () => {
 
   const updateActiveTab = (tab: string) => {
     setActiveTab(tab);
-    window.location.hash = tab;
+    const url = new URL(window.location.href);
+    url.hash = tab;
+    window.history.replaceState(null, '', url.toString());
   };
 
   const handleNavigateBack = useCallback(() => {
+    const nextTab = useNavigationStore.getState().pop();
     if (session?.user?.role === 'COACH') {
-      const nextTab = useCoachNavigation.getState().pop();
-      if (nextTab) {
-        updateActiveTab(nextTab);
-      } else {
-        updateActiveTab('dashboard');
-      }
-      return;
+      useCoachNavigation.getState().pop();
     }
-
-    const currentTab = window.location.hash.substring(1) || 'dashboard';
-    if (currentTab.startsWith('sports/')) {
-      updateActiveTab('sports');
+    if (nextTab) {
+      updateActiveTab(nextTab);
     } else {
       updateActiveTab('dashboard');
     }
   }, [session]);
 
-  // Coach-specific active tab to stack synchronizer
+  // Unified active tab to stack synchronizer
   useEffect(() => {
-    if (session?.user?.role === 'COACH' && activeTab) {
-      const isBacking = useCoachNavigation.getState().isBacking;
+    if (session && activeTab) {
+      const isBacking = useNavigationStore.getState().isBacking;
       if (isBacking) {
-        useCoachNavigation.getState().setIsBacking(false);
+        useNavigationStore.getState().setIsBacking(false);
       } else {
-        useCoachNavigation.getState().push(activeTab);
+        useNavigationStore.getState().push(activeTab);
+      }
+
+      if (session.user.role === 'COACH') {
+        const coachBacking = useCoachNavigation.getState().isBacking;
+        if (coachBacking) {
+          useCoachNavigation.getState().setIsBacking(false);
+        } else {
+          useCoachNavigation.getState().push(activeTab);
+        }
       }
     }
   }, [activeTab, session]);
 
-  // Sync active tab to hash on change (safeguard)
+  // Sync active tab to hash on change (safeguard using replaceState)
   useEffect(() => {
     if (activeTab) {
-      window.location.hash = activeTab;
+      const url = new URL(window.location.href);
+      url.hash = activeTab;
+      window.history.replaceState(null, '', url.toString());
     }
   }, [activeTab]);
 
@@ -500,37 +507,26 @@ export const App: React.FC = () => {
   }, [activeTab, session]);
 
   // Android Back Button Hardware Listener
+  // Android Back Button Hardware Listener
   useEffect(() => {
     let activeListener: any = null;
     const setupBackButtonListener = async () => {
       if (Capacitor.isNativePlatform()) {
         try {
           activeListener = await CapApp.addListener('backButton', () => {
-            if (session?.user?.role === 'COACH') {
-              const currentStack = useCoachNavigation.getState().stack;
-              if (currentStack.length > 1) {
-                const nextTab = useCoachNavigation.getState().pop();
-                if (nextTab) {
-                  updateActiveTab(nextTab);
-                } else {
-                  updateActiveTab('dashboard');
-                }
-              } else {
-                CapApp.exitApp();
+            const currentStack = useNavigationStore.getState().stack;
+            if (currentStack.length > 1) {
+              const nextTab = useNavigationStore.getState().pop();
+              if (session?.user?.role === 'COACH') {
+                useCoachNavigation.getState().pop();
               }
-              return;
-            }
-
-            const currentTab = window.location.hash.substring(1) || 'dashboard';
-            
-            if (currentTab === 'dashboard') {
-              CapApp.exitApp();
-            } else if (currentTab.startsWith('sports/')) {
-              updateActiveTab('sports');
-            } else if (currentTab === 'sports') {
-              updateActiveTab('dashboard');
+              if (nextTab) {
+                updateActiveTab(nextTab);
+              } else {
+                updateActiveTab('dashboard');
+              }
             } else {
-              updateActiveTab('dashboard');
+              CapApp.exitApp();
             }
           });
         } catch (err) {
@@ -546,29 +542,30 @@ export const App: React.FC = () => {
     };
   }, [session]);
 
-  // Synchronize browser history (back/forward) with the active tab state
+  // Synchronize browser history (back/forward) and intercept back barrier
   useEffect(() => {
-    const handleHashChange = () => {
-      const hash = window.location.hash.substring(1);
-      if (hash) {
-        // Validate route for the current user's role
-        if (session) {
-          const allowed = getTabsForRole(session.user.role, session.schoolSubscriptionPlan || 'freemium');
-          const baseTab = hash.split('/')[0];
-          if (allowed.includes(baseTab)) {
-            setActiveTab(hash);
-            return;
-          }
-        } else {
-          setActiveTab('dashboard');
-          return;
-        }
+    if (!session) return;
+
+    // Push the barrier state
+    window.history.pushState({ aegis: true }, '', window.location.hash || '#dashboard');
+
+    const handlePopState = (e: PopStateEvent) => {
+      // Re-push the barrier immediately to intercept next back click
+      window.history.pushState({ aegis: true }, '', window.location.hash || '#dashboard');
+
+      const nextTab = useNavigationStore.getState().pop();
+      if (session?.user?.role === 'COACH') {
+        useCoachNavigation.getState().pop();
       }
-      setActiveTab('dashboard');
+      if (nextTab) {
+        updateActiveTab(nextTab);
+      } else {
+        updateActiveTab('dashboard');
+      }
     };
 
-    window.addEventListener('hashchange', handleHashChange);
-    return () => window.removeEventListener('hashchange', handleHashChange);
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
   }, [session]);
 
   // Listen for programmatic tab navigation events (e.g. from warning banners)

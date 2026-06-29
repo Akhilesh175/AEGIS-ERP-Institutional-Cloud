@@ -14,6 +14,8 @@ import {
   PolarRadiusAxis, Radar, Legend, BarChart, Bar, AreaChart, Area
 } from 'recharts';
 import jsPDF from 'jspdf';
+import { Capacitor } from '@capacitor/core';
+import { downloadFile } from '../utils/downloadHelper';
 
 interface ErrorBoundaryProps {
   children: React.ReactNode;
@@ -1108,8 +1110,13 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
     doc.setFontSize(9);
     doc.setTextColor(148, 163, 184);
     doc.text(`Verification ID: ${cert.certificateNumber}`, 148, 175, { align: 'center' });
-    doc.text(`Issued Date: ${cert.issueDate}`, 148, 182, { align: 'center' });
-    doc.save(`Sports_Certificate_${cert.certificateNumber}.pdf`);
+    const fileName = `Sports_Certificate_${cert.certificateNumber}.pdf`;
+    if (Capacitor.isNativePlatform()) {
+      const pdfBlob = doc.output('blob');
+      downloadFile(pdfBlob, fileName).catch(console.error);
+    } else {
+      doc.save(fileName);
+    }
   };
 
   // Helper selectors / computed values

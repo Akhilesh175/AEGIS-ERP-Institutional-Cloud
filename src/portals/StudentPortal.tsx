@@ -18,6 +18,7 @@ import {
   BookMarked, Layers, Home, User, Coffee, HelpCircle, Activity, Utensils, ShieldAlert
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
+import { downloadFile } from '../utils/downloadHelper';
 import { subscriptionPlans, isTabLocked, isTabLockedByEntitlements } from '../services/subscriptionConfig';
 import { useFeatureEntitlements } from '../hooks/useFeatureEntitlements';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
@@ -1181,14 +1182,20 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                           Stream Live
                         </button>
                       ) : (
-                        <a 
-                          href={m.fileUrl} 
-                          download 
+                        <button 
+                          onClick={async () => {
+                            try {
+                              const filename = m.title.toLowerCase().replace(/\s+/g, '_') + (m.fileUrl.endsWith('.pdf') ? '.pdf' : '.docx');
+                              await downloadFile(m.fileUrl, filename);
+                            } catch (err: any) {
+                              alert('Download failed: ' + err.message);
+                            }
+                          }}
                           className="text-brand-400 hover:text-brand-300 flex items-center gap-1 font-semibold text-xs transition-colors"
                         >
                           <Download size={14} />
                           Download Resource
-                        </a>
+                        </button>
                       )}
                     </div>
                   </div>
