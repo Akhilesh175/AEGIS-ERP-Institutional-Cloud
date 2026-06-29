@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useStore } from './store/useStore';
 import { App as CapApp } from '@capacitor/app';
+import { Capacitor } from '@capacitor/core';
 import { mockApi } from './services/mockApi';
 import { supabase } from './lib/supabase';
 import { Navbar } from './components/Navbar';
@@ -298,7 +299,7 @@ export const App: React.FC = () => {
   const inactivityApi = useInactivityTimeout({
     timeoutMs: 5 * 60 * 1000,   // 5 minutes total idle
     warningMs: 60 * 1000,       // warn 60 s before expiry (at 4-min mark)
-    isActive: !!session && !(typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()), // only track on web when a session is live
+    isActive: !!session && !Capacitor.isNativePlatform(), // only track on web when a session is live
     onWarn: handleInactivityWarn,
     onResume: handleInactivityResume,
     onExpire: handleInactivityExpire,
@@ -479,7 +480,7 @@ export const App: React.FC = () => {
   useEffect(() => {
     let activeListener: any = null;
     const setupBackButtonListener = async () => {
-      if (typeof window !== 'undefined' && (window as any).Capacitor?.isNativePlatform?.()) {
+      if (Capacitor.isNativePlatform()) {
         try {
           activeListener = await CapApp.addListener('backButton', () => {
             const currentTab = window.location.hash.substring(1) || 'dashboard';

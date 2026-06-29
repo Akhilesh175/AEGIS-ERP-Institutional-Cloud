@@ -191,6 +191,9 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
   const [selectedSessionId, setSelectedSessionId] = useState<string>('');
   const [selectedAttendanceDate, setSelectedAttendanceDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [sportsAttendanceHistoryLogs, setSportsAttendanceHistoryLogs] = useState<any[]>([]);
+  const [athleteAttendanceHistoryFull, setAthleteAttendanceHistoryFull] = useState<any[]>([]);
+  const [attendanceHistorySearch, setAttendanceHistorySearch] = useState('');
+  const [attendanceHistorySessionFilter, setAttendanceHistorySessionFilter] = useState('');
 
   const [showCreateTournament, setShowCreateTournament] = useState(false);
   const [newTournament, setNewTournament] = useState({ name: '', sportId: '', opponent: '', venue: '', startDate: '', endDate: '', startTime: '09:00', endTime: '17:00', description: '', banner: '', teamIds: [] as string[], studentIds: [] as string[] });
@@ -396,6 +399,11 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
       if (['STUDENT', 'PARENT'].includes(userRole) && currentStudentId) {
         const attHistory = await mockApi.fetchStudentAttendance(schoolId, currentStudentId);
         setAthleteAttendanceHistory(attHistory);
+      }
+
+      if (['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'ACADEMIC_ADMIN', 'COACH'].includes(userRole)) {
+        const allAttHistory = await mockApi.fetchAllAthleteAttendanceHistory(schoolId);
+        setAthleteAttendanceHistoryFull(allAttHistory);
       }
 
       // Load all students for the school if Admin, Sports Admin, or Finance Admin
@@ -3149,7 +3157,7 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
         {activeSubTab === 'attendance' && (
           <div className="bg-[#0b101d]/60 border border-slate-800 rounded-2xl p-6 shadow-xl space-y-6">
             
-            {['SCHOOL_ADMIN', 'COACH', 'SPORTS_ADMIN'].includes(portalRole) ? (
+            {['SCHOOL_ADMIN', 'COACH', 'SPORTS_ADMIN'].includes(portalRole) && (
               <div className="space-y-6">
                 <div className="flex flex-wrap gap-4 items-end">
                   <div className="space-y-1">
@@ -3343,10 +3351,94 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                   </div>
                 )}
               </div>
-            ) : (
+            )}
+
+            {/* Unified Athlete Practice Attendance History Log for Admins & Coaches */}
+            {['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'ACADEMIC_ADMIN', 'COACH'].includes(portalRole) && (
+              <div className="border-t border-slate-800 pt-6 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-4">
+                  <h3 className="text-sm font-bold text-slate-100 uppercase tracking-wider font-mono">Athlete Practice Attendance History Log</h3>
+                  <div className="flex flex-wrap gap-3">
+                    <input 
+                      type="text"
+                      placeholder="Search student..."
+                      value={attendanceHistorySearch}
+                      onChange={(e) => setAttendanceHistorySearch(e.target.value)}
+                      className="px-3 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-xl focus:outline-none w-48 text-white font-mono"
+                    />
+                    <select
+                      value={attendanceHistorySessionFilter}
+                      onChange={(e) => setAttendanceHistorySessionFilter(e.target.value)}
+                      className="px-3 py-1.5 text-xs bg-slate-900 border border-slate-800 rounded-xl focus:outline-none w-48 font-mono text-white"
+                    >
+                      <option value="">All Sessions</option>
+                      {sessions.map(s => (
+                        <option key={s.id} value={s.sessionName}>{s.sessionName}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+                
+                <div className="overflow-x-auto bg-slate-900/40 border border-slate-850 rounded-xl p-4">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
+                        <th className="py-2.5 px-4 font-bold">Student Name</th>
+                        <th className="py-2.5 px-4 font-bold">Session</th>
+                        <th className="py-2.5 px-4 font-bold">Date</th>
+                        <th className="py-2.5 px-4 font-bold">Status</th>
+                        <th className="py-2.5 px-4 font-bold">Remarks</th>
+                        <th className="py-2.5 px-4 font-bold">Marked By</th>
+                        <th className="py-2.5 px-4 font-bold">Created At</th>
+                        <th className="py-2.5 px-4 font-bold">Updated At</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-850 text-slate-300">
+                      {(() => {
+                        const filtered = athleteAttendanceHistoryFull.filter(log => {
+                          const matchesSearch = log.studentName.toLowerCase().includes(attendanceHistorySearch.toLowerCase());
+                          const matchesSession = !attendanceHistorySessionFilter || log.sessionName === attendanceHistorySessionFilter;
+                          return matchesSearch && matchesSession;
+                        });
+                        if (filtered.length === 0) {
+                          return (
+                            <tr>
+                              <td colSpan={8} className="py-6 text-center text-slate-500">No matching attendance logs found.</td>
+                            </tr>
+                          );
+                        }
+                        return filtered.map((log) => (
+                          <tr key={log.id} className="hover:bg-slate-900/20">
+                            <td className="py-2.5 px-4 font-semibold text-slate-100">{log.studentName}</td>
+                            <td className="py-2.5 px-4 text-slate-300 font-medium">{log.sessionName}</td>
+                            <td className="py-2.5 px-4 text-slate-400 font-mono">{log.date}</td>
+                            <td className="py-2.5 px-4">
+                              <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${
+                                log.status === 'PRESENT' ? 'bg-emerald-500/10 text-emerald-400' :
+                                log.status === 'LATE' ? 'bg-amber-500/10 text-amber-500' :
+                                'bg-red-500/10 text-red-400'
+                              }`}>
+                                {log.status}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-4 text-slate-400 italic">{log.remarks || 'No remarks'}</td>
+                            <td className="py-2.5 px-4 text-slate-300 font-medium">{log.coachName}</td>
+                            <td className="py-2.5 px-4 text-slate-500 font-mono">{new Date(log.createdAt).toLocaleString()}</td>
+                            <td className="py-2.5 px-4 text-slate-500 font-mono">{new Date(log.updatedAt).toLocaleString()}</td>
+                          </tr>
+                        ));
+                      })()}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* Non-admin / Student / Parent Portal View */}
+            {!['SCHOOL_ADMIN', 'SPORTS_ADMIN', 'SUPER_ADMIN', 'ADMIN', 'ACADEMIC_ADMIN', 'COACH'].includes(portalRole) && (
               <div className="space-y-6">
                 <h3 className="text-xs font-bold text-white uppercase tracking-wider font-mono">Athlete Practice Attendance Logs</h3>
-                <div className="overflow-x-auto">
+                <div className="overflow-x-auto bg-slate-900/40 border border-slate-850 rounded-xl p-4">
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="border-b border-slate-800 text-slate-400 uppercase tracking-wider font-mono">
@@ -3354,6 +3446,9 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                         <th className="py-3 px-4 font-bold">Date</th>
                         <th className="py-3 px-4 font-bold">Status</th>
                         <th className="py-3 px-4 font-bold">Remarks</th>
+                        <th className="py-3 px-4 font-bold">Marked By</th>
+                        <th className="py-3 px-4 font-bold">Created At</th>
+                        <th className="py-3 px-4 font-bold">Updated At</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-850 text-slate-300">
@@ -3369,11 +3464,14 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                             }`}>{log.status}</span>
                           </td>
                           <td className="py-3 px-4 text-slate-400 italic">{log.remarks || 'No remarks'}</td>
+                          <td className="py-3 px-4 text-slate-300 font-medium">{log.coachName}</td>
+                          <td className="py-3 px-4 text-slate-500 font-mono">{new Date(log.createdAt).toLocaleString()}</td>
+                          <td className="py-3 px-4 text-slate-500 font-mono">{new Date(log.updatedAt).toLocaleString()}</td>
                         </tr>
                       ))}
                       {athleteAttendanceHistory.length === 0 && (
                         <tr>
-                          <td colSpan={4} className="py-6 text-center text-slate-500">No attendance logs recorded.</td>
+                          <td colSpan={7} className="py-6 text-center text-slate-500">No attendance logs recorded.</td>
                         </tr>
                       )}
                     </tbody>

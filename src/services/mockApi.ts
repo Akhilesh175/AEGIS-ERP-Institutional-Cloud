@@ -18038,18 +18038,50 @@ export const mockApi = {
     validateSchoolId(schoolId, 'fetchStudentAttendance');
     const { data, error } = await supabaseAdmin
       .from('sports_attendance')
-      .select('*, sports_training_sessions(session_name)')
+      .select(`
+        id,
+        date,
+        status,
+        remarks,
+        created_at,
+        updated_at,
+        sports_training_sessions(
+          session_name,
+          sports_coaches(
+            coach_name
+          )
+        ),
+        users(
+          first_name,
+          last_name
+        )
+      `)
       .eq('school_id', schoolId)
       .eq('student_id', studentId)
       .order('date', { ascending: false });
     if (error) throw error;
-    return (data || []).map(r => ({
-      id: r.id,
-      date: r.date,
-      status: r.status,
-      remarks: r.remarks,
-      sessionName: r.sports_training_sessions?.session_name || 'General Session'
-    }));
+    return (data || []).map(row => {
+      const r = row as any;
+      const sessionObj = Array.isArray(r.sports_training_sessions) ? r.sports_training_sessions[0] : r.sports_training_sessions;
+      const sessionCoachObj = sessionObj ? (Array.isArray(sessionObj.sports_coaches) ? sessionObj.sports_coaches[0] : sessionObj.sports_coaches) : null;
+      
+      const markedByUser = Array.isArray(r.users) ? r.users[0] : r.users;
+      
+      const coachName = markedByUser 
+        ? `${markedByUser.first_name || ''} ${markedByUser.last_name || ''}`.trim() 
+        : (sessionCoachObj?.coach_name || 'System / Coach');
+
+      return {
+        id: r.id,
+        date: r.date,
+        status: r.status,
+        remarks: r.remarks,
+        sessionName: sessionObj?.session_name || 'General Session',
+        coachName,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      };
+    });
   },
 
   async markSportsAttendance(userId: string, sessionId: string, date: string, attendanceList: any[], device?: string, ip?: string): Promise<any> {
@@ -18097,6 +18129,68 @@ export const mockApi = {
       editorName: r.editor_name || 'System',
       studentName: r.students?.users ? `${r.students.users.first_name} ${r.students.users.last_name}` : 'Unknown Student'
     }));
+  },
+
+  async fetchAllAthleteAttendanceHistory(schoolId: string): Promise<any[]> {
+    validateSchoolId(schoolId, 'fetchAllAthleteAttendanceHistory');
+    const { data, error } = await supabaseAdmin
+      .from('sports_attendance')
+      .select(`
+        id,
+        date,
+        status,
+        remarks,
+        created_at,
+        updated_at,
+        students(
+          id,
+          users(first_name, last_name)
+        ),
+        sports_training_sessions(
+          id,
+          session_name,
+          sports_coaches(
+            id,
+            coach_name
+          )
+        ),
+        users(
+          first_name,
+          last_name
+        )
+      `)
+      .eq('school_id', schoolId)
+      .order('date', { ascending: false });
+
+    if (error) throw error;
+    
+    return (data || []).map(row => {
+      const r = row as any;
+      const studentObj = Array.isArray(r.students) ? r.students[0] : r.students;
+      const studentUser = studentObj ? (Array.isArray(studentObj.users) ? studentObj.users[0] : studentObj.users) : null;
+      
+      const sessionObj = Array.isArray(r.sports_training_sessions) ? r.sports_training_sessions[0] : r.sports_training_sessions;
+      const sessionCoachObj = sessionObj ? (Array.isArray(sessionObj.sports_coaches) ? sessionObj.sports_coaches[0] : sessionObj.sports_coaches) : null;
+      
+      const markedByUser = Array.isArray(r.users) ? r.users[0] : r.users;
+      
+      const studentName = studentUser ? `${studentUser.first_name || ''} ${studentUser.last_name || ''}`.trim() : 'Unknown Student';
+      const coachName = markedByUser 
+        ? `${markedByUser.first_name || ''} ${markedByUser.last_name || ''}`.trim() 
+        : (sessionCoachObj?.coach_name || 'System / Coach');
+        
+      return {
+        id: r.id,
+        studentName,
+        sessionName: sessionObj?.session_name || 'General Practice',
+        date: r.date,
+        status: r.status,
+        remarks: r.remarks,
+        coachName,
+        createdAt: r.created_at,
+        updatedAt: r.updated_at
+      };
+    });
   },
 
 
@@ -19127,7 +19221,8 @@ export const mockApi = {
         user_id: invoice.students.user_id,
         title: 'New Sports Invoice Generated',
         message: `A new sports invoice ${invoice.invoice_number} of ₹${invoice.amount} for '${invoice.invoice_title}' has been generated. Due date: ${invoice.due_date}.`,
-        status: 'UNREAD'
+        channel: 'sports',
+        is_read: false
       });
 
     const { data: mapping } = await supabaseAdmin
@@ -19145,7 +19240,8 @@ export const mockApi = {
           user_id: (mapping.parents as any).user_id,
           title: 'New Sports Invoice Generated',
           message: `A new sports invoice ${invoice.invoice_number} of ₹${invoice.amount} for your child has been generated. Due date: ${invoice.due_date}.`,
-          status: 'UNREAD'
+          channel: 'sports',
+          is_read: false
         });
     }
 
