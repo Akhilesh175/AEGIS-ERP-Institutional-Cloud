@@ -13,6 +13,7 @@ import { AdminPortal } from './portals/AdminPortal';
 import { SuperAdminPortal } from './portals/SuperAdminPortal';
 import { SportsManagement } from './components/SportsManagement';
 import { AegisMeet } from './components/AegisMeet';
+import { useCoachNavigation } from './store/useCoachNavigation';
 import { Shield, Lock, Mail, Sun, Moon, Sparkles, ChevronRight, Eye, EyeOff, Building2, GraduationCap, Users, BookOpen, Home, Key, UserCheck, Phone, MessageSquare, Instagram, CheckCircle2, ShieldAlert, Database, Network, Layers, FileText, CheckSquare, HelpCircle, Globe, Laptop, ArrowRight, ShieldCheck, Bell } from 'lucide-react';
 import { BrandLogo } from './components/common/BrandLogo';
 import { GlassCard } from './components/GlassCard';
@@ -444,13 +445,35 @@ export const App: React.FC = () => {
   };
 
   const handleNavigateBack = useCallback(() => {
+    if (session?.user?.role === 'COACH') {
+      const nextTab = useCoachNavigation.getState().pop();
+      if (nextTab) {
+        updateActiveTab(nextTab);
+      } else {
+        updateActiveTab('dashboard');
+      }
+      return;
+    }
+
     const currentTab = window.location.hash.substring(1) || 'dashboard';
     if (currentTab.startsWith('sports/')) {
       updateActiveTab('sports');
     } else {
       updateActiveTab('dashboard');
     }
-  }, []);
+  }, [session]);
+
+  // Coach-specific active tab to stack synchronizer
+  useEffect(() => {
+    if (session?.user?.role === 'COACH' && activeTab) {
+      const isBacking = useCoachNavigation.getState().isBacking;
+      if (isBacking) {
+        useCoachNavigation.getState().setIsBacking(false);
+      } else {
+        useCoachNavigation.getState().push(activeTab);
+      }
+    }
+  }, [activeTab, session]);
 
   // Sync active tab to hash on change (safeguard)
   useEffect(() => {
@@ -483,6 +506,21 @@ export const App: React.FC = () => {
       if (Capacitor.isNativePlatform()) {
         try {
           activeListener = await CapApp.addListener('backButton', () => {
+            if (session?.user?.role === 'COACH') {
+              const currentStack = useCoachNavigation.getState().stack;
+              if (currentStack.length > 1) {
+                const nextTab = useCoachNavigation.getState().pop();
+                if (nextTab) {
+                  updateActiveTab(nextTab);
+                } else {
+                  updateActiveTab('dashboard');
+                }
+              } else {
+                CapApp.exitApp();
+              }
+              return;
+            }
+
             const currentTab = window.location.hash.substring(1) || 'dashboard';
             
             if (currentTab === 'dashboard') {
@@ -506,7 +544,7 @@ export const App: React.FC = () => {
         activeListener.remove();
       }
     };
-  }, []);
+  }, [session]);
 
   // Synchronize browser history (back/forward) with the active tab state
   useEffect(() => {

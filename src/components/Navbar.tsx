@@ -6,6 +6,7 @@ import type { Notification } from '../types';
 import { Bell, MessageSquare, Sun, Moon, LogOut, ChevronDown, Camera, Upload, Trash2, X, Check, Menu, Settings, Key, Lock, Eye, EyeOff, Layers, ArrowLeft } from 'lucide-react';
 import { ChatDrawer } from './ChatDrawer';
 import { BrandLogo } from './common/BrandLogo';
+import { useCoachNavigation } from '../store/useCoachNavigation';
 
 const SPORTS_TAB_TITLES: Record<string, string> = {
   'sports': 'Sports & Activities',
@@ -36,6 +37,7 @@ interface NavbarProps {
 
 export const Navbar: React.FC<NavbarProps> = ({ activeTab = 'dashboard', onBack }) => {
   const { session, theme, toggleTheme, setSession, isMobileMenuOpen, setMobileMenuOpen, warningLevel, daysRemaining } = useStore();
+  const coachStack = useCoachNavigation(state => state.stack);
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [showNotifyDrop, setShowNotifyDrop] = useState(false);
   const [showPreferences, setShowPreferences] = useState(false);
@@ -423,6 +425,32 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab = 'dashboard', onBack 
         {/* Branding Title — AEGIS ERP Official Logo */}
         <div className="flex items-center gap-3">
           {(() => {
+            if (session?.user?.role === 'COACH') {
+              if (coachStack.length === 1) {
+                return (
+                  <button
+                    onClick={() => setMobileMenuOpen(!isMobileMenuOpen)}
+                    className="flex items-center justify-center w-9 h-9 text-slate-350 hover:text-white hover:bg-slate-800/60 active:bg-slate-700/60 border border-slate-800 hover:border-slate-700 rounded-lg transition-all duration-200 shadow-md"
+                    title="Toggle Menu"
+                    id="header-menu-button"
+                  >
+                    <Menu size={18} />
+                  </button>
+                );
+              } else {
+                return (
+                  <button
+                    onClick={onBack}
+                    className="flex items-center justify-center w-9 h-9 text-slate-350 hover:text-white hover:bg-slate-800/60 active:bg-slate-700/60 border border-slate-800 hover:border-slate-700 rounded-lg transition-all duration-200 shadow-md"
+                    title="Go Back"
+                    id="header-sports-back-button"
+                  >
+                    <ArrowLeft size={18} />
+                  </button>
+                );
+              }
+            }
+
             const isSports = activeTab.startsWith('sports');
             if (isSports && typeof window !== 'undefined' && window.innerWidth < 768) {
               return (
@@ -437,9 +465,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab = 'dashboard', onBack 
               );
             }
 
-            const isDashboard = session?.user?.role === 'COACH'
-              ? (activeTab === 'sports' || activeTab === 'sports/dashboard')
-              : (activeTab === 'dashboard');
+            const isDashboard = activeTab === 'dashboard';
 
             if (isDashboard) {
               return (
