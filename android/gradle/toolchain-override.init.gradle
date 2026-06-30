@@ -1,0 +1,30 @@
+/**
+ * toolchain-override.init.gradle
+ *
+ * Applied automatically by adding it to the Gradle init-scripts directory.
+ * Overrides all Kotlin jvmToolchain() and Java compileOptions requests so they
+ * use the currently installed JDK (Java 25) instead of trying to download Java 21.
+ *
+ * This file should be referenced from gradle.properties via:
+ *   org.gradle.java.home=/Library/Java/JavaVirtualMachines/jdk-25.jdk/Contents/Home
+ */
+allprojects {
+    afterEvaluate { project ->
+        // Override Kotlin jvmToolchain for all subprojects (e.g. capacitor-filesystem)
+        if (project.plugins.hasPlugin('kotlin-android') || project.plugins.hasPlugin('org.jetbrains.kotlin.android')) {
+            try {
+                project.kotlin {
+                    jvmToolchain(25)
+                }
+            } catch (Exception e) {
+                // Plugin not yet configured – skip silently
+            }
+        }
+
+        // Override Java sourceCompatibility / targetCompatibility
+        project.tasks.withType(JavaCompile).configureEach { task ->
+            task.sourceCompatibility = JavaVersion.VERSION_21
+            task.targetCompatibility = JavaVersion.VERSION_21
+        }
+    }
+}
