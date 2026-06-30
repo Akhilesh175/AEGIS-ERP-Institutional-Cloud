@@ -15,7 +15,8 @@ import {
   Calendar, Clock, BookOpen, PenTool, Award, Download, 
   ExternalLink, UploadCloud, MessageCircle, DollarSign, PlayCircle,
   Paperclip, Trash2, Loader2, CheckCircle, X, FileText, AlertCircle, Eye, ClipboardList,
-  BookMarked, Layers, Home, User, Coffee, HelpCircle, Activity, Utensils, ShieldAlert
+  BookMarked, Layers, Home, User, Coffee, HelpCircle, Activity, Utensils, ShieldAlert,
+  Printer, Share2, History, Plus, Search, Filter
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { downloadFile } from '../utils/downloadHelper';
@@ -23,6 +24,7 @@ import { subscriptionPlans, isTabLocked, isTabLockedByEntitlements } from '../se
 import { useFeatureEntitlements } from '../hooks/useFeatureEntitlements';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 import { downloadReceiptPdf } from '../components/ReceiptTemplate';
+import { downloadInvoicePdf } from '../components/InvoiceTemplate';
 import { 
   downloadStudentIdCardPdf, downloadAdmissionFormPdf, 
   downloadBonafideCertificatePdf 
@@ -93,6 +95,9 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
   const [fees, setFees] = useState<{ structure: any; payment?: any }[]>([]);
   const [reportCards, setReportCards] = useState<any[]>([]);
   const [docGenerating, setDocGenerating] = useState<string>('');
+  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
+  const [invoiceFilter, setInvoiceFilter] = useState<'ALL' | 'PAID' | 'PENDING' | 'OVERDUE'>('ALL');
+  const [historyInvoice, setHistoryInvoice] = useState<any | null>(null);
 
   // Dynamic Library & Transport States
   const [transitAssignment, setTransitAssignment] = useState<any>(null);
@@ -1753,83 +1758,303 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
           requiredTier="Basic" 
           featureName="Fee Management"
         >
-          <GlassCard className="space-y-6 animate-fade-in">
-            <div className="border-b border-slate-850 pb-3">
-              <h3 className="font-bold text-slate-100 flex items-center gap-2">
-                <DollarSign className="text-brand-500" size={18} />
-                Outstanding Fee Structure & Invoices
-              </h3>
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start animate-fade-in">
+            {/* Left Panel: Invoices List */}
+            <div className="lg:col-span-8 space-y-4">
+              <GlassCard className="p-5 space-y-4">
+                <div className="flex flex-col sm:flex-row justify-between sm:items-center pb-3 border-b border-slate-850 gap-3">
+                  <h3 className="font-bold text-slate-100 flex items-center gap-2">
+                    <DollarSign className="text-brand-500" size={18} />
+                    My Invoices
+                  </h3>
+                  
+                  {/* Filter chips */}
+                  <div className="flex flex-wrap gap-1.5">
+                    {(['ALL', 'PAID', 'PENDING', 'OVERDUE'] as const).map(f => (
+                      <button
+                        key={f}
+                        onClick={() => setInvoiceFilter(f)}
+                        className={`px-3 py-1 rounded-lg text-[10px] font-bold uppercase transition-all ${
+                          invoiceFilter === f
+                            ? 'bg-brand-600 text-white shadow-lg'
+                            : 'bg-slate-900/40 text-slate-450 border border-slate-850 hover:text-slate-200'
+                        }`}
+                      >
+                        {f}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  {(() => {
+                    const mappedInvoices = fees.map(({ structure, payment }) => {
+                      const isPaid = payment?.status === 'PAID';
+                      const isOverdue = !isPaid && new Date(structure.dueDate).getTime() < Date.now();
+                      const status = isPaid ? 'PAID' : isOverdue ? 'OVERDUE' : (payment?.status === 'PENDING' ? 'PENDING' : 'UNPAID');
+                      
+                      const invoiceNumber = payment?.transactionId 
+                        ? `INV-${new Date(structure.dueDate).getFullYear()}-${payment.transactionId.substring(0, 6).toUpperCase()}` 
+                        : `INV-${new Date(structure.dueDate).getFullYear()}-${structure.id.substring(0, 6).toUpperCase()}`;
+
+                      return {
+                        id: structure.id,
+                        structure,
+                        payment,
+                        invoiceNumber,
+                        status,
+                        description: structure.description,
+                        dueDate: structure.dueDate,
+                        amount: Number(structure.amount),
+                        billDate: structure.createdAt || new Date(new Date(structure.dueDate).getTime() - 14 * 24 * 60 * 60 * 1000).toISOString()
+                      };
+                    });
+
+                    const filteredInvoices = mappedInvoices.filter(inv => {
+                      if (invoiceFilter === 'ALL') return true;
+                      return inv.status === invoiceFilter;
+                    });
+
+                    if (filteredInvoices.length === 0) {
+                      return (
+                        <div className="text-center py-16 flex flex-col items-center justify-center gap-3">
+                          <DollarSign size={36} className="text-slate-650 animate-pulse-subtle" />
+                          <p className="text-sm text-slate-350 font-semibold">No Invoices Found</p>
+                          <p className="text-xs text-slate-500 max-w-sm">No billing invoices matching the selected filter were found.</p>
+                        </div>
+                      );
+                    }
+
+                    return filteredInvoices.map((inv, idx) => {
+                      const stObj = mockDb.students.find(s => s.id === studentId);
+                      const cls = stObj ? mockDb.classes.find(c => c.id === stObj.classId) : null;
+                      const parentObj = mockDb.parentStudentMappings.find(m => m.studentId === studentId);
+                      const parentDetails = parentObj ? mockDb.parents.find(p => p.id === parentObj.parentId) : null;
+                      const parentUser = parentDetails ? mockDb.users.find(u => u.id === parentDetails.userId) : null;
+
+                      const invoicePayload = {
+                        schoolId: studentSchool?.id || '',
+                        schoolName: studentSchool?.name || '',
+                        schoolAddress: studentSchool?.address || '',
+                        schoolPhone: studentSchool?.phone || '',
+                        schoolEmail: studentSchool?.email || '',
+                        schoolWebsite: (studentSchool as any)?.website || '',
+                        logoUrl: studentSchool?.logoUrl || '',
+                        sealUrl: studentSchool?.sealUrl || '',
+                        currencySymbol: studentSchool?.currencySymbol || '$',
+                        invoiceNumber: inv.invoiceNumber,
+                        billDate: inv.billDate,
+                        dueDate: inv.dueDate,
+                        paymentDate: inv.payment?.paymentDate || undefined,
+                        billingCycle: new Date(inv.billDate).toLocaleString('default', { month: 'long', year: 'numeric' }),
+                        academicYear: '2026 - 27',
+                        paymentMethod: inv.payment?.paymentMethod || undefined,
+                        transactionId: inv.payment?.transactionId || undefined,
+                        status: inv.status === 'PAID' ? 'PAID' : (inv.status === 'PENDING' ? 'PENDING' : 'UNPAID') as any,
+                        studentName: `${session?.user?.firstName || 'Student'} ${session?.user?.lastName || ''}`,
+                        studentClass: cls?.name || 'Class 10 - A',
+                        studentRollNo: stObj?.rollNumber ? String(stObj.rollNumber) : '15',
+                        studentAdmissionNo: stObj?.admissionNumber ? String(stObj.admissionNumber) : 'AEGIS2026/015',
+                        studentId: studentId || '',
+                        parentName: parentUser ? `${parentUser.firstName} ${parentUser.lastName}` : 'Guardian',
+                        parentPhone: parentUser?.phone || 'N/A',
+                        parentEmail: parentUser?.email || 'N/A',
+                        parentRelation: 'Father',
+                        amount: inv.amount
+                      };
+
+                      return (
+                        <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-slate-800 rounded-2xl flex flex-col justify-between gap-4 transition-all duration-200">
+                          <div className="flex justify-between items-start gap-4">
+                            <div className="space-y-1">
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[9px] font-extrabold tracking-wider px-2 py-0.5 rounded uppercase border ${
+                                  inv.status === 'PAID'
+                                    ? 'bg-green-500/10 border-green-500/25 text-green-400'
+                                    : inv.status === 'PENDING'
+                                      ? 'bg-amber-500/10 border-amber-500/25 text-amber-400'
+                                      : 'bg-red-500/10 border-red-500/25 text-red-400'
+                                }`}>
+                                  {inv.status}
+                                </span>
+                                <span className="text-[9.5px] font-mono text-slate-500">#{inv.invoiceNumber}</span>
+                              </div>
+                              <h4 className="font-bold text-slate-200 text-sm mt-2">{inv.description}</h4>
+                              <p className="text-[10px] text-slate-450">
+                                {session?.user?.firstName} ${session?.user?.lastName} ({cls?.name || 'Class 10 - A'})
+                              </p>
+                              <div className="flex flex-wrap gap-x-4 gap-y-1 text-[9.5px] text-slate-500 font-mono mt-1">
+                                <span>Bill Date: {new Date(inv.billDate).toLocaleDateString()}</span>
+                                <span>Due: {new Date(inv.dueDate).toLocaleDateString()}</span>
+                              </div>
+                            </div>
+
+                            <div className="text-right shrink-0">
+                              <span className="text-sm font-extrabold text-slate-100">
+                                {studentSchool?.currencySymbol || '$'}{inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                              </span>
+                              <p className="text-[9px] text-slate-500 mt-1">
+                                {inv.status === 'PAID' ? `Paid on ${new Date(inv.payment.paymentDate).toLocaleDateString()}` : 'Payment Pending'}
+                              </p>
+                            </div>
+                          </div>
+
+                          {/* Invoice Actions */}
+                          <div className="border-t border-slate-850/60 pt-3 flex flex-wrap justify-between items-center gap-3">
+                            <div className="flex items-center gap-2">
+                              <button
+                                onClick={() => downloadInvoicePdf(invoicePayload, false)}
+                                className="px-2.5 py-1 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-350 hover:text-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                title="Download Invoice A4 PDF"
+                              >
+                                <Download size={11} />
+                                Invoice
+                              </button>
+                              {inv.status === 'PAID' && (
+                                <button
+                                  onClick={() => downloadInvoicePdf(invoicePayload, true)}
+                                  className="px-2.5 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/25 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                  title="Download Payment Receipt PDF"
+                                >
+                                  <FileText size={11} />
+                                  Receipt
+                                </button>
+                              )}
+                              <button
+                                onClick={async () => {
+                                  const shareUrl = `https://www.aegiserp.xyz/verify/invoice/${inv.invoiceNumber}`;
+                                  if (navigator.share) {
+                                    await navigator.share({
+                                      title: `Invoice ${inv.invoiceNumber}`,
+                                      url: shareUrl
+                                    }).catch(() => {});
+                                  } else {
+                                    navigator.clipboard.writeText(shareUrl);
+                                    alert('Invoice verification link copied to clipboard!');
+                                  }
+                                }}
+                                className="px-2.5 py-1 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-350 hover:text-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                title="Share Invoice Registry Link"
+                              >
+                                <Share2 size={11} />
+                                Share
+                              </button>
+                              <button
+                                onClick={() => downloadInvoicePdf(invoicePayload, false)}
+                                className="px-2.5 py-1 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-350 hover:text-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                title="Print Invoice"
+                              >
+                                <Printer size={11} />
+                                Print
+                              </button>
+                              <button
+                                onClick={() => setHistoryInvoice(inv)}
+                                className="px-2.5 py-1 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-350 hover:text-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                title="View Payment Audit History"
+                              >
+                                <History size={11} />
+                                History
+                              </button>
+                            </div>
+
+                            <button
+                              onClick={() => setSelectedInvoice(invoicePayload)}
+                              className="px-3 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-md shadow-brand-500/10"
+                            >
+                              <Eye size={11} />
+                              View Detail
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </GlassCard>
             </div>
 
-            {fees.length === 0 ? (
-              <div className="text-center py-16 p-6 flex flex-col items-center justify-center gap-3">
-                <DollarSign size={36} className="text-slate-650 animate-pulse-subtle" />
-                <p className="text-sm text-slate-350 font-semibold">No Fee Invoices Mapped</p>
-                <p className="text-xs text-slate-500 max-w-sm">No fee structures or billing invoices have been published for this academic cycle yet.</p>
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                {fees.map(({ structure, payment }, idx: number) => {
-                  const isPaid = payment?.status === 'PAID';
-                  return (
-                    <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4 hover:border-slate-800 transition-all duration-200">
-                      <div className="space-y-1">
-                        <span className={`text-[9.5px] font-bold tracking-wider px-2.5 py-0.5 rounded-full uppercase border ${
-                          isPaid 
-                            ? 'bg-green-500/10 border-green-500/15 text-green-400' 
-                            : payment?.status === 'PENDING' 
-                              ? 'bg-amber-500/10 border-amber-500/15 text-amber-400' 
-                              : 'bg-red-500/10 border-red-500/15 text-red-400'
-                        }`}>
-                          {payment?.status || 'PENDING'}
-                        </span>
-                        <h4 className="font-bold text-slate-200 text-sm mt-2">{structure.description}</h4>
-                        <p className="text-xs text-slate-400">Total Bill Amount: {studentSchool?.currencySymbol || '$'}{structure.amount.toFixed(2)}</p>
-                        <p className="text-[10px] text-slate-500">Bill Due: {new Date(structure.dueDate).toLocaleDateString()}</p>
-                      </div>
+            {/* Right Panel: Summary stats */}
+            <div className="lg:col-span-4 space-y-4">
+              <GlassCard className="p-5 space-y-4">
+                <div className="border-b border-slate-850 pb-2">
+                  <h4 className="font-bold text-slate-200 text-xs uppercase tracking-wider">My Invoices Summary</h4>
+                </div>
 
-                      {isPaid && (
-                        <div className="text-[10px] text-slate-500 border-t border-slate-850 pt-2 flex justify-between items-center">
-                          <span>Receipt Download Ready</span>
-                          <button
-                            onClick={async () => {
-                              if (!studentSchool) return;
-                              const stObj = mockDb.students.find(s => s.id === studentId);
-                              const cls = stObj ? mockDb.classes.find(c => c.id === stObj.classId) : null;
-                              await downloadReceiptPdf({
-                                schoolId: studentSchool.id,
-                                schoolName: studentSchool.name,
-                                schoolAddress: studentSchool.address || '',
-                                schoolPhone: studentSchool.phone || '',
-                                schoolEmail: studentSchool.email || '',
-                                logoUrl: studentSchool.logoUrl || '',
-                                sealUrl: studentSchool.sealUrl || '',
-                                currencySymbol: studentSchool.currencySymbol || '$',
-                                studentName: `${session?.user?.firstName || 'Student'} ${session?.user?.lastName || ''}`,
-                                studentId: studentId || '',
-                                admissionNumber: stObj?.admissionNumber || '',
-                                className: cls?.name || '',
-                                sectionName: '',
-                                feeDescription: structure.description,
-                                amount: Number(structure.amount),
-                                paymentDate: payment.paymentDate || new Date().toISOString(),
-                                paymentMethod: payment.paymentMethod || 'ONLINE',
-                                transactionId: payment.transactionId
-                              });
-                            }}
-                            className="px-2 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/30 rounded flex items-center gap-1 font-semibold cursor-pointer active:scale-95 transition-all text-[9px]"
-                          >
-                            <Download size={10} />
-                            Download
-                          </button>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </GlassCard>
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Total Invoices</span>
+                    <h3 className="text-xl font-extrabold text-slate-200 mt-1">
+                      {fees.length}
+                    </h3>
+                  </div>
+
+                  <div className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl">
+                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Total Paid</span>
+                    <h3 className="text-xl font-extrabold text-emerald-400 mt-1">
+                      {studentSchool?.currencySymbol || '$'}{fees
+                        .filter(f => f.payment?.status === 'PAID')
+                        .reduce((sum, f) => sum + Number(f.structure.amount), 0)
+                        .toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                    </h3>
+                  </div>
+                </div>
+
+                <button
+                  onClick={async () => {
+                    alert('Generating batch PDF invoices...');
+                    for (const f of fees) {
+                      const stObj = mockDb.students.find(s => s.id === studentId);
+                      const cls = stObj ? mockDb.classes.find(c => c.id === stObj.classId) : null;
+                      const parentObj = mockDb.parentStudentMappings.find(m => m.studentId === studentId);
+                      const parentDetails = parentObj ? mockDb.parents.find(p => p.id === parentObj.parentId) : null;
+                      const parentUser = parentDetails ? mockDb.users.find(u => u.id === parentDetails.userId) : null;
+
+                      const isPaid = f.payment?.status === 'PAID';
+                      const billDate = f.structure.createdAt || new Date(new Date(f.structure.dueDate).getTime() - 14 * 24 * 60 * 60 * 1000).toISOString();
+                      const invoiceNumber = f.payment?.transactionId 
+                        ? `INV-${new Date(f.structure.dueDate).getFullYear()}-${f.payment.transactionId.substring(0, 6).toUpperCase()}` 
+                        : `INV-${new Date(f.structure.dueDate).getFullYear()}-${f.structure.id.substring(0, 6).toUpperCase()}`;
+
+                      const pl = {
+                        schoolId: studentSchool?.id || '',
+                        schoolName: studentSchool?.name || '',
+                        schoolAddress: studentSchool?.address || '',
+                        schoolPhone: studentSchool?.phone || '',
+                        schoolEmail: studentSchool?.email || '',
+                        logoUrl: studentSchool?.logoUrl || '',
+                        sealUrl: studentSchool?.sealUrl || '',
+                        currencySymbol: studentSchool?.currencySymbol || '$',
+                        invoiceNumber,
+                        billDate,
+                        dueDate: f.structure.dueDate,
+                        paymentDate: f.payment?.paymentDate || undefined,
+                        billingCycle: new Date(billDate).toLocaleString('default', { month: 'long', year: 'numeric' }),
+                        academicYear: '2026 - 27',
+                        paymentMethod: f.payment?.paymentMethod || undefined,
+                        transactionId: f.payment?.transactionId || undefined,
+                        status: isPaid ? 'PAID' : 'UNPAID' as any,
+                        studentName: `${session?.user?.firstName || 'Student'} ${session?.user?.lastName || ''}`,
+                        studentClass: cls?.name || 'Class 10 - A',
+                        studentRollNo: stObj?.rollNumber ? String(stObj.rollNumber) : '15',
+                        studentAdmissionNo: stObj?.admissionNumber ? String(stObj.admissionNumber) : 'AEGIS2026/015',
+                        studentId: studentId || '',
+                        parentName: parentUser ? `${parentUser.firstName} ${parentUser.lastName}` : 'Guardian',
+                        parentPhone: parentUser?.phone || 'N/A',
+                        parentEmail: parentUser?.email || 'N/A',
+                        parentRelation: 'Father',
+                        amount: Number(f.structure.amount)
+                      };
+                      await downloadInvoicePdf(pl, false);
+                    }
+                  }}
+                  className="w-full py-2 bg-brand-600 hover:bg-brand-500 text-white rounded-xl text-xs font-bold transition-all shadow-md shadow-brand-500/10 flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Download size={14} />
+                  Download All Invoices
+                </button>
+              </GlassCard>
+            </div>
+          </div>
         </PremiumLock>
       )}
 
@@ -2813,6 +3038,303 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                 </button>
               </div>
             </form>
+          </GlassCard>
+        </div>
+      )}
+      {/* Invoice Detail Modal (Reference Layout Mock) */}
+      {selectedInvoice && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-start justify-center overflow-y-auto z-50 p-4">
+          <div className="bg-white text-slate-800 rounded-2xl max-w-[800px] w-full my-8 shadow-2xl border border-slate-200 overflow-hidden animate-fade-in font-sans">
+            {/* Modal Controls Bar */}
+            <div className="bg-slate-900 text-slate-100 p-4 flex justify-between items-center border-b border-slate-850">
+              <h3 className="font-bold text-xs uppercase tracking-wider">Invoice Registry Preview</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => downloadInvoicePdf(selectedInvoice, false)}
+                  className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Download size={11} /> Download A4 PDF
+                </button>
+                <button
+                  onClick={() => setSelectedInvoice(null)}
+                  className="p-1 text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* A4 Reference Invoice Wrapper */}
+            <div className="p-8 space-y-6" style={{ minHeight: '800px' }}>
+              {/* Header Branding */}
+              <div className="flex justify-between items-start border-b-2 border-emerald-500 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 border-radius-12 bg-emerald-50 border border-emerald-200 flex items-center justify-center font-bold text-emerald-700 text-2xl">
+                    {selectedInvoice.logoUrl ? (
+                      <img src={selectedInvoice.logoUrl} className="w-full h-full object-cover rounded-xl" />
+                    ) : selectedInvoice.schoolName.substring(0,1)}
+                  </div>
+                  <div>
+                    <h2 className="text-base font-extrabold text-emerald-900 uppercase leading-tight">{selectedInvoice.schoolName}</h2>
+                    <p className="text-[9px] text-emerald-600 font-semibold tracking-wider uppercase mt-1">Reference Invoice Layout</p>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                    selectedInvoice.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-200' : 'bg-amber-500/10 text-amber-600 border border-amber-200'
+                  }`}>
+                    {selectedInvoice.status}
+                  </span>
+                  <h3 className="text-sm font-extrabold text-slate-900 mt-2 uppercase">Invoice</h3>
+                  <p className="text-[10px] font-mono text-slate-500 mt-0.5">#{selectedInvoice.invoiceNumber}</p>
+                </div>
+              </div>
+
+              {/* School Details & Invoice Metadata */}
+              <div className="grid grid-cols-2 gap-6 text-[10px] text-slate-650">
+                <div className="space-y-1">
+                  <p>📍 {selectedInvoice.schoolAddress}</p>
+                  <p>📞 {selectedInvoice.schoolPhone}</p>
+                  <p>✉️ {selectedInvoice.schoolEmail}</p>
+                  {selectedInvoice.schoolWebsite && <p>🌐 {selectedInvoice.schoolWebsite}</p>}
+                  <p className="text-[8px] text-slate-500 mt-2">GSTIN: 09ABCDE1234F1ZS | Affiliation: 2130456 | UDISE: 091234567890</p>
+                </div>
+                <div className="border-l border-emerald-50 pl-5 grid grid-cols-2 gap-x-2 gap-y-1 text-slate-700 font-medium">
+                  <span className="text-slate-500 font-bold">Bill Date:</span>
+                  <span>{new Date(selectedInvoice.billDate).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                  
+                  <span className="text-slate-500 font-bold">Due Date:</span>
+                  <span>{new Date(selectedInvoice.dueDate).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+
+                  {selectedInvoice.status === 'PAID' && selectedInvoice.paymentDate && (
+                    <>
+                      <span className="text-slate-500 font-bold">Payment Date:</span>
+                      <span>{new Date(selectedInvoice.paymentDate).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                    </>
+                  )}
+
+                  <span className="text-slate-500 font-bold">Billing Cycle:</span>
+                  <span>{selectedInvoice.billingCycle}</span>
+
+                  <span className="text-slate-500 font-bold">Academic Year:</span>
+                  <span>{selectedInvoice.academicYear}</span>
+                </div>
+              </div>
+
+              {/* Billed To / Parent Details Split */}
+              <div className="grid grid-cols-2 gap-6 border-t border-b border-slate-100 py-4">
+                <div>
+                  <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-wide mb-2">Billed To</h4>
+                  <div className="flex gap-2.5 items-center">
+                    <div className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-extrabold text-sm overflow-hidden">
+                      {selectedInvoice.studentPhoto ? (
+                        <img src={selectedInvoice.studentPhoto} className="w-full h-full object-cover" />
+                      ) : selectedInvoice.studentName.substring(0, 1)}
+                    </div>
+                    <div className="text-[10px] line-height-1.3 text-slate-650">
+                      <strong className="text-slate-900 uppercase block font-bold">{selectedInvoice.studentName}</strong>
+                      <p>Class: {selectedInvoice.studentClass}</p>
+                      <p>Roll No: {selectedInvoice.studentRollNo}</p>
+                      <p className="font-mono text-slate-500">Student ID: {selectedInvoice.studentId}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-l border-slate-50 pl-5">
+                  <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-wide mb-2">Parent / Guardian</h4>
+                  <div className="text-[10px] line-height-1.3 text-slate-650">
+                    <strong className="text-slate-900 block font-bold">{selectedInvoice.parentName} <span className="text-[8.5px] font-normal text-slate-500">({selectedInvoice.parentRelation})</span></strong>
+                    <p className="mt-1">📞 {selectedInvoice.parentPhone}</p>
+                    <p>✉️ {selectedInvoice.parentEmail}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fee Component breakdown table */}
+              <div>
+                <table className="w-full text-left text-[10px] border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-900 border-b-2 border-slate-200 font-bold uppercase">
+                      <th className="py-2 px-3 width-6">#</th>
+                      <th className="py-2 px-3">Description</th>
+                      <th className="py-2 px-3 text-right">Amount</th>
+                      <th className="py-2 px-3 text-right">Discount</th>
+                      <th className="py-2 px-3 text-right">Late Fee</th>
+                      <th className="py-2 px-3 text-right">Tax</th>
+                      <th className="py-2 px-3 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-600">
+                    {(selectedInvoice.feeItems && selectedInvoice.feeItems.length > 0
+                      ? selectedInvoice.feeItems
+                      : [{ description: selectedInvoice.description || 'Institutional Tuition Fee', amount: selectedInvoice.amount }]
+                    ).map((item: any, itemIdx: number) => {
+                      const itemAmount = Number(item.amount) || 0;
+                      const itemDiscount = Number(item.discount) || 0;
+                      const itemLateFee = Number(item.lateFee) || 0;
+                      const itemTax = Number(item.tax) || 0;
+                      const itemTotal = itemAmount - itemDiscount + itemLateFee + itemTax;
+                      return (
+                        <tr key={itemIdx}>
+                          <td className="py-2.5 px-3">{itemIdx + 1}</td>
+                          <td className="py-2.5 px-3 font-semibold text-slate-900">{item.description}</td>
+                          <td className="py-2.5 px-3 text-right">{itemAmount.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right">{itemDiscount.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right">{itemLateFee.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right">{itemTax.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-slate-900">{itemTotal.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Totals & QR Block */}
+              <div className="flex justify-between items-start border-t border-slate-100 pt-4 gap-6">
+                <div className="max-w-[50%]">
+                  <h5 className="text-[9px] font-bold text-slate-900 uppercase">Amount In Words</h5>
+                  <p className="text-[10px] text-emerald-700 italic font-semibold mt-1">
+                    Rupees {selectedInvoice.amount.toLocaleString('en-IN')} Only
+                  </p>
+                </div>
+
+                <div className="w-[200px] text-[10px] grid grid-cols-2 gap-y-1.5 text-right font-semibold text-slate-700">
+                  <span className="text-slate-500 font-normal">Subtotal</span>
+                  <span>{selectedInvoice.currencySymbol}{selectedInvoice.amount.toFixed(2)}</span>
+
+                  <span className="text-slate-500 font-normal">Discount</span>
+                  <span>0.00</span>
+
+                  <span className="text-slate-500 font-normal">Tax</span>
+                  <span>0.00</span>
+
+                  <span className="text-emerald-700 font-extrabold text-[11px] border-t border-slate-100 pt-1.5">Grand Total</span>
+                  <span className="text-emerald-700 font-extrabold text-[11px] border-t border-slate-100 pt-1.5">{selectedInvoice.currencySymbol}{selectedInvoice.amount.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Signature Footer & Seal */}
+              <div className="flex justify-between items-center border-t border-slate-100 pt-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 border border-slate-200">
+                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://www.aegiserp.xyz/verify/invoice/${selectedInvoice.invoiceNumber}`} className="w-full h-full" />
+                  </div>
+                  <div className="text-[8px] text-slate-500 leading-tight">
+                    <strong className="text-slate-900 uppercase font-bold">QR Registry Verification</strong>
+                    <p className="mt-0.5">This invoice is dynamically catalogued in the school blockchain.</p>
+                  </div>
+                </div>
+
+                <div className="text-center w-[120px] text-[9px] relative font-semibold text-slate-500">
+                  {selectedInvoice.sealUrl && (
+                    <img src={selectedInvoice.sealUrl} className="absolute left-[38px] top-[-20px] w-10 h-10 opacity-70 pointer-events-none" />
+                  )}
+                  <span className="font-serif italic text-emerald-800 text-xs block h-6 leading-6">School Principal</span>
+                  <span className="border-t border-slate-200 pt-1 block uppercase tracking-wide">Principal / Registrar</span>
+                </div>
+              </div>
+
+              {/* Disclaimer */}
+              <div className="p-2.5 bg-slate-50 border border-slate-200 text-center rounded-xl text-[9px] text-slate-500 leading-normal">
+                This is a secure system-generated billing invoice. Does not require manual physical signature.
+              </div>
+
+              {/* Watermark */}
+              <div className="border-t border-dashed border-slate-200 pt-2.5 flex justify-between items-center text-[8px] text-slate-400 font-bold uppercase tracking-wider">
+                <div className="flex items-center gap-1.5">
+                  <img src="/aegis-logo.png" className="w-3.5 h-3.5 object-contain" />
+                  <span>Powered by AEGIS ERP – Institutional Cloud</span>
+                </div>
+                <span>&copy; 2026 AEGIS ERP. All rights reserved.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice History Log Timeline Modal */}
+      {historyInvoice && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <GlassCard className="max-w-md w-full p-5 space-y-4 animate-fade-in">
+            <div className="flex justify-between items-center border-b border-slate-850 pb-2.5">
+              <h3 className="font-bold text-slate-100 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <History size={14} className="text-brand-500" /> Payment Audit Timeline
+              </h3>
+              <button
+                onClick={() => setHistoryInvoice(null)}
+                className="text-slate-400 hover:text-slate-200 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4 py-2 font-mono text-[10px]">
+              {/* Step 1: Invoiced */}
+              <div className="flex gap-3">
+                <div className="flex flex-col items-center">
+                  <div className="w-2.5 h-2.5 rounded-full bg-brand-500" />
+                  <div className="w-0.5 h-10 bg-slate-800" />
+                </div>
+                <div className="space-y-0.5">
+                  <strong className="text-slate-200 block text-xs">Fee Invoice Published</strong>
+                  <span className="text-slate-450 block">Invoiced: {new Date(historyInvoice.billDate).toLocaleString()}</span>
+                  <span className="text-[9px] text-slate-500">Ref: INV_GEN_AUDIT_LOG_SUCCESS</span>
+                </div>
+              </div>
+
+              {/* Step 2: Verification Pending */}
+              {historyInvoice.status !== 'UNPAID' && (
+                <div className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                    {historyInvoice.status === 'PAID' && <div className="w-0.5 h-10 bg-slate-800" />}
+                  </div>
+                  <div className="space-y-0.5">
+                    <strong className="text-slate-200 block text-xs">Payment Deposited / Submitted</strong>
+                    <span className="text-slate-450 block">Submitted: {new Date(historyInvoice.payment?.paymentDate || historyInvoice.dueDate).toLocaleString()}</span>
+                    <span className="text-[9px] text-slate-500">Channel: {historyInvoice.payment?.paymentMethod || 'Online Checkout'}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Cleared */}
+              {historyInvoice.status === 'PAID' && (
+                <div className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <strong className="text-slate-200 block text-xs">Clearance Verification Verified</strong>
+                    <span className="text-slate-450 block">Cleared: {new Date(historyInvoice.payment.paymentDate).toLocaleString()}</span>
+                    <span className="text-[9px] text-slate-500">Receipt No: {historyInvoice.payment.transactionId}</span>
+                  </div>
+                </div>
+              )}
+
+              {historyInvoice.status === 'UNPAID' && (
+                <div className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <strong className="text-rose-400 block text-xs">Awaiting Settlement</strong>
+                    <span className="text-slate-400 block">Due Date: {new Date(historyInvoice.dueDate).toLocaleDateString()}</span>
+                    <span className="text-[9px] text-rose-500/80">Reminder sent automatically to parent dashboard</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setHistoryInvoice(null)}
+                className="px-3 py-1 bg-slate-900 hover:bg-slate-850 text-slate-300 rounded-lg text-[10px] font-bold cursor-pointer"
+              >
+                Close Audit Log
+              </button>
+            </div>
           </GlassCard>
         </div>
       )}

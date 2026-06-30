@@ -14,13 +14,15 @@ import {
   User as UserIcon, ShieldAlert, CheckCircle, XCircle, AlertCircle, UsersRound, Clock,
   BookOpen, Play, Download, MessageCircle, Paperclip,
   Filter, Search, ChevronDown, ChevronRight, ExternalLink,
-  BookMarked, Layers, Home, Coffee, Utensils, ClipboardList, Check, X, Bell, Mail
+  BookMarked, Layers, Home, Coffee, Utensils, ClipboardList, Check, X, Bell, Mail,
+  Printer, Share2, History
 } from 'lucide-react';
 import PremiumLock from '../components/PremiumLock';
 import { subscriptionPlans, isTabLocked, isTabLockedByEntitlements } from '../services/subscriptionConfig';
 import { useFeatureEntitlements } from '../hooks/useFeatureEntitlements';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 import { downloadReceiptPdf } from '../components/ReceiptTemplate';
+import { downloadInvoicePdf } from '../components/InvoiceTemplate';
 import { 
   downloadStudentIdCardPdf, downloadAdmissionFormPdf, 
   downloadBonafideCertificatePdf 
@@ -102,6 +104,9 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   const [academicRecord, setAcademicRecord] = useState<any | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [selectedInvoice, setSelectedInvoice] = useState<any | null>(null);
+  const [invoiceFilter, setInvoiceFilter] = useState<'ALL' | 'PAID' | 'PENDING' | 'OVERDUE'>('ALL');
+  const [historyInvoice, setHistoryInvoice] = useState<any | null>(null);
   const [quizzes, setQuizzes] = useState<{ quiz: Quiz; attempt?: QuizAttempt }[]>([]);
 
   // Dynamic Library & Transport States
@@ -1561,86 +1566,251 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                   {/* Main Grid: Left Outstanding Invoices, Right Quick Actions & Payment Instructions */}
                   <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
                     
-                    {/* Left Panel: Outstanding Invoices */}
+                    {/* Left Panel: Invoices & Child Selector */}
                     <div className="lg:col-span-8 space-y-4">
+                      {/* Multi-Child Selector Chips */}
+                      {assignedStudents.length > 1 && (
+                        <GlassCard className="p-4 space-y-3">
+                          <span className="text-[10px] uppercase font-bold tracking-widest text-slate-500 block">Select Child Profile</span>
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                            {assignedStudents.map(s => {
+                              const isActive = selectedStudent === s.id;
+                              return (
+                                <div
+                                  key={s.id}
+                                  onClick={() => setSelectedStudent(s.id)}
+                                  className={`p-3 rounded-xl border cursor-pointer flex items-center gap-3 transition-all ${
+                                    isActive
+                                      ? 'bg-brand-500/10 border-brand-500/40 shadow-lg shadow-brand-500/5'
+                                      : 'bg-slate-900/40 border-slate-850 hover:bg-slate-900/60'
+                                  }`}
+                                >
+                                  <div className="w-8 h-8 rounded-full bg-slate-800 flex items-center justify-center font-bold text-slate-350 text-xs">
+                                    {s.userDetails?.firstName?.substring(0, 1)}
+                                  </div>
+                                  <div className="min-w-0">
+                                    <span className="block text-xs font-bold text-slate-200 truncate">{s.userDetails?.firstName} {s.userDetails?.lastName}</span>
+                                    <span className="block text-[10px] text-slate-550 truncate">{s.className} | Adm: {s.admissionNumber}</span>
+                                  </div>
+                                </div>
+                              );
+                            })}
+                          </div>
+                        </GlassCard>
+                      )}
+
                       <GlassCard className="p-5 space-y-4">
-                        <div className="flex justify-between items-center pb-2 border-b border-slate-850">
+                        <div className="flex flex-col sm:flex-row justify-between sm:items-center pb-2 border-b border-slate-850 gap-3">
                           <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
                             Outstanding Invoices
                             <span className="px-2 py-0.5 text-[10px] font-bold rounded-full bg-rose-500/15 text-rose-400 border border-rose-500/20">
                               {(academicRecord?.fees || []).filter((f: any) => f.status !== 'PAID').length}
                             </span>
                           </h4>
-                          <button
-                            onClick={() => {
-                              const el = document.getElementById('recent-payments-section');
-                              if (el) el.scrollIntoView({ behavior: 'smooth' });
-                            }}
-                            className="text-xs font-bold text-brand-400 hover:text-brand-300 transition-colors flex items-center gap-1"
-                          >
-                            View All Invoices &rarr;
-                          </button>
+                          
+                          {/* Filter chips */}
+                          <div className="flex flex-wrap gap-1.5">
+                            {(['ALL', 'PAID', 'PENDING', 'OVERDUE'] as const).map(f => (
+                              <button
+                                key={f}
+                                onClick={() => setInvoiceFilter(f)}
+                                className={`px-2.5 py-0.5 rounded-lg text-[9px] font-bold uppercase transition-all ${
+                                  invoiceFilter === f
+                                    ? 'bg-brand-600 text-white shadow-lg'
+                                    : 'bg-slate-900/40 text-slate-450 border border-slate-850 hover:text-slate-200'
+                                }`}
+                              >
+                                {f}
+                              </button>
+                            ))}
+                          </div>
                         </div>
 
-                        <div className="space-y-3">
-                          {(academicRecord?.fees || []).filter((f: any) => f.status !== 'PAID').length === 0 ? (
-                            <div className="text-center py-10 text-slate-500 text-xs">
-                              No outstanding invoices. All fees are paid!
-                            </div>
-                          ) : (
-                            (academicRecord?.fees || []).filter((f: any) => f.status !== 'PAID').map((f: any, idx: number) => {
-                              const studentProfile = academicRecord?.studentProfile || {};
+                        <div className="space-y-4">
+                          {(() => {
+                            const rawFees = academicRecord?.fees || [];
+                            if (rawFees.length === 0) {
                               return (
-                                <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-slate-800/80 rounded-2xl flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 transition-all duration-200">
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-2">
-                                      <span className={`text-[9.5px] font-black uppercase px-2 py-0.5 rounded border ${
-                                        f.status === 'REJECTED'
-                                          ? 'bg-rose-500/10 border-rose-500/25 text-rose-400 font-bold'
-                                          : f.status === 'PENDING'
-                                            ? 'bg-amber-500/10 border-amber-500/25 text-amber-400 font-bold'
-                                            : f.status === 'UNPAID'
-                                              ? 'bg-red-500/10 border-red-500/25 text-red-400 font-bold'
-                                              : 'bg-red-500/10 border-red-500/25 text-red-400 font-bold'
-                                      }`}>
-                                        {f.status === 'UNPAID' ? 'UNPAID' : f.status}
-                                      </span>
-                                      {f.status === 'REJECTED' && (
-                                        <span className="text-[9.5px] font-semibold text-rose-400 bg-rose-500/5 px-2 py-0.5 rounded border border-rose-500/10">
-                                          Verification Failed
+                                <div className="text-center py-10 text-slate-500 text-xs">
+                                  No invoices mapped for the selected child.
+                                </div>
+                              );
+                            }
+
+                            const mappedInvoices = rawFees.map((f: any) => {
+                              const isPaid = f.status === 'PAID';
+                              const isOverdue = !isPaid && new Date(f.dueDate).getTime() < Date.now();
+                              const status = isPaid ? 'PAID' : isOverdue ? 'OVERDUE' : (f.status === 'PENDING' ? 'PENDING' : 'UNPAID');
+                              
+                              const invoiceNumber = f.paymentId 
+                                ? `INV-${new Date(f.dueDate).getFullYear()}-${f.paymentId.substring(0, 6).toUpperCase()}` 
+                                : `INV-${new Date(f.dueDate).getFullYear()}-${f.id.substring(0, 6).toUpperCase()}`;
+
+                              return {
+                                id: f.id,
+                                structure: f,
+                                payment: {
+                                  status: f.status,
+                                  paymentDate: f.paymentDate,
+                                  paymentMethod: f.paymentMethod,
+                                  transactionId: f.utrNumber || f.paymentId
+                                },
+                                invoiceNumber,
+                                status,
+                                description: f.description,
+                                dueDate: f.dueDate,
+                                amount: Number(f.amount),
+                                billDate: new Date(new Date(f.dueDate).getTime() - 14 * 24 * 60 * 60 * 1000).toISOString()
+                              };
+                            });
+
+                            const filteredInvoices = mappedInvoices.filter((inv: any) => {
+                              if (invoiceFilter === 'ALL') return true;
+                              return inv.status === invoiceFilter;
+                            });
+
+                            if (filteredInvoices.length === 0) {
+                              return (
+                                <div className="text-center py-10 text-slate-550 text-xs">
+                                  No invoices matching the selected filter.
+                                </div>
+                              );
+                            }
+
+                            return filteredInvoices.map((inv: any, idx: number) => {
+                              const stObj = assignedStudents.find(s => s.id === selectedStudent);
+                              const parentUser = session?.user;
+
+                              const invoicePayload = {
+                                schoolId: stObj?.schoolId || '',
+                                schoolName: studentSchool?.name || '',
+                                schoolAddress: studentSchool?.address || '',
+                                schoolPhone: studentSchool?.phone || '',
+                                schoolEmail: studentSchool?.email || '',
+                                schoolWebsite: (studentSchool as any)?.website || '',
+                                logoUrl: studentSchool?.logoUrl || '',
+                                sealUrl: studentSchool?.sealUrl || '',
+                                currencySymbol: studentSchool?.currencySymbol || '$',
+                                invoiceNumber: inv.invoiceNumber,
+                                billDate: inv.billDate,
+                                dueDate: inv.dueDate,
+                                paymentDate: inv.payment?.paymentDate || undefined,
+                                billingCycle: new Date(inv.billDate).toLocaleString('default', { month: 'long', year: 'numeric' }),
+                                academicYear: '2026 - 27',
+                                paymentMethod: inv.payment?.paymentMethod || undefined,
+                                transactionId: inv.payment?.transactionId || undefined,
+                                status: inv.status === 'PAID' ? 'PAID' : (inv.status === 'PENDING' ? 'PENDING' : 'UNPAID') as any,
+                                studentName: stObj ? `${stObj.userDetails?.firstName} ${stObj.userDetails?.lastName}` : 'Student',
+                                studentClass: stObj?.className || 'N/A',
+                                studentRollNo: stObj?.rollNumber ? String(stObj.rollNumber) : 'N/A',
+                                studentAdmissionNo: stObj?.admissionNumber ? String(stObj.admissionNumber) : 'N/A',
+                                studentId: selectedStudent || '',
+                                parentName: parentUser ? `${parentUser.firstName} ${parentUser.lastName}` : 'Guardian',
+                                parentPhone: parentUser?.phone || 'N/A',
+                                parentEmail: parentUser?.email || 'N/A',
+                                parentRelation: 'Parent',
+                                amount: inv.amount
+                              };
+
+                              return (
+                                <div key={idx} className="p-4 bg-slate-900/30 border border-slate-850 hover:border-slate-800 rounded-2xl flex flex-col justify-between gap-4 transition-all duration-200">
+                                  <div className="flex justify-between items-start gap-4">
+                                    <div className="space-y-1">
+                                      <div className="flex items-center gap-2">
+                                        <span className={`text-[9px] font-extrabold tracking-wider px-2 py-0.5 rounded uppercase border ${
+                                          inv.status === 'PAID'
+                                            ? 'bg-green-500/10 border-green-500/25 text-green-400'
+                                            : inv.status === 'PENDING'
+                                              ? 'bg-amber-500/10 border-amber-500/25 text-amber-400'
+                                              : 'bg-red-500/10 border-red-500/25 text-red-400'
+                                        }`}>
+                                          {inv.status}
                                         </span>
-                                      )}
-                                    </div>
-                                    <h5 className="font-bold text-xs text-slate-200 mt-1">{f.description}</h5>
-                                    <p className="text-[10px] text-slate-450 font-sans">
-                                      {studentProfile.fullName || 'Student'} ({studentProfile.className || 'N/A'})
-                                    </p>
-                                    <p className="text-[9.5px] text-slate-500 font-mono">Due Date: {new Date(f.dueDate).toLocaleDateString()}</p>
-                                    
-                                    {f.status === 'REJECTED' && f.rejectionReason && (
-                                      <div className="mt-2 p-2 bg-red-500/5 border border-red-500/10 rounded-xl text-[10px] text-red-400 flex items-start gap-1">
-                                        <AlertCircle size={12} className="shrink-0 mt-0.5" />
-                                        <div>
-                                          <span className="font-bold">Rejection Reason: </span>
-                                          {f.rejectionReason}
-                                        </div>
+                                        <span className="text-[9.5px] font-mono text-slate-500">#{inv.invoiceNumber}</span>
                                       </div>
-                                    )}
+                                      <h4 className="font-bold text-slate-200 text-xs mt-2">{inv.description}</h4>
+                                      <p className="text-[10px] text-slate-450">
+                                        {stObj?.userDetails?.firstName} {stObj?.userDetails?.lastName} ({stObj?.className})
+                                      </p>
+                                      <div className="flex flex-wrap gap-x-4 gap-y-1 text-[9.5px] text-slate-550 font-mono mt-1">
+                                        <span>Bill Date: {new Date(inv.billDate).toLocaleDateString()}</span>
+                                        <span>Due: {new Date(inv.dueDate).toLocaleDateString()}</span>
+                                      </div>
+                                    </div>
+
+                                    <div className="text-right shrink-0">
+                                      <span className="text-sm font-extrabold text-slate-100">
+                                        ₹{inv.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
+                                      </span>
+                                      <p className="text-[9px] text-slate-555 mt-1">
+                                        {inv.status === 'PAID' ? `Verified` : 'Awaiting Settlement'}
+                                      </p>
+                                    </div>
                                   </div>
 
-                                  <div className="flex items-center gap-4 sm:text-right sm:flex-col sm:items-end sm:gap-2 justify-between">
-                                    <span className="text-sm font-extrabold text-slate-200">
-                                      ₹{f.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })}
-                                    </span>
-                                    {f.status === 'PENDING' ? (
-                                      <span className="px-3 py-1 bg-amber-500/10 border border-amber-500/20 text-amber-400 rounded-lg text-[10px] font-bold uppercase tracking-wider">
-                                        Awaiting Verification
-                                      </span>
-                                    ) : f.status === 'UNPAID' || f.status === 'REJECTED' ? (
-                                      <div className="flex items-center gap-2">
+                                  {/* Invoice Actions */}
+                                  <div className="border-t border-slate-850/60 pt-3 flex flex-wrap justify-between items-center gap-3">
+                                    <div className="flex items-center gap-2">
+                                      <button
+                                        onClick={() => downloadInvoicePdf(invoicePayload, false)}
+                                        className="px-2.5 py-1 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-350 hover:text-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                        title="Download Invoice A4 PDF"
+                                      >
+                                        <Download size={11} />
+                                        Invoice
+                                      </button>
+                                      {inv.status === 'PAID' && (
+                                        <button
+                                          onClick={() => downloadInvoicePdf(invoicePayload, true)}
+                                          className="px-2.5 py-1 bg-brand-500/10 hover:bg-brand-500/20 text-brand-400 border border-brand-500/25 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                          title="Download Payment Receipt PDF"
+                                        >
+                                          <FileText size={11} />
+                                          Receipt
+                                        </button>
+                                      )}
+                                      <button
+                                        onClick={async () => {
+                                          const shareUrl = `https://www.aegiserp.xyz/verify/invoice/${inv.invoiceNumber}`;
+                                          if (navigator.share) {
+                                            await navigator.share({
+                                              title: `Invoice ${inv.invoiceNumber}`,
+                                              url: shareUrl
+                                            }).catch(() => {});
+                                          } else {
+                                            navigator.clipboard.writeText(shareUrl);
+                                            alert('Invoice verification link copied to clipboard!');
+                                          }
+                                        }}
+                                        className="px-2.5 py-1 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-350 hover:text-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                        title="Share Invoice Registry Link"
+                                      >
+                                        <Share2 size={11} />
+                                        Share
+                                      </button>
+                                      <button
+                                        onClick={() => downloadInvoicePdf(invoicePayload, false)}
+                                        className="px-2.5 py-1 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-350 hover:text-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                        title="Print Invoice"
+                                      >
+                                        <Printer size={11} />
+                                        Print
+                                      </button>
+                                      <button
+                                        onClick={() => setHistoryInvoice(inv)}
+                                        className="px-2.5 py-1 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-350 hover:text-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"
+                                        title="View Payment Audit History"
+                                      >
+                                        <History size={11} />
+                                        History
+                                      </button>
+                                    </div>
+
+                                    <div className="flex items-center gap-2">
+                                      {(inv.status === 'UNPAID' || inv.status === 'OVERDUE') && (
                                         <button
                                           onClick={() => {
-                                            setSelectedFee(f);
+                                            setSelectedFee(inv.structure);
                                             setShowPayModal(true);
                                             if (schoolPaymentSettings?.qrPaymentEnabled && schoolPaymentSettings?.showQrToParents) {
                                               setPayModalTab('qr');
@@ -1650,17 +1820,24 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                               setPayModalTab('bank');
                                             }
                                           }}
-                                          className="px-3 py-1.5 bg-brand-500 hover:bg-brand-600 active:scale-95 text-white font-bold rounded-xl text-xs transition-all flex items-center gap-1.5"
+                                          className="px-3 py-1 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-md shadow-emerald-500/10"
                                         >
                                           Pay Now
                                         </button>
-                                      </div>
-                                    ) : null}
+                                      )}
+                                      <button
+                                        onClick={() => setSelectedInvoice(invoicePayload)}
+                                        className="px-3 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all active:scale-95 shadow-md shadow-brand-500/10"
+                                      >
+                                        <Eye size={11} />
+                                        View Detail
+                                      </button>
+                                    </div>
                                   </div>
                                 </div>
                               );
-                            })
-                          )}
+                            });
+                          })()}
                         </div>
 
                         <div className="pt-2 flex justify-center">
@@ -1669,9 +1846,9 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                               const el = document.getElementById('recent-payments-section');
                               if (el) el.scrollIntoView({ behavior: 'smooth' });
                             }}
-                            className="text-xs font-bold text-slate-400 hover:text-slate-300 transition-colors"
+                            className="text-xs font-bold text-slate-400 hover:text-slate-350 transition-colors"
                           >
-                            View All Invoices & Payment History
+                            View All Invoices & Payment History &rarr;
                           </button>
                         </div>
                       </GlassCard>
@@ -3871,6 +4048,303 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
               </div>
             )}
 
+      {/* Invoice Detail Modal (Reference Layout Mock) */}
+      {selectedInvoice && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-start justify-center overflow-y-auto z-50 p-4">
+          <div className="bg-white text-slate-800 rounded-2xl max-w-[800px] w-full my-8 shadow-2xl border border-slate-200 overflow-hidden animate-fade-in font-sans">
+            {/* Modal Controls Bar */}
+            <div className="bg-slate-900 text-slate-100 p-4 flex justify-between items-center border-b border-slate-850">
+              <h3 className="font-bold text-xs uppercase tracking-wider">Invoice Registry Preview</h3>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => downloadInvoicePdf(selectedInvoice, false)}
+                  className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10px] font-bold flex items-center gap-1 active:scale-95 transition-all cursor-pointer"
+                >
+                  <Download size={11} /> Download A4 PDF
+                </button>
+                <button
+                  onClick={() => setSelectedInvoice(null)}
+                  className="p-1 text-slate-400 hover:text-slate-200 cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+            </div>
+
+            {/* A4 Reference Invoice Wrapper */}
+            <div className="p-8 space-y-6" style={{ minHeight: '800px' }}>
+              {/* Header Branding */}
+              <div className="flex justify-between items-start border-b-2 border-emerald-500 pb-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-14 h-14 border-radius-12 bg-emerald-50 border border-emerald-200 flex items-center justify-center font-bold text-emerald-700 text-2xl">
+                    {selectedInvoice.logoUrl ? (
+                      <img src={selectedInvoice.logoUrl} className="w-full h-full object-cover rounded-xl" />
+                    ) : selectedInvoice.schoolName.substring(0,1)}
+                  </div>
+                  <div>
+                    <h2 className="text-base font-extrabold text-emerald-900 uppercase leading-tight">{selectedInvoice.schoolName}</h2>
+                    <p className="text-[9px] text-emerald-600 font-semibold tracking-wider uppercase mt-1">Reference Invoice Layout</p>
+                  </div>
+                </div>
+
+                <div className="text-right">
+                  <span className={`text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full ${
+                    selectedInvoice.status === 'PAID' ? 'bg-emerald-500/10 text-emerald-600 border border-emerald-200' : 'bg-amber-500/10 text-amber-600 border border-amber-200'
+                  }`}>
+                    {selectedInvoice.status}
+                  </span>
+                  <h3 className="text-sm font-extrabold text-slate-900 mt-2 uppercase">Invoice</h3>
+                  <p className="text-[10px] font-mono text-slate-500 mt-0.5">#{selectedInvoice.invoiceNumber}</p>
+                </div>
+              </div>
+
+              {/* School Details & Invoice Metadata */}
+              <div className="grid grid-cols-2 gap-6 text-[10px] text-slate-650">
+                <div className="space-y-1">
+                  <p>📍 {selectedInvoice.schoolAddress}</p>
+                  <p>📞 {selectedInvoice.schoolPhone}</p>
+                  <p>✉️ {selectedInvoice.schoolEmail}</p>
+                  {selectedInvoice.schoolWebsite && <p>🌐 {selectedInvoice.schoolWebsite}</p>}
+                  <p className="text-[8px] text-slate-500 mt-2">GSTIN: 09ABCDE1234F1ZS | Affiliation: 2130456 | UDISE: 091234567890</p>
+                </div>
+                <div className="border-l border-emerald-50 pl-5 grid grid-cols-2 gap-x-2 gap-y-1 text-slate-700 font-medium">
+                  <span className="text-slate-500 font-bold">Bill Date:</span>
+                  <span>{new Date(selectedInvoice.billDate).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                  
+                  <span className="text-slate-500 font-bold">Due Date:</span>
+                  <span>{new Date(selectedInvoice.dueDate).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+
+                  {selectedInvoice.status === 'PAID' && selectedInvoice.paymentDate && (
+                    <>
+                      <span className="text-slate-500 font-bold">Payment Date:</span>
+                      <span>{new Date(selectedInvoice.paymentDate).toLocaleDateString(undefined, { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+                    </>
+                  )}
+
+                  <span className="text-slate-500 font-bold">Billing Cycle:</span>
+                  <span>{selectedInvoice.billingCycle}</span>
+
+                  <span className="text-slate-500 font-bold">Academic Year:</span>
+                  <span>{selectedInvoice.academicYear}</span>
+                </div>
+              </div>
+
+              {/* Billed To / Parent Details Split */}
+              <div className="grid grid-cols-2 gap-6 border-t border-b border-slate-100 py-4">
+                <div>
+                  <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-wide mb-2">Billed To</h4>
+                  <div className="flex gap-2.5 items-center">
+                    <div className="w-10 h-10 rounded-full bg-emerald-50 border border-emerald-200 flex items-center justify-center text-emerald-700 font-extrabold text-sm overflow-hidden">
+                      {selectedInvoice.studentPhoto ? (
+                        <img src={selectedInvoice.studentPhoto} className="w-full h-full object-cover" />
+                      ) : selectedInvoice.studentName.substring(0, 1)}
+                    </div>
+                    <div className="text-[10px] line-height-1.3 text-slate-650">
+                      <strong className="text-slate-900 uppercase block font-bold">{selectedInvoice.studentName}</strong>
+                      <p>Class: {selectedInvoice.studentClass}</p>
+                      <p>Roll No: {selectedInvoice.studentRollNo}</p>
+                      <p className="font-mono text-slate-500">Student ID: {selectedInvoice.studentId}</p>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="border-l border-slate-50 pl-5">
+                  <h4 className="text-[10px] font-black text-emerald-700 uppercase tracking-wide mb-2">Parent / Guardian</h4>
+                  <div className="text-[10px] line-height-1.3 text-slate-650">
+                    <strong className="text-slate-900 block font-bold">{selectedInvoice.parentName} <span className="text-[8.5px] font-normal text-slate-500">({selectedInvoice.parentRelation})</span></strong>
+                    <p className="mt-1">📞 {selectedInvoice.parentPhone}</p>
+                    <p>✉️ {selectedInvoice.parentEmail}</p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Fee Component breakdown table */}
+              <div>
+                <table className="w-full text-left text-[10px] border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-900 border-b-2 border-slate-200 font-bold uppercase">
+                      <th className="py-2 px-3 width-6">#</th>
+                      <th className="py-2 px-3">Description</th>
+                      <th className="py-2 px-3 text-right">Amount</th>
+                      <th className="py-2 px-3 text-right">Discount</th>
+                      <th className="py-2 px-3 text-right">Late Fee</th>
+                      <th className="py-2 px-3 text-right">Tax</th>
+                      <th className="py-2 px-3 text-right">Total</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-600">
+                    {(selectedInvoice.feeItems && selectedInvoice.feeItems.length > 0
+                      ? selectedInvoice.feeItems
+                      : [{ description: selectedInvoice.description || 'Institutional Tuition Fee', amount: selectedInvoice.amount }]
+                    ).map((item: any, itemIdx: number) => {
+                      const itemAmount = Number(item.amount) || 0;
+                      const itemDiscount = Number(item.discount) || 0;
+                      const itemLateFee = Number(item.lateFee) || 0;
+                      const itemTax = Number(item.tax) || 0;
+                      const itemTotal = itemAmount - itemDiscount + itemLateFee + itemTax;
+                      return (
+                        <tr key={itemIdx}>
+                          <td className="py-2.5 px-3">{itemIdx + 1}</td>
+                          <td className="py-2.5 px-3 font-semibold text-slate-900">{item.description}</td>
+                          <td className="py-2.5 px-3 text-right">{itemAmount.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right">{itemDiscount.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right">{itemLateFee.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right">{itemTax.toFixed(2)}</td>
+                          <td className="py-2.5 px-3 text-right font-bold text-slate-900">{itemTotal.toFixed(2)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Totals & QR Block */}
+              <div className="flex justify-between items-start border-t border-slate-100 pt-4 gap-6">
+                <div className="max-w-[50%]">
+                  <h5 className="text-[9px] font-bold text-slate-900 uppercase">Amount In Words</h5>
+                  <p className="text-[10px] text-emerald-700 italic font-semibold mt-1">
+                    Rupees {selectedInvoice.amount.toLocaleString('en-IN')} Only
+                  </p>
+                </div>
+
+                <div className="w-[200px] text-[10px] grid grid-cols-2 gap-y-1.5 text-right font-semibold text-slate-700">
+                  <span className="text-slate-500 font-normal">Subtotal</span>
+                  <span>{selectedInvoice.currencySymbol}{selectedInvoice.amount.toFixed(2)}</span>
+
+                  <span className="text-slate-500 font-normal">Discount</span>
+                  <span>0.00</span>
+
+                  <span className="text-slate-500 font-normal">Tax</span>
+                  <span>0.00</span>
+
+                  <span className="text-emerald-700 font-extrabold text-[11px] border-t border-slate-100 pt-1.5">Grand Total</span>
+                  <span className="text-emerald-700 font-extrabold text-[11px] border-t border-slate-100 pt-1.5">{selectedInvoice.currencySymbol}{selectedInvoice.amount.toFixed(2)}</span>
+                </div>
+              </div>
+
+              {/* Signature Footer & Seal */}
+              <div className="flex justify-between items-center border-t border-slate-100 pt-4">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 border border-slate-200">
+                    <img src={`https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=https://www.aegiserp.xyz/verify/invoice/${selectedInvoice.invoiceNumber}`} className="w-full h-full" />
+                  </div>
+                  <div className="text-[8px] text-slate-500 leading-tight">
+                    <strong className="text-slate-900 uppercase font-bold">QR Registry Verification</strong>
+                    <p className="mt-0.5">This invoice is dynamically catalogued in the school blockchain.</p>
+                  </div>
+                </div>
+
+                <div className="text-center w-[120px] text-[9px] relative font-semibold text-slate-500">
+                  {selectedInvoice.sealUrl && (
+                    <img src={selectedInvoice.sealUrl} className="absolute left-[38px] top-[-20px] w-10 h-10 opacity-70 pointer-events-none" />
+                  )}
+                  <span className="font-serif italic text-emerald-800 text-xs block h-6 leading-6">School Principal</span>
+                  <span className="border-t border-slate-200 pt-1 block uppercase tracking-wide">Principal / Registrar</span>
+                </div>
+              </div>
+
+              {/* Disclaimer */}
+              <div className="p-2.5 bg-slate-50 border border-slate-200 text-center rounded-xl text-[9px] text-slate-500 leading-normal">
+                This is a secure system-generated billing invoice. Does not require manual physical signature.
+              </div>
+
+              {/* Watermark */}
+              <div className="border-t border-dashed border-slate-200 pt-2.5 flex justify-between items-center text-[8px] text-slate-400 font-bold uppercase tracking-wider">
+                <div className="flex items-center gap-1.5">
+                  <img src="/aegis-logo.png" className="w-3.5 h-3.5 object-contain" />
+                  <span>Powered by AEGIS ERP – Institutional Cloud</span>
+                </div>
+                <span>&copy; 2026 AEGIS ERP. All rights reserved.</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Invoice History Log Timeline Modal */}
+      {historyInvoice && (
+        <div className="fixed inset-0 bg-slate-950/80 backdrop-blur-xs flex items-center justify-center z-50 p-4">
+          <GlassCard className="max-w-md w-full p-5 space-y-4 animate-fade-in">
+            <div className="flex justify-between items-center border-b border-slate-850 pb-2.5">
+              <h3 className="font-bold text-slate-100 text-xs uppercase tracking-wider flex items-center gap-1.5">
+                <History size={14} className="text-brand-500" /> Payment Audit Timeline
+              </h3>
+              <button
+                onClick={() => setHistoryInvoice(null)}
+                className="text-slate-400 hover:text-slate-200 cursor-pointer"
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            <div className="space-y-4 py-2 font-mono text-[10px]">
+              {/* Step 1: Invoiced */}
+              <div className="flex gap-3">
+                <div className="flex flex-col items-center">
+                  <div className="w-2.5 h-2.5 rounded-full bg-brand-500" />
+                  <div className="w-0.5 h-10 bg-slate-800" />
+                </div>
+                <div className="space-y-0.5">
+                  <strong className="text-slate-200 block text-xs">Fee Invoice Published</strong>
+                  <span className="text-slate-450 block">Invoiced: {new Date(historyInvoice.billDate).toLocaleString()}</span>
+                  <span className="text-[9px] text-slate-500">Ref: INV_GEN_AUDIT_LOG_SUCCESS</span>
+                </div>
+              </div>
+
+              {/* Step 2: Verification Pending */}
+              {historyInvoice.status !== 'UNPAID' && (
+                <div className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className="w-2.5 h-2.5 rounded-full bg-amber-500" />
+                    {historyInvoice.status === 'PAID' && <div className="w-0.5 h-10 bg-slate-800" />}
+                  </div>
+                  <div className="space-y-0.5">
+                    <strong className="text-slate-200 block text-xs">Payment Deposited / Submitted</strong>
+                    <span className="text-slate-450 block">Submitted: {new Date(historyInvoice.payment?.paymentDate || historyInvoice.dueDate).toLocaleString()}</span>
+                    <span className="text-[9px] text-slate-500">Channel: {historyInvoice.payment?.paymentMethod || 'Online Checkout'}</span>
+                  </div>
+                </div>
+              )}
+
+              {/* Step 3: Cleared */}
+              {historyInvoice.status === 'PAID' && (
+                <div className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className="w-2.5 h-2.5 rounded-full bg-green-500" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <strong className="text-slate-200 block text-xs">Clearance Verification Verified</strong>
+                    <span className="text-slate-450 block">Cleared: {new Date(historyInvoice.payment.paymentDate).toLocaleString()}</span>
+                    <span className="text-[9px] text-slate-500">Receipt No: {historyInvoice.payment.transactionId}</span>
+                  </div>
+                </div>
+              )}
+
+              {historyInvoice.status === 'UNPAID' && (
+                <div className="flex gap-3">
+                  <div className="flex flex-col items-center">
+                    <div className="w-2.5 h-2.5 rounded-full bg-red-500 animate-pulse" />
+                  </div>
+                  <div className="space-y-0.5">
+                    <strong className="text-rose-400 block text-xs">Awaiting Settlement</strong>
+                    <span className="text-slate-400 block">Due Date: {new Date(historyInvoice.dueDate).toLocaleDateString()}</span>
+                    <span className="text-[9px] text-rose-500/80">Reminder sent automatically to parent dashboard</span>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                onClick={() => setHistoryInvoice(null)}
+                className="px-3 py-1 bg-slate-900 hover:bg-slate-850 text-slate-350 rounded-lg text-[10px] font-bold cursor-pointer"
+              >
+                Close Audit Log
+              </button>
+            </div>
+          </GlassCard>
+        </div>
+      )}
           </div>
         )
       )}

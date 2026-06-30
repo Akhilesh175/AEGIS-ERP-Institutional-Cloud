@@ -820,6 +820,41 @@ export const App: React.FC = () => {
     );
   }
 
+  if (session?.user?.role === 'SUPER_ADMIN') {
+    const hash = window.location.hash.toLowerCase();
+    if (
+      hash.includes('fees') ||
+      hash.includes('invoice') ||
+      hash.includes('receipt') ||
+      hash.includes('financial')
+    ) {
+      return (
+        <div className="min-h-screen bg-slate-950 flex flex-col items-center justify-center p-6 text-center">
+          <div className="max-w-md w-full bg-slate-900 border border-red-500/30 rounded-3xl p-8 space-y-6 shadow-2xl">
+            <div className="w-16 h-16 bg-red-500/10 border border-red-500/30 rounded-2xl flex items-center justify-center text-red-500 mx-auto">
+              <ShieldAlert size={36} />
+            </div>
+            <div className="space-y-2">
+              <h1 className="text-xl font-extrabold text-slate-100 font-mono tracking-tight">HTTP 403 Forbidden</h1>
+              <p className="text-xs text-slate-400 leading-relaxed">
+                Access Denied. Super Admin cannot access institution financial records.
+              </p>
+            </div>
+            <button
+              onClick={() => {
+                window.location.hash = 'dashboard';
+                window.location.reload();
+              }}
+              className="w-full py-2.5 bg-slate-950 hover:bg-slate-850 border border-slate-800 text-slate-350 hover:text-slate-200 rounded-xl text-xs font-bold transition-all cursor-pointer"
+            >
+              Return to Platform Registry
+            </button>
+          </div>
+        </div>
+      );
+    }
+  }
+
   if (activeTab.startsWith('verify/marksheet/')) {
     const code = activeTab.replace('verify/marksheet/', '');
     return <MarksheetVerificationPage code={code} onBack={() => { window.location.hash = 'dashboard'; setActiveTab('dashboard'); }} />;

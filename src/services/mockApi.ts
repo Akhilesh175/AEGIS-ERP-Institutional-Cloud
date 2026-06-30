@@ -16,6 +16,7 @@ import {
 } from '../types';
 import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
+import { useStore } from '../store/useStore';
 
 // Helper to simulate network latency
 const delay = (ms = 400) => new Promise(resolve => setTimeout(resolve, ms));
@@ -3613,6 +3614,25 @@ export const mockApi = {
 
   async studentGetFees(studentId: string): Promise<{ structure: FeeStructure; payment?: FeePayment }[]> {
     await delay();
+    const sessionUser = useStore.getState().session?.user;
+    if (sessionUser) {
+      if (sessionUser.role === 'STUDENT') {
+        const mappedStudent = mockDb.students.find(s => s.userId === sessionUser.id);
+        if (mappedStudent && mappedStudent.id !== studentId) {
+          throw new Error('Access Denied: You can only view your own financial records.');
+        }
+      } else if (sessionUser.role === 'PARENT') {
+        const parentRecord = mockDb.parents.find(p => p.userId === sessionUser.id);
+        if (parentRecord) {
+          const isMapped = mockDb.parentStudentMappings.some(
+            m => m.parentId === parentRecord.id && m.studentId === studentId
+          );
+          if (!isMapped) {
+            throw new Error('Access Denied: You can only view invoices of your assigned children.');
+          }
+        }
+      }
+    }
     const student = mockDb.students.find(s => s.id === studentId);
     if (!student || !student.classId) return [];
 
@@ -7958,6 +7978,10 @@ export const mockApi = {
 
   async adminGetFeeStructures(): Promise<FeeStructure[]> {
     await delay();
+    const sessionUser = useStore.getState().session?.user;
+    if (sessionUser?.role === 'SUPER_ADMIN') {
+      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to access institution billing or fee structure data.');
+    }
     const schoolId = await getAdminSchoolId();
     await this.syncFeeStructuresData(schoolId);
     return mockDb.feeStructures.filter(fs => fs.schoolId === schoolId);
@@ -8105,6 +8129,10 @@ export const mockApi = {
 
   async adminGetFeePayments(): Promise<FeePayment[]> {
     await delay();
+    const sessionUser = useStore.getState().session?.user;
+    if (sessionUser?.role === 'SUPER_ADMIN') {
+      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to access institution payment or invoice ledger data.');
+    }
     const schoolId = await getAdminSchoolId();
     await this.syncFeePaymentsData(schoolId);
     
@@ -8126,8 +8154,12 @@ export const mockApi = {
   ): Promise<FeePayment> {
     await delay(600);
     const { data: admin } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
-    if (!admin || !['ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
-      throw new Error('Access Denied: Only School Admin and Finance Admin can record fee payments.');
+    if (!admin) throw new Error('[403 Forbidden] User not found.');
+    if (admin.role === 'SUPER_ADMIN') {
+      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to access billing or payment data.');
+    }
+    if (!['ADMIN', 'FINANCE_ADMIN'].includes(admin.role)) {
+      throw new Error('[403 Forbidden] Access Denied: Only School Admin and Finance Admin can record fee payments.');
     }
     if (admin.school_id) {
       await this.verifySchoolFeature(admin.school_id, 'billing');
@@ -8181,8 +8213,12 @@ export const mockApi = {
   async adminApproveFeePayment(adminId: string, paymentId: string): Promise<void> {
     await delay(300);
     const { data: admin } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
-    if (!admin || !['ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
-      throw new Error('Access Denied: Only School Admin and Finance Admin can approve fee payments.');
+    if (!admin) throw new Error('[403 Forbidden] User not found.');
+    if (admin.role === 'SUPER_ADMIN') {
+      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to access billing or payment data.');
+    }
+    if (!['ADMIN', 'FINANCE_ADMIN'].includes(admin.role)) {
+      throw new Error('[403 Forbidden] Access Denied: Only School Admin and Finance Admin can approve fee payments.');
     }
     if (admin.school_id) {
       await this.verifySchoolFeature(admin.school_id, 'billing');
@@ -8207,8 +8243,12 @@ export const mockApi = {
   async adminRejectFeePayment(adminId: string, paymentId: string): Promise<void> {
     await delay(300);
     const { data: admin } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
-    if (!admin || !['ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN'].includes(admin.role)) {
-      throw new Error('Access Denied: Only School Admin and Finance Admin can reject fee payments.');
+    if (!admin) throw new Error('[403 Forbidden] User not found.');
+    if (admin.role === 'SUPER_ADMIN') {
+      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to access billing or payment data.');
+    }
+    if (!['ADMIN', 'FINANCE_ADMIN'].includes(admin.role)) {
+      throw new Error('[403 Forbidden] Access Denied: Only School Admin and Finance Admin can reject fee payments.');
     }
     if (admin.school_id) {
       await this.verifySchoolFeature(admin.school_id, 'billing');
@@ -11556,6 +11596,11 @@ export const mockApi = {
 
   // --- Dedicated Finance Admin Helpers ---
   async fetchInvoices(schoolId: string): Promise<any[]> {
+    const session = useStore.getState().session;
+    const role = session?.user?.role;
+    if (role === 'STUDENT' || role === 'PARENT' || role === 'TEACHER' || role === 'COACH') {
+      throw new Error('Security Policy: Insufficient privileges to query institutional invoices ledger.');
+    }
     const { data, error } = await supabaseAdmin
       .from('invoices')
       .select('*, student:students(*, userDetails:users(*))')
@@ -12488,8 +12533,11 @@ export const mockApi = {
 
     const currentRole = dbErr || !dbUser ? operator?.role : dbUser.role;
     const normalizedRole = normalizeRole(currentRole || '');
-    if (normalizedRole !== 'FINANCE_ADMIN' && normalizedRole !== 'SUPER_ADMIN') {
-      throw new Error('Only Finance Admin is authorized to perform salary disbursement.');
+    if (normalizedRole === 'SUPER_ADMIN') {
+      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to disburse salary payouts.');
+    }
+    if (normalizedRole !== 'FINANCE_ADMIN') {
+      throw new Error('[403 Forbidden] Only Finance Admin is authorized to perform salary disbursement.');
     }
 
     // Duplicate Prevention Check
@@ -16579,8 +16627,11 @@ export const mockApi = {
     const { data: dbUser } = await supabaseAdmin.from('users').select('role').eq('id', adminId).maybeSingle();
     const currentRole = dbUser?.role || operator?.role;
     const normalizedRole = normalizeRole(currentRole || '');
-    if (normalizedRole !== 'FINANCE_ADMIN' && normalizedRole !== 'SUPER_ADMIN') {
-      throw new Error('Only Finance Admin is authorized to perform salary disbursement.');
+    if (normalizedRole === 'SUPER_ADMIN') {
+      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to access payroll records.');
+    }
+    if (normalizedRole !== 'FINANCE_ADMIN') {
+      throw new Error('[403 Forbidden] Only Finance Admin is authorized to create payroll records.');
     }
 
     const netSalary = Number(record.baseSalary || 0) + Number(record.allowances || 0) - Number(record.deductions || 0);
@@ -16678,8 +16729,11 @@ export const mockApi = {
     const { data: dbUser } = await supabaseAdmin.from('users').select('role').eq('id', adminId).maybeSingle();
     const currentRole = dbUser?.role || operator?.role;
     const normalizedRole = normalizeRole(currentRole || '');
-    if (normalizedRole !== 'FINANCE_ADMIN' && normalizedRole !== 'SUPER_ADMIN') {
-      throw new Error('Only Finance Admin is authorized to perform salary disbursement.');
+    if (normalizedRole === 'SUPER_ADMIN') {
+      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to access payroll records.');
+    }
+    if (normalizedRole !== 'FINANCE_ADMIN') {
+      throw new Error('[403 Forbidden] Only Finance Admin is authorized to update payroll status.');
     }
 
     const localRecord = mockDb.payrollRecords.find(r => r.id === recordId);
@@ -16766,8 +16820,11 @@ export const mockApi = {
     const { data: dbUser } = await supabaseAdmin.from('users').select('role').eq('id', adminId).maybeSingle();
     const currentRole = dbUser?.role || operator?.role;
     const normalizedRole = normalizeRole(currentRole || '');
-    if (normalizedRole !== 'FINANCE_ADMIN' && normalizedRole !== 'SUPER_ADMIN') {
-      throw new Error('Only Finance Admin is authorized to perform salary disbursement.');
+    if (normalizedRole === 'SUPER_ADMIN') {
+      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to access payroll records.');
+    }
+    if (normalizedRole !== 'FINANCE_ADMIN') {
+      throw new Error('[403 Forbidden] Only Finance Admin is authorized to delete payroll records.');
     }
 
     const localRecord = mockDb.payrollRecords.find(r => r.id === recordId);

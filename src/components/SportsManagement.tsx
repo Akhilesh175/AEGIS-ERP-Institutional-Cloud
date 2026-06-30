@@ -1480,9 +1480,9 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
               { id: 'performance', label: 'Athlete Performance', icon: BarChart3, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'medical', label: 'Medical Fitness', icon: Heart, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'equipment', label: 'Equipment Inventory', icon: Package, roles: ['COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
-              { id: 'finance', label: 'Finance Control', icon: DollarSign, roles: ['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN', 'SPORTS_ADMIN'] },
-              { id: 'fees', label: 'Sports Invoices', icon: DollarSign, roles: ['STUDENT', 'PARENT', 'SPORTS_ADMIN', 'FINANCE_ADMIN', 'SCHOOL_ADMIN', 'SUPER_ADMIN'] },
-              { id: 'reports', label: 'Reports & Analytics', icon: FileText, roles: ['SCHOOL_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+              { id: 'finance', label: 'Finance Control', icon: DollarSign, roles: ['FINANCE_ADMIN', 'SCHOOL_ADMIN', 'SPORTS_ADMIN'] },
+              { id: 'fees', label: 'Sports Invoices', icon: DollarSign, roles: ['STUDENT', 'PARENT', 'SPORTS_ADMIN', 'FINANCE_ADMIN', 'SCHOOL_ADMIN'] },
+              { id: 'reports', label: 'Reports & Analytics', icon: FileText, roles: ['SCHOOL_ADMIN', 'FINANCE_ADMIN', 'SPORTS_ADMIN'] },
               { id: 'audit-logs', label: 'Audit Logs', icon: ShieldCheck, roles: ['SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] }
             ].map(tab => {
               if (!tab.roles.includes(portalRole)) return null;
@@ -1572,9 +1572,9 @@ export const SportsManagement: React.FC<SportsManagementProps> = ({
                     { id: 'performance', label: 'Athlete Performance', icon: BarChart3, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
                     { id: 'medical', label: 'Medical Fitness', icon: Heart, roles: ['STUDENT', 'PARENT', 'COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
                     { id: 'equipment', label: 'Equipment Inventory', icon: Package, roles: ['COACH', 'TEACHER', 'SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
-                    { id: 'finance', label: 'Finance Control', icon: DollarSign, roles: ['FINANCE_ADMIN', 'SUPER_ADMIN', 'SCHOOL_ADMIN', 'SPORTS_ADMIN'] },
-                    { id: 'fees', label: 'Sports Invoices', icon: DollarSign, roles: ['STUDENT', 'PARENT', 'SPORTS_ADMIN', 'FINANCE_ADMIN', 'SCHOOL_ADMIN', 'SUPER_ADMIN'] },
-                    { id: 'reports', label: 'Reports & Analytics', icon: FileText, roles: ['SCHOOL_ADMIN', 'FINANCE_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'finance', label: 'Finance Control', icon: DollarSign, roles: ['FINANCE_ADMIN', 'SCHOOL_ADMIN', 'SPORTS_ADMIN'] },
+                    { id: 'fees', label: 'Sports Invoices', icon: DollarSign, roles: ['STUDENT', 'PARENT', 'SPORTS_ADMIN', 'FINANCE_ADMIN', 'SCHOOL_ADMIN'] },
+                    { id: 'reports', label: 'Reports & Analytics', icon: FileText, roles: ['SCHOOL_ADMIN', 'FINANCE_ADMIN', 'SPORTS_ADMIN'] },
                     { id: 'audit-logs', label: 'Audit Logs', icon: ShieldCheck, roles: ['SCHOOL_ADMIN', 'SUPER_ADMIN', 'SPORTS_ADMIN'] }
                   ].map(tab => {
                     if (!tab.roles.includes(portalRole)) return null;

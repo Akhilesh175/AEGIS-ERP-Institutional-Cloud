@@ -605,6 +605,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   ];
 
   const [rbacPermissions, setRbacPermissions] = useState<Record<string, Record<string, boolean>>>({
+    ADMIN: { billing: false, directory: true, academics: true, grading: true, security: true, books: true, transport: true, hostel: true },
     FINANCE_ADMIN: { billing: true, directory: true, academics: false, grading: false, security: false, books: false, transport: true, hostel: false },
     ACADEMIC_ADMIN: { billing: false, directory: true, academics: true, grading: true, security: false, books: true, transport: true, hostel: false },
     EXAM_CONTROLLER: { billing: false, directory: false, academics: true, grading: true, security: false, books: false, transport: false, hostel: false },
@@ -2434,7 +2435,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     if (!session?.user.schoolId) return;
 
     const currentRole = session.user.role;
-    if (currentRole !== 'FINANCE_ADMIN' && currentRole !== 'SUPER_ADMIN') {
+    if (currentRole !== 'FINANCE_ADMIN') {
       alert('Only Finance Admin is authorized to perform salary disbursement.');
       return;
     }
@@ -2523,7 +2524,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     if (!session?.user.schoolId) return;
 
     const currentRole = session.user.role;
-    if (currentRole !== 'FINANCE_ADMIN' && currentRole !== 'SUPER_ADMIN') {
+    if (currentRole !== 'FINANCE_ADMIN') {
       alert('Only Finance Admin is authorized to perform salary disbursement.');
       return;
     }
@@ -2543,7 +2544,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     if (!session?.user.schoolId) return;
 
     const currentRole = session.user.role;
-    if (currentRole !== 'FINANCE_ADMIN' && currentRole !== 'SUPER_ADMIN') {
+    if (currentRole !== 'FINANCE_ADMIN') {
       alert('Only Finance Admin is authorized to perform salary disbursement.');
       return;
     }
@@ -3504,6 +3505,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
   const handleCreateFeeStructure = async (e: React.FormEvent) => {
     e.preventDefault();
+    const currentRole = session?.user.role;
+    const hasFinancePrivileges =
+      currentRole === 'FINANCE_ADMIN' ||
+      (currentRole === 'ADMIN' && rbacPermissions['ADMIN']?.billing === true);
+
+    if (!hasFinancePrivileges) {
+      alert('Security Policy: You do not have Finance Admin permissions to perform write actions on fee structures or modify billing details.');
+      return;
+    }
     if (!adminId || !feeClassId || !feeAmount || !feeDueDate || !feeDescription) return;
 
     try {
@@ -3528,6 +3538,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
   const handleEditFeeStructure = async (e: React.FormEvent) => {
     e.preventDefault();
+    const currentRole = session?.user.role;
+    const hasFinancePrivileges =
+      currentRole === 'FINANCE_ADMIN' ||
+      (currentRole === 'ADMIN' && rbacPermissions['ADMIN']?.billing === true);
+
+    if (!hasFinancePrivileges) {
+      alert('Security Policy: You do not have Finance Admin permissions to perform write actions on fee structures or modify billing details.');
+      return;
+    }
     if (!adminId || !editFeeId || !feeAmount || !feeDueDate || !feeDescription) return;
 
     try {
@@ -3551,6 +3570,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleDeleteFeeStructure = async (id: string) => {
+    const currentRole = session?.user.role;
+    const hasFinancePrivileges =
+      currentRole === 'FINANCE_ADMIN' ||
+      (currentRole === 'ADMIN' && rbacPermissions['ADMIN']?.billing === true);
+
+    if (!hasFinancePrivileges) {
+      alert('Security Policy: You do not have Finance Admin permissions to perform write actions on fee structures or modify billing details.');
+      return;
+    }
     if (!adminId) return;
     if (!window.confirm('WARNING: Deleting this billing structure will permanently erase ALL associated payments and invoicing history for all students! Are you absolutely sure?')) return;
 
@@ -3566,6 +3594,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
   const handleRecordFeePayment = async (e: React.FormEvent) => {
     e.preventDefault();
+    const currentRole = session?.user.role;
+    const hasFinancePrivileges =
+      currentRole === 'FINANCE_ADMIN' ||
+      (currentRole === 'ADMIN' && rbacPermissions['ADMIN']?.billing === true);
+
+    if (!hasFinancePrivileges) {
+      alert('Security Policy: You do not have Finance Admin permissions to perform write actions on fee structures or modify billing details.');
+      return;
+    }
     if (!adminId || !collectingPayment) return;
 
     try {
@@ -3590,8 +3627,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleDisburseDriverSalary = async (driverId: string, amount: number, attendanceRecordId?: string | null) => {
-    if (session?.user.role !== 'SUPER_ADMIN' && session?.user.role !== 'FINANCE_ADMIN') {
-      alert('Unauthorized: Only Super Administrators and Finance Administrators can disburse salary.');
+    if (session?.user.role !== 'FINANCE_ADMIN') {
+      alert('Unauthorized: Only Finance Administrators can disburse salary payouts.');
       return;
     }
     if (!adminId || !session?.user.schoolId) return;
@@ -3619,7 +3656,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleToggleTransportFeePayment = async (id: string, currentStatus: string) => {
-    const canToggleFeeStatus = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN';
+    const canToggleFeeStatus = session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN';
     if (!canToggleFeeStatus) {
       alert('You do not have permission to modify fee payment status.');
       return;
@@ -3634,6 +3671,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleQuickApprovePayment = async (studentId: string, structureId: string, amount: number) => {
+    const currentRole = session?.user.role;
+    const hasFinancePrivileges =
+      currentRole === 'FINANCE_ADMIN' ||
+      (currentRole === 'ADMIN' && rbacPermissions['ADMIN']?.billing === true);
+
+    if (!hasFinancePrivileges) {
+      alert('Security Policy: You do not have Finance Admin permissions to approve or modify payment records.');
+      return;
+    }
     if (!adminId) return;
     try {
       const txId = 'TX' + Math.random().toString(36).substr(2, 8).toUpperCase();
@@ -3646,6 +3692,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const handleQuickRejectPayment = async (studentId: string, structureId: string) => {
+    const currentRole = session?.user.role;
+    const hasFinancePrivileges =
+      currentRole === 'FINANCE_ADMIN' ||
+      (currentRole === 'ADMIN' && rbacPermissions['ADMIN']?.billing === true);
+
+    if (!hasFinancePrivileges) {
+      alert('Security Policy: You do not have Finance Admin permissions to modify or reject payment records.');
+      return;
+    }
     if (!adminId) return;
     if (!window.confirm('Are you sure you want to reject/unpay this student\'s invoice? This sets the status back to PENDING.')) return;
     try {
@@ -5785,13 +5840,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                       <CreditCard className="text-brand-500" size={16} />
                       Class Billing Fees
                     </h3>
-                    <button
-                      onClick={() => setShowAddFee(true)}
-                      className="px-2.5 py-1 text-[10px] font-bold bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors flex items-center gap-1 active:scale-95"
-                    >
-                      <Plus size={12} />
-                      Create Invoice
-                    </button>
+                    {(session?.user.role === 'FINANCE_ADMIN' || (session?.user.role === 'ADMIN' && rbacPermissions['ADMIN']?.billing === true)) && (
+                      <button
+                        onClick={() => setShowAddFee(true)}
+                        className="px-2.5 py-1 text-[10px] font-bold bg-brand-600 hover:bg-brand-500 text-white rounded-lg transition-colors flex items-center gap-1 active:scale-95"
+                      >
+                        <Plus size={12} />
+                        Create Invoice
+                      </button>
+                    )}
                   </div>
 
                   <div className="space-y-3 max-h-[55vh] overflow-y-auto pr-1">
@@ -5823,33 +5880,35 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
                             <div className="flex items-center justify-between mt-3 text-[10px] text-slate-400 border-t border-slate-850/60 pt-2">
                               <span>Due: {new Date(fs.dueDate).toLocaleDateString()}</span>
-                              <div className="flex gap-2 shrink-0">
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    setEditFeeId(fs.id);
-                                    setFeeAmount(fs.amount.toString());
-                                    setFeeDueDate(fs.dueDate);
-                                    setFeeDescription(fs.description);
-                                    setFeeClassId(fs.classId);
-                                    setShowEditFee(true);
-                                  }}
-                                  className="p-1 text-slate-400 hover:text-slate-200 transition-colors"
-                                  title="Edit Invoice"
-                                >
-                                  <Edit size={12} />
-                                </button>
-                                <button
-                                  onClick={(e) => {
-                                    e.stopPropagation();
-                                    handleDeleteFeeStructure(fs.id);
-                                  }}
-                                  className="p-1 text-red-500/80 hover:text-red-400 transition-colors"
-                                  title="Delete Invoice"
-                                >
-                                  <Trash2 size={12} />
-                                </button>
-                              </div>
+                              {(session?.user.role === 'FINANCE_ADMIN' || (session?.user.role === 'ADMIN' && rbacPermissions['ADMIN']?.billing === true)) && (
+                                <div className="flex gap-2 shrink-0">
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      setEditFeeId(fs.id);
+                                      setFeeAmount(fs.amount.toString());
+                                      setFeeDueDate(fs.dueDate);
+                                      setFeeDescription(fs.description);
+                                      setFeeClassId(fs.classId);
+                                      setShowEditFee(true);
+                                    }}
+                                    className="p-1 text-slate-400 hover:text-slate-200 transition-colors"
+                                    title="Edit Invoice"
+                                  >
+                                    <Edit size={12} />
+                                  </button>
+                                  <button
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      handleDeleteFeeStructure(fs.id);
+                                    }}
+                                    className="p-1 text-red-500/80 hover:text-red-400 transition-colors"
+                                    title="Delete Invoice"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              )}
                             </div>
                           </div>
                         );
@@ -5937,49 +5996,55 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                   </td>
                                   <td className="py-3 px-4 text-right">
                                     <div className="flex items-center justify-end gap-2">
-                                      {status === 'PAID' ? (
-                                        <>
-                                          <button
-                                            onClick={() => {
-                                              setCollectingPayment({ student, structure: selectedFeeStructure });
-                                              setPaymentAmountPaid(payment?.amountPaid?.toString() || '');
-                                              setPaymentMethod(payment?.paymentMethod || 'Cash');
-                                              setPaymentTxId(payment?.transactionId || '');
-                                              setPaymentStatus('PAID');
-                                            }}
-                                            className="px-2.5 py-1 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-[10px] font-bold transition-all"
-                                          >
-                                            Edit
-                                          </button>
-                                          <button
-                                            onClick={() => handleQuickRejectPayment(student.id, selectedFeeStructure.id)}
-                                            className="px-2.5 py-1 border border-red-500/20 hover:bg-red-500/10 text-red-450 hover:text-red-400 rounded-lg text-[10px] font-bold transition-all"
-                                            title="Reject / Revoke payment"
-                                          >
-                                            Reject
-                                          </button>
-                                        </>
+                                      {(session?.user.role === 'FINANCE_ADMIN' || (session?.user.role === 'ADMIN' && rbacPermissions['ADMIN']?.billing === true)) ? (
+                                        status === 'PAID' ? (
+                                          <>
+                                            <button
+                                              onClick={() => {
+                                                setCollectingPayment({ student, structure: selectedFeeStructure });
+                                                setPaymentAmountPaid(payment?.amountPaid?.toString() || '');
+                                                setPaymentMethod(payment?.paymentMethod || 'Cash');
+                                                setPaymentTxId(payment?.transactionId || '');
+                                                setPaymentStatus('PAID');
+                                              }}
+                                              className="px-2.5 py-1 bg-slate-900 border border-slate-800 hover:border-slate-700 text-slate-300 hover:text-slate-100 rounded-lg text-[10px] font-bold transition-all"
+                                            >
+                                              Edit
+                                            </button>
+                                            <button
+                                              onClick={() => handleQuickRejectPayment(student.id, selectedFeeStructure.id)}
+                                              className="px-2.5 py-1 border border-red-500/20 hover:bg-red-500/10 text-red-450 hover:text-red-400 rounded-lg text-[10px] font-bold transition-all"
+                                              title="Reject / Revoke payment"
+                                            >
+                                              Reject
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <>
+                                            <button
+                                              onClick={() => handleQuickApprovePayment(student.id, selectedFeeStructure.id, selectedFeeStructure.amount + lateFee)}
+                                              className="px-2.5 py-1 border border-emerald-500/20 hover:bg-emerald-500/10 text-emerald-450 hover:text-emerald-400 rounded-lg text-[10px] font-bold transition-all"
+                                            >
+                                              Approve
+                                            </button>
+                                            <button
+                                              onClick={() => {
+                                                setCollectingPayment({ student, structure: selectedFeeStructure });
+                                                setPaymentAmountPaid((selectedFeeStructure.amount + lateFee).toString());
+                                                setPaymentMethod('Cash');
+                                                setPaymentTxId('TX' + Math.random().toString(36).substr(2, 8).toUpperCase());
+                                                setPaymentStatus('PAID');
+                                              }}
+                                              className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10px] font-bold transition-all active:scale-95 shadow-lg shadow-brand-500/10"
+                                            >
+                                              Collect
+                                            </button>
+                                          </>
+                                        )
                                       ) : (
-                                        <>
-                                          <button
-                                            onClick={() => handleQuickApprovePayment(student.id, selectedFeeStructure.id, selectedFeeStructure.amount + lateFee)}
-                                            className="px-2.5 py-1 border border-emerald-500/20 hover:bg-emerald-500/10 text-emerald-450 hover:text-emerald-400 rounded-lg text-[10px] font-bold transition-all"
-                                          >
-                                            Approve
-                                          </button>
-                                          <button
-                                            onClick={() => {
-                                              setCollectingPayment({ student, structure: selectedFeeStructure });
-                                              setPaymentAmountPaid((selectedFeeStructure.amount + lateFee).toString());
-                                              setPaymentMethod('Cash');
-                                              setPaymentTxId('TX' + Math.random().toString(36).substr(2, 8).toUpperCase());
-                                              setPaymentStatus('PAID');
-                                            }}
-                                            className="px-2.5 py-1 bg-brand-600 hover:bg-brand-500 text-white rounded-lg text-[10px] font-bold transition-all active:scale-95 shadow-lg shadow-brand-500/10"
-                                          >
-                                            Collect
-                                          </button>
-                                        </>
+                                        <span className="px-2.5 py-1 text-[10px] font-bold text-slate-500 border border-slate-800 rounded-lg bg-slate-900/50 cursor-not-allowed select-none" title="Finance Admin permissions required to process payments">
+                                          View Only
+                                        </span>
                                       )}
                                     </div>
                                   </td>
@@ -6046,7 +6111,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         const pendingPayout = unpaidCount * dailyRate;
 
                         const isDisbursing = disbursingDriverId === driver.id;
-                        const canDisburse = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'FINANCE_ADMIN';
+                        const canDisburse = session?.user.role === 'FINANCE_ADMIN';
 
                         return (
                           <tr key={driver.id} className="hover:bg-slate-900/10 text-slate-200">
@@ -6300,7 +6365,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             return matchesSearch && matchesType && matchesStatus && matchesMonth;
                           })
                           .map(p => {
-                            const isAuthorized = session?.user.role === 'FINANCE_ADMIN' || session?.user.role === 'SUPER_ADMIN';
+                            const isAuthorized = session?.user.role === 'FINANCE_ADMIN';
                             return (
                               <tr key={p.id} className="hover:bg-slate-900/10">
                                 <td className="py-3 px-4">
@@ -10775,7 +10840,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                               <td className="py-2 px-3 font-mono text-brand-400 font-bold">${Number(rec.amount || 0).toFixed(2)}</td>
                               <td className="py-2 px-3">
                                 {(() => {
-                                  const canToggleFeeStatus = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN';
+                                  const canToggleFeeStatus = session?.user.role === 'ADMIN' || session?.user.role === 'FINANCE_ADMIN';
                                   return canToggleFeeStatus ? (
                                     <button
                                       onClick={() => handleToggleTransportFeePayment(rec.id, rec.status || 'UNPAID')}
@@ -10893,7 +10958,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           const dailyRate = 45.00;
                           const pendingPayout = unpaidCount * dailyRate;
                           const isDisbursing = disbursingDriverId === driver.id;
-                          const canDisburse = session?.user.role === 'SUPER_ADMIN' || session?.user.role === 'FINANCE_ADMIN';
+                          const canDisburse = session?.user.role === 'FINANCE_ADMIN';
 
                           return (
                             <tr key={driver.id} className="hover:bg-slate-900/10">
