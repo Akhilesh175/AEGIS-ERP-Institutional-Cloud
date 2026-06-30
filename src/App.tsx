@@ -49,9 +49,9 @@ const getTabsForRole = (role: string, planName: string): string[] => {
       return [
         'dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'sports', 'ptm', 'support',
         'saas-billing',
-        // Subscription Management sub-tabs
+        // Subscription Management sub-tabs — Invoices intentionally excluded for Super Admin
         'sub-dashboard', 'sub-plans', 'sub-pricing', 'sub-coupons',
-        'sub-purchases', 'sub-timeline', 'sub-invoices', 'sub-audits', 'sub-reports'
+        'sub-purchases', 'sub-timeline', 'sub-audits', 'sub-reports'
       ];
     case 'ADMIN':
       return [
@@ -64,7 +64,7 @@ const getTabsForRole = (role: string, planName: string): string[] => {
       return [
         'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'sports', 'ptm'
+        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'sports', 'ptm', 'paymentsettings'
       ];
     case 'SPORTS_ADMIN':
       return ['dashboard', 'sports', 'paymentsettings', 'ptm', 'support'];
@@ -1559,8 +1559,17 @@ export const App: React.FC = () => {
         {/* Sidebar Navigation */}
         <Sidebar activeTab={activeTab} setActiveTab={updateActiveTab} />
 
-        {/* Dashboard Content — independently scrollable */}
-        <main className="flex-1 min-w-0 overflow-y-auto px-6 py-6 md:px-8">
+        {/* Dashboard Content — independently scrollable; padding suppressed when full-screen chat overlay is active */}
+        <main
+          className={
+            activeTab === 'groupdiscussion'
+              ? // Chat is a fixed full-screen overlay on mobile — strip padding so
+                // there's no gap beneath it. On desktop (md:) the overlay reverts to
+                // relative positioning and uses its own internal sizing.
+                'flex-1 min-w-0 overflow-hidden p-0 md:overflow-y-auto md:px-8 md:py-6'
+              : 'flex-1 min-w-0 overflow-y-auto px-6 py-6 md:px-8'
+          }
+        >
           
           <ErrorBoundary>
             {/* Active Portal Mount */}
@@ -1639,7 +1648,9 @@ export const App: React.FC = () => {
                         {/* WARDEN: Entire portal is Enterprise-only; non-Enterprise sees PremiumLock */}
                         {['FINANCE_ADMIN', 'ACADEMIC_ADMIN', 'EXAM_CONTROLLER', 'LIBRARIAN', 'TRANSPORT_MANAGER', 'HOSTEL_ADMIN', 'WARDEN', 'SPORTS_ADMIN', 'CUSTOM_SUB_ADMIN', 'DRIVER'].includes(session.user.role) && (
                           activeTab === 'paymentsettings'
-                            ? <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />
+                            ? (session.user.role === 'FINANCE_ADMIN'
+                                ? <AdminPortal activeTab={activeTab} />
+                                : <TeacherPortal activeTab={activeTab} setActiveTab={updateActiveTab} />)
                             : session.user.role === 'WARDEN' && isTabLockedByEntitlements('WARDEN', activeTab, ent)
                               ? <PremiumLock
                                   isLocked={true}

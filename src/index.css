@@ -93,3 +93,33 @@
     opacity: 1;
   }
 }
+
+/* ── Full-Screen Chat Overlay (FullScreenChatLayout) ─────────────────────────
+ * These rules complement the Tailwind classes on FullScreenChatLayout.
+ * They handle edge-cases that Tailwind alone cannot express cleanly:
+ *   • 100dvh on mobile for collapsible address-bar browsers (Chrome, Safari)
+ *   • env(safe-area-inset-*) for iOS notch / Android gesture bar
+ *   • overscroll-behavior: contain to prevent pull-to-refresh inside chat
+ * ─────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  /* The FullScreenChatLayout fixed overlay uses inset:0 which is equivalent
+     to height:100dvh on most browsers, but we add the explicit dvh fallback
+     for older Safari that doesn't fully support inset shorthand on fixed els */
+  .full-screen-chat-overlay {
+    height: 100dvh;
+    /* Prevent body scroll bleed-through on iOS */
+    overscroll-behavior: contain;
+    /* Ensure the overlay sits above the Capacitor/Android status bar */
+    padding-top: env(safe-area-inset-top, 0px);
+    /* Respect the iOS home indicator / Android gesture bar at the bottom.
+       Applied as padding-bottom on the composer via inline style in ClassDiscussion,
+       but also set here as a fallback for the root container. */
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  /* Prevent any horizontal scroll on the body when the chat overlay is open */
+  body:has(.full-screen-chat-overlay) {
+    overflow: hidden;
+    max-width: 100vw;
+  }
+}

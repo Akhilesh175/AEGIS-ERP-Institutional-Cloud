@@ -7,6 +7,7 @@ import {
 import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
 import { ClassChatGroup, ClassChatMember, ClassMessage, ClassMessageAttachment, UserRole } from '../types';
+import { FullScreenChatLayout } from './FullScreenChatLayout';
 
 interface ClassDiscussionProps {
   currentUserId: string;
@@ -566,7 +567,9 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
   }, [currentUserId, currentUserRole, schoolId, academicSessionId, groups, filteredGroups, members]);
 
   return (
-    <div className="flex h-[calc(100vh-80px)] w-full overflow-hidden bg-slate-950/20 text-slate-100 rounded-3xl backdrop-blur-xl border border-slate-800/80 shadow-2xl">
+    <FullScreenChatLayout>
+      {/* Inner flex container — fills FullScreenChatLayout on both mobile and desktop */}
+      <div className="flex w-full h-full overflow-hidden text-slate-100">
       {/* ── LEFT PANEL: CLASS GROUPS ────────────────────────────────────────── */}
       <div className={`w-full md:w-80 border-r border-slate-850 bg-slate-900/60 flex flex-col h-full ${selectedGroup ? 'hidden md:flex' : 'flex'}`}>
         {/* Search */}
@@ -916,8 +919,11 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
               </div>
             )}
 
-            {/* Input Composer area */}
-            <div className="p-4 bg-slate-900/60 border-t border-slate-800/80">
+            {/* Input Composer area — safe-area-inset-bottom keeps it above iOS home bar and Android gesture nav */}
+            <div
+              className="p-4 bg-slate-900/60 border-t border-slate-800/80"
+              style={{ paddingBottom: 'max(1rem, env(safe-area-inset-bottom))' }}
+            >
               <form onSubmit={handleSubmitMessage} className="flex flex-col gap-3">
                 {/* Thread reply bar */}
                 {replyTo && (
@@ -1311,6 +1317,7 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
           </div>
         </div>
       )}
-    </div>
+      </div>{/* end inner flex container */}
+    </FullScreenChatLayout>
   );
 };
