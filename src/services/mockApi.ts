@@ -2868,6 +2868,8 @@ export const mockApi = {
             rollNumber: r.roll_number,
             dateOfBirth: r.date_of_birth || '',
             gender: r.gender,
+            fatherName: r.father_name || '',
+            motherName: r.mother_name || '',
             createdAt: r.created_at
           };
           const idx = mockDb.students.findIndex(s => s.id === r.id);
@@ -5264,7 +5266,9 @@ export const mockApi = {
     gender: 'MALE' | 'FEMALE' | 'OTHER', 
     dob: string, 
     password: string,
-    phone?: string
+    phone?: string,
+    fatherName?: string,
+    motherName?: string
   ): Promise<void> {
     await delay(600);
     const { data: admin, error: adminErr } = await supabaseAdmin.from('users').select('role, school_id').eq('id', adminId).single();
@@ -5395,7 +5399,9 @@ export const mockApi = {
       admission_number: admissionNumber,
       roll_number: rollNumber,
       date_of_birth: dob || null, // Safety: use null if date_of_birth is empty string to prevent invalid date syntax database errors
-      gender
+      gender,
+      father_name: fatherName?.trim() || null,
+      mother_name: motherName?.trim() || null
     }).select('id').single();
 
     if (studentErr || !studentRow) {
@@ -5416,6 +5422,8 @@ export const mockApi = {
       sectionId: resolvedSectionId,
       academicSessionId: activeSessionId,
       admissionNumber, rollNumber, dateOfBirth: dob, gender,
+      fatherName: fatherName?.trim() || '',
+      motherName: motherName?.trim() || '',
       createdAt: new Date().toISOString()
     };
     mockDb.users.push(user);
@@ -7980,7 +7988,7 @@ export const mockApi = {
     await delay();
     const sessionUser = useStore.getState().session?.user;
     if (sessionUser?.role === 'SUPER_ADMIN') {
-      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to access institution billing or fee structure data.');
+      throw new Error('HTTP 403 Forbidden: You are not authorized to access invoices.');
     }
     const schoolId = await getAdminSchoolId();
     await this.syncFeeStructuresData(schoolId);
@@ -8131,7 +8139,7 @@ export const mockApi = {
     await delay();
     const sessionUser = useStore.getState().session?.user;
     if (sessionUser?.role === 'SUPER_ADMIN') {
-      throw new Error('[403 Forbidden] SUPER_ADMIN is not permitted to access institution payment or invoice ledger data.');
+      throw new Error('HTTP 403 Forbidden: You are not authorized to access invoices.');
     }
     const schoolId = await getAdminSchoolId();
     await this.syncFeePaymentsData(schoolId);
@@ -11598,6 +11606,9 @@ export const mockApi = {
   async fetchInvoices(schoolId: string): Promise<any[]> {
     const session = useStore.getState().session;
     const role = session?.user?.role;
+    if (role === 'SUPER_ADMIN') {
+      throw new Error('HTTP 403 Forbidden: You are not authorized to access invoices.');
+    }
     if (role === 'STUDENT' || role === 'PARENT' || role === 'TEACHER' || role === 'COACH') {
       throw new Error('Security Policy: Insufficient privileges to query institutional invoices ledger.');
     }
@@ -11619,6 +11630,11 @@ export const mockApi = {
   },
 
   async createInvoice(schoolId: string, sessionId: string, studentId: string, amount: number, dueDate: string): Promise<void> {
+    const session = useStore.getState().session;
+    const role = session?.user?.role;
+    if (role === 'SUPER_ADMIN') {
+      throw new Error('HTTP 403 Forbidden: You are not authorized to access invoices.');
+    }
     const invNumber = 'INV-' + Math.floor(100000 + Math.random() * 900000);
     const { error } = await supabaseAdmin.from('invoices').insert({
       school_id: schoolId,
@@ -13165,6 +13181,11 @@ export const mockApi = {
   },
 
   async fetchLibraryInvoices(schoolId: string, studentId?: string): Promise<any[]> {
+    const session = useStore.getState().session;
+    const role = session?.user?.role;
+    if (role === 'SUPER_ADMIN') {
+      throw new Error('HTTP 403 Forbidden: You are not authorized to access invoices.');
+    }
     let query = supabaseAdmin.from('library_invoices').select('*, student:students(*, userDetails:users(*))').eq('school_id', schoolId);
     if (studentId) query = query.eq('student_id', studentId);
     const { data, error } = await query;
@@ -15396,6 +15417,10 @@ export const mockApi = {
         }
       }
     }
+
+    // Fallback: if no linked parent account, use the directly stored names from the students table
+    if (!fatherName && student.fatherName) fatherName = student.fatherName;
+    if (!motherName && student.motherName) motherName = student.motherName;
 
     // 7. Exam and Marks Validation
     const sessionObj = mockDb.academicSessions.find(s => s.id === sessionId);
@@ -18867,6 +18892,11 @@ export const mockApi = {
   },
 
   async fetchSportsInvoices(schoolId: string, studentId?: string): Promise<any[]> {
+    const session = useStore.getState().session;
+    const role = session?.user?.role;
+    if (role === 'SUPER_ADMIN') {
+      throw new Error('HTTP 403 Forbidden: You are not authorized to access invoices.');
+    }
     validateSchoolId(schoolId, 'fetchSportsInvoices');
     let query = supabaseAdmin
       .from('sports_fee_invoices')
@@ -18908,6 +18938,11 @@ export const mockApi = {
   },
 
   async createSportsInvoice(invoice: any): Promise<any> {
+    const session = useStore.getState().session;
+    const role = session?.user?.role;
+    if (role === 'SUPER_ADMIN') {
+      throw new Error('HTTP 403 Forbidden: You are not authorized to access invoices.');
+    }
     validateSchoolId(invoice.schoolId, 'createSportsInvoice');
     const invoiceNumber = `INV-SP-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`;
 

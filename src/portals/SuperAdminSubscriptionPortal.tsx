@@ -829,119 +829,6 @@ export const SuperAdminSubscriptionPortal: React.FC<SuperAdminSubscriptionPortal
     }
   };
 
-  // Generate and Download Invoice PDF client-side
-  const downloadInvoicePDF = async (inv: any) => {
-    try {
-      const doc = new jsPDF({
-        orientation: 'portrait',
-        unit: 'pt',
-        format: 'a4'
-      });
-
-      const schoolName = inv.schools?.name || 'Your School';
-      const amt = Number(inv.amount || 0);
-      const tax = Number(inv.tax_amount || 0);
-      const discount = Number(inv.discount_amount || 0);
-      const total = Number(inv.total_amount || 0);
-      const invoiceNo = inv.invoice_number;
-      const issueDate = new Date(inv.created_at).toLocaleDateString('en-IN');
-      const planCode = inv.plan_code || 'pro';
-      const cycle = inv.billing_cycle || 'MONTHLY';
-
-      // Simple premium PDF Layout
-      doc.setFillColor(7, 10, 19); // dark header banner
-      doc.rect(0, 0, 595, 120, 'F');
-
-      // Title
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(22);
-      doc.setFont('Helvetica', 'bold');
-      doc.text('AEGIS ERP INSTITUTIONAL CLOUD', 40, 55);
-      doc.setFontSize(10);
-      doc.setFont('Helvetica', 'normal');
-      doc.setTextColor(150, 150, 150);
-      doc.text('Advanced Multi-Tenant SaaS Platform', 40, 75);
-
-      doc.setTextColor(255, 255, 255);
-      doc.setFontSize(18);
-      doc.setFont('Helvetica', 'bold');
-      doc.text('INVOICE', 460, 55);
-      doc.setFontSize(9);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(`#${invoiceNo}`, 460, 75);
-
-      // Section: Billing Info
-      doc.setTextColor(30, 30, 30);
-      doc.setFontSize(11);
-      doc.setFont('Helvetica', 'bold');
-      doc.text('BILLED TO:', 40, 170);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(schoolName, 40, 190);
-      doc.text('Institutional Administrator', 40, 205);
-      doc.text(inv.billing_email || 'billing@aegiserp.xyz', 40, 220);
-
-      // Section: Invoice details
-      doc.setFont('Helvetica', 'bold');
-      doc.text('INVOICE DETAILS:', 380, 170);
-      doc.setFont('Helvetica', 'normal');
-      doc.text(`Issue Date: ${issueDate}`, 380, 190);
-      doc.text(`Billing Cycle: ${cycle}`, 380, 205);
-      doc.text(`Plan Code: ${planCode.toUpperCase()}`, 380, 220);
-
-      // Table Header
-      doc.setFillColor(240, 243, 248);
-      doc.rect(40, 260, 515, 25, 'F');
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(9);
-      doc.text('Item Description', 50, 276);
-      doc.text('Billing Cycle', 280, 276);
-      doc.text('Original Price', 380, 276);
-      doc.text('Paid Amount', 480, 276);
-
-      // Table Row
-      doc.setFont('Helvetica', 'normal');
-      doc.text(`AEGIS ERP Subscription - ${planCode.toUpperCase()} Plan`, 50, 310);
-      doc.text(cycle, 280, 310);
-      doc.text(`INR ${amt.toLocaleString()}`, 380, 310);
-      doc.text(`INR ${total.toLocaleString()}`, 480, 310);
-
-      // Subtotals & Totals
-      doc.line(40, 340, 555, 340);
-
-      doc.text('Subtotal:', 380, 370);
-      doc.text(`INR ${amt.toLocaleString()}`, 480, 370);
-
-      if (discount > 0) {
-        doc.setTextColor(220, 50, 50);
-        doc.text('Discount Applied:', 380, 390);
-        doc.text(`- INR ${discount.toLocaleString()}`, 480, 390);
-        doc.setTextColor(30, 30, 30);
-      }
-
-      doc.text('GST (18%):', 380, 410);
-      doc.text(`INR ${tax.toLocaleString()}`, 480, 410);
-
-      doc.setFont('Helvetica', 'bold');
-      doc.setFontSize(11);
-      doc.text('Total Paid:', 380, 440);
-      doc.text(`INR ${total.toLocaleString()}`, 480, 440);
-
-      // Footer
-      doc.setFillColor(245, 247, 250);
-      doc.rect(40, 490, 515, 50, 'F');
-      doc.setFont('Helvetica', 'normal');
-      doc.setFontSize(8);
-      doc.setTextColor(100, 100, 100);
-      doc.text('Note: This is a system-generated invoice for your cloud subscription renewal. All payments are verified securely.', 50, 510);
-      doc.text('For queries, write to billing@aegiserp.xyz. Thank you for choosing AEGIS ERP Institutional Cloud.', 50, 525);
-
-      doc.save(`Invoice-${invoiceNo}.pdf`);
-    } catch (e) {
-      console.error(e);
-      alert('Failed to generate PDF invoice.');
-    }
-  };
-
   // Export reports to CSV
   const exportReportCSV = (reportType: string) => {
     let headers: string[] = [];
@@ -1886,52 +1773,19 @@ export const SuperAdminSubscriptionPortal: React.FC<SuperAdminSubscriptionPortal
         </div>
       )}
 
-      {/* ── Tab 7: Invoices ── */}
+      {/* ── Tab 7: Invoices — ACCESS DENIED FOR SUPER ADMIN ── */}
       {activeTab === 'sub-invoices' && (
-        <div className="space-y-6">
-          <GlassCard className="p-0 overflow-hidden">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
-                <thead>
-                  <tr className="border-b border-slate-850 text-slate-450 font-bold uppercase tracking-wider text-[10px] bg-slate-900/30">
-                    <th className="py-2.5 px-3">Invoice #</th>
-                    <th className="py-2.5 px-3">Institution Name</th>
-                    <th className="py-2.5 px-3">Subtotal</th>
-                    <th className="py-2.5 px-3">GST Tax</th>
-                    <th className="py-2.5 px-3">Total Amount</th>
-                    <th className="py-2.5 px-3">Date issued</th>
-                    <th className="py-2.5 px-3 text-right">Actions</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-850/60 text-slate-350">
-                  {invoices.map(inv => (
-                    <tr key={inv.id} className="hover:bg-slate-900/10 transition-colors">
-                      <td className="py-2.5 px-3 font-mono font-bold text-slate-100">{inv.invoice_number}</td>
-                      <td className="py-2.5 px-3 font-semibold text-slate-200">{inv.schools?.name || 'Global'}</td>
-                      <td className="py-2.5 px-3 font-mono">₹{Number(inv.amount).toLocaleString()}</td>
-                      <td className="py-2.5 px-3 font-mono text-slate-450">₹{Number(inv.tax_amount || 0).toLocaleString()}</td>
-                      <td className="py-2.5 px-3 font-mono text-green-400 font-bold">₹{Number(inv.total_amount).toLocaleString()}</td>
-                      <td className="py-2.5 px-3 text-slate-500 font-mono">{new Date(inv.created_at).toLocaleDateString('en-IN')}</td>
-                      <td className="py-2.5 px-3 text-right flex items-center justify-end gap-2">
-                        <button
-                          onClick={() => downloadInvoicePDF(inv)}
-                          className="p-1 hover:text-brand-400 transition-colors"
-                          title="Download PDF"
-                        >
-                          <Download size={13} />
-                        </button>
-                      </td>
-                    </tr>
-                  ))}
-                  {invoices.length === 0 && (
-                    <tr>
-                      <td colSpan={7} className="text-center py-8 text-slate-500 italic">No billings invoices generated.</td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </GlassCard>
+        <div className="flex flex-col items-center justify-center py-24 space-y-5 animate-fade-in">
+          <div className="w-16 h-16 rounded-2xl bg-rose-500/10 border border-rose-500/20 flex items-center justify-center">
+            <span className="text-2xl">🚫</span>
+          </div>
+          <div className="text-center space-y-2 max-w-sm">
+            <p className="text-xs font-mono font-bold text-rose-400 uppercase tracking-[0.2em]">HTTP 403 Forbidden</p>
+            <h3 className="text-base font-bold text-slate-100">Access Denied</h3>
+            <p className="text-xs text-slate-500 leading-relaxed">
+              You are not authorized to access invoices. This resource is restricted to authorized billing roles only.
+            </p>
+          </div>
         </div>
       )}
 

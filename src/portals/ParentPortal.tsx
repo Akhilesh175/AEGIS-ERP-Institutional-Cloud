@@ -1748,9 +1748,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                     </div>
                                   </div>
 
-                                  {/* Invoice Actions */}
                                   <div className="border-t border-slate-850/60 pt-3 flex flex-wrap justify-between items-center gap-3">
-                                    <div className="flex items-center gap-2">
+                                    <div className="flex flex-wrap items-center gap-2">
                                       <button
                                         onClick={() => downloadInvoicePdf(invoicePayload, false)}
                                         className="px-2.5 py-1 bg-slate-900 border border-slate-850 hover:border-slate-700 text-slate-350 hover:text-slate-200 rounded-lg text-[10px] font-bold flex items-center gap-1 cursor-pointer transition-all"

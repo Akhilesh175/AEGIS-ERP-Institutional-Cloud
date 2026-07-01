@@ -182,6 +182,8 @@ export interface Student {
   rollNumber: number;
   dateOfBirth: string;
   gender: GenderType;
+  fatherName?: string;
+  motherName?: string;
   createdAt: string;
 }
 

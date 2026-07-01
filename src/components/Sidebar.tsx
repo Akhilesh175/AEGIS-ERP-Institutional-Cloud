@@ -433,7 +433,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
                   { id: 'sub-coupons', label: 'Coupons', icon: Tag },
                   { id: 'sub-purchases', label: 'Purchase History', icon: Clock },
                   { id: 'sub-timeline', label: 'Subscription Timeline', icon: TrendingUp },
-                  { id: 'sub-invoices', label: 'Invoices', icon: FileText },
                   { id: 'sub-audits', label: 'Audit Logs', icon: ClipboardList },
                   { id: 'sub-reports', label: 'Reports', icon: FileText },
                 ].map(subTab => {

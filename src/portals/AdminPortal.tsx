@@ -1183,6 +1183,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [stPassword, setStPassword] = useState('');
   const [showStPassword, setShowStPassword] = useState(false);
   const [stPhone, setStPhone] = useState('');
+  const [stFatherName, setStFatherName] = useState('');
+  const [stMotherName, setStMotherName] = useState('');
 
   const [showAddClass, setShowAddClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
@@ -1269,6 +1271,34 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     } finally {
       setSessionsLoading(false);
     }
+  };
+
+  const loadSchoolPaymentSettings = async () => {
+    setPaySettingsLoading(true);
+    try {
+      const s = await mockApi.fetchSchoolPaymentSettings(session?.user.schoolId || '', session?.user.role || '');
+      if (s) {
+        setSchoolPaySettings(s);
+        setPsAccHolder(s.accountHolderName || '');
+        setPsBankName(s.bankName || '');
+        setPsAccNumber(s.accountNumber || '');
+        setPsIfsc(s.ifscCode || '');
+        setPsBranch(s.branchName || '');
+        setPsSwift(s.swiftCode || '');
+        setPsUpiId(s.upiId || '');
+        setPsInstructions(s.paymentInstructions || '');
+        setPsQrEnabled(s.qrPaymentEnabled);
+        setPsBankEnabled(s.bankTransferEnabled);
+        setPsShowQrToParents(s.showQrToParents);
+        setPsShowBankToParents(s.showBankToParents);
+        setPsUtrUpload(s.enableUtrUpload);
+        setPsAutoRemind(s.autoRemindUnpaid);
+        if (s.qrCodeUrl) setPsQrPreview(s.qrCodeUrl);
+      }
+    } catch (e) {
+      console.warn(e);
+    }
+    setPaySettingsLoading(false);
   };
 
   const handleCreateAcademicSession = async (e: React.FormEvent) => {
@@ -1782,6 +1812,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     }
     if (activeTab === 'attendance') {
       loadAttendanceAnalytics(attendanceSectionId || undefined, undefined, attendanceSessionId || undefined);
+    }
+    if (activeTab === 'paymentsettings') {
+      loadSchoolPaymentSettings();
     }
     // Auto-poll every 30 seconds so external DB deletions are reflected
     const pollInterval = setInterval(loadData, 30000);
@@ -3341,7 +3374,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
     try {
       await mockApi.adminCreateStudent(
-        adminId, stEmail, stFirst, stLast, stClass, stAdmission, stRoll, stGender, stDob, stPassword, stPhone
+        adminId, stEmail, stFirst, stLast, stClass, stAdmission, stRoll, stGender, stDob, stPassword, stPhone, stFatherName, stMotherName
       );
       setShowAddStudent(false);
       setStEmail('');
@@ -3352,6 +3385,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       setStPassword('');
       setShowStPassword(false);
       setStPhone('');
+      setStFatherName('');
+      setStMotherName('');
       loadData();
       alert('Student registered in classroom listings!');
     } catch (err: any) {
@@ -5528,29 +5563,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                   onClick={async () => {
                     setFeesSubTab('payment-settings');
                     if (!schoolPaySettings) {
-                      setPaySettingsLoading(true);
-                      try {
-                        const s = await mockApi.fetchSchoolPaymentSettings(session?.user.schoolId || '', session?.user.role || '');
-                        if (s) {
-                          setSchoolPaySettings(s);
-                          setPsAccHolder(s.accountHolderName || '');
-                          setPsBankName(s.bankName || '');
-                          setPsAccNumber(s.accountNumber || '');
-                          setPsIfsc(s.ifscCode || '');
-                          setPsBranch(s.branchName || '');
-                          setPsSwift(s.swiftCode || '');
-                          setPsUpiId(s.upiId || '');
-                          setPsInstructions(s.paymentInstructions || '');
-                          setPsQrEnabled(s.qrPaymentEnabled);
-                          setPsBankEnabled(s.bankTransferEnabled);
-                          setPsShowQrToParents(s.showQrToParents);
-                          setPsShowBankToParents(s.showBankToParents);
-                          setPsUtrUpload(s.enableUtrUpload);
-                          setPsAutoRemind(s.autoRemindUnpaid);
-                          if (s.qrCodeUrl) setPsQrPreview(s.qrCodeUrl);
-                        }
-                      } catch (e) { console.warn(e); }
-                      setPaySettingsLoading(false);
+                      await loadSchoolPaymentSettings();
                     }
                   }}
                   className={`px-4 py-1.5 rounded-xl text-xs font-bold transition-all ${
@@ -7650,6 +7663,330 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
         </PremiumLock>
       )}
 
+      {activeTab === 'paymentsettings' && (
+        <div className="space-y-6">
+          <div className="space-y-5 animate-fade-in">
+            {paySettingsLoading ? (
+              <div className="flex items-center justify-center py-16">
+                <div className="w-8 h-8 border-2 border-violet-500 border-t-transparent rounded-full animate-spin" />
+              </div>
+            ) : (
+              <>
+                {/* Header */}
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-base font-bold text-slate-100 flex items-center gap-2">
+                      <Banknote className="text-violet-400" size={18} />
+                      School Payment Gateway Settings
+                    </h3>
+                    <p className="text-[11px] text-slate-500 mt-0.5">Configure how parents can pay fees — QR code, bank transfer, and visibility controls.</p>
+                  </div>
+                  {paySettingsMsg && (
+                    <div className={`text-xs font-semibold px-3 py-1.5 rounded-lg ${
+                      paySettingsMsg.type === 'success' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
+                    }`}>
+                      {paySettingsMsg.text}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+                  {/* Left: QR Code Panel */}
+                  <GlassCard className="p-5 space-y-4">
+                    <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                      <QrCode className="text-violet-400" size={15} />
+                      QR Code Payment
+                      <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        psQrEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-500'
+                      }`}>{psQrEnabled ? 'Enabled' : 'Disabled'}</span>
+                    </h4>
+
+                    {/* QR Upload Area */}
+                    <div className="relative">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block mb-1.5">QR Code Image</label>
+                      <div
+                        className="w-full h-40 rounded-xl border-2 border-dashed border-slate-700 hover:border-violet-500/50 transition-colors flex flex-col items-center justify-center cursor-pointer bg-slate-900/50 overflow-hidden"
+                        onClick={() => document.getElementById('ps-qr-upload')?.click()}
+                      >
+                        {psQrPreview ? (
+                          <img src={psQrPreview} alt="QR Code" className="h-36 w-36 object-contain rounded-lg" />
+                        ) : (
+                          <div className="text-center space-y-1">
+                            <ScanLine className="mx-auto text-slate-600" size={28} />
+                            <p className="text-[11px] text-slate-500">Click to upload QR image</p>
+                            <p className="text-[10px] text-slate-600">PNG, JPG up to 2MB</p>
+                          </div>
+                        )}
+                      </div>
+                      <input
+                        id="ps-qr-upload"
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        onChange={(e) => {
+                          const file = e.target.files?.[0];
+                          if (file) {
+                            setPsQrFile(file);
+                            setPsQrPreview(URL.createObjectURL(file));
+                          }
+                        }}
+                      />
+                    </div>
+
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-bold text-slate-350">Enable UPI QR Payments</label>
+                          <p className="text-[10px] text-slate-500">Show UPI QR payment option in Parent Portal.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPsQrEnabled(!psQrEnabled)}
+                          className="text-violet-400 hover:text-violet-300"
+                        >
+                          {psQrEnabled ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-bold text-slate-350">Show QR details on checkout</label>
+                          <p className="text-[10px] text-slate-500">Directly display QR scan instructions during payment checkouts.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPsShowQrToParents(!psShowQrToParents)}
+                          className="text-violet-400 hover:text-violet-300"
+                        >
+                          {psShowQrToParents ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
+                        </button>
+                      </div>
+                    </div>
+                  </GlassCard>
+
+                  {/* Right: Bank Details Panel */}
+                  <GlassCard className="p-5 space-y-4">
+                    <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                      <Building className="text-violet-400" size={15} />
+                      Bank Account Details
+                      <span className={`ml-auto text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                        psBankEnabled ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' : 'bg-slate-800 text-slate-500'
+                      }`}>{psBankEnabled ? 'Enabled' : 'Disabled'}</span>
+                    </h4>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Account Holder Name</label>
+                        <input
+                          type="text"
+                          placeholder="School Account Name"
+                          value={psAccHolder}
+                          onChange={(e) => setPsAccHolder(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 text-xs rounded-lg p-2 focus:outline-none focus:border-violet-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Bank Name</label>
+                        <input
+                          type="text"
+                          placeholder="e.g. HDFC Bank"
+                          value={psBankName}
+                          onChange={(e) => setPsBankName(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 text-xs rounded-lg p-2 focus:outline-none focus:border-violet-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Account Number</label>
+                        <input
+                          type="text"
+                          placeholder="1234567890"
+                          value={psAccNumber}
+                          onChange={(e) => setPsAccNumber(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 text-xs rounded-lg p-2 focus:outline-none focus:border-violet-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">IFSC Code</label>
+                        <input
+                          type="text"
+                          placeholder="HDFC0001234"
+                          value={psIfsc}
+                          onChange={(e) => setPsIfsc(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 text-xs rounded-lg p-2 focus:outline-none focus:border-violet-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Branch Name</label>
+                        <input
+                          type="text"
+                          placeholder="Branch location"
+                          value={psBranch}
+                          onChange={(e) => setPsBranch(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 text-xs rounded-lg p-2 focus:outline-none focus:border-violet-500"
+                        />
+                      </div>
+                      <div className="space-y-1">
+                        <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">SWIFT/BIC Code (Optional)</label>
+                        <input
+                          type="text"
+                          placeholder="HDFCINBB"
+                          value={psSwift}
+                          onChange={(e) => setPsSwift(e.target.value)}
+                          className="w-full bg-slate-950 border border-slate-850 text-xs rounded-lg p-2 focus:outline-none focus:border-violet-500"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-3 pt-1 border-t border-slate-850/55">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-bold text-slate-350">Enable Bank Transfer Payments</label>
+                          <p className="text-[10px] text-slate-500">Show manual offline bank transfer details to parents.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPsBankEnabled(!psBankEnabled)}
+                          className="text-violet-400 hover:text-violet-300"
+                        >
+                          {psBankEnabled ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
+                        </button>
+                      </div>
+
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <label className="text-xs font-bold text-slate-350">Show Bank details on billing dashboard</label>
+                          <p className="text-[10px] text-slate-500">Show bank name, routing, and number inside Parent Portal.</p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPsShowBankToParents(!psShowBankToParents)}
+                          className="text-violet-400 hover:text-violet-300"
+                        >
+                          {psShowBankToParents ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
+                        </button>
+                      </div>
+                    </div>
+                  </GlassCard>
+
+                  {/* General settings & visibility controls */}
+                  <GlassCard className="p-5 space-y-4 lg:col-span-2">
+                    <h4 className="text-sm font-bold text-slate-200 flex items-center gap-2">
+                      <ExternalLink className="text-violet-400" size={15} />
+                      Online Gateway & Verification Rules
+                    </h4>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-xs font-bold text-slate-350">UPI ID for Direct Transfers</label>
+                            <p className="text-[10px] text-slate-500">Specify the school's merchant UPI handle.</p>
+                          </div>
+                          <input
+                            type="text"
+                            placeholder="school@upi"
+                            value={psUpiId}
+                            onChange={(e) => setPsUpiId(e.target.value)}
+                            className="bg-slate-950 border border-slate-850 text-xs rounded-lg p-2 w-48 text-right focus:outline-none focus:border-violet-500"
+                          />
+                        </div>
+
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-xs font-bold text-slate-350">Require UTR/Ref upload for manual verify</label>
+                            <p className="text-[10px] text-slate-500">Forces parent to submit reference number or transaction slip screenshot.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setPsUtrUpload(!psUtrUpload)}
+                            className="text-violet-400 hover:text-violet-300"
+                          >
+                            {psUtrUpload ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
+                          </button>
+                        </div>
+                      </div>
+
+                      <div className="space-y-4">
+                        <div className="flex items-center justify-between">
+                          <div>
+                            <label className="text-xs font-bold text-slate-350">Auto-remind parents of unpaid invoices</label>
+                            <p className="text-[10px] text-slate-500">Triggers automated system alert 3 days before invoice due date.</p>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => setPsAutoRemind(!psAutoRemind)}
+                            className="text-violet-400 hover:text-violet-300"
+                          >
+                            {psAutoRemind ? <ToggleRight size={28} /> : <ToggleLeft size={28} />}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-2 border-t border-slate-850/60">
+                      <label className="text-[10px] font-bold uppercase tracking-wider text-slate-500 block">Custom Checkout Payment Instructions</label>
+                      <textarea
+                        rows={2}
+                        placeholder="Provide standard checkout details or special bank payment notes here..."
+                        value={psInstructions}
+                        onChange={(e) => setPsInstructions(e.target.value)}
+                        className="w-full bg-slate-950 border border-slate-850 text-xs rounded-lg p-2.5 focus:outline-none focus:border-violet-500"
+                      />
+                    </div>
+                  </GlassCard>
+                </div>
+
+                {/* Submit button */}
+                <div className="flex justify-end pt-3 border-t border-slate-850/70">
+                  <button
+                    onClick={async () => {
+                      setPaySettingsSaving(true);
+                      try {
+                        const saved = await mockApi.saveSchoolPaymentSettings(
+                          session?.user.schoolId || '',
+                          session?.user.role || '',
+                          {
+                            accountHolderName: psAccHolder,
+                            bankName: psBankName,
+                            accountNumber: psAccNumber,
+                            ifscCode: psIfsc,
+                            branchName: psBranch,
+                            swiftCode: psSwift,
+                            upiId: psUpiId,
+                            paymentInstructions: psInstructions,
+                            qrPaymentEnabled: psQrEnabled,
+                            bankTransferEnabled: psBankEnabled,
+                            showQrToParents: psShowQrToParents,
+                            showBankToParents: psShowBankToParents,
+                            enableUtrUpload: psUtrUpload,
+                            autoRemindUnpaid: psAutoRemind,
+                          },
+                          psQrFile
+                        );
+                        setSchoolPaySettings(saved);
+                        setPsQrFile(null);
+                        setPaySettingsMsg({ type: 'success', text: '✓ Payment settings saved successfully' });
+                        setTimeout(() => setPaySettingsMsg(null), 4000);
+                      } catch (err: any) {
+                        setPaySettingsMsg({ type: 'error', text: err?.message || 'Failed to save settings' });
+                      }
+                      setPaySettingsSaving(false);
+                    }}
+                    className="glass-btn-primary flex items-center gap-2 text-xs"
+                  >
+                    {paySettingsSaving ? (
+                      <><div className="w-3.5 h-3.5 border border-white/60 border-t-transparent rounded-full animate-spin" /> Saving...</>
+                    ) : (
+                      <><ShieldCheck size={14} /> Save Payment Settings</>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* ── REJECT PAYMENT MODAL ── */}
       {showRejectModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm animate-fade-in p-4">
@@ -8090,6 +8427,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Phone</label>
                 <input type="text" placeholder="+1 (555) 000-0000" value={stPhone} onChange={(e) => setStPhone(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Father's Name <span className="text-rose-400">*</span></label>
+                <input type="text" placeholder="e.g. Rajesh Kumar" value={stFatherName} onChange={(e) => setStFatherName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+              </div>
+              <div className="space-y-1">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Mother's Name <span className="text-rose-400">*</span></label>
+                <input type="text" placeholder="e.g. Sunita Devi" value={stMotherName} onChange={(e) => setStMotherName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
               </div>
 
               <div className="space-y-1 sm:col-span-2">
