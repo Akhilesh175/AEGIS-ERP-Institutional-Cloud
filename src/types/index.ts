@@ -1181,6 +1181,18 @@ export interface PaymentAuditLog {
 
 // --- GROUP DISCUSSION ---
 
+/**
+ * Client-side only message lifecycle status.
+ * NOT persisted to the database — used for optimistic UI updates.
+ */
+export type MessageStatus =
+  | 'sending'    // optimistic insert in progress
+  | 'sent'       // persisted to DB
+  | 'delivered'  // received by at least one other client
+  | 'read'       // seen by recipient(s)
+  | 'failed'     // network / server error, user can retry
+  | 'queued';    // offline — will send when connection restores
+
 export interface ClassChatGroup {
   id: string;
   schoolId: string;
@@ -1252,6 +1264,10 @@ export interface ClassMessage {
   replyToMessageId?: string | null;
   replyToSenderName?: string | null;
   replyToContent?: string | null;
+  // Client-side only — not persisted
+  status?: MessageStatus;
+  localId?: string;
+  retryCount?: number;
 }
 
 export interface ClassPinnedMessage {

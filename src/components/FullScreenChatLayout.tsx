@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useLayoutEffect } from 'react';
 
 /**
  * FullScreenChatLayout
@@ -62,6 +62,23 @@ export const FullScreenChatLayout: React.FC<{ children: React.ReactNode }> = ({
       document.documentElement.style.removeProperty('--visual-viewport-top');
     };
   }, []);
+  // Measure the actual rendered navbar height after every paint so --navbar-height is
+  // always accurate. Covers cases where the header grows taller (e.g. logo text
+  // wraps to 2 lines on narrow phones, causing a visible gap if hardcoded to 60px).
+  useLayoutEffect(() => {
+    const measureNavbar = () => {
+      const hdr = document.querySelector<HTMLElement>('header.sticky');
+      const h = hdr ? Math.round(hdr.getBoundingClientRect().height) : 60;
+      document.documentElement.style.setProperty('--navbar-height', `${h}px`);
+    };
+    measureNavbar();
+    // Re-measure on resize covers orientation change, fold/unfold, etc.
+    window.addEventListener('resize', measureNavbar);
+    return () => {
+      window.removeEventListener('resize', measureNavbar);
+      document.documentElement.style.removeProperty('--navbar-height');
+    };
+  }, []);
 
   return (
     <div
@@ -81,10 +98,12 @@ export const FullScreenChatLayout: React.FC<{ children: React.ReactNode }> = ({
         'md:text-slate-100',
       ].join(' ')}
       style={{
-        // On mobile: start below Navbar (≈60px) + OS safe-area-inset-top (notch/Dynamic Island/status bar).
-        // --visual-viewport-top shifts the overlay when the virtual keyboard scrolls the viewport on Android Chrome.
+        // On mobile: start exactly below the Navbar (--navbar-height, measured in useLayoutEffect)
+        // + OS safe-area-inset-top (notch/Dynamic Island/status bar).
+        // --visual-viewport-top shifts the overlay when the virtual keyboard scrolls
+        // the viewport on Android Chrome.
         // On desktop (md: relative) this inline style has no layout effect.
-        top: 'calc(var(--visual-viewport-top, 0px) + 60px + env(safe-area-inset-top, 0px))',
+        top: 'calc(var(--visual-viewport-top, 0px) + var(--navbar-height, 60px) + env(safe-area-inset-top, 0px))',
       }}
     >
       {children}
