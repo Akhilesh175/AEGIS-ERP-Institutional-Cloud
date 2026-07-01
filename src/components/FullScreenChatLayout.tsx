@@ -1,4 +1,5 @@
-import React, { useEffect, useLayoutEffect } from 'react';
+import React, { useEffect, useLayoutEffect, useState } from 'react';
+import { createPortal } from 'react-dom';
 
 /**
  * FullScreenChatLayout
@@ -8,6 +9,24 @@ import React, { useEffect, useLayoutEffect } from 'react';
 export const FullScreenChatLayout: React.FC<{ children: React.ReactNode }> = ({
   children,
 }) => {
+  const [mounted, setMounted] = useState(false);
+  const [isMobile, setIsMobile] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Check if viewport is mobile sized to dynamically select portaling
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const checkMobile = () => {
+      setIsMobile(window.innerWidth < 768);
+    };
+    checkMobile();
+    window.addEventListener('resize', checkMobile);
+    return () => window.removeEventListener('resize', checkMobile);
+  }, []);
+
   // Lock body/document scroll on mobile while the full-screen overlay is
   // active. Prevents the page beneath from scrolling when the user swipes
   // inside the chat. Cleaned up automatically on unmount.
@@ -62,6 +81,7 @@ export const FullScreenChatLayout: React.FC<{ children: React.ReactNode }> = ({
       document.documentElement.style.removeProperty('--visual-viewport-top');
     };
   }, []);
+
   // Measure the actual rendered navbar height after every paint so --navbar-height is
   // always accurate. Covers cases where the header grows taller (e.g. logo text
   // wraps to 2 lines on narrow phones, causing a visible gap if hardcoded to 60px).
@@ -80,7 +100,7 @@ export const FullScreenChatLayout: React.FC<{ children: React.ReactNode }> = ({
     };
   }, []);
 
-  return (
+  const overlay = (
     <div
       className={[
         // ── Mobile: full-screen fixed overlay ─────────────────────────
@@ -98,16 +118,20 @@ export const FullScreenChatLayout: React.FC<{ children: React.ReactNode }> = ({
         'md:text-slate-100',
       ].join(' ')}
       style={{
-        // On mobile: start exactly below the Navbar (--navbar-height, measured in useLayoutEffect)
-        // + OS safe-area-inset-top (notch/Dynamic Island/status bar).
-        // --visual-viewport-top shifts the overlay when the virtual keyboard scrolls
-        // the viewport on Android Chrome.
-        // On desktop (md: relative) this inline style has no layout effect.
-        top: 'calc(var(--visual-viewport-top, 0px) + var(--navbar-height, 60px) + env(safe-area-inset-top, 0px))',
+        // On mobile: start exactly below the Navbar (measured in useLayoutEffect).
+        // Since --navbar-height includes env(safe-area-inset-top) from index.css padding-top,
+        // we do NOT add env(safe-area-inset-top) here to avoid double-counting.
+        top: 'calc(var(--visual-viewport-top, 0px) + var(--navbar-height, 60px))',
       }}
     >
       {children}
     </div>
   );
+
+  if (isMobile && mounted) {
+    return createPortal(overlay, document.body);
+  }
+
+  return overlay;
 };
 

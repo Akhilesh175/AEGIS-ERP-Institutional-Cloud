@@ -3937,7 +3937,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
       
       {/* Portal Identity Header */}
-      <AdminPortalHeader />
+      {activeTab !== 'groupdiscussion' && <AdminPortalHeader />}
 
       {activeTab === 'dashboard' && overview && (
         <div className="space-y-6">

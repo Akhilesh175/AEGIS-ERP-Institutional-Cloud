@@ -773,47 +773,49 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
       {/* Portal Identity Context Bar */}
-      <div className="bg-gradient-to-r from-brand-950 to-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-          {parentUser?.avatarUrl ? (
-            <img 
-              src={parentUser.avatarUrl} 
-              alt="" 
-              className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md shrink-0 animate-fade-in"
-              onError={(e) => {
-                // If link fails or is broken, clear it visually
-                (e.target as HTMLImageElement).src = '';
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-          ) : (
-            <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center shrink-0">
-              <UsersRound className="text-brand-400" size={24} />
-            </div>
-          )}
-          <div>
-            <h2 className="text-xl font-bold text-slate-100 font-sans leading-none">{parentName} <span className="text-xs text-slate-400 font-normal ml-1">(Parent/Guardian)</span></h2>
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-2">
-              <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono bg-slate-800 px-2 py-0.5 rounded">Wards: {studentNames}</span>
-              <span className="text-[10px] text-brand-400 uppercase tracking-widest font-mono bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded">{schoolNames}</span>
+      {activeTab !== 'groupdiscussion' && (
+        <div className="bg-gradient-to-r from-brand-950 to-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+            {parentUser?.avatarUrl ? (
+              <img 
+                src={parentUser.avatarUrl} 
+                alt="" 
+                className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md shrink-0 animate-fade-in"
+                onError={(e) => {
+                  // If link fails or is broken, clear it visually
+                  (e.target as HTMLImageElement).src = '';
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center shrink-0">
+                <UsersRound className="text-brand-400" size={24} />
+              </div>
+            )}
+            <div>
+              <h2 className="text-xl font-bold text-slate-100 font-sans leading-none">{parentName} <span className="text-xs text-slate-400 font-normal ml-1">(Parent/Guardian)</span></h2>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-2">
+                <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono bg-slate-800 px-2 py-0.5 rounded">Wards: {studentNames}</span>
+                <span className="text-[10px] text-brand-400 uppercase tracking-widest font-mono bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded">{schoolNames}</span>
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* Dropdown child selector */}
-        <div className="flex items-center gap-2">
-          <span className="text-xs text-slate-400 font-medium">Select Child:</span>
-          <select 
-            value={selectedStudent}
-            onChange={(e) => setSelectedStudent(e.target.value)}
-            className="bg-slate-950 border border-slate-800 text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 focus:outline-none focus:border-brand-500"
-          >
-            {assignedStudents.map(s => (
-              <option key={s.id} value={s.id}>{s.userDetails?.firstName || 'Student'} {s.userDetails?.lastName || ''} ({s.className})</option>
-            ))}
-          </select>
+          {/* Dropdown child selector */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-slate-400 font-medium">Select Child:</span>
+            <select 
+              value={selectedStudent}
+              onChange={(e) => setSelectedStudent(e.target.value)}
+              className="bg-slate-950 border border-slate-800 text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 focus:outline-none focus:border-brand-500"
+            >
+              {assignedStudents.map(s => (
+                <option key={s.id} value={s.id}>{s.userDetails?.firstName || 'Student'} {s.userDetails?.lastName || ''} ({s.className})</option>
+              ))}
+            </select>
+          </div>
         </div>
-      </div>
+      )}
 
       {error ? (
         <div className="p-6 bg-red-500/5 border border-red-500/20 rounded-2xl flex items-center gap-3 text-red-400">

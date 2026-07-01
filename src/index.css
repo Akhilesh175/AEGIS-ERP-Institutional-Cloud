@@ -156,13 +156,12 @@ body.group-discussion-active {
     padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
   }
 
-  /* 3. Chat overlay: sit exactly below the Navbar + safe-area */
+  /* 3. Chat overlay: sit exactly below the Navbar (measured dynamic height) */
   body.group-discussion-active .full-screen-chat-overlay {
-    top: calc(var(--navbar-height, 60px) + env(safe-area-inset-top, 0px)) !important;
+    top: var(--navbar-height, 60px) !important;
     height: calc(
       var(--visual-viewport-height, 100dvh)
       - var(--navbar-height, 60px)
-      - env(safe-area-inset-top, 0px)
     ) !important;
     overscroll-behavior: contain;
     touch-action: pan-y;

@@ -784,34 +784,36 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
       {/* Portal Identity Context Bar */}
-      <div className="bg-gradient-to-r from-brand-950 to-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col md:flex-row items-center justify-between gap-4">
-        <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-          {studentUser?.avatarUrl ? (
-            <img 
-              src={studentUser.avatarUrl} 
-              alt="" 
-              className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md shrink-0 animate-fade-in"
-              onError={(e) => {
-                // If link fails or is broken, clear it visually
-                (e.target as HTMLImageElement).src = '';
-                (e.target as HTMLImageElement).style.display = 'none';
-              }}
-            />
-          ) : (
-            <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center shrink-0">
-              <BookOpen className="text-brand-400" size={24} />
-            </div>
-          )}
-          <div>
-            <h2 className="text-xl font-bold text-slate-100 font-sans leading-none">{studentName} <span className="text-xs text-slate-400 font-normal ml-1">(Student)</span></h2>
-            <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-2">
-              <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono bg-slate-800 px-2 py-0.5 rounded">Adm No: {admissionNumber}</span>
-              <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono bg-slate-800 px-2 py-0.5 rounded">Class: {className}</span>
-              <span className="text-[10px] text-brand-400 uppercase tracking-widest font-mono bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded">{schoolName}</span>
+      {activeTab !== 'groupdiscussion' && (
+        <div className="bg-gradient-to-r from-brand-950 to-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
+            {studentUser?.avatarUrl ? (
+              <img 
+                src={studentUser.avatarUrl} 
+                alt="" 
+                className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md shrink-0 animate-fade-in"
+                onError={(e) => {
+                  // If link fails or is broken, clear it visually
+                  (e.target as HTMLImageElement).src = '';
+                  (e.target as HTMLImageElement).style.display = 'none';
+                }}
+              />
+            ) : (
+              <div className="w-12 h-12 rounded-xl bg-brand-500/10 border border-brand-500/25 flex items-center justify-center shrink-0">
+                <BookOpen className="text-brand-400" size={24} />
+              </div>
+            )}
+            <div>
+              <h2 className="text-xl font-bold text-slate-100 font-sans leading-none">{studentName} <span className="text-xs text-slate-400 font-normal ml-1">(Student)</span></h2>
+              <div className="flex flex-wrap items-center justify-center sm:justify-start gap-2 mt-2">
+                <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono bg-slate-800 px-2 py-0.5 rounded">Adm No: {admissionNumber}</span>
+                <span className="text-[10px] text-slate-400 uppercase tracking-widest font-mono bg-slate-800 px-2 py-0.5 rounded">Class: {className}</span>
+                <span className="text-[10px] text-brand-400 uppercase tracking-widest font-mono bg-brand-500/10 border border-brand-500/20 px-2 py-0.5 rounded">{schoolName}</span>
+              </div>
             </div>
           </div>
         </div>
-      </div>
+      )}
       
       {/* Active Tab Routing switch */}
 
