@@ -44,6 +44,55 @@ export const ClassDiscussion: React.FC<ClassDiscussionProps> = ({
     console.log(`[App Routing] Mount ClassDiscussion component: route = groupdiscussion, userRole = ${currentUserRole}`);
   }, [currentUserRole]);
 
+  // ── Group Discussion Body-Class Toggle ────────────────────────────────────
+  // Adds `group-discussion-active` to <body> while this component is mounted.
+  // The class activates the scoped CSS block in index.css that repositions the
+  // fullscreen chat overlay below the Navbar and respects OS safe-area insets.
+  // Strictly cleaned up on unmount — never leaks to other pages or modules.
+  useEffect(() => {
+    document.body.classList.add('group-discussion-active');
+    return () => {
+      document.body.classList.remove('group-discussion-active');
+    };
+  }, []);
+
+  // ── Capture-Phase Back-Button Interceptor ─────────────────────────────────
+  // Implements the navigation flow:
+  //   Class Discussion chat open → Back → Group Discussion list
+  //   Group Discussion list      → Back → Dashboard (default global handler)
+  //
+  // Strategy: listen at the capture phase (before the global onClick in Navbar)
+  // on the `#header-back-button` element. If a group is currently selected we
+  // intercept the event, close the chat room, and stop propagation. Otherwise
+  // we let the event bubble normally so global navigation handles it.
+  //
+  // selectedGroupRef mirrors the selectedGroup state so the listener always
+  // sees the latest value without needing to be re-registered on every change.
+  const selectedGroupRef = useRef<typeof selectedGroup>(null);
+  useEffect(() => {
+    selectedGroupRef.current = selectedGroup;
+  }, [selectedGroup]);
+
+  useEffect(() => {
+    const handleBackCapture = (e: MouseEvent) => {
+      const target = e.target as HTMLElement;
+      // Only intercept clicks on or within #header-back-button
+      if (!target.closest('#header-back-button')) return;
+      // If a chat group is open, close it and stay on Group Discussion list
+      if (selectedGroupRef.current !== null) {
+        e.preventDefault();
+        e.stopPropagation();
+        setSelectedGroup(null);
+      }
+      // Otherwise let the event propagate — Navbar's onClick will navigate back
+    };
+
+    document.addEventListener('click', handleBackCapture, true /* capture */);
+    return () => {
+      document.removeEventListener('click', handleBackCapture, true);
+    };
+  }, []); // Dependencies intentionally empty — uses ref for fresh state access
+
   // Message compose state
   const [messageText, setMessageText] = useState('');
   const [replyTo, setReplyTo] = useState<ClassMessage | null>(null);

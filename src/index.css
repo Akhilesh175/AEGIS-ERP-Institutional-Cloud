@@ -132,3 +132,52 @@
   }
 }
 
+/* ═══════════════════════════════════════════════════════════════════════════
+ * GROUP DISCUSSION — Mobile Layout, Safe-Area & Fullscreen Chat Fixes
+ * ─────────────────────────────────────────────────────────────────────────
+ * SCOPE: Only active when ClassDiscussion.tsx mounts and adds
+ *        `.group-discussion-active` to <body>.  Removed on unmount.
+ *
+ * APPROACH: Standard CSS class-based selectors only.
+ *   • No CSS :has()
+ *   • No user-agent / browser detection
+ *   • No vendor-specific hacks
+ *   • All rules scoped to @media (max-width: 767px) — desktop is unaffected
+ *
+ * WHAT THESE RULES DO:
+ *   1. Ensure the sticky Navbar header respects safe-area-inset-top
+ *      (notch, Dynamic Island, Android status bar) so it is never hidden.
+ *   2. Shift .full-screen-chat-overlay below the Navbar (60px) + OS
+ *      safe-area-inset-top so no content is clipped behind the status bar.
+ *   3. Set overlay height to the remaining visual viewport so it never
+ *      causes overflow or horizontal scroll.
+ *   4. Pad the mobile Sidebar drawer so its header clears the notch.
+ *
+ * DO NOT ADD RULES HERE that affect any other module.
+ * ═══════════════════════════════════════════════════════════════════════════ */
+
+@media (max-width: 767px) {
+  /* 1. Navbar header: push content below OS status-bar / notch */
+  body.group-discussion-active header.sticky {
+    padding-top: calc(env(safe-area-inset-top, 0px) + 0.75rem);
+  }
+
+  /* 2. Chat overlay: sit below the Navbar (60px) + safe-area-inset-top */
+  body.group-discussion-active .full-screen-chat-overlay {
+    top: calc(60px + env(safe-area-inset-top, 0px)) !important;
+    height: calc(
+      var(--visual-viewport-height, 100dvh)
+      - 60px
+      - env(safe-area-inset-top, 0px)
+    ) !important;
+    overscroll-behavior: contain;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-top: 0 !important;
+  }
+
+  /* 3. Mobile Sidebar drawer: clear notch when Group Discussion is open */
+  body.group-discussion-active .animate-slide-right {
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+}

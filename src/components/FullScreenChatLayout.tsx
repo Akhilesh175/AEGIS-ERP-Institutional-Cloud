@@ -81,7 +81,10 @@ export const FullScreenChatLayout: React.FC<{ children: React.ReactNode }> = ({
         'md:text-slate-100',
       ].join(' ')}
       style={{
-        top: 'var(--visual-viewport-top, 0px)',
+        // On mobile: start below Navbar (≈60px) + OS safe-area-inset-top (notch/Dynamic Island/status bar).
+        // --visual-viewport-top shifts the overlay when the virtual keyboard scrolls the viewport on Android Chrome.
+        // On desktop (md: relative) this inline style has no layout effect.
+        top: 'calc(var(--visual-viewport-top, 0px) + 60px + env(safe-area-inset-top, 0px))',
       }}
     >
       {children}
