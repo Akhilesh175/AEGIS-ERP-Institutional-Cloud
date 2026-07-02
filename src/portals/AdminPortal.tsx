@@ -21,8 +21,19 @@ import { downloadReceiptPdf } from '../components/ReceiptTemplate';
 import { 
   downloadStudentIdCardPdf, downloadAdmissionFormPdf, 
   downloadTransferCertificatePdf, downloadBonafideCertificatePdf, 
-  downloadCertificateOfExcellencePdf 
+  downloadCertificateOfExcellencePdf,
+  downloadCharacterCertificatePdf,
+  downloadAdmissionRecordPdf
 } from '../components/DocumentTemplates';
+import {
+  fetchStudentDocData,
+  fetchSchoolDocData,
+  fetchPrincipalDocData,
+  saveGeneratedDocumentRecord,
+  uploadStudentPhoto,
+  upsertStudentProfile,
+} from '../services/documentService';
+
 import { ClassDiscussion } from '../components/ClassDiscussion';
 import { AdminPTMManagement } from '../components/PTMManagement';
 
@@ -14393,62 +14404,109 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 const handleDownload = async (type: string) => {
                   try {
                     setDocGenerating(type);
-                    
-                    // Fetch dynamic principal signature from database
-                    let pSig = '';
-                    let pName = 'Principal / School Admin';
-                    const { data: dbAdmin } = await supabase
-                      .from('school_admins')
-                      .select('signature_url, users(first_name, last_name)')
-                      .eq('school_id', school.id)
-                      .eq('status', 'ACTIVE')
-                      .maybeSingle();
-                    if (dbAdmin) {
-                      if (dbAdmin.signature_url) pSig = dbAdmin.signature_url;
-                      if (dbAdmin.users) {
-                        const u = dbAdmin.users as any;
-                        pName = `${u.first_name} ${u.last_name}`;
-                      }
+
+                    // ── Fetch ALL enriched student data from DB (no hardcoded values) ──
+                    const enrichedSt = await fetchStudentDocData(st.id, session?.user.schoolId || '');
+                    const enrichedSchool = await fetchSchoolDocData(session?.user.schoolId || '');
+                    const principal = await fetchPrincipalDocData(session?.user.schoolId || '');
+
+                    if (!enrichedSt) {
+                      alert('Error: Could not load student data. Please try again.');
+                      return;
                     }
 
-                    // Setup student document object
                     const docSt = {
-                      id: st.id,
-                      fullName: st.userDetails ? `${st.userDetails.firstName} ${st.userDetails.lastName}` : 'Student Name',
-                      admissionNumber: st.admissionNumber,
-                      rollNumber: st.rollNumber,
-                      className: st.className,
-                      sectionName: 'A',
-                      dateOfBirth: st.dateOfBirth,
-                      gender: st.gender,
-                      avatarUrl: st.userDetails?.avatarUrl,
-                      fatherName: 'Father Name',
-                      motherName: 'Mother Name',
-                      address: 'Student Residence, USA',
-                      phone: st.userDetails?.phone
+                      id: enrichedSt.studentId,
+                      fullName: enrichedSt.fullName,
+                      firstName: enrichedSt.firstName,
+                      lastName: enrichedSt.lastName,
+                      admissionNumber: enrichedSt.admissionNumber,
+                      rollNumber: enrichedSt.rollNumber,
+                      className: enrichedSt.className || st.className,
+                      sectionName: enrichedSt.sectionName,
+                      dateOfBirth: enrichedSt.dateOfBirth,
+                      gender: enrichedSt.gender,
+                      photoUrl: enrichedSt.photoUrl,
+                      avatarUrl: enrichedSt.avatarUrl,
+                      bloodGroup: enrichedSt.bloodGroup,
+                      aadhaarNumber: enrichedSt.aadhaarNumber,
+                      nationality: enrichedSt.nationality,
+                      religion: enrichedSt.religion,
+                      category: enrichedSt.category,
+                      house: enrichedSt.house,
+                      phone: enrichedSt.phone,
+                      email: enrichedSt.email,
+                      addressLine1: enrichedSt.addressLine1,
+                      addressLine2: enrichedSt.addressLine2,
+                      city: enrichedSt.city,
+                      state: enrichedSt.state,
+                      pincode: enrichedSt.pincode,
+                      country: enrichedSt.country,
+                      fatherName: enrichedSt.fatherName,
+                      fatherPhone: enrichedSt.fatherPhone,
+                      fatherEmail: enrichedSt.fatherEmail,
+                      fatherOccupation: enrichedSt.fatherOccupation,
+                      motherName: enrichedSt.motherName,
+                      motherPhone: enrichedSt.motherPhone,
+                      motherEmail: enrichedSt.motherEmail,
+                      motherOccupation: enrichedSt.motherOccupation,
+                      admissionDate: enrichedSt.admissionDate,
+                      academicSession: enrichedSt.academicSession,
+                      previousSchool: enrichedSt.previousSchool,
+                      previousClass: enrichedSt.previousClass,
+                      previousBoard: enrichedSt.previousBoard,
+                      previousPercentage: enrichedSt.previousPercentage,
                     };
 
-                    const docSchool = {
-                      id: school.id,
-                      name: school.name,
-                      address: school.address,
-                      phone: school.phone,
-                      email: (school as any).email || 'admin@aegisacademy.edu',
-                      logoUrl: school.logoUrl,
-                      sealUrl: school.sealUrl,
-                      sessionName: (school as any).sessionName || '2025-2026'
+                    const docSchool = enrichedSchool ? {
+                      id: enrichedSchool.id,
+                      name: enrichedSchool.name,
+                      address: enrichedSchool.address,
+                      phone: enrichedSchool.phone,
+                      email: enrichedSchool.email,
+                      logoUrl: enrichedSchool.logoUrl,
+                      sealUrl: enrichedSchool.sealUrl,
+                      sessionName: enrichedSchool.sessionName,
+                    } : {
+                      id: session?.user.schoolId || '',
+                      name: 'Aegis Academy',
+                      address: '', phone: '', email: '',
+                      logoUrl: '', sealUrl: '', sessionName: '2025-2026',
                     };
+
+                    const pSig = principal.signatureUrl;
+                    const pName = principal.name;
 
                     if (type === 'idcard') {
                       await downloadStudentIdCardPdf(docSchool, docSt, pSig, pName);
                     } else if (type === 'admission') {
                       await downloadAdmissionFormPdf(docSchool, docSt, undefined, pSig, pName);
-                    } else if (type === 'transfer') {
-                      await downloadTransferCertificatePdf(docSchool, docSt, pSig, pName);
+                    } else if (type === 'admission_record') {
+                      await downloadAdmissionRecordPdf(docSchool, docSt, pSig, pName);
                     } else if (type === 'bonafide') {
                       await downloadBonafideCertificatePdf(docSchool, docSt, pSig, pName);
                     } else if (type === 'excellence') {
                       await downloadCertificateOfExcellencePdf(docSchool, docSt, pSig, pName);
+                    } else if (type === 'character') {
+                      // Save DB record FIRST to get verification number
+                      const docId = await saveGeneratedDocumentRecord({
+                        schoolId: session?.user.schoolId || '',
+                        studentId: st.id,
+                        documentType: 'character_certificate',
+                        generatedByUserId: session?.user.id || '',
+                        generatedByRole: session?.user.role || 'ADMIN',
+                      });
+                      await downloadCharacterCertificatePdf(docSchool, docSt, pSig, pName);
+                    } else if (type === 'transfer') {
+                      // Save DB record for Transfer Certificate (gated visibility)
+                      await saveGeneratedDocumentRecord({
+                        schoolId: session?.user.schoolId || '',
+                        studentId: st.id,
+                        documentType: 'transfer_certificate',
+                        generatedByUserId: session?.user.id || '',
+                        generatedByRole: session?.user.role || 'ADMIN',
+                      });
+                      await downloadTransferCertificatePdf(docSchool, docSt, pSig, pName);
                     }
                   } catch (err) {
                     console.error('Failed to generate document:', err);
@@ -14457,6 +14515,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     setDocGenerating('');
                   }
                 };
+
 
                 return (
                   <div className="pt-4 border-t border-slate-850 space-y-4 animate-fade-in">
@@ -14535,6 +14594,57 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
                         >
                           {docGenerating === 'excellence' ? 'Generating...' : 'Download Certificate (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Admission Record Button */}
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <h6 className="font-bold text-slate-200 text-xs">Admission Record</h6>
+                          <p className="text-[10px] text-slate-450 mt-1">Comprehensive tabular admission record. Includes all personal, academic, parent, address, and previous school details fetched live from database.</p>
+                        </div>
+                        <button
+                          onClick={() => handleDownload('admission_record')}
+                          disabled={!!docGenerating}
+                          className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
+                        >
+                          {docGenerating === 'admission_record' ? 'Generating...' : 'Download Admission Record (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Character Certificate Button — Admin Only, saves to DB */}
+                      <div className="p-4 bg-amber-950/30 border border-amber-800/40 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <h6 className="font-bold text-amber-300 text-xs">Character Certificate</h6>
+                            <span className="text-[8px] bg-amber-900/60 text-amber-400 px-1.5 py-0.5 rounded-full font-bold uppercase">Admin Only</span>
+                          </div>
+                          <p className="text-[10px] text-slate-450">Generates official character certificate. Once generated, it becomes automatically visible to the student and parent portal. Saves an audit record.</p>
+                        </div>
+                        <button
+                          onClick={() => handleDownload('character')}
+                          disabled={!!docGenerating}
+                          className="w-full py-2 text-xs flex items-center justify-center gap-1.5 bg-amber-700/80 hover:bg-amber-600 text-white rounded-xl font-semibold transition-colors"
+                        >
+                          {docGenerating === 'character' ? 'Generating & Saving...' : 'Generate Character Certificate (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Transfer Certificate Button — Admin Only, saves to DB */}
+                      <div className="p-4 bg-rose-950/30 border border-rose-800/40 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <div className="flex items-center gap-1.5 mb-1">
+                            <h6 className="font-bold text-rose-300 text-xs">Transfer Certificate</h6>
+                            <span className="text-[8px] bg-rose-900/60 text-rose-400 px-1.5 py-0.5 rounded-full font-bold uppercase">Admin Only</span>
+                          </div>
+                          <p className="text-[10px] text-slate-450">Generates official school leaving / transfer certificate. Once generated, it becomes visible to student and parent portals. Saves an audit record.</p>
+                        </div>
+                        <button
+                          onClick={() => handleDownload('transfer')}
+                          disabled={!!docGenerating}
+                          className="w-full py-2 text-xs flex items-center justify-center gap-1.5 bg-rose-700/80 hover:bg-rose-600 text-white rounded-xl font-semibold transition-colors"
+                        >
+                          {docGenerating === 'transfer' ? 'Generating & Saving...' : 'Generate Transfer Certificate (PDF)'}
                         </button>
                       </div>
                     </div>

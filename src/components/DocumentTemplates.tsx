@@ -14,7 +14,7 @@ const AEGIS_PDF_FOOTER = `
   </div>
 `;
 
-interface DocumentSchoolData {
+export interface DocumentSchoolData {
   id: string;
   name: string;
   address?: string;
@@ -23,30 +23,89 @@ interface DocumentSchoolData {
   logoUrl?: string;
   sealUrl?: string;
   sessionName?: string;
+  affiliationNumber?: string;
+  schoolCode?: string;
+  principalName?: string;
 }
 
-interface DocumentStudentData {
+export interface DocumentStudentData {
   id: string;
   fullName: string;
+  firstName?: string;
+  lastName?: string;
   admissionNumber: string;
   rollNumber: number;
   className: string;
   sectionName: string;
   dateOfBirth: string;
   gender: string;
+  // Photo — prefer photoUrl from student_profiles; fall back to avatarUrl from users
+  photoUrl?: string;
   avatarUrl?: string;
-  fatherName?: string;
-  motherName?: string;
-  address?: string;
+  // Personal
+  bloodGroup?: string;
+  aadhaarNumber?: string;
+  nationality?: string;
+  religion?: string;
+  category?: string;
+  house?: string;
+  // Contact
   phone?: string;
+  email?: string;
+  // Address (from student_profiles)
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  country?: string;
+  // Convenience combined address string (backward compat)
+  address?: string;
+  // Parents
+  fatherName?: string;
+  fatherPhone?: string;
+  fatherEmail?: string;
+  fatherOccupation?: string;
+  motherName?: string;
+  motherPhone?: string;
+  motherEmail?: string;
+  motherOccupation?: string;
+  // Admission
+  admissionDate?: string;
+  academicSession?: string;
+  // Previous school
+  previousSchool?: string;
+  previousClass?: string;
+  previousBoard?: string;
+  previousPercentage?: string;
 }
 
-interface DocumentParentData {
+export interface DocumentParentData {
   fullName: string;
   phone?: string;
   occupation?: string;
   address?: string;
 }
+
+/** Helper: returns the best available photo URL for a student */
+export function getStudentPhotoUrl(student: DocumentStudentData): string {
+  return student.photoUrl || student.avatarUrl || '';
+}
+
+/** Helper: builds a formatted full address string from parts */
+export function buildAddressString(student: DocumentStudentData): string {
+  if (student.address) return student.address; // backward compat
+  const parts = [
+    student.addressLine1,
+    student.addressLine2,
+    student.city,
+    student.state,
+    student.pincode,
+    student.country,
+  ].filter(Boolean);
+  return parts.join(', ');
+}
+
 
 // ─── STUDENT ID CARD ──────────────────────────────────────────────────────────
 export const downloadStudentIdCardPdf = async (
@@ -97,7 +156,7 @@ export const downloadStudentIdCardPdf = async (
     <!-- Profile & Information Section -->
     <div style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 20px;">
       <div style="width: 90px; height: 90px; border-radius: 20px; border: 2.5px solid #4f46e5; overflow: hidden; background-color: #1e293b; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); margin-bottom: 12px;">
-        ${student.avatarUrl ? `<img src="${student.avatarUrl}" style="width: 100%; height: 100%; object-fit: cover;" />` : `
+        ${(student.photoUrl || student.avatarUrl) ? `<img src="${student.photoUrl || student.avatarUrl}" style="width: 100%; height: 100%; object-fit: cover;" crossorigin="anonymous" />` : `
           <svg style="width: 44px; height: 44px; color: #64748b;" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
             <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
           </svg>
@@ -122,6 +181,10 @@ export const downloadStudentIdCardPdf = async (
           <td style="color: #64748b; font-weight: bold;">Date of Birth</td>
           <td style="color: #ffffff;">: ${new Date(student.dateOfBirth).toLocaleDateString('en-GB')}</td>
         </tr>
+        ${student.bloodGroup ? `<tr>
+          <td style="color: #64748b; font-weight: bold;">Blood Group</td>
+          <td style="color: #ef4444; font-weight: bold;">: ${student.bloodGroup}</td>
+        </tr>` : ''}
         <tr>
           <td style="color: #64748b; font-weight: bold;">Emergency No.</td>
           <td style="color: #38bdf8; font-weight: bold;">: ${student.phone || school.phone || 'N/A'}</td>
@@ -218,8 +281,8 @@ export const downloadAdmissionFormPdf = async (
         <p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; font-family: sans-serif; text-transform: uppercase;">${school.address || ''}</p>
         <p style="font-size: 9px; color: #475569; margin: 2px 0 0 0; font-family: sans-serif; font-weight: 600;">Contact: ${school.phone || ''} | Email: ${school.email || ''}</p>
       </div>
-      <div style="width: 90px; height: 100px; border: 1px dashed #94a3b8; display: flex; align-items: center; justify-content: center; background-color: #f8fafc; font-size: 9px; color: #64748b; text-align: center; font-family: sans-serif;">
-        ${student.avatarUrl ? `<img src="${student.avatarUrl}" style="width: 100%; height: 100%; object-fit: cover;" />` : 'STUDENT<br/>PHOTO'}
+      <div style="width: 90px; height: 100px; border: 1px dashed #94a3b8; display: flex; align-items: center; justify-content: center; background-color: #f8fafc; font-size: 9px; color: #64748b; text-align: center; font-family: sans-serif; overflow: hidden;">
+        ${(student.photoUrl || student.avatarUrl) ? `<img src="${student.photoUrl || student.avatarUrl}" style="width: 100%; height: 100%; object-fit: cover;" crossorigin="anonymous" />` : 'STUDENT<br/>PHOTO'}
       </div>
     </div>
 
@@ -681,3 +744,266 @@ export const downloadCertificateOfExcellencePdf = async (
     document.body.removeChild(container);
   }
 };
+
+// ─── CHARACTER CERTIFICATE ───────────────────────────────────────────────────
+/**
+ * CHARACTER CERTIFICATE
+ * Admin/Academic Admin only. After generation, metadata is saved to DB
+ * and the doc becomes visible in Student and Parent portals.
+ */
+export const downloadCharacterCertificatePdf = async (
+  school: DocumentSchoolData,
+  student: DocumentStudentData,
+  principalSignatureUrl?: string,
+  principalName: string = 'Principal',
+  verificationNumber?: string
+) => {
+  const container = document.createElement('div');
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
+  container.style.top = '-9999px';
+  container.style.width = '800px';
+  container.style.background = 'white';
+
+  document.body.appendChild(container);
+
+  const cert = document.createElement('div');
+  container.appendChild(cert);
+
+  cert.style.cssText = `
+    background: white;
+    color: #1e293b;
+    padding: 48px;
+    border: 8px double #1e3a5f;
+    width: 794px;
+    min-height: 1100px;
+    box-sizing: border-box;
+    font-family: Georgia, serif;
+    position: relative;
+  `;
+
+  const issueDate = new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'long', year: 'numeric' });
+  const verNum = verificationNumber || `AEGIS-CHR-${new Date().getFullYear()}-${Math.random().toString(36).substring(2,8).toUpperCase()}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`${window.location.origin}/#verify/doc/${verNum}`)}`;
+  const address = student.addressLine1
+    ? [student.addressLine1, student.city, student.state].filter(Boolean).join(', ')
+    : (student.address || '');
+
+  cert.innerHTML = `
+    <!-- Outer decorative top rule -->
+    <div style="height: 3px; background: linear-gradient(90deg, #1e3a5f, #c8a84b, #1e3a5f); margin-bottom: 24px;"></div>
+
+    <!-- Header -->
+    <div style="text-align: center; margin-bottom: 20px; position: relative;">
+      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 0; top: 0; width: 70px; height: 70px; object-fit: contain;" />` : ''}
+      <h1 style="font-size: 24px; font-weight: 900; color: #1e3a5f; margin: 0; text-transform: uppercase; letter-spacing: 1.5px; font-family: sans-serif;">${school.name}</h1>
+      ${school.affiliationNumber ? `<p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; font-family: sans-serif;">AFFILIATION NO.: ${school.affiliationNumber} | SCHOOL CODE: ${school.schoolCode || ''}</p>` : `<p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; font-family: sans-serif;">${school.address || ''}</p>`}
+    </div>
+
+    <!-- Title -->
+    <div style="text-align: center; margin: 20px 0 28px 0;">
+      <div style="display: inline-block; border: 2px solid #1e3a5f; padding: 6px 32px;">
+        <h2 style="font-size: 20px; font-weight: 900; color: #1e3a5f; margin: 0; text-transform: uppercase; letter-spacing: 3px; font-family: sans-serif;">CHARACTER CERTIFICATE</h2>
+      </div>
+    </div>
+
+    <!-- Date -->
+    <div style="text-align: right; font-size: 11px; margin-bottom: 20px; color: #475569;">Date: ${issueDate}</div>
+
+    <!-- Body -->
+    <div style="font-size: 14px; line-height: 2.2; text-align: justify; color: #1e293b; margin-top: 16px;">
+      <p>This is to certify that <strong style="text-transform: uppercase; font-size: 15px; color: #0f172a;">${student.fullName}</strong>, 
+      ${student.fatherName ? `S/o or D/o <strong>${student.fatherName}</strong>,` : ''} 
+      was a bonafide student of <strong>${school.name}</strong> in class 
+      <strong>${student.className}${student.sectionName ? ' – ' + student.sectionName : ''}</strong> 
+      during the academic session <strong>${student.academicSession || school.sessionName || '2025-2026'}</strong>.</p>
+
+      <p>His / Her conduct and behavior during the period of study at this institution have been found to be 
+      <strong style="color: #065f46; font-size: 15px;">VERY GOOD</strong>. He / She bears a 
+      good moral character and is a disciplined and sincere student.</p>
+
+      <p>This certificate is issued on request for use in any official purpose.</p>
+    </div>
+
+    <!-- Verification number -->
+    <p style="font-size: 9px; font-family: monospace; color: #94a3b8; margin-top: 16px;">Cert. No.: ${verNum}</p>
+
+    <!-- Signatures -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 80px; padding-top: 16px; border-top: 1px solid #cbd5e1;">
+      <!-- QR Code -->
+      <div style="text-align: center;">
+        <div style="background: white; padding: 3px; border: 1px solid #e2e8f0; display: inline-block; border-radius: 4px;">
+          <img src="${qrUrl}" style="width: 70px; height: 70px; display: block;" />
+        </div>
+        <p style="font-size: 8px; color: #94a3b8; margin: 4px 0 0 0; font-family: sans-serif;">Scan to Verify</p>
+      </div>
+
+      <!-- Seal + Signature -->
+      <div style="width: 220px; text-align: center; position: relative;">
+        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 10px; bottom: 30px; width: 52px; height: 52px; opacity: 0.5; object-fit: contain;" />` : ''}
+        ${principalSignatureUrl ? `
+          <div style="height: 42px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px;">
+            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 160px; object-fit: contain;" />
+          </div>
+        ` : `<div style="height: 42px;"></div>`}
+        <span style="font-weight: bold; color: #1e3a5f; border-top: 2px solid #1e3a5f; display: block; padding-top: 6px; font-size: 11px; font-family: sans-serif;">${principalName}</span>
+        <span style="font-size: 10px; color: #475569; font-family: sans-serif;">Principal, ${school.name}</span>
+      </div>
+    </div>
+
+    <div style="height: 3px; background: linear-gradient(90deg, #1e3a5f, #c8a84b, #1e3a5f); margin-top: 24px;"></div>
+  ${AEGIS_PDF_FOOTER}
+  `;
+
+  await new Promise(r => setTimeout(r, 1000));
+
+  try {
+    const canvas = await html2canvas(cert, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
+
+    const fileName = `character_certificate_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
+    if (Capacitor.isNativePlatform()) {
+      const pdfBlob = pdf.output('blob');
+      await downloadFile(pdfBlob, fileName);
+    } else {
+      pdf.save(fileName);
+    }
+  } catch (err) {
+    console.error('Failed to export Character Certificate:', err);
+    alert('An error occurred while generating the Character Certificate PDF.');
+  } finally {
+    document.body.removeChild(container);
+  }
+};
+
+// ─── ADMISSION RECORD ────────────────────────────────────────────────────────
+/**
+ * ADMISSION RECORD
+ * A comprehensive tabular record of the student's complete admission details.
+ * Different from "Admission Form" — this is the official record, not the intake form.
+ */
+export const downloadAdmissionRecordPdf = async (
+  school: DocumentSchoolData,
+  student: DocumentStudentData,
+  principalSignatureUrl?: string,
+  principalName: string = 'Authorised Signatory'
+) => {
+  const container = document.createElement('div');
+  container.style.position = 'absolute';
+  container.style.left = '-9999px';
+  container.style.top = '-9999px';
+  container.style.width = '800px';
+  container.style.background = 'white';
+
+  document.body.appendChild(container);
+
+  const rec = document.createElement('div');
+  container.appendChild(rec);
+
+  rec.style.cssText = `
+    background: white;
+    color: #1e293b;
+    padding: 48px;
+    border: 6px double #1e3a5f;
+    width: 794px;
+    min-height: 1100px;
+    box-sizing: border-box;
+    font-family: Georgia, serif;
+    position: relative;
+  `;
+
+  const address = student.addressLine1
+    ? [student.addressLine1, student.addressLine2, student.city, student.state, student.pincode].filter(Boolean).join(', ')
+    : (student.address || 'N/A');
+
+  rec.innerHTML = `
+    <!-- Header -->
+    <div style="text-align: center; border-bottom: 2px solid #1e3a5f; padding-bottom: 16px; margin-bottom: 20px; position: relative;">
+      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 0; top: 0; width: 65px; height: 65px; object-fit: contain;" />` : ''}
+      <h1 style="font-size: 22px; font-weight: 900; color: #1e3a5f; margin: 0; text-transform: uppercase; letter-spacing: 1px; font-family: sans-serif;">${school.name}</h1>
+      ${school.affiliationNumber ? `<p style="font-size: 9px; color: #64748b; margin: 3px 0 0 0; font-family: sans-serif;">AFFILIATION NO.: ${school.affiliationNumber} | SCHOOL CODE: ${school.schoolCode || ''}</p>` : `<p style="font-size: 9px; color: #64748b; margin: 3px 0 0 0; font-family: sans-serif;">${school.address || ''}</p>`}
+      <h2 style="font-size: 16px; font-weight: 900; color: #1e293b; margin: 14px 0 0 0; text-transform: uppercase; letter-spacing: 2px; font-family: sans-serif;">ADMISSION RECORD</h2>
+    </div>
+
+    <!-- Table: All student admission fields -->
+    <table style="width: 100%; border-collapse: collapse; font-size: 11.5px; line-height: 1.9;">
+      ${[
+        ['Admission No.', student.admissionNumber],
+        ['Admission Date', student.admissionDate ? new Date(student.admissionDate).toLocaleDateString('en-IN') : 'N/A'],
+        ['Student Name', `<strong style="text-transform:uppercase;">${student.fullName}</strong>`],
+        ['Father\'s Name', student.fatherName || 'N/A'],
+        ['Mother\'s Name', student.motherName || 'N/A'],
+        ['Date of Birth', student.dateOfBirth ? new Date(student.dateOfBirth).toLocaleDateString('en-IN') : 'N/A'],
+        ['Gender', student.gender || 'N/A'],
+        ['Blood Group', student.bloodGroup || 'N/A'],
+        ['Category', student.category || 'General'],
+        ['Aadhaar Number', student.aadhaarNumber || 'N/A'],
+        ['Nationality', student.nationality || 'Indian'],
+        ['Religion', student.religion || 'N/A'],
+        ['Class', `${student.className}${student.sectionName ? ' – ' + student.sectionName : ''}`],
+        ['Roll Number', String(student.rollNumber)],
+        ['Academic Session', student.academicSession || school.sessionName || '2025-2026'],
+        ['House', student.house || 'N/A'],
+        ['Previous School', student.previousSchool || 'N/A'],
+        ['Previous Class', student.previousClass || 'N/A'],
+        ['Board', student.previousBoard || 'N/A'],
+        ['Previous %/CGPA', student.previousPercentage || 'N/A'],
+        ['Contact Number', student.phone || 'N/A'],
+        ['Address', address],
+      ].map(([label, value], i) => `
+        <tr style="background-color: ${i % 2 === 0 ? '#f8fafc' : '#ffffff'}; border-bottom: 1px solid #e2e8f0;">
+          <td style="padding: 7px 10px; font-weight: bold; color: #475569; width: 35%; vertical-align: top;">${label}</td>
+          <td style="padding: 7px 10px; color: #0f172a; vertical-align: top;">: ${value}</td>
+        </tr>
+      `).join('')}
+    </table>
+
+    <!-- Signatures -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 60px; border-top: 1px solid #cbd5e1; padding-top: 16px;">
+      <div style="text-align: center; font-size: 10px; font-family: sans-serif; width: 200px;">
+        <div style="height: 36px;"></div>
+        <span style="font-weight: bold; color: #475569; border-top: 1px solid #e2e8f0; display: block; padding-top: 6px;">Parent / Guardian Signature</span>
+      </div>
+
+      <div style="width: 220px; text-align: center; position: relative; font-size: 10px; font-family: sans-serif;">
+        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 10px; bottom: 30px; width: 52px; height: 52px; opacity: 0.5; object-fit: contain;" />` : ''}
+        ${principalSignatureUrl ? `
+          <div style="height: 36px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px;">
+            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 160px; object-fit: contain;" />
+          </div>
+        ` : `<div style="height: 36px;"></div>`}
+        <span style="font-weight: bold; color: #1e3a5f; border-top: 1px solid #e2e8f0; display: block; padding-top: 6px;">${principalName}</span>
+      </div>
+    </div>
+  ${AEGIS_PDF_FOOTER}
+  `;
+
+  await new Promise(r => setTimeout(r, 1000));
+
+  try {
+    const canvas = await html2canvas(rec, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
+    const imgData = canvas.toDataURL('image/png');
+    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: 'a4' });
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
+
+    const fileName = `admission_record_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
+    if (Capacitor.isNativePlatform()) {
+      const pdfBlob = pdf.output('blob');
+      await downloadFile(pdfBlob, fileName);
+    } else {
+      pdf.save(fileName);
+    }
+  } catch (err) {
+    console.error('Failed to export Admission Record:', err);
+    alert('An error occurred while generating the Admission Record PDF.');
+  } finally {
+    document.body.removeChild(container);
+  }
+};
+

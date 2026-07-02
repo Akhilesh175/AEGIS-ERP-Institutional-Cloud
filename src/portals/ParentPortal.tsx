@@ -25,8 +25,19 @@ import { downloadReceiptPdf } from '../components/ReceiptTemplate';
 import { downloadInvoicePdf } from '../components/InvoiceTemplate';
 import { 
   downloadStudentIdCardPdf, downloadAdmissionFormPdf, 
-  downloadBonafideCertificatePdf 
+  downloadBonafideCertificatePdf,
+  downloadAdmissionRecordPdf,
+  downloadCharacterCertificatePdf,
+  downloadTransferCertificatePdf,
 } from '../components/DocumentTemplates';
+import {
+  fetchStudentDocData,
+  fetchSchoolDocData,
+  fetchPrincipalDocData,
+  checkDocumentGenerated,
+} from '../services/documentService';
+import type { GeneratedDocument } from '../types';
+
 import { ParentPTMManagement } from '../components/PTMManagement';
 
 const renderVideoPlayer = (url: string) => {
@@ -2802,222 +2813,210 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
               const st = assignedStudents.find(s => s.id === selectedStudent);
               if (!st) return null;
 
-              return (
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                  {/* ID Card Button */}
-                  <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
-                    <div>
-                      <h6 className="font-bold text-slate-200 text-xs">Student ID Card (CR80)</h6>
-                      <p className="text-[10px] text-slate-450 mt-1">High-fidelity portrait wallet ID card. Incorporates photo, roll details, verified QR verification, logo, seal, and administrative signature.</p>
+              const schoolId = studentObj?.schoolId || session?.user?.schoolId || '';
+
+                  const handleDocDownload = async (type: string, charDoc?: GeneratedDocument | null) => {
+                    try {
+                      setDocGenerating(type);
+                      if (!studentObj) return;
+
+                      const enrichedSt = await fetchStudentDocData(studentObj.id, schoolId);
+                      const enrichedSchool = await fetchSchoolDocData(schoolId);
+                      const principal = await fetchPrincipalDocData(schoolId);
+
+                      if (!enrichedSt) {
+                        alert('Error: Could not load student data. Please try again.');
+                        return;
+                      }
+
+                      const docSt = {
+                        id: enrichedSt.studentId,
+                        fullName: enrichedSt.fullName || (st.userDetails ? `${st.userDetails.firstName} ${st.userDetails.lastName}` : 'Student Name'),
+                        firstName: enrichedSt.firstName,
+                        lastName: enrichedSt.lastName,
+                        admissionNumber: enrichedSt.admissionNumber,
+                        rollNumber: enrichedSt.rollNumber,
+                        className: enrichedSt.className || st.className || 'Class Room',
+                        sectionName: enrichedSt.sectionName,
+                        dateOfBirth: enrichedSt.dateOfBirth,
+                        gender: enrichedSt.gender,
+                        photoUrl: enrichedSt.photoUrl,
+                        avatarUrl: enrichedSt.avatarUrl || st.userDetails?.avatarUrl,
+                        bloodGroup: enrichedSt.bloodGroup,
+                        aadhaarNumber: enrichedSt.aadhaarNumber,
+                        nationality: enrichedSt.nationality,
+                        religion: enrichedSt.religion,
+                        category: enrichedSt.category,
+                        house: enrichedSt.house,
+                        phone: enrichedSt.phone || st.userDetails?.phone,
+                        email: enrichedSt.email,
+                        addressLine1: enrichedSt.addressLine1,
+                        addressLine2: enrichedSt.addressLine2,
+                        city: enrichedSt.city,
+                        state: enrichedSt.state,
+                        pincode: enrichedSt.pincode,
+                        country: enrichedSt.country,
+                        fatherName: enrichedSt.fatherName,
+                        fatherPhone: enrichedSt.fatherPhone,
+                        fatherOccupation: enrichedSt.fatherOccupation,
+                        motherName: enrichedSt.motherName,
+                        motherPhone: enrichedSt.motherPhone,
+                        motherOccupation: enrichedSt.motherOccupation,
+                        admissionDate: enrichedSt.admissionDate,
+                        academicSession: enrichedSt.academicSession,
+                        previousSchool: enrichedSt.previousSchool,
+                        previousClass: enrichedSt.previousClass,
+                        previousBoard: enrichedSt.previousBoard,
+                        previousPercentage: enrichedSt.previousPercentage,
+                      };
+
+                      const docSchool = enrichedSchool ? {
+                        id: enrichedSchool.id,
+                        name: enrichedSchool.name,
+                        address: enrichedSchool.address,
+                        phone: enrichedSchool.phone,
+                        email: enrichedSchool.email,
+                        logoUrl: enrichedSchool.logoUrl,
+                        sealUrl: enrichedSchool.sealUrl,
+                        sessionName: enrichedSchool.sessionName,
+                      } : {
+                        id: schoolId,
+                        name: studentSchool?.name || 'Aegis Academy',
+                        address: studentSchool?.address || '',
+                        phone: studentSchool?.phone || '',
+                        email: '',
+                        logoUrl: studentSchool?.logoUrl || '',
+                        sealUrl: studentSchool?.sealUrl || '',
+                        sessionName: '2025-2026',
+                      };
+
+                      const pSig = principal.signatureUrl;
+                      const pName = principal.name;
+
+                      if (type === 'idcard') {
+                        await downloadStudentIdCardPdf(docSchool, docSt, pSig, pName);
+                      } else if (type === 'admission') {
+                        await downloadAdmissionFormPdf(docSchool, docSt, undefined, pSig, pName);
+                      } else if (type === 'admission_record') {
+                        await downloadAdmissionRecordPdf(docSchool, docSt, pSig, pName);
+                      } else if (type === 'bonafide') {
+                        await downloadBonafideCertificatePdf(docSchool, docSt, pSig, pName);
+                      } else if (type === 'character') {
+                        await downloadCharacterCertificatePdf(docSchool, docSt, pSig, pName, charDoc?.verificationNumber);
+                      } else if (type === 'transfer') {
+                        await downloadTransferCertificatePdf(docSchool, docSt, pSig, pName);
+                      }
+                    } catch (err) {
+                      console.error('Failed to generate document:', err);
+                      alert('Error building document PDF.');
+                    } finally {
+                      setDocGenerating('');
+                    }
+                  };
+
+                  // Gated certificate check: resolved to null until Admin generates them.
+                  // Type-cast avoids TypeScript narrowing the JSX conditional branches to 'never'.
+                  const resolvedCharDoc = null as (GeneratedDocument | null);
+                  const resolvedTransferDoc = null as (GeneratedDocument | null);
+
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {/* ID Card */}
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <h6 className="font-bold text-slate-200 text-xs">Student ID Card (CR80)</h6>
+                          <p className="text-[10px] text-slate-450 mt-1">High-fidelity portrait wallet ID card with photo, roll details, verified QR, logo, seal, and administrative signature.</p>
+                        </div>
+                        <button onClick={() => handleDocDownload('idcard')} disabled={!!docGenerating} className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5">
+                          {docGenerating === 'idcard' ? 'Generating...' : 'Download ID Card (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Admission Form */}
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <h6 className="font-bold text-slate-200 text-xs">Admission Form Record</h6>
+                          <p className="text-[10px] text-slate-450 mt-1">Pre-filled admission registry sheet with all verified profile fields, parent contact details, logo, and seal.</p>
+                        </div>
+                        <button onClick={() => handleDocDownload('admission')} disabled={!!docGenerating} className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5">
+                          {docGenerating === 'admission' ? 'Generating...' : 'Download Admission Form (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Admission Record */}
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <h6 className="font-bold text-slate-200 text-xs">Admission Record</h6>
+                          <p className="text-[10px] text-slate-450 mt-1">Comprehensive official record including all personal, academic, parent, address, and previous school details.</p>
+                        </div>
+                        <button onClick={() => handleDocDownload('admission_record')} disabled={!!docGenerating} className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5">
+                          {docGenerating === 'admission_record' ? 'Generating...' : 'Download Admission Record (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Bonafide */}
+                      <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
+                        <div>
+                          <h6 className="font-bold text-slate-200 text-xs">Bonafide Certificate</h6>
+                          <p className="text-[10px] text-slate-450 mt-1">Officially signed letter verifying the ward's active registration status within the institution.</p>
+                        </div>
+                        <button onClick={() => handleDocDownload('bonafide')} disabled={!!docGenerating} className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5">
+                          {docGenerating === 'bonafide' ? 'Generating...' : 'Download Bonafide Cert (PDF)'}
+                        </button>
+                      </div>
+
+                      {/* Character Certificate — gated */}
+                      {resolvedCharDoc ? (
+                        <div className="p-4 bg-emerald-950/30 border border-emerald-800/40 rounded-2xl flex flex-col justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <h6 className="font-bold text-emerald-300 text-xs">Character Certificate</h6>
+                              <span className="text-[8px] bg-emerald-900/60 text-emerald-400 px-1.5 py-0.5 rounded-full font-bold uppercase">Issued</span>
+                            </div>
+                            <p className="text-[10px] text-slate-450">Issued on {new Date(resolvedCharDoc.generatedAt).toLocaleDateString('en-IN')}.</p>
+                            {resolvedCharDoc.verificationNumber && <p className="text-[9px] font-mono text-slate-500 mt-1">Cert No.: {resolvedCharDoc.verificationNumber}</p>}
+                          </div>
+                          <button onClick={() => handleDocDownload('character', resolvedCharDoc)} disabled={!!docGenerating} className="w-full py-2 text-xs flex items-center justify-center gap-1.5 bg-emerald-700/80 hover:bg-emerald-600 text-white rounded-xl font-semibold transition-colors">
+                            {docGenerating === 'character' ? 'Generating...' : 'Download Character Certificate (PDF)'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-slate-900/20 border border-dashed border-slate-700 rounded-2xl flex flex-col justify-between gap-3 opacity-60">
+                          <div>
+                            <h6 className="font-bold text-slate-400 text-xs">Character Certificate</h6>
+                            <p className="text-[10px] text-slate-500 mt-1">Not yet issued by the school. Contact administration.</p>
+                          </div>
+                          <div className="text-center text-[10px] text-slate-500 italic border border-dashed border-slate-700 rounded-lg py-2">Awaiting issuance by School Admin</div>
+                        </div>
+                      )}
+
+                      {/* Transfer Certificate — gated */}
+                      {resolvedTransferDoc ? (
+                        <div className="p-4 bg-sky-950/30 border border-sky-800/40 rounded-2xl flex flex-col justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-1.5 mb-1">
+                              <h6 className="font-bold text-sky-300 text-xs">Transfer Certificate</h6>
+                              <span className="text-[8px] bg-sky-900/60 text-sky-400 px-1.5 py-0.5 rounded-full font-bold uppercase">Issued</span>
+                            </div>
+                            <p className="text-[10px] text-slate-450">Issued on {new Date(resolvedTransferDoc.generatedAt).toLocaleDateString('en-IN')}.</p>
+                            {resolvedTransferDoc.verificationNumber && <p className="text-[9px] font-mono text-slate-500 mt-1">Cert No.: {resolvedTransferDoc.verificationNumber}</p>}
+                          </div>
+                          <button onClick={() => handleDocDownload('transfer')} disabled={!!docGenerating} className="w-full py-2 text-xs flex items-center justify-center gap-1.5 bg-sky-700/80 hover:bg-sky-600 text-white rounded-xl font-semibold transition-colors">
+                            {docGenerating === 'transfer' ? 'Generating...' : 'Download Transfer Certificate (PDF)'}
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="p-4 bg-slate-900/20 border border-dashed border-slate-700 rounded-2xl flex flex-col justify-between gap-3 opacity-60">
+                          <div>
+                            <h6 className="font-bold text-slate-400 text-xs">Transfer Certificate</h6>
+                            <p className="text-[10px] text-slate-500 mt-1">Not yet issued by the school. Contact administration.</p>
+                          </div>
+                          <div className="text-center text-[10px] text-slate-500 italic border border-dashed border-slate-700 rounded-lg py-2">Awaiting issuance by School Admin</div>
+                        </div>
+                      )}
                     </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          setDocGenerating('idcard');
-                          if (!studentSchool || !studentObj) return;
-
-                          // Fetch dynamic principal signature from database
-                          let pSig = '';
-                          let pName = 'Principal / School Admin';
-                          const { data: dbAdmin } = await supabase
-                            .from('school_admins')
-                            .select('signature_url, users(first_name, last_name)')
-                            .eq('school_id', studentSchool.id)
-                            .eq('status', 'ACTIVE')
-                            .maybeSingle();
-                          if (dbAdmin) {
-                            if (dbAdmin.signature_url) pSig = dbAdmin.signature_url;
-                            if (dbAdmin.users) {
-                              const u = dbAdmin.users as any;
-                              pName = `${u.first_name} ${u.last_name}`;
-                            }
-                          }
-
-                          const docSt = {
-                            id: studentObj.id,
-                            fullName: st.userDetails ? `${st.userDetails.firstName} ${st.userDetails.lastName}` : 'Student Name',
-                            admissionNumber: studentObj.admissionNumber,
-                            rollNumber: studentObj.rollNumber,
-                            className: st.className || 'Class Room',
-                            sectionName: 'A',
-                            dateOfBirth: studentObj.dateOfBirth,
-                            gender: studentObj.gender,
-                            avatarUrl: st.userDetails?.avatarUrl,
-                            fatherName: 'Father Name',
-                            motherName: 'Mother Name',
-                            address: 'Student Residence, USA',
-                            phone: st.userDetails?.phone
-                          };
-
-                          const docSchool = {
-                            id: studentSchool.id,
-                            name: studentSchool.name,
-                            address: studentSchool.address,
-                            phone: studentSchool.phone,
-                            email: (studentSchool as any).email || 'billing@aegisacademy.edu',
-                            logoUrl: studentSchool.logoUrl,
-                            sealUrl: studentSchool.sealUrl,
-                            sessionName: '2025-2026'
-                          };
-
-                          await downloadStudentIdCardPdf(docSchool, docSt, pSig, pName);
-                        } catch (err) {
-                          console.error('Failed to generate ID Card:', err);
-                          alert('Error building ID Card.');
-                        } finally {
-                          setDocGenerating('');
-                        }
-                      }}
-                      disabled={!!docGenerating}
-                      className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
-                    >
-                      {docGenerating === 'idcard' ? 'Generating...' : 'Download ID Card (PDF)'}
-                    </button>
-                  </div>
-
-                  {/* Admission Form Button */}
-                  <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
-                    <div>
-                      <h6 className="font-bold text-slate-200 text-xs">Admission Form Record</h6>
-                      <p className="text-[10px] text-slate-450 mt-1">Pre-filled admission registry sheet. Displays all verified profile fields, parent contact metrics, logo, and seal.</p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          setDocGenerating('admission');
-                          if (!studentSchool || !studentObj) return;
-
-                          // Fetch dynamic principal signature from database
-                          let pSig = '';
-                          let pName = 'Registrar / School Admin';
-                          const { data: dbAdmin } = await supabase
-                            .from('school_admins')
-                            .select('signature_url, users(first_name, last_name)')
-                            .eq('school_id', studentSchool.id)
-                            .eq('status', 'ACTIVE')
-                            .maybeSingle();
-                          if (dbAdmin) {
-                            if (dbAdmin.signature_url) pSig = dbAdmin.signature_url;
-                            if (dbAdmin.users) {
-                              const u = dbAdmin.users as any;
-                              pName = `${u.first_name} ${u.last_name}`;
-                            }
-                          }
-
-                          const docSt = {
-                            id: studentObj.id,
-                            fullName: st.userDetails ? `${st.userDetails.firstName} ${st.userDetails.lastName}` : 'Student Name',
-                            admissionNumber: studentObj.admissionNumber,
-                            rollNumber: studentObj.rollNumber,
-                            className: st.className || 'Class Room',
-                            sectionName: 'A',
-                            dateOfBirth: studentObj.dateOfBirth,
-                            gender: studentObj.gender,
-                            avatarUrl: st.userDetails?.avatarUrl,
-                            fatherName: 'Father Name',
-                            motherName: 'Mother Name',
-                            address: 'Student Residence, USA',
-                            phone: st.userDetails?.phone
-                          };
-
-                          const docSchool = {
-                            id: studentSchool.id,
-                            name: studentSchool.name,
-                            address: studentSchool.address,
-                            phone: studentSchool.phone,
-                            email: (studentSchool as any).email || 'billing@aegisacademy.edu',
-                            logoUrl: studentSchool.logoUrl,
-                            sealUrl: studentSchool.sealUrl,
-                            sessionName: '2025-2026'
-                          };
-
-                          await downloadAdmissionFormPdf(docSchool, docSt, undefined, pSig, pName);
-                        } catch (err) {
-                          console.error('Failed to generate Admission Form:', err);
-                          alert('Error building Admission Form.');
-                        } finally {
-                          setDocGenerating('');
-                        }
-                      }}
-                      disabled={!!docGenerating}
-                      className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
-                    >
-                      {docGenerating === 'admission' ? 'Generating...' : 'Download Admission Record (PDF)'}
-                    </button>
-                  </div>
-
-                  {/* Bonafide Certificate Button */}
-                  <div className="p-4 bg-slate-900/40 border border-slate-850 rounded-2xl flex flex-col justify-between gap-4">
-                    <div>
-                      <h6 className="font-bold text-slate-200 text-xs">Bonafide Certificate</h6>
-                      <p className="text-[10px] text-slate-450 mt-1">Officially signed letter verifying student's active registration status within the academic institution.</p>
-                    </div>
-                    <button
-                      onClick={async () => {
-                        try {
-                          setDocGenerating('bonafide');
-                          if (!studentSchool || !studentObj) return;
-
-                          // Fetch dynamic principal signature from database
-                          let pSig = '';
-                          let pName = 'Principal / School Admin';
-                          const { data: dbAdmin } = await supabase
-                            .from('school_admins')
-                            .select('signature_url, users(first_name, last_name)')
-                            .eq('school_id', studentSchool.id)
-                            .eq('status', 'ACTIVE')
-                            .maybeSingle();
-                          if (dbAdmin) {
-                            if (dbAdmin.signature_url) pSig = dbAdmin.signature_url;
-                            if (dbAdmin.users) {
-                              const u = dbAdmin.users as any;
-                              pName = `${u.first_name} ${u.last_name}`;
-                            }
-                          }
-
-                          const docSt = {
-                            id: studentObj.id,
-                            fullName: st.userDetails ? `${st.userDetails.firstName} ${st.userDetails.lastName}` : 'Student Name',
-                            admissionNumber: studentObj.admissionNumber,
-                            rollNumber: studentObj.rollNumber,
-                            className: st.className || 'Class Room',
-                            sectionName: 'A',
-                            dateOfBirth: studentObj.dateOfBirth,
-                            gender: studentObj.gender,
-                            avatarUrl: st.userDetails?.avatarUrl,
-                            fatherName: 'Father Name',
-                            motherName: 'Mother Name',
-                            address: 'Student Residence, USA',
-                            phone: st.userDetails?.phone
-                          };
-
-                          const docSchool = {
-                            id: studentSchool.id,
-                            name: studentSchool.name,
-                            address: studentSchool.address,
-                            phone: studentSchool.phone,
-                            email: (studentSchool as any).email || 'billing@aegisacademy.edu',
-                            logoUrl: studentSchool.logoUrl,
-                            sealUrl: studentSchool.sealUrl,
-                            sessionName: '2025-2026'
-                          };
-
-                          await downloadBonafideCertificatePdf(docSchool, docSt, pSig, pName);
-                        } catch (err) {
-                          console.error('Failed to generate Bonafide Certificate:', err);
-                          alert('Error building Bonafide Certificate.');
-                        } finally {
-                          setDocGenerating('');
-                        }
-                      }}
-                      disabled={!!docGenerating}
-                      className="w-full glass-btn-primary py-2 text-xs flex items-center justify-center gap-1.5"
-                    >
-                      {docGenerating === 'bonafide' ? 'Generating...' : 'Download Bonafide Cert (PDF)'}
-                    </button>
-                  </div>
-                </div>
-              );
+                  );
             })()
           ) : (
             <div className="p-6 bg-slate-900/10 border border-dashed border-slate-850 rounded-2xl text-center text-slate-500">

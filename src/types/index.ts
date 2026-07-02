@@ -185,7 +185,18 @@ export interface Student {
   fatherName?: string;
   motherName?: string;
   createdAt: string;
+  // Convenience fields joined from classes/sections tables
+  className?: string;
+  sectionName?: string;
+  userDetails?: {
+    firstName: string;
+    lastName: string;
+    avatarUrl?: string;
+    phone?: string;
+    email?: string;
+  };
 }
+
 
 export interface Parent {
   id: string;
@@ -1905,6 +1916,7 @@ export interface PTMDocument {
   createdAt: string;
 }
 
+
 export interface PTMChatMessage {
   id: string;
   meetingId: string;
@@ -1912,4 +1924,85 @@ export interface PTMChatMessage {
   senderName: string;
   messageText: string;
   createdAt: string;
+}
+
+// ─── STUDENT DOCUMENTS MANAGEMENT SYSTEM ──────────────────────────────────
+
+/** Extended student profile data (stored in student_profiles table) */
+export interface StudentProfile {
+  id: string;
+  studentId: string;
+  schoolId: string;
+  bloodGroup?: string;
+  aadhaarNumber?: string;
+  nationality?: string;
+  religion?: string;
+  category?: string;
+  addressLine1?: string;
+  addressLine2?: string;
+  city?: string;
+  state?: string;
+  pincode?: string;
+  country?: string;
+  house?: string;
+  admissionDate?: string;
+  previousSchool?: string;
+  previousClass?: string;
+  previousBoard?: string;
+  previousPercentage?: string;
+  photoUrl?: string;
+  fatherOccupation?: string;
+  fatherEmail?: string;
+  motherName?: string;
+  motherPhone?: string;
+  motherEmail?: string;
+  motherOccupation?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+/**
+ * Document types that can be generated in the system.
+ * Character and Transfer certificates are gated — they only become
+ * visible in Student/Parent portals after an Admin/Academic Admin generates them.
+ */
+export type DocumentType =
+  | 'id_card'
+  | 'admission_form'
+  | 'admission_record'
+  | 'bonafide'
+  | 'character_certificate'
+  | 'transfer_certificate'
+  | 'certificate_of_excellence';
+
+/** Row from generated_documents table */
+export interface GeneratedDocument {
+  id: string;
+  schoolId: string;
+  studentId: string;
+  documentType: DocumentType;
+  generatedAt: string;
+  generatedByUserId?: string;
+  generatedByRole?: string;
+  version: number;
+  verificationNumber?: string;
+  qrData?: string;
+  pdfUrl?: string;
+  status: 'ACTIVE' | 'REVOKED' | 'SUPERSEDED';
+  metadata?: Record<string, any>;
+  createdAt: string;
+}
+
+/** Row from document_audit_logs table */
+export interface DocumentAuditLog {
+  id: string;
+  documentId?: string;
+  schoolId: string;
+  studentId: string;
+  action: 'GENERATED' | 'DOWNLOADED' | 'REVOKED' | 'REGENERATED';
+  performedBy?: string;
+  performedByRole?: string;
+  timestamp: string;
+  ipAddress?: string;
+  details?: Record<string, any>;
 }
