@@ -5199,11 +5199,13 @@ export const mockApi = {
     const schoolId = await getAdminSchoolId();
 
     // Fetch live student profiles from Supabase (source of truth)
+    // Left-join student_profiles to get photo_url (single source of truth for student photos)
     const { data: studentRows, error } = await supabase
       .from('students')
       .select(`
         id, user_id, school_id, class_id, academic_session_id, admission_number, roll_number, date_of_birth, gender, created_at,
-        users!inner(id, email, first_name, last_name, phone, avatar_url, role, school_id, is_active, created_at)
+        users!inner(id, email, first_name, last_name, phone, avatar_url, role, school_id, is_active, created_at),
+        student_profiles(photo_url, student_id, school_id)
       `)
       .eq('school_id', schoolId);
 
@@ -5243,8 +5245,18 @@ export const mockApi = {
       if (existingStudent === -1) mockDb.students.push(studentMapped);
       else mockDb.students[existingStudent] = studentMapped;
 
+      // Extract photo_url from student_profiles join result.
+      // Enforce ownership check: only use photo_url if it belongs to this student+school.
+      const profileJoin = Array.isArray(row.student_profiles)
+        ? row.student_profiles[0]
+        : row.student_profiles;
+      const profilePhotoUrl: string =
+        profileJoin?.student_id === row.id && profileJoin?.school_id === row.school_id
+          ? (profileJoin?.photo_url || '')
+          : '';
+
       const cls = mockDb.classes.find(c => c.id === row.class_id);
-      return { ...studentMapped, userDetails: userMapped, className: cls?.name || 'Unassigned' };
+      return { ...studentMapped, photoUrl: profilePhotoUrl, userDetails: userMapped, className: cls?.name || 'Unassigned' };
     });
 
     // Remove stale local entries not in Supabase
@@ -15637,6 +15649,25 @@ export const mockApi = {
         fatherName: fatherName,
         motherName: motherName,
         address: address,
+        // Priority: student_profiles.photo_url → users.avatar_url → empty
+        // Fetch photo_url from Supabase with school+student isolation
+        photoUrl: await (async () => {
+          try {
+            const { data: sp } = await supabase
+              .from('student_profiles')
+              .select('photo_url, student_id, school_id')
+              .eq('student_id', studentId)
+              .eq('school_id', schoolId)  // Tenant isolation
+              .maybeSingle();
+            // Ownership double-check before returning
+            if (sp?.student_id === studentId && sp?.school_id === schoolId) {
+              return sp.photo_url || '';
+            }
+            return '';
+          } catch {
+            return '';
+          }
+        })(),
         avatarUrl: studentUser.avatarUrl || ''
       },
       academic: {

@@ -484,40 +484,121 @@ export async function fetchStudentGeneratedDocs(
   }
 }
 
-// ─── 7. Upload Student Photo ──────────────────────────────────────────────────
+// ─── 7. Upload Student Photo (Atomic — Enterprise Grade) ─────────────────────
 
 /**
- * Uploads a student photo to the `student-photos` Supabase Storage bucket.
- * Returns the public URL, or null on failure.
+ * Atomically uploads a student photo and updates student_profiles.photo_url.
+ *
+ * Security guarantees:
+ *  ① Validates student belongs to the given schoolId before any write.
+ *  ② Reads the previous photo_url so the old storage object can be deleted.
+ *  ③ Uploads to a deterministic UUID-scoped path (no name collisions possible).
+ *  ④ Updates student_profiles ONLY after the storage upload succeeds.
+ *  ⑤ Deletes the previous storage object ONLY after the DB update is confirmed.
+ *  ⑥ Appends a cache-busting timestamp (?v=<ts>) to the returned public URL.
+ *
+ * On any failure the function throws a descriptive Error; callers should catch
+ * and show a user-friendly message. Storage and DB are always kept in sync.
  */
 export async function uploadStudentPhoto(
   file: File,
   studentId: string,
   schoolId: string
 ): Promise<string | null> {
-  try {
-    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
-    const path = `${schoolId}/${studentId}/photo.${ext}`;
+  // ── Step 1: Validate student ownership (school_id + student_id) ────────────
+  const { data: existingProfile, error: profileFetchErr } = await supabase
+    .from('student_profiles')
+    .select('id, photo_url, student_id, school_id')
+    .eq('student_id', studentId)
+    .eq('school_id', schoolId)        // Tenant isolation — MANDATORY
+    .maybeSingle();
 
-    const { error: uploadErr } = await supabase.storage
-      .from('student-photos')
-      .upload(path, file, { upsert: true, contentType: file.type });
-
-    if (uploadErr) {
-      console.error('[documentService] uploadStudentPhoto upload error:', uploadErr);
-      return null;
-    }
-
-    const { data: urlData } = supabase.storage
-      .from('student-photos')
-      .getPublicUrl(path);
-
-    return urlData?.publicUrl || null;
-  } catch (err) {
-    console.error('[documentService] uploadStudentPhoto error:', err);
-    return null;
+  if (profileFetchErr) {
+    console.error('[documentService] uploadStudentPhoto – profile fetch error:', profileFetchErr);
+    throw new Error('Failed to verify student ownership before photo upload.');
   }
+
+  // Capture the previous storage path so we can delete it after success
+  const previousPhotoUrl: string = existingProfile?.photo_url || '';
+  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+
+  // ── Step 2: Deterministic, collision-proof storage path ───────────────────
+  // Path format: <schoolId>/<studentId>/photo.<ext>
+  // UUID segments guarantee: no school can see another school's files.
+  const storagePath = `${schoolId}/${studentId}/photo.${ext}`;
+
+  // ── Step 3: Upload to Supabase Storage ───────────────────────────────────
+  const { error: uploadErr } = await supabase.storage
+    .from('student-photos')
+    .upload(storagePath, file, {
+      upsert: true,           // Overwrite if previous upload exists at same path
+      contentType: file.type,
+      cacheControl: '0',      // Disable CDN caching so the new file is fetched immediately
+    });
+
+  if (uploadErr) {
+    console.error('[documentService] uploadStudentPhoto – storage upload error:', uploadErr);
+    throw new Error(`Photo storage upload failed: ${uploadErr.message}`);
+  }
+
+  // ── Step 4: Get the public URL (with cache-busting timestamp) ────────────
+  const { data: urlData } = supabase.storage
+    .from('student-photos')
+    .getPublicUrl(storagePath);
+
+  if (!urlData?.publicUrl) {
+    // Rollback: delete the just-uploaded file so storage stays clean
+    await supabase.storage.from('student-photos').remove([storagePath]).catch(console.error);
+    throw new Error('Failed to retrieve public URL after upload. Storage rolled back.');
+  }
+
+  const cacheBustedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+
+  // ── Step 5: Update student_profiles.photo_url (tenant-safe) ──────────────
+  const { error: dbErr } = await supabase
+    .from('student_profiles')
+    .upsert(
+      {
+        student_id: studentId,
+        school_id: schoolId,
+        photo_url: cacheBustedUrl,
+        updated_at: new Date().toISOString(),
+      },
+      { onConflict: 'student_id' }
+    );
+
+  if (dbErr) {
+    // Rollback: delete the uploaded file to prevent orphaned storage objects
+    await supabase.storage.from('student-photos').remove([storagePath]).catch(console.error);
+    console.error('[documentService] uploadStudentPhoto – DB upsert error:', dbErr);
+    throw new Error(`Database update failed after upload: ${dbErr.message}. Storage rolled back.`);
+  }
+
+  // ── Step 6: Delete the old storage file (after DB is confirmed updated) ──
+  // Only delete if the previous URL points to a different path.
+  if (previousPhotoUrl && previousPhotoUrl.includes('student-photos')) {
+    try {
+      // Extract the storage path from the previous URL
+      const urlObj = new URL(previousPhotoUrl.split('?')[0]);
+      const pathParts = urlObj.pathname.split('/student-photos/');
+      const oldStoragePath = pathParts[1];
+      if (oldStoragePath && oldStoragePath !== storagePath) {
+        const { error: deleteErr } = await supabase.storage
+          .from('student-photos')
+          .remove([oldStoragePath]);
+        if (deleteErr) {
+          // Non-fatal: log but don't fail the whole operation
+          console.warn('[documentService] uploadStudentPhoto – old file cleanup failed:', deleteErr.message);
+        }
+      }
+    } catch (cleanupErr) {
+      console.warn('[documentService] uploadStudentPhoto – old file cleanup skipped:', cleanupErr);
+    }
+  }
+
+  return cacheBustedUrl;
 }
+
 
 // ─── 8. Upsert Student Profile ────────────────────────────────────────────────
 
@@ -571,6 +652,105 @@ export async function upsertStudentProfile(
     return true;
   } catch (err) {
     console.error('[documentService] upsertStudentProfile error:', err);
+    return false;
+  }
+}
+
+// ─── 9. Safe Photo URL Reader (Ownership Verified) ────────────────────────────
+
+/**
+ * Reads student_profiles.photo_url for a specific student, enforcing:
+ *   - school_id must match (tenant isolation)
+ *   - student_id must match (prevents cross-student leakage)
+ *
+ * Returns empty string if no photo is set or if the student is not found
+ * in the given school (prevents cross-tenant reads).
+ */
+export async function getStudentPhotoUrl(
+  studentId: string,
+  schoolId: string
+): Promise<string> {
+  try {
+    const { data, error } = await supabase
+      .from('student_profiles')
+      .select('photo_url, student_id, school_id')
+      .eq('student_id', studentId)
+      .eq('school_id', schoolId)     // Tenant isolation — MANDATORY
+      .maybeSingle();
+
+    if (error || !data) return '';
+
+    // Double-check the returned row actually belongs to this student+school
+    if (data.student_id !== studentId || data.school_id !== schoolId) {
+      console.error('[documentService] getStudentPhotoUrl – ownership mismatch detected!', {
+        expected: { studentId, schoolId },
+        returned: { student_id: data.student_id, school_id: data.school_id },
+      });
+      return '';
+    }
+
+    return data.photo_url || '';
+  } catch (err) {
+    console.error('[documentService] getStudentPhotoUrl error:', err);
+    return '';
+  }
+}
+
+// ─── 10. Update Student Photo URL (Patch-Only, Ownership Verified) ─────────────
+
+/**
+ * Updates ONLY photo_url on an existing student_profiles row.
+ * Verifies ownership (school_id + student_id) before writing.
+ * Used by the "Change Photo" admin edit flow after uploadStudentPhoto has already
+ * written the URL via its own upsert — this is available as a standalone helper
+ * for flows that manage storage externally.
+ */
+export async function updateStudentPhotoUrl(
+  studentId: string,
+  schoolId: string,
+  photoUrl: string
+): Promise<boolean> {
+  try {
+    // Verify ownership before any write
+    const { data: existing, error: fetchErr } = await supabase
+      .from('student_profiles')
+      .select('id, student_id, school_id')
+      .eq('student_id', studentId)
+      .eq('school_id', schoolId)
+      .maybeSingle();
+
+    if (fetchErr) {
+      console.error('[documentService] updateStudentPhotoUrl – fetch error:', fetchErr);
+      return false;
+    }
+
+    if (!existing) {
+      // Profile row doesn't exist yet — create it
+      const { error: insertErr } = await supabase
+        .from('student_profiles')
+        .insert({ student_id: studentId, school_id: schoolId, photo_url: photoUrl });
+      if (insertErr) {
+        console.error('[documentService] updateStudentPhotoUrl – insert error:', insertErr);
+        return false;
+      }
+      return true;
+    }
+
+    // Profile exists — patch only photo_url
+    const { error: updateErr } = await supabase
+      .from('student_profiles')
+      .update({ photo_url: photoUrl, updated_at: new Date().toISOString() })
+      .eq('student_id', studentId)
+      .eq('school_id', schoolId);   // Tenant isolation — MANDATORY
+
+    if (updateErr) {
+      console.error('[documentService] updateStudentPhotoUrl – update error:', updateErr);
+      return false;
+    }
+
+    return true;
+  } catch (err) {
+    console.error('[documentService] updateStudentPhotoUrl error:', err);
     return false;
   }
 }

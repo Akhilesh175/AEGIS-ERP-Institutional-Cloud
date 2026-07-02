@@ -40,6 +40,8 @@ interface MarksheetData {
     motherName: string;
     address: string;
     avatarUrl: string;
+    /** Uploaded registration photo from student_profiles.photo_url — single source of truth */
+    photoUrl?: string;
   };
   academic: {
     term: string;
@@ -145,57 +147,90 @@ export const MarksheetTemplate: React.FC<MarksheetTemplateProps> = ({ data }) =>
 
       {/* STUDENT PROFILE BOX */}
       <div className="border border-slate-400 p-3 mb-4 text-[11px] leading-relaxed">
-        <div className="grid grid-cols-2 gap-x-6 gap-y-1">
-          <div className="flex">
-            <span className="w-28 font-bold text-slate-700">Name of Student</span>
-            <span className="mr-2">:</span>
-            <span className="font-bold text-slate-900 uppercase">{data.student.name}</span>
-          </div>
-          <div className="flex">
-            <span className="w-28 font-bold text-slate-700">Admission No.</span>
-            <span className="mr-2">:</span>
-            <span className="font-mono text-slate-900">{data.student.admissionNumber}</span>
+        <div className="flex gap-4">
+          {/* Student details grid */}
+          <div className="grid grid-cols-2 gap-x-6 gap-y-1 flex-1">
+            <div className="flex">
+              <span className="w-28 font-bold text-slate-700">Name of Student</span>
+              <span className="mr-2">:</span>
+              <span className="font-bold text-slate-900 uppercase">{data.student.name}</span>
+            </div>
+            <div className="flex">
+              <span className="w-28 font-bold text-slate-700">Admission No.</span>
+              <span className="mr-2">:</span>
+              <span className="font-mono text-slate-900">{data.student.admissionNumber}</span>
+            </div>
+
+            <div className="flex">
+              <span className="w-28 font-bold text-slate-700">Father's Name</span>
+              <span className="mr-2">:</span>
+              <span className="text-slate-900 font-semibold">{data.student.fatherName}</span>
+            </div>
+            <div className="flex">
+              <span className="w-28 font-bold text-slate-700">Attendance</span>
+              <span className="mr-2">:</span>
+              <span className="font-semibold text-slate-900">
+                {data.academic.attendance.presentDays}/{data.academic.attendance.workingDays} ({data.academic.attendance.percentage}%)
+              </span>
+            </div>
+
+            <div className="flex">
+              <span className="w-28 font-bold text-slate-700">Mother's Name</span>
+              <span className="mr-2">:</span>
+              <span className="text-slate-900 font-semibold">{data.student.motherName}</span>
+            </div>
+            <div className="flex">
+              <span className="w-28 font-bold text-slate-700">Address</span>
+              <span className="mr-2">:</span>
+              <span className="text-slate-700 truncate max-w-[200px]" title={data.student.address}>
+                {data.student.address}
+              </span>
+            </div>
+
+            <div className="flex">
+              <span className="w-28 font-bold text-slate-700">Roll Number / Class</span>
+              <span className="mr-2">:</span>
+              <span className="font-semibold text-slate-900">
+                {data.student.rollNumber} / {data.student.className} {data.student.sectionName ? `(${data.student.sectionName})` : ''}
+              </span>
+            </div>
+            <div className="flex">
+              <span className="w-28 font-bold text-slate-700">Date of Birth</span>
+              <span className="mr-2">:</span>
+              <span className="font-semibold text-slate-900">
+                {new Date(data.student.dateOfBirth).toLocaleDateString('en-GB')}
+              </span>
+            </div>
           </div>
 
-          <div className="flex">
-            <span className="w-28 font-bold text-slate-700">Father's Name</span>
-            <span className="mr-2">:</span>
-            <span className="text-slate-900 font-semibold">{data.student.fatherName}</span>
-          </div>
-          <div className="flex">
-            <span className="w-28 font-bold text-slate-700">Attendance</span>
-            <span className="mr-2">:</span>
-            <span className="font-semibold text-slate-900">
-              {data.academic.attendance.presentDays}/{data.academic.attendance.workingDays} ({data.academic.attendance.percentage}%)
-            </span>
-          </div>
-
-          <div className="flex">
-            <span className="w-28 font-bold text-slate-700">Mother's Name</span>
-            <span className="mr-2">:</span>
-            <span className="text-slate-900 font-semibold">{data.student.motherName}</span>
-          </div>
-          <div className="flex">
-            <span className="w-28 font-bold text-slate-700">Address</span>
-            <span className="mr-2">:</span>
-            <span className="text-slate-700 truncate max-w-[200px]" title={data.student.address}>
-              {data.student.address}
-            </span>
-          </div>
-
-          <div className="flex">
-            <span className="w-28 font-bold text-slate-700">Roll Number / Class</span>
-            <span className="mr-2">:</span>
-            <span className="font-semibold text-slate-900">
-              {data.student.rollNumber} / {data.student.className} {data.student.sectionName ? `(${data.student.sectionName})` : ''}
-            </span>
-          </div>
-          <div className="flex">
-            <span className="w-28 font-bold text-slate-700">Date of Birth</span>
-            <span className="mr-2">:</span>
-            <span className="font-semibold text-slate-900">
-              {new Date(data.student.dateOfBirth).toLocaleDateString('en-GB')}
-            </span>
+          {/* Student passport photo — Priority: photoUrl → avatarUrl → placeholder */}
+          <div className="flex-shrink-0 flex flex-col items-center justify-center">
+            <div
+              style={{
+                width: '64px', height: '80px',
+                border: '1px solid #94a3b8',
+                borderRadius: '4px',
+                overflow: 'hidden',
+                background: '#f1f5f9',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+              }}
+            >
+              {(data.student.photoUrl || data.student.avatarUrl) ? (
+                <img
+                  src={data.student.photoUrl || data.student.avatarUrl}
+                  alt="Student Photo"
+                  style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                  crossOrigin="anonymous"
+                />
+              ) : (
+                <svg viewBox="0 0 64 80" width="64" height="80" xmlns="http://www.w3.org/2000/svg">
+                  <rect width="64" height="80" fill="#e2e8f0" />
+                  <circle cx="32" cy="30" r="14" fill="#94a3b8" />
+                  <ellipse cx="32" cy="64" rx="22" ry="16" fill="#94a3b8" />
+                </svg>
+              )}
+            </div>
+            <p style={{ fontSize: '7px', color: '#64748b', marginTop: '3px', textAlign: 'center', fontFamily: 'serif' }}>Photograph</p>
           </div>
         </div>
       </div>

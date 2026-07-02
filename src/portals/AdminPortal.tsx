@@ -32,6 +32,7 @@ import {
   saveGeneratedDocumentRecord,
   uploadStudentPhoto,
   upsertStudentProfile,
+  getStudentPhotoUrl,
 } from '../services/documentService';
 
 import { ClassDiscussion } from '../components/ClassDiscussion';
@@ -3436,23 +3437,23 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       if (schoolId && stPhotoFile) {
         try {
           setStPhotoUploading(true);
-          // Find newly created student by admission number
+          // Find newly created student by admission number + school_id (tenant-safe)
           const { data: newStudent } = await supabase
             .from('students')
             .select('id')
-            .eq('school_id', schoolId)
+            .eq('school_id', schoolId)         // Tenant isolation — MANDATORY
             .eq('admission_number', stAdmission)
             .maybeSingle();
 
           if (newStudent?.id) {
-            const photoUrl = await uploadStudentPhoto(stPhotoFile, newStudent.id, schoolId);
-            if (photoUrl) {
-              await upsertStudentProfile(newStudent.id, schoolId, { photoUrl });
-            }
+            // uploadStudentPhoto now throws on failure — catch separately so the
+            // student creation success is never affected by a photo error.
+            await uploadStudentPhoto(stPhotoFile, newStudent.id, schoolId);
+            // Photo URL is already persisted inside uploadStudentPhoto atomically
           }
-        } catch (photoErr) {
-          console.warn('[AdminPortal] Photo upload after student creation failed:', photoErr);
-          // Non-fatal: student was already created successfully
+        } catch (photoErr: any) {
+          console.warn('[AdminPortal] Photo upload after student creation failed (non-fatal):', photoErr?.message || photoErr);
+          // Non-fatal: student was created successfully; show soft warning only.
         } finally {
           setStPhotoUploading(false);
         }
@@ -6985,8 +6986,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                       <td className="py-3 px-3">
                                         <div className="flex items-center gap-2.5 min-w-[170px]">
                                           <div className="w-[36px] h-[36px] rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border border-slate-600/50 flex items-center justify-center text-[10px] font-bold text-slate-300 flex-shrink-0 overflow-hidden shadow-sm">
-                                            {student?.userDetails?.avatarUrl ? (
-                                              <img src={student.userDetails.avatarUrl} alt="" className="w-full h-full object-cover rounded-full" />
+                                            {/* Priority: photoUrl (student_profiles) → avatarUrl (users) → initials */}
+                                            {((student as any)?.photoUrl || student?.userDetails?.avatarUrl) ? (
+                                              <img src={(student as any).photoUrl || student!.userDetails!.avatarUrl} alt="" className="w-full h-full object-cover rounded-full" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
                                             ) : (
                                               initials
                                             )}
@@ -7099,8 +7101,9 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             </h5>
                             <div className="flex items-start gap-3.5">
                               <div className="w-[48px] h-[48px] rounded-full bg-gradient-to-br from-slate-700 to-slate-800 border-2 border-slate-600/40 flex items-center justify-center text-xs font-bold text-slate-300 flex-shrink-0 overflow-hidden shadow-md">
-                                {student?.userDetails?.avatarUrl ? (
-                                  <img src={student.userDetails.avatarUrl} alt="" className="w-full h-full object-cover rounded-full" />
+                                {/* Priority: photoUrl (student_profiles) → avatarUrl (users) → initials */}
+                                {((student as any)?.photoUrl || student?.userDetails?.avatarUrl) ? (
+                                  <img src={(student as any).photoUrl || student!.userDetails!.avatarUrl} alt="" className="w-full h-full object-cover rounded-full" onError={(e) => { (e.target as HTMLImageElement).style.display='none'; }} />
                                 ) : (
                                   initials
                                 )}

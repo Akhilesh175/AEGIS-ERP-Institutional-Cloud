@@ -112,6 +112,13 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
   const [invoiceFilter, setInvoiceFilter] = useState<'ALL' | 'PAID' | 'PENDING' | 'OVERDUE'>('ALL');
   const [historyInvoice, setHistoryInvoice] = useState<any | null>(null);
 
+  /**
+   * Official student photo URL from student_profiles.photo_url.
+   * Fetched with school_id + student_id isolation to prevent cross-student/cross-tenant leakage.
+   * Priority for display: studentPhotoUrl → studentUser.avatarUrl → placeholder icon.
+   */
+  const [studentPhotoUrl, setStudentPhotoUrl] = useState<string>('');
+
   // Dynamic Library & Transport States
   const [transitAssignment, setTransitAssignment] = useState<any>(null);
   const [assignedRoute, setAssignedRoute] = useState<any>(null);
@@ -174,6 +181,41 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
 
   const [complaintCategory, setComplaintCategory] = useState<'ROOM' | 'ELECTRICITY' | 'WATER' | 'MAINTENANCE' | 'OTHER'>('ROOM');
   const [complaintDescription, setComplaintDescription] = useState('');
+
+  // ── Fetch official student photo from student_profiles (school+student isolation) ──
+  useEffect(() => {
+    const schoolId = session?.user?.schoolId;
+    const entity = mockDb.students.find(s => s.id === studentId);
+    const dbStudentId = entity?.id || studentId;
+
+    if (!dbStudentId || !schoolId) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase
+          .from('student_profiles')
+          .select('photo_url, student_id, school_id')
+          .eq('student_id', dbStudentId)     // MANDATORY: student_id isolation
+          .eq('school_id', schoolId)         // MANDATORY: tenant isolation
+          .maybeSingle();
+
+        if (cancelled || error || !data) return;
+
+        // Double-check ownership to prevent any cross-student photo leakage
+        if (data.student_id !== dbStudentId || data.school_id !== schoolId) {
+          console.error('[StudentPortal] Photo ownership mismatch detected. Suppressing display.');
+          return;
+        }
+
+        setStudentPhotoUrl(data.photo_url || '');
+      } catch (err) {
+        console.warn('[StudentPortal] Failed to fetch student photo_url:', err);
+      }
+    })();
+
+    return () => { cancelled = true; };
+  }, [studentId, session?.user?.schoolId]);
 
   const loadData = async () => {
     try {
@@ -818,14 +860,13 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
       {activeTab !== 'groupdiscussion' && (
         <div className="bg-gradient-to-r from-brand-950 to-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-            {studentUser?.avatarUrl ? (
+            {/* Priority: studentPhotoUrl (student_profiles.photo_url) → avatarUrl (users) → BookOpen icon */}
+            {(studentPhotoUrl || studentUser?.avatarUrl) ? (
               <img 
-                src={studentUser.avatarUrl} 
+                src={studentPhotoUrl || studentUser!.avatarUrl!} 
                 alt="" 
                 className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md shrink-0 animate-fade-in"
                 onError={(e) => {
-                  // If link fails or is broken, clear it visually
-                  (e.target as HTMLImageElement).src = '';
                   (e.target as HTMLImageElement).style.display = 'none';
                 }}
               />

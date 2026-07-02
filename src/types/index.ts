@@ -188,6 +188,8 @@ export interface Student {
   // Convenience fields joined from classes/sections tables
   className?: string;
   sectionName?: string;
+  /** Uploaded registration photo from student_profiles.photo_url (single source of truth) */
+  photoUrl?: string;
   userDetails?: {
     firstName: string;
     lastName: string;
