@@ -505,98 +505,209 @@ export async function uploadStudentPhoto(
   studentId: string,
   schoolId: string
 ): Promise<string | null> {
-  // ── Step 1: Validate student ownership (school_id + student_id) ────────────
-  const { data: existingProfile, error: profileFetchErr } = await supabase
-    .from('student_profiles')
-    .select('id, photo_url, student_id, school_id')
-    .eq('student_id', studentId)
-    .eq('school_id', schoolId)        // Tenant isolation — MANDATORY
-    .maybeSingle();
+  const requestId = Math.random().toString(36).substring(2, 15).toUpperCase();
+  const timestamp = new Date().toISOString();
 
-  if (profileFetchErr) {
-    console.error('[documentService] uploadStudentPhoto – profile fetch error:', profileFetchErr);
-    throw new Error('Failed to verify student ownership before photo upload.');
-  }
+  // Audit Helper Log
+  const logAudit = (event: string, details: Record<string, any>) => {
+    console.log(`[uploadStudentPhoto:audit] [${timestamp}] [Req:${requestId}] Event: ${event}`, JSON.stringify({
+      studentId,
+      schoolId,
+      timestamp,
+      requestId,
+      ...details
+    }));
+  };
 
-  // Capture the previous storage path so we can delete it after success
-  const previousPhotoUrl: string = existingProfile?.photo_url || '';
-  const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+  logAudit('Upload Started', { fileName: file.name, fileSize: file.size });
 
-  // ── Step 2: Deterministic, collision-proof storage path ───────────────────
-  // Path format: <schoolId>/<studentId>/photo.<ext>
-  // UUID segments guarantee: no school can see another school's files.
-  const storagePath = `${schoolId}/${studentId}/photo.${ext}`;
-
-  // ── Step 3: Upload to Supabase Storage ───────────────────────────────────
-  const { error: uploadErr } = await supabase.storage
-    .from('student-photos')
-    .upload(storagePath, file, {
-      upsert: true,           // Overwrite if previous upload exists at same path
-      contentType: file.type,
-      cacheControl: '0',      // Disable CDN caching so the new file is fetched immediately
-    });
-
-  if (uploadErr) {
-    console.error('[documentService] uploadStudentPhoto – storage upload error:', uploadErr);
-    throw new Error(`Photo storage upload failed: ${uploadErr.message}`);
-  }
-
-  // ── Step 4: Get the public URL (with cache-busting timestamp) ────────────
-  const { data: urlData } = supabase.storage
-    .from('student-photos')
-    .getPublicUrl(storagePath);
-
-  if (!urlData?.publicUrl) {
-    // Rollback: delete the just-uploaded file so storage stays clean
-    await supabase.storage.from('student-photos').remove([storagePath]).catch(console.error);
-    throw new Error('Failed to retrieve public URL after upload. Storage rolled back.');
-  }
-
-  const cacheBustedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
-
-  // ── Step 5: Update student_profiles.photo_url (tenant-safe) ──────────────
-  const { error: dbErr } = await supabase
-    .from('student_profiles')
-    .upsert(
-      {
-        student_id: studentId,
-        school_id: schoolId,
-        photo_url: cacheBustedUrl,
-        updated_at: new Date().toISOString(),
-      },
-      { onConflict: 'student_id' }
-    );
-
-  if (dbErr) {
-    // Rollback: delete the uploaded file to prevent orphaned storage objects
-    await supabase.storage.from('student-photos').remove([storagePath]).catch(console.error);
-    console.error('[documentService] uploadStudentPhoto – DB upsert error:', dbErr);
-    throw new Error(`Database update failed after upload: ${dbErr.message}. Storage rolled back.`);
-  }
-
-  // ── Step 6: Delete the old storage file (after DB is confirmed updated) ──
-  // Only delete if the previous URL points to a different path.
-  if (previousPhotoUrl && previousPhotoUrl.includes('student-photos')) {
-    try {
-      // Extract the storage path from the previous URL
-      const urlObj = new URL(previousPhotoUrl.split('?')[0]);
-      const pathParts = urlObj.pathname.split('/student-photos/');
-      const oldStoragePath = pathParts[1];
-      if (oldStoragePath && oldStoragePath !== storagePath) {
-        const { error: deleteErr } = await supabase.storage
-          .from('student-photos')
-          .remove([oldStoragePath]);
-        if (deleteErr) {
-          // Non-fatal: log but don't fail the whole operation
-          console.warn('[documentService] uploadStudentPhoto – old file cleanup failed:', deleteErr.message);
-        }
-      }
-    } catch (cleanupErr) {
-      console.warn('[documentService] uploadStudentPhoto – old file cleanup skipped:', cleanupErr);
+  try {
+    // ── 1. Validate User Session & Auth Permissions ────────────────────────
+    const { data: { session }, error: sessionErr } = await supabase.auth.getSession();
+    if (sessionErr || !session) {
+      logAudit('Unauthorized Access Attempt', { error: 'No active session found.' });
+      throw new Error('Access Denied: No active user session found.');
     }
-  }
 
-  return cacheBustedUrl;
+    const adminUserId = session.user.id;
+
+    // Validate active user permissions and school association
+    const { data: activeUser, error: activeUserErr } = await supabase
+      .from('users')
+      .select('id, role, school_id, is_active')
+      .eq('id', adminUserId)
+      .maybeSingle();
+
+    if (activeUserErr || !activeUser || !activeUser.is_active) {
+      logAudit('Unauthorized Access Attempt', { adminUserId, error: 'Active user profile not found or inactive.' });
+      throw new Error('Access Denied: User account is inactive or not found.');
+    }
+
+    const permittedRoles = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'ACADEMIC_ADMIN'];
+    if (!permittedRoles.includes(activeUser.role)) {
+      logAudit('Unauthorized Access Attempt', { adminUserId, role: activeUser.role, error: 'Insufficient role permissions.' });
+      throw new Error(`Access Denied: Role '${activeUser.role}' is not authorized to upload student photos.`);
+    }
+
+    if (activeUser.role !== 'SUPER_ADMIN' && activeUser.school_id !== schoolId) {
+      logAudit('Unauthorized Access Attempt', { adminUserId, userSchoolId: activeUser.school_id, targetSchoolId: schoolId, error: 'Tenant school mismatch.' });
+      throw new Error('Access Denied: School tenant mismatch. Security violation.');
+    }
+
+    // ── 2. Validate School Profile Existence ────────────────────────────────
+    const { data: schoolCheck, error: schoolCheckErr } = await supabase
+      .from('schools')
+      .select('id')
+      .eq('id', schoolId)
+      .maybeSingle();
+
+    if (schoolCheckErr || !schoolCheck) {
+      logAudit('Upload Failed', { error: 'Target school profile not found in database.', schoolCheckErr });
+      throw new Error('Failed to resolve target school profile.');
+    }
+
+    // ── 3. Validate Student Profile & Ownership ─────────────────────────────
+    const { data: studentCheck, error: studentCheckErr } = await supabase
+      .from('students')
+      .select('id, school_id')
+      .eq('id', studentId)
+      .eq('school_id', schoolId) // Strict tenant query
+      .maybeSingle();
+
+    if (studentCheckErr || !studentCheck) {
+      logAudit('Student Ownership Mismatch', { error: 'Student profile not found or tenant mismatch.', studentCheckErr });
+      throw new Error('Access Denied: Student does not exist or does not belong to your school tenant.');
+    }
+
+    // ── 4. Fetch Concurrency Metadata (Optimistic Concurrency Control) ─────
+    const { data: existingProfile, error: profileFetchErr } = await supabase
+      .from('student_profiles')
+      .select('id, photo_url, updated_at, student_id, school_id')
+      .eq('student_id', studentId)
+      .eq('school_id', schoolId)
+      .maybeSingle();
+
+    if (profileFetchErr) {
+      logAudit('Upload Failed', { error: 'Failed to retrieve existing profile metadata.', profileFetchErr });
+      throw new Error('Database transaction abort: could not fetch profile metadata.');
+    }
+
+    const previousPhotoUrl = existingProfile?.photo_url || '';
+    const lastUpdatedAt = existingProfile?.updated_at || null;
+
+    // ── 5. Perform Storage Upload to UUID Path ──────────────────────────────
+    const ext = file.name.split('.').pop()?.toLowerCase() || 'jpg';
+    // Unique suffix prevents overlapping concurrent files from overwriting each other in storage
+    const uniqueSuffix = `${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const storagePath = `${schoolId}/${studentId}/photo_${uniqueSuffix}.${ext}`;
+
+    const { error: uploadErr } = await supabase.storage
+      .from('student-photos')
+      .upload(storagePath, file, {
+        upsert: false, // Strict OCC: do not overwrite concurrent uploads
+        contentType: file.type,
+        cacheControl: '0',
+      });
+
+    if (uploadErr) {
+      logAudit('Upload Failed', { error: 'Storage provider failed write operation.', uploadErr });
+      throw new Error(`Photo storage upload failed: ${uploadErr.message}`);
+    }
+
+    // Resolve public CDN URL
+    const { data: urlData } = supabase.storage
+      .from('student-photos')
+      .getPublicUrl(storagePath);
+
+    if (!urlData?.publicUrl) {
+      // Rollback: delete storage object
+      await supabase.storage.from('student-photos').remove([storagePath]).catch(console.error);
+      logAudit('Rollback Executed', { error: 'Storage public URL resolution failed.', storagePath });
+      throw new Error('Public URL resolution failed. Transaction rolled back.');
+    }
+
+    const cacheBustedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+
+    // ── 6. Update student_profiles with OCC Constraint ─────────────────────
+    if (existingProfile) {
+      // OCC Update
+      const { data: updatedRows, error: dbErr } = await supabase
+        .from('student_profiles')
+        .update({
+          photo_url: cacheBustedUrl,
+          updated_at: new Date().toISOString(),
+        })
+        .eq('student_id', studentId)
+        .eq('school_id', schoolId)
+        .eq('updated_at', lastUpdatedAt) // Strict OCC: updated_at check
+        .select();
+
+      if (dbErr) {
+        // Rollback Storage
+        await supabase.storage.from('student-photos').remove([storagePath]).catch(console.error);
+        logAudit('Database Update Failed', { error: dbErr.message, dbErr });
+        logAudit('Rollback Executed', { reason: 'DB update failure', storagePath });
+        throw new Error(`Database transaction failure: ${dbErr.message}. Storage rolled back.`);
+      }
+
+      if (!updatedRows || updatedRows.length === 0) {
+        // Concurrency Check Failure: another transaction updated the record first
+        await supabase.storage.from('student-photos').remove([storagePath]).catch(console.error);
+        logAudit('Concurrent Update Detected', { lastUpdatedAt, currentPhotoUrl: previousPhotoUrl });
+        logAudit('Rollback Executed', { reason: 'OCC lock mismatch', storagePath });
+        throw new Error('Concurrency Error: Profile was updated by another administrator. Please reload and try again.');
+      }
+    } else {
+      // Insert new profile
+      const { error: dbErr } = await supabase
+        .from('student_profiles')
+        .insert({
+          student_id: studentId,
+          school_id: schoolId,
+          photo_url: cacheBustedUrl,
+          created_at: new Date().toISOString(),
+          updated_at: new Date().toISOString(),
+        });
+
+      if (dbErr) {
+        // Rollback Storage
+        await supabase.storage.from('student-photos').remove([storagePath]).catch(console.error);
+        logAudit('Database Update Failed', { error: dbErr.message, dbErr });
+        logAudit('Rollback Executed', { reason: 'DB insert failure', storagePath });
+        throw new Error(`Database transaction failure: ${dbErr.message}. Storage rolled back.`);
+      }
+    }
+
+    logAudit('Database Update Success', { newPhotoUrl: cacheBustedUrl });
+    logAudit('Upload Success', { newPhotoUrl: cacheBustedUrl, storagePath });
+
+    // ── 7. Safe Deferred Cleanup of Previous Photo ────────────────────────
+    if (previousPhotoUrl && previousPhotoUrl.includes('student-photos')) {
+      try {
+        const urlObj = new URL(previousPhotoUrl.split('?')[0]);
+        const pathParts = urlObj.pathname.split('/student-photos/');
+        const oldStoragePath = pathParts[1];
+        if (oldStoragePath && oldStoragePath !== storagePath) {
+          const { error: deleteErr } = await supabase.storage
+            .from('student-photos')
+            .remove([oldStoragePath]);
+
+          if (deleteErr) {
+            logAudit('Cleanup Failed', { oldStoragePath, error: deleteErr.message });
+          } else {
+            logAudit('Old Photo Deleted', { oldStoragePath });
+          }
+        }
+      } catch (cleanupErr: any) {
+        logAudit('Cleanup Failed', { error: cleanupErr?.message || cleanupErr });
+      }
+    }
+
+    return cacheBustedUrl;
+  } catch (err: any) {
+    logAudit('Upload Failed', { error: err.message || err });
+    throw err;
+  }
 }
 
 
