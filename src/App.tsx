@@ -28,65 +28,20 @@ import { useFeatureEntitlements } from './hooks/useFeatureEntitlements';
 import { SubscriptionDashboard } from './components/SubscriptionDashboard';
 import { useSubscriptionLifecycle } from './hooks/useSubscriptionLifecycle';
 import { WARNING_BANNER_CONFIG } from './services/subscriptionService';
-
-const getTabsForRole = (role: string, planName: string): string[] => {
-  if (planName === 'expired') {
-    if (role === 'ADMIN') {
-      return ['dashboard', 'subscriptions', 'support'];
-    }
-    return ['dashboard', 'support'];
-  }
-
-  switch (role) {
-    case 'STUDENT':
-      return ['dashboard', 'timetable', 'ptm', 'grades', 'documents', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'fees', 'hostel', 'support', 'groupdiscussion'];
-    case 'PARENT':
-      return ['dashboard', 'notifications', 'ptm', 'homework', 'timetable', 'grades', 'documents', 'fees', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'hostel', 'support'];
-    case 'TEACHER':
-    case 'DRIVER':
-      return ['dashboard', 'timetable', 'ptm', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'sports', 'analytics', 'paymentsettings', 'support', 'groupdiscussion'];
-    case 'SUPER_ADMIN':
-      return [
-        'dashboard', 'tenants', 'users', 'communications', 'audits', 'backups', 'logging', 'sports', 'ptm', 'support',
-        'saas-billing',
-        // Subscription Management sub-tabs — Invoices intentionally excluded for Super Admin
-        'sub-dashboard', 'sub-plans', 'sub-pricing', 'sub-coupons',
-        'sub-purchases', 'sub-timeline', 'sub-audits', 'sub-reports'
-      ];
-    case 'ADMIN':
-      return [
-        'dashboard', 'impersonation', 'dangerzone', 'subscriptions',
-        'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
-        'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'documents', 'groupdiscussion', 'sports', 'ptm'
-      ];
-    case 'FINANCE_ADMIN':
-      return [
-        'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
-        'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'sports', 'ptm', 'paymentsettings'
-      ];
-    case 'SPORTS_ADMIN':
-      return ['dashboard', 'sports', 'paymentsettings', 'ptm', 'support'];
-    case 'COACH':
-      return ['dashboard', 'sports', 'paymentsettings', 'support'];
-    default: { // Sub-admin roles (Librarian, Warden, Academic Admin, Exam Controller, etc.)
-      const tabs = [
-        'dashboard', 'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
-        'communications', 'rbac', 'backups', 'books', 'transport', 'marksheets', 'quizzes', 
-        'attendance', 'assignments', 'hostel', 'support', 'paymentsettings', 'sports', 'ptm'
-      ];
-      if (role === 'ACADEMIC_ADMIN') {
-        tabs.push('groupdiscussion');
-      }
-      return tabs;
-    }
-  }
-};
-
+import { getAllowedTabsForRole } from './config/sidebarTabConfig';
 import { MarksheetVerificationPage } from './components/MarksheetVerificationPage';
 import { HelpSupportPage } from './components/HelpSupportPage';
 import { SaaSAuthFlow } from './components/SaaSAuthFlow';
+
+/**
+ * getTabsForRole — thin wrapper kept for backward-compatibility.
+ * All role→tab mappings now live in src/config/sidebarTabConfig.ts.
+ * To add a tab for a role, update ROLE_TAB_IDS in that file.
+ */
+const getTabsForRole = (role: string, planName: string): string[] =>
+  getAllowedTabsForRole(role, planName);
+
+
 
 const RoleSelectorOverlay: React.FC<{
   session: any;
