@@ -92,6 +92,21 @@ export function getStudentPhotoUrl(student: DocumentStudentData): string {
   return student.photoUrl || student.avatarUrl || '';
 }
 
+/** Helper: Renders photo image HTML or a beautiful fallback SVG placeholder */
+export function renderDocumentPhotoHtml(photoUrl?: string, borderRadius: string = '0px', width: string = '28px', height: string = '28px'): string {
+  if (photoUrl) {
+    return `<img src="${photoUrl}" style="width:100%;height:100%;object-fit:cover;border-radius:${borderRadius};display:block;" crossorigin="anonymous" />`;
+  }
+  return `
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;width:100%;height:100%;background-color:#f1f5f9;color:#94a3b8;border-radius:${borderRadius};box-sizing:border-box;padding:4px;text-align:center;">
+      <svg style="width:${width};height:${height};color:#94a3b8;display:block;" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
+      </svg>
+      <span style="font-size:7px;font-weight:700;font-family:sans-serif;text-transform:uppercase;letter-spacing:0.5px;color:#64748b;line-height:1;">No Photo</span>
+    </div>
+  `;
+}
+
 /** Helper: builds a formatted full address string from parts */
 export function buildAddressString(student: DocumentStudentData): string {
   if (student.address) return student.address; // backward compat
@@ -140,7 +155,7 @@ export const downloadStudentIdCardPdf = async (
   container.style.zIndex = '-9999';
   container.style.opacity = '0.02';
   container.style.pointerEvents = 'none';
-  container.style.width = '450px';
+  container.style.width = '350px';
   container.style.background = '#0b1329';
 
   document.body.appendChild(container);
@@ -148,112 +163,149 @@ export const downloadStudentIdCardPdf = async (
   const card = document.createElement('div');
   container.appendChild(card);
 
-  // CRITICAL: ID Card standard layout (CR80 scale)
-  card.className = "text-white p-5 border border-slate-800 rounded-3xl relative overflow-hidden shadow-2xl";
-  card.style.width = '350px';
-  card.style.height = '500px';
-  card.style.boxSizing = 'border-box';
-  card.style.fontFamily = 'system-ui, -apple-system, sans-serif';
-  card.style.background = 'linear-gradient(135deg, #0f172a 0%, #1e293b 100%)';
+  // CRITICAL: use min-height not fixed height — card auto-expands so nothing clips
+  card.style.cssText = `
+    width: 350px;
+    min-height: 500px;
+    height: auto;
+    box-sizing: border-box;
+    font-family: system-ui, -apple-system, sans-serif;
+    background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+    border: 1px solid #1e293b;
+    border-radius: 24px;
+    padding: 20px;
+    position: relative;
+    overflow: visible;
+    color: white;
+  `;
 
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=100x100&data=${encodeURIComponent(
     `${window.location.origin}/#verify/student/${student.id}`
   )}`;
 
+  // Best available photo: photoUrl → avatarUrl → SVG placeholder
+  const studentPhoto = student.photoUrl || student.avatarUrl || '';
+
   card.innerHTML = `
     <!-- Top Branding Accent Banner -->
-    <div style="position: absolute; top: 0; left: 0; right: 0; height: 6px; background: linear-gradient(90deg, #4f46e5, #06b6d4);"></div>
+    <div style="position: absolute; top: 0; left: 0; right: 0; height: 6px; background: linear-gradient(90deg, #4f46e5, #06b6d4); border-radius: 24px 24px 0 0;"></div>
 
-    <!-- Header Block -->
-    <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
-      <div style="width: 44px; height: 44px; border-radius: 50%; background-color: #ffffff; border: 1px solid #334155; overflow: hidden; display: flex; align-items: center; justify-content: center; shrink-0;">
-        ${school.logoUrl ? `<img src="${school.logoUrl}" style="width: 100%; height: 100%; object-fit: cover;" crossorigin="anonymous" />` : `<span style="font-weight: 800; color: #4f46e5; font-size: 18px;">${school.name.substring(0,1)}</span>`}
+    <!-- HEADER: Logo + School Name + Address — FULL TEXT, NEVER CLIPS -->
+    <div style="display: flex; align-items: flex-start; gap: 10px; margin-top: 10px; margin-bottom: 16px;">
+
+      <!-- School Logo (fixed size, never shrinks) -->
+      <div style="width: 46px; height: 46px; min-width: 46px; min-height: 46px; border-radius: 50%; background-color: #ffffff; border: 1px solid #334155; overflow: hidden; display: flex; align-items: center; justify-content: center; flex-shrink: 0;">
+        ${school.logoUrl
+          ? `<img src="${school.logoUrl}" style="width: 100%; height: 100%; object-fit: cover;" crossorigin="anonymous" />`
+          : `<span style="font-weight: 800; color: #4f46e5; font-size: 18px;">${school.name.substring(0, 1)}</span>`}
       </div>
-      <div style="flex: 1; min-width: 0;">
-        <h2 style="font-size: 13px; font-weight: 800; color: #f8fafc; margin: 0; text-transform: uppercase; letter-spacing: 0.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${school.name}</h2>
-        <span style="font-size: 8px; color: #94a3b8; display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${school.address || 'Academic Center'}</span>
+
+      <!-- School Name + Address text block: wraps naturally, never clips -->
+      <div style="flex: 1; min-width: 0; overflow: visible;">
+        <div style="
+          font-size: 11.5px;
+          font-weight: 800;
+          color: #f8fafc;
+          margin: 0 0 4px 0;
+          text-transform: uppercase;
+          letter-spacing: 0.4px;
+          line-height: 1.35;
+          word-break: break-word;
+          overflow-wrap: break-word;
+          white-space: normal;
+        ">${school.name}</div>
+        <div style="
+          font-size: 7.5px;
+          color: #94a3b8;
+          line-height: 1.5;
+          word-break: break-word;
+          overflow-wrap: break-word;
+          white-space: normal;
+        ">${school.address || 'Academic Center'}</div>
       </div>
     </div>
 
-    <!-- Profile & Information Section -->
-    <div style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 20px;">
-      <div style="width: 90px; height: 90px; border-radius: 20px; border: 2.5px solid #4f46e5; overflow: hidden; background-color: #1e293b; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.3); margin-bottom: 12px;">
-        ${(student.photoUrl || student.avatarUrl) ? `<img src="${student.photoUrl || student.avatarUrl}" style="width: 100%; height: 100%; object-fit: cover;" crossorigin="anonymous" />` : `
-          <svg style="width: 44px; height: 44px; color: #64748b;" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24">
-            <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 6a3.75 3.75 0 11-7.5 0 3.75 3.75 0 017.5 0zM4.501 20.118a7.5 7.5 0 0114.998 0A17.933 17.933 0 0112 21.75c-2.676 0-5.216-.584-7.499-1.632z" />
-          </svg>
-        `}
+    <!-- Profile Photo + Student Name -->
+    <div style="display: flex; flex-direction: column; align-items: center; text-align: center; margin-bottom: 16px;">
+      <div style="width: 90px; height: 90px; border-radius: 18px; border: 2.5px solid #4f46e5; overflow: hidden; background-color: #1e293b; display: flex; align-items: center; justify-content: center; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.3); margin-bottom: 10px; flex-shrink: 0;">
+        ${renderDocumentPhotoHtml(studentPhoto, '18px', '32px', '32px')}
       </div>
-      <h3 style="font-size: 14px; font-weight: 700; color: #ffffff; margin: 0; uppercase">${student.fullName}</h3>
-      <span style="font-size: 9px; font-weight: 600; color: #38bdf8; uppercase; letter-spacing: 1px; margin-top: 2px;">STUDENT CARD</span>
+      <div style="font-size: 14px; font-weight: 700; color: #ffffff; margin: 0; text-transform: uppercase; word-break: break-word; overflow-wrap: break-word;">${student.fullName}</div>
+      <div style="font-size: 9px; font-weight: 600; color: #38bdf8; letter-spacing: 1px; margin-top: 3px; text-transform: uppercase;">STUDENT CARD</div>
     </div>
 
     <!-- Details Grid -->
-    <div style="background-color: rgba(15, 23, 42, 0.4); border: 1px solid rgba(51, 65, 85, 0.5); border-radius: 16px; padding: 12px; margin-bottom: 20px; font-size: 10px; line-height: 1.6; color: #cbd5e1;">
+    <div style="background-color: rgba(15,23,42,0.4); border: 1px solid rgba(51,65,85,0.5); border-radius: 14px; padding: 12px; margin-bottom: 16px; font-size: 10px; line-height: 1.65; color: #cbd5e1;">
       <table style="width: 100%; border-collapse: collapse;">
         <tr>
-          <td style="color: #64748b; font-weight: bold; width: 35%;">Admission No.</td>
-          <td style="font-family: monospace; color: #ffffff;">: ${student.admissionNumber}</td>
+          <td style="color:#64748b;font-weight:bold;width:40%;vertical-align:top;padding:1px 0;">Admission No.</td>
+          <td style="font-family:monospace;color:#ffffff;vertical-align:top;padding:1px 0;">: ${student.admissionNumber}</td>
         </tr>
         <tr>
-          <td style="color: #64748b; font-weight: bold;">Class / Roll</td>
-          <td style="color: #ffffff;">: ${student.className} ${student.sectionName ? `(${student.sectionName})` : ''} / #${student.rollNumber}</td>
+          <td style="color:#64748b;font-weight:bold;vertical-align:top;padding:1px 0;">Class / Roll</td>
+          <td style="color:#ffffff;vertical-align:top;padding:1px 0;">: ${student.className}${student.sectionName ? ` / ${student.sectionName}` : ''} / #${student.rollNumber}</td>
         </tr>
         <tr>
-          <td style="color: #64748b; font-weight: bold;">Date of Birth</td>
-          <td style="color: #ffffff;">: ${new Date(student.dateOfBirth).toLocaleDateString('en-GB')}</td>
+          <td style="color:#64748b;font-weight:bold;vertical-align:top;padding:1px 0;">Date of Birth</td>
+          <td style="color:#ffffff;vertical-align:top;padding:1px 0;">: ${new Date(student.dateOfBirth).toLocaleDateString('en-GB')}</td>
         </tr>
         ${student.bloodGroup ? `<tr>
-          <td style="color: #64748b; font-weight: bold;">Blood Group</td>
-          <td style="color: #ef4444; font-weight: bold;">: ${student.bloodGroup}</td>
+          <td style="color:#64748b;font-weight:bold;vertical-align:top;padding:1px 0;">Blood Group</td>
+          <td style="color:#ef4444;font-weight:bold;vertical-align:top;padding:1px 0;">: ${student.bloodGroup}</td>
         </tr>` : ''}
         <tr>
-          <td style="color: #64748b; font-weight: bold;">Emergency No.</td>
-          <td style="color: #38bdf8; font-weight: bold;">: ${student.phone || school.phone || 'N/A'}</td>
+          <td style="color:#64748b;font-weight:bold;vertical-align:top;padding:1px 0;">Emergency No.</td>
+          <td style="color:#38bdf8;font-weight:bold;vertical-align:top;padding:1px 0;">: ${student.phone || school.phone || 'N/A'}</td>
         </tr>
       </table>
     </div>
 
     <!-- Card Footer (QR & Signature) -->
-    <div style="display: flex; align-items: flex-end; justify-content: space-between; border-top: 1px solid rgba(51, 65, 85, 0.4); padding-top: 10px;">
-      <div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: white; padding: 2px; border-radius: 8px;">
-        <img src="${qrUrl}" style="width: 100%; height: 100%; object-fit: contain;" crossorigin="anonymous" />
+    <div style="display:flex;align-items:flex-end;justify-content:space-between;border-top:1px solid rgba(51,65,85,0.4);padding-top:10px;">
+      <div style="width:48px;height:48px;display:flex;align-items:center;justify-content:center;background:white;padding:2px;border-radius:8px;flex-shrink:0;">
+        <img src="${qrUrl}" style="width:100%;height:100%;object-fit:contain;" crossorigin="anonymous" />
       </div>
 
-      <!-- Seal & Signature Overlay Container -->
-      <div style="width: 130px; text-align: center; position: relative;">
-        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 10px; bottom: 12px; width: 36px; height: 36px; opacity: 0.4; pointer-events: none; object-fit: contain;" crossorigin="anonymous" />` : ''}
+      <div style="width:130px;text-align:center;position:relative;">
+        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position:absolute;right:10px;bottom:12px;width:36px;height:36px;opacity:0.4;pointer-events:none;object-fit:contain;" crossorigin="anonymous" />` : ''}
         ${principalSignatureUrl ? `
-          <div style="height: 24px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 2px;">
-            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 100px; object-fit: contain;" crossorigin="anonymous" />
+          <div style="height:24px;display:flex;align-items:center;justify-content:center;overflow:hidden;margin-bottom:2px;">
+            <img src="${principalSignatureUrl}" style="max-height:100%;max-width:100px;object-fit:contain;" crossorigin="anonymous" />
           </div>
         ` : `
-          <span style="font-family: 'Brush Script MT', cursive, sans-serif; color: #818cf8; font-size: 11px; display: block; margin-bottom: 2px;">${principalName}</span>
+          <span style="font-family:'Brush Script MT',cursive,sans-serif;color:#818cf8;font-size:11px;display:block;margin-bottom:2px;">${principalName}</span>
         `}
-        <span style="font-size: 8px; color: #64748b; border-top: 1px solid rgba(226, 232, 240, 0.15); display: block; padding-top: 2px; text-transform: uppercase; font-weight: bold;">Authorized Sign</span>
+        <span style="font-size:8px;color:#64748b;border-top:1px solid rgba(226,232,240,0.15);display:block;padding-top:2px;text-transform:uppercase;font-weight:bold;">Authorized Sign</span>
       </div>
     </div>
   ${AEGIS_PDF_FOOTER}
   `;
 
-  // Wait for all dynamic resources inside the card to fully load
+  // Wait for all images + fonts to fully load before capture
   await waitUntilImagesAndFontsLoaded(card);
 
   try {
+    // Measure actual rendered size — card may be taller than 500px for long school names
+    const rect = card.getBoundingClientRect();
+    const renderedW = rect.width || 350;
+    const renderedH = rect.height || 500;
+
+    // Scale to CR80 card width (54mm), height proportional
+    const pdfW = 54;
+    const pdfH = Math.max(85.6, (renderedH / renderedW) * pdfW);
+
     const canvas = await html2canvas(card, {
       scale: 3,
       useCORS: true,
       logging: false,
-      backgroundColor: null
+      backgroundColor: null,
+      width: renderedW,
+      height: renderedH,
     });
 
     const imgData = canvas.toDataURL('image/png');
-    const pdf = new jsPDF({
-      orientation: 'p',
-      unit: 'mm',
-      format: [54, 85.6] // 54mm width by 85.6mm height
-    });
-    pdf.addImage(imgData, 'PNG', 0, 0, 54, 85.6);
+    const pdf = new jsPDF({ orientation: 'p', unit: 'mm', format: [pdfW, pdfH] });
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfW, pdfH);
 
     const fileName = `idcard_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
     if (Capacitor.isNativePlatform()) {
@@ -308,8 +360,8 @@ export const downloadAdmissionFormPdf = async (
         <p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; font-family: sans-serif; text-transform: uppercase;">${school.address || ''}</p>
         <p style="font-size: 9px; color: #475569; margin: 2px 0 0 0; font-family: sans-serif; font-weight: 600;">Contact: ${school.phone || ''} | Email: ${school.email || ''}</p>
       </div>
-      <div style="width: 90px; height: 100px; border: 1px dashed #94a3b8; display: flex; align-items: center; justify-content: center; background-color: #f8fafc; font-size: 9px; color: #64748b; text-align: center; font-family: sans-serif; overflow: hidden;">
-        ${(student.photoUrl || student.avatarUrl) ? `<img src="${student.photoUrl || student.avatarUrl}" style="width: 100%; height: 100%; object-fit: cover;" crossorigin="anonymous" />` : 'STUDENT<br/>PHOTO'}
+      <div style="width: 90px; height: 100px; border: 1.5px solid #cbd5e1; display: flex; align-items: center; justify-content: center; background-color: #f8fafc; font-size: 9px; color: #64748b; text-align: center; font-family: sans-serif; overflow: hidden; box-sizing: border-box;">
+        ${renderDocumentPhotoHtml(student.photoUrl || student.avatarUrl, '0px', '32px', '32px')}
       </div>
     </div>
 
@@ -453,7 +505,8 @@ export const downloadTransferCertificatePdf = async (
   school: DocumentSchoolData,
   student: DocumentStudentData,
   principalSignatureUrl?: string,
-  principalName: string = 'Principal'
+  principalName: string = 'Principal',
+  verificationNumber?: string
 ) => {
   const container = document.createElement('div');
   container.style.position = 'fixed';
@@ -474,15 +527,28 @@ export const downloadTransferCertificatePdf = async (
   tc.style.boxSizing = 'border-box';
   tc.style.fontFamily = 'Georgia, serif';
 
+  const tcStudentPhoto = student.photoUrl || student.avatarUrl || '';
+  const verNum = verificationNumber || `AEGIS-TRF-${new Date().getFullYear()}-${Math.random().toString(36).substring(2,8).toUpperCase()}`;
+  const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`${window.location.origin}/#verify/doc/${verNum}`)}`;
+
   tc.innerHTML = `
-    <!-- Header Block -->
-    <div style="text-align: center; border-bottom: 2px dashed #475569; padding-bottom: 16px; margin-bottom: 24px; position: relative;">
-      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 10px; top: 10px; width: 60px; height: 60px; object-fit: contain;" crossorigin="anonymous" />` : ''}
-      <h1 style="font-size: 22px; font-weight: bold; color: #1e293b; margin: 0; text-transform: uppercase;">${school.name}</h1>
-      <p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; text-transform: uppercase;">${school.address || ''}</p>
-      <p style="font-size: 9px; color: #475569; margin: 2px 0 0 0; font-weight: 600;">Contact: ${school.phone || ''} | Email: ${school.email || ''}</p>
-      <div style="font-size: 14px; font-weight: 900; color: #1e293b; border: 1.5px solid #1e293b; border-radius: 4px; padding: 4px 16px; display: inline-block; margin-top: 16px; text-transform: uppercase; letter-spacing: 2px;">
-        School Leaving / Transfer Certificate
+    <!-- Header Block: Logo left + Student Photo right -->
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 2px dashed #475569; padding-bottom: 16px; margin-bottom: 24px;">
+      <!-- Left: School branding -->
+      <div style="display: flex; align-items: flex-start; gap: 12px; flex: 1;">
+        ${school.logoUrl ? `<img src="${school.logoUrl}" style="width: 60px; height: 60px; object-fit: contain; flex-shrink: 0;" crossorigin="anonymous" />` : ''}
+        <div>
+          <h1 style="font-size: 20px; font-weight: bold; color: #1e293b; margin: 0; text-transform: uppercase; word-break: break-word;">${school.name}</h1>
+          <p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; text-transform: uppercase; word-break: break-word;">${school.address || ''}</p>
+          <p style="font-size: 9px; color: #475569; margin: 2px 0 0 0; font-weight: 600;">Contact: ${school.phone || ''} | Email: ${school.email || ''}</p>
+          <div style="font-size: 12px; font-weight: 900; color: #1e293b; border: 1.5px solid #1e293b; border-radius: 4px; padding: 3px 12px; display: inline-block; margin-top: 10px; text-transform: uppercase; letter-spacing: 1.5px;">
+            School Leaving / Transfer Certificate
+          </div>
+        </div>
+      </div>
+      <!-- Right: Student passport photo -->
+      <div style="width: 80px; height: 96px; border: 1.5px solid #cbd5e1; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: 16px; font-size: 8px; color: #94a3b8; text-align: center; font-family: sans-serif; box-sizing: border-box;">
+        ${renderDocumentPhotoHtml(tcStudentPhoto, '0px', '28px', '28px')}
       </div>
     </div>
 
@@ -505,7 +571,7 @@ export const downloadTransferCertificatePdf = async (
         </tr>
         <tr>
           <td style="font-weight: bold; color: #475569;">4. Date of Admission</td>
-          <td style="color: #0f172a;">: ${new Date().toLocaleDateString('en-GB')}</td>
+          <td style="color: #0f172a;">: ${student.admissionDate ? new Date(student.admissionDate).toLocaleDateString('en-GB') : new Date().toLocaleDateString('en-GB')}</td>
         </tr>
         <tr>
           <td style="font-weight: bold; color: #475569;">5. Character & Conduct</td>
@@ -520,13 +586,21 @@ export const downloadTransferCertificatePdf = async (
       <p>We wish the candidate every success and wisdom in all prospective academic aspirations.</p>
     </div>
 
+    <!-- Verification number -->
+    <p style="font-size: 9px; font-family: monospace; color: #94a3b8; margin-top: 16px;">Cert. No.: ${verNum}</p>
+
     <!-- Signatures Panel -->
-    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 80px; border-top: 1px solid #cbd5e1; padding-top: 20px;">
-      <div style="width: 200px; text-align: center; font-size: 11px;">
-        <span style="font-weight: bold; color: #475569; display: block; border-top: 1px solid #e2e8f0; padding-top: 6px;">Prepared By</span>
+    <div style="display: flex; justify-content: space-between; align-items: flex-end; margin-top: 60px; border-top: 1px solid #cbd5e1; padding-top: 20px;">
+      <!-- QR Code -->
+      <div style="text-align: center;">
+        <div style="background: white; padding: 3px; border: 1px solid #e2e8f0; display: inline-block; border-radius: 4px;">
+          <img src="${qrUrl}" style="width: 70px; height: 70px; display: block;" crossorigin="anonymous" />
+        </div>
+        <p style="font-size: 8px; color: #94a3b8; margin: 4px 0 0 0; font-family: sans-serif;">Scan to Verify</p>
       </div>
 
-      <div style="width: 200px; text-align: center; position: relative; font-size: 11px;">
+      <!-- Principal Seal + Signature -->
+      <div style="width: 220px; text-align: center; position: relative; font-size: 11px;">
         ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 20px; bottom: 20px; width: 48px; height: 48px; opacity: 0.75; pointer-events: none; object-fit: contain;" crossorigin="anonymous" />` : ''}
         ${principalSignatureUrl ? `
           <div style="height: 38px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px;">
@@ -604,15 +678,26 @@ export const downloadBonafideCertificatePdf = async (
   bc.style.boxSizing = 'border-box';
   bc.style.fontFamily = 'Georgia, serif';
 
+  const bcStudentPhoto = student.photoUrl || student.avatarUrl || '';
+
   bc.innerHTML = `
-    <!-- Header Block -->
-    <div style="text-align: center; border-bottom: 2px dashed #475569; padding-bottom: 16px; margin-bottom: 24px; position: relative;">
-      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 10px; top: 10px; width: 60px; height: 60px; object-fit: contain;" crossorigin="anonymous" />` : ''}
-      <h1 style="font-size: 22px; font-weight: bold; color: #1e293b; margin: 0; text-transform: uppercase;">${school.name}</h1>
-      <p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; text-transform: uppercase;">${school.address || ''}</p>
-      <p style="font-size: 9px; color: #475569; margin: 2px 0 0 0; font-weight: 600;">Contact: ${school.phone || ''} | Email: ${school.email || ''}</p>
-      <div style="font-size: 14px; font-weight: 900; color: #1e293b; border: 1.5px solid #1e293b; border-radius: 4px; padding: 4px 20px; display: inline-block; margin-top: 16px; text-transform: uppercase; letter-spacing: 2px;">
-        Certificate of Bonafide Identity
+    <!-- Header Block: Logo left + Student Photo right -->
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 2px dashed #475569; padding-bottom: 16px; margin-bottom: 24px;">
+      <!-- Left: School branding -->
+      <div style="display: flex; align-items: flex-start; gap: 12px; flex: 1;">
+        ${school.logoUrl ? `<img src="${school.logoUrl}" style="width: 60px; height: 60px; object-fit: contain; flex-shrink: 0;" crossorigin="anonymous" />` : ''}
+        <div>
+          <h1 style="font-size: 20px; font-weight: bold; color: #1e293b; margin: 0; text-transform: uppercase; word-break: break-word;">${school.name}</h1>
+          <p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; text-transform: uppercase; word-break: break-word;">${school.address || ''}</p>
+          <p style="font-size: 9px; color: #475569; margin: 2px 0 0 0; font-weight: 600;">Contact: ${school.phone || ''} | Email: ${school.email || ''}</p>
+          <div style="font-size: 12px; font-weight: 900; color: #1e293b; border: 1.5px solid #1e293b; border-radius: 4px; padding: 3px 12px; display: inline-block; margin-top: 10px; text-transform: uppercase; letter-spacing: 1.5px;">
+            Certificate of Bonafide Identity
+          </div>
+        </div>
+      </div>
+      <!-- Right: Student passport photo -->
+      <div style="width: 80px; height: 96px; border: 1.5px solid #cbd5e1; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: 16px; font-size: 8px; color: #94a3b8; text-align: center; font-family: sans-serif; box-sizing: border-box;">
+        ${renderDocumentPhotoHtml(bcStudentPhoto, '0px', '28px', '28px')}
       </div>
     </div>
 
@@ -726,10 +811,13 @@ export const downloadCertificateOfExcellencePdf = async (
       <div style="width: 120px; height: 2px; background-color: #d4af37; margin: 12px auto 0 auto;"></div>
     </div>
 
-    <!-- Main citation details -->
+    <!-- Main citation details with student photo -->
     <div style="text-align: center; font-size: 15px; line-height: 2; color: #292524; max-width: 800px; margin: 0 auto;">
       <p style="margin: 0; font-style: italic;">This honor and recognition is proudly presented to</p>
-      <h3 style="font-size: 26px; font-weight: bold; color: #1c1917; margin: 16px 0; text-transform: uppercase; letter-spacing: 2.5px;">${student.fullName}</h3>
+      <div style="width: 90px; height: 108px; border-radius: 8px; border: 2px solid #d4af37; overflow: hidden; margin: 12px auto 4px auto; background: #f8fafc; display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex-shrink: 0;">
+        ${renderDocumentPhotoHtml(student.photoUrl || student.avatarUrl, '8px', '32px', '32px')}
+      </div>
+      <h3 style="font-size: 26px; font-weight: bold; color: #1c1917; margin: 12px 0 8px 0; text-transform: uppercase; letter-spacing: 2.5px;">${student.fullName}</h3>
       <p style="margin: 0; font-style: italic;">of class <strong>${student.className}</strong>, for displaying outstanding scholastic distinction, wisdom, and exemplary commitment to academic excellence in the current session cycle.</p>
     </div>
 
@@ -852,11 +940,17 @@ export const downloadCharacterCertificatePdf = async (
     <!-- Outer decorative top rule -->
     <div style="height: 3px; background: linear-gradient(90deg, #1e3a5f, #c8a84b, #1e3a5f); margin-bottom: 24px;"></div>
 
-    <!-- Header -->
-    <div style="text-align: center; margin-bottom: 20px; position: relative;">
-      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 0; top: 0; width: 70px; height: 70px; object-fit: contain;" crossorigin="anonymous" />` : ''}
-      <h1 style="font-size: 24px; font-weight: 900; color: #1e3a5f; margin: 0; text-transform: uppercase; letter-spacing: 1.5px; font-family: sans-serif;">${school.name}</h1>
-      ${school.affiliationNumber ? `<p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; font-family: sans-serif;">AFFILIATION NO.: ${school.affiliationNumber} | SCHOOL CODE: ${school.schoolCode || ''}</p>` : `<p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; font-family: sans-serif;">${school.address || ''}</p>`}
+    <!-- Header: school logo left, student photo right -->
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 20px; position: relative;">
+      <div style="display: flex; align-items: flex-start; gap: 12px; flex: 1; text-align: center; flex-direction: column; align-items: center;">
+        ${school.logoUrl ? `<img src="${school.logoUrl}" style="width: 60px; height: 60px; object-fit: contain;" crossorigin="anonymous" />` : ''}
+        <h1 style="font-size: 22px; font-weight: 900; color: #1e3a5f; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 1.5px; font-family: sans-serif; word-break: break-word;">${school.name}</h1>
+        ${school.affiliationNumber ? `<p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; font-family: sans-serif;">AFFILIATION NO.: ${school.affiliationNumber} | SCHOOL CODE: ${school.schoolCode || ''}</p>` : `<p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; font-family: sans-serif; word-break: break-word;">${school.address || ''}</p>`}
+      </div>
+      <!-- Student passport photo (top-right) -->
+      <div style="width: 78px; height: 94px; border: 1.5px solid #1e3a5f; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: 16px; font-size: 8px; color: #94a3b8; text-align: center; font-family: sans-serif; box-sizing: border-box;">
+        ${renderDocumentPhotoHtml(student.photoUrl || student.avatarUrl, '0px', '28px', '28px')}
+      </div>
     </div>
 
     <!-- Title -->
@@ -984,12 +1078,18 @@ export const downloadAdmissionRecordPdf = async (
     : (student.address || 'N/A');
 
   rec.innerHTML = `
-    <!-- Header -->
-    <div style="text-align: center; border-bottom: 2px solid #1e3a5f; padding-bottom: 16px; margin-bottom: 20px; position: relative;">
-      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 0; top: 0; width: 65px; height: 65px; object-fit: contain;" crossorigin="anonymous" />` : ''}
-      <h1 style="font-size: 22px; font-weight: 900; color: #1e3a5f; margin: 0; text-transform: uppercase; letter-spacing: 1px; font-family: sans-serif;">${school.name}</h1>
-      ${school.affiliationNumber ? `<p style="font-size: 9px; color: #64748b; margin: 3px 0 0 0; font-family: sans-serif;">AFFILIATION NO.: ${school.affiliationNumber} | SCHOOL CODE: ${school.schoolCode || ''}</p>` : `<p style="font-size: 9px; color: #64748b; margin: 3px 0 0 0; font-family: sans-serif;">${school.address || ''}</p>`}
-      <h2 style="font-size: 16px; font-weight: 900; color: #1e293b; margin: 14px 0 0 0; text-transform: uppercase; letter-spacing: 2px; font-family: sans-serif;">ADMISSION RECORD</h2>
+    <!-- Header: school logo+name center, student photo right -->
+    <div style="display: flex; align-items: flex-start; justify-content: space-between; border-bottom: 2px solid #1e3a5f; padding-bottom: 16px; margin-bottom: 20px;">
+      <div style="flex: 1; text-align: center;">
+        ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 0; top: 0; width: 65px; height: 65px; object-fit: contain;" crossorigin="anonymous" />` : ''}
+        <h1 style="font-size: 22px; font-weight: 900; color: #1e3a5f; margin: 0; text-transform: uppercase; letter-spacing: 1px; font-family: sans-serif; word-break: break-word;">${school.name}</h1>
+        ${school.affiliationNumber ? `<p style="font-size: 9px; color: #64748b; margin: 3px 0 0 0; font-family: sans-serif;">AFFILIATION NO.: ${school.affiliationNumber} | SCHOOL CODE: ${school.schoolCode || ''}</p>` : `<p style="font-size: 9px; color: #64748b; margin: 3px 0 0 0; font-family: sans-serif; word-break: break-word;">${school.address || ''}</p>`}
+        <h2 style="font-size: 16px; font-weight: 900; color: #1e293b; margin: 14px 0 0 0; text-transform: uppercase; letter-spacing: 2px; font-family: sans-serif;">ADMISSION RECORD</h2>
+      </div>
+      <!-- Student passport photo (top-right) -->
+      <div style="width: 78px; height: 94px; border: 1.5px solid #1e3a5f; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: 16px; font-size: 8px; color: #94a3b8; text-align: center; font-family: sans-serif; box-sizing: border-box;">
+        ${renderDocumentPhotoHtml(student.photoUrl || student.avatarUrl, '0px', '28px', '28px')}
+      </div>
     </div>
 
     <!-- Table: All student admission fields -->

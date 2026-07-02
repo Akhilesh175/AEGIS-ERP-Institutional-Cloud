@@ -337,7 +337,7 @@ export async function saveGeneratedDocumentRecord({
   generatedByUserId: string;
   generatedByRole: string;
   metadata?: Record<string, any>;
-}): Promise<string | null> {
+}): Promise<{ id: string; verificationNumber: string } | null> {
   try {
     const verificationNumber = generateVerificationNumber(documentType);
     const qrData = `${window.location.origin}/#verify/doc/${verificationNumber}`;
@@ -392,7 +392,7 @@ export async function saveGeneratedDocumentRecord({
       details: { document_type: documentType, verification_number: verificationNumber },
     });
 
-    return row.id;
+    return { id: row.id, verificationNumber };
   } catch (err) {
     console.error('[documentService] saveGeneratedDocumentRecord error:', err);
     return null;

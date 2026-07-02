@@ -3381,6 +3381,43 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
     }
   };
 
+  /**
+   * Compresses an image File using a canvas before uploading.
+   * Resizes to max 1200px on the longest side and re-encodes as JPEG @ 0.85 quality.
+   * Falls back to the original file if canvas is unavailable.
+   */
+  const compressImage = (file: File): Promise<File> =>
+    new Promise((resolve) => {
+      const img = new window.Image();
+      const objectUrl = URL.createObjectURL(file);
+      img.onload = () => {
+        URL.revokeObjectURL(objectUrl);
+        const MAX = 1200;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round((height / width) * MAX); width = MAX; }
+          else { width = Math.round((width / height) * MAX); height = MAX; }
+        }
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (!ctx) { resolve(file); return; }
+        ctx.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (!blob) { resolve(file); return; }
+            const compressed = new File([blob], file.name.replace(/\.[^.]+$/, '.jpg'), { type: 'image/jpeg' });
+            resolve(compressed);
+          },
+          'image/jpeg',
+          0.85
+        );
+      };
+      img.onerror = () => { URL.revokeObjectURL(objectUrl); resolve(file); };
+      img.src = objectUrl;
+    });
+
   const handleCreateStudent = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!adminId || !stEmail.trim()) return;
@@ -8500,15 +8537,17 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                   onClick={() => !stPhotoPreview && stPhotoInputRef.current?.click()}
                   onDragOver={(ev) => { ev.preventDefault(); setStPhotoDragging(true); }}
                   onDragLeave={() => setStPhotoDragging(false)}
-                  onDrop={(ev) => {
+                  onDrop={async (ev) => {
                     ev.preventDefault();
                     setStPhotoDragging(false);
                     const f = ev.dataTransfer.files?.[0];
                     if (!f) return;
                     if (!['image/jpeg','image/png','image/webp'].includes(f.type)) { alert('Only JPG, PNG or WEBP files are allowed.'); return; }
                     if (f.size > 5 * 1024 * 1024) { alert('Photo must be under 5 MB.'); return; }
-                    setStPhotoFile(f);
-                    setStPhotoPreview(URL.createObjectURL(f));
+                    const compressed = await compressImage(f);
+                    if (stPhotoPreview) URL.revokeObjectURL(stPhotoPreview);
+                    setStPhotoFile(compressed);
+                    setStPhotoPreview(URL.createObjectURL(compressed));
                   }}
                 >
                   {stPhotoPreview ? (
@@ -8532,7 +8571,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           </button>
                           <button
                             type="button"
-                            onClick={(ev) => { ev.stopPropagation(); setStPhotoFile(null); setStPhotoPreview(null); }}
+                            onClick={(ev) => { ev.stopPropagation(); setStPhotoFile(null); if (stPhotoPreview) URL.revokeObjectURL(stPhotoPreview); setStPhotoPreview(null); }}
                             className="text-[10px] font-semibold text-rose-400 hover:text-rose-300 transition-colors px-2 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20"
                           >
                             Remove
@@ -8557,13 +8596,15 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     accept="image/jpeg,image/png,image/webp"
                     capture="environment"
                     className="hidden"
-                    onChange={(ev) => {
+                    onChange={async (ev) => {
                       const f = ev.target.files?.[0];
                       if (!f) return;
                       if (!['image/jpeg','image/png','image/webp'].includes(f.type)) { alert('Only JPG, PNG or WEBP files are allowed.'); return; }
                       if (f.size > 5 * 1024 * 1024) { alert('Photo must be under 5 MB.'); return; }
-                      setStPhotoFile(f);
-                      setStPhotoPreview(URL.createObjectURL(f));
+                      const compressed = await compressImage(f);
+                      if (stPhotoPreview) URL.revokeObjectURL(stPhotoPreview);
+                      setStPhotoFile(compressed);
+                      setStPhotoPreview(URL.createObjectURL(compressed));
                       ev.target.value = '';
                     }}
                   />
@@ -14615,24 +14656,24 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                       await downloadCertificateOfExcellencePdf(docSchool, docSt, pSig, pName);
                     } else if (type === 'character') {
                       // Save DB record FIRST to get verification number
-                      const docId = await saveGeneratedDocumentRecord({
+                      const docRes = await saveGeneratedDocumentRecord({
                         schoolId: session?.user.schoolId || '',
                         studentId: st.id,
                         documentType: 'character_certificate',
                         generatedByUserId: session?.user.id || '',
                         generatedByRole: session?.user.role || 'ADMIN',
                       });
-                      await downloadCharacterCertificatePdf(docSchool, docSt, pSig, pName);
+                      await downloadCharacterCertificatePdf(docSchool, docSt, pSig, pName, docRes?.verificationNumber);
                     } else if (type === 'transfer') {
                       // Save DB record for Transfer Certificate (gated visibility)
-                      await saveGeneratedDocumentRecord({
+                      const docRes = await saveGeneratedDocumentRecord({
                         schoolId: session?.user.schoolId || '',
                         studentId: st.id,
                         documentType: 'transfer_certificate',
                         generatedByUserId: session?.user.id || '',
                         generatedByRole: session?.user.role || 'ADMIN',
                       });
-                      await downloadTransferCertificatePdf(docSchool, docSt, pSig, pName);
+                      await downloadTransferCertificatePdf(docSchool, docSt, pSig, pName, docRes?.verificationNumber);
                     }
                   } catch (err) {
                     console.error('Failed to generate document:', err);
