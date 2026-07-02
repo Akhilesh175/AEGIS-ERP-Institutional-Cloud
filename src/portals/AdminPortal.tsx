@@ -1196,6 +1196,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   const [stPhone, setStPhone] = useState('');
   const [stFatherName, setStFatherName] = useState('');
   const [stMotherName, setStMotherName] = useState('');
+  // Photo upload state for student registration
+  const [stPhotoFile, setStPhotoFile] = useState<File | null>(null);
+  const [stPhotoPreview, setStPhotoPreview] = useState<string | null>(null);
+  const [stPhotoDragging, setStPhotoDragging] = useState(false);
+  const [stPhotoUploading, setStPhotoUploading] = useState(false);
+  const stPhotoInputRef = useRef<HTMLInputElement>(null);
 
   const [showAddClass, setShowAddClass] = useState(false);
   const [newClassName, setNewClassName] = useState('');
@@ -3387,6 +3393,34 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       await mockApi.adminCreateStudent(
         adminId, stEmail, stFirst, stLast, stClass, stAdmission, stRoll, stGender, stDob, stPassword, stPhone, stFatherName, stMotherName
       );
+
+      // After student creation, resolve the new student's ID and upload photo if provided
+      const schoolId = session?.user.schoolId;
+      if (schoolId && stPhotoFile) {
+        try {
+          setStPhotoUploading(true);
+          // Find newly created student by admission number
+          const { data: newStudent } = await supabase
+            .from('students')
+            .select('id')
+            .eq('school_id', schoolId)
+            .eq('admission_number', stAdmission)
+            .maybeSingle();
+
+          if (newStudent?.id) {
+            const photoUrl = await uploadStudentPhoto(stPhotoFile, newStudent.id, schoolId);
+            if (photoUrl) {
+              await upsertStudentProfile(newStudent.id, schoolId, { photoUrl });
+            }
+          }
+        } catch (photoErr) {
+          console.warn('[AdminPortal] Photo upload after student creation failed:', photoErr);
+          // Non-fatal: student was already created successfully
+        } finally {
+          setStPhotoUploading(false);
+        }
+      }
+
       setShowAddStudent(false);
       setStEmail('');
       setStFirst('');
@@ -3398,8 +3432,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       setStPhone('');
       setStFatherName('');
       setStMotherName('');
+      setStPhotoFile(null);
+      setStPhotoPreview(null);
       loadData();
-      alert('Student registered in classroom listings!');
+      alert('Student registered successfully!');
     } catch (err: any) {
       alert(err.message || 'Error creating student');
     }
@@ -8447,6 +8483,96 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Mother's Name <span className="text-rose-400">*</span></label>
                 <input type="text" placeholder="e.g. Sunita Devi" value={stMotherName} onChange={(e) => setStMotherName(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+              </div>
+
+              {/* ── Student Photo Upload ── */}
+              <div className="col-span-1 sm:col-span-2 space-y-2">
+                <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Student Photo <span className="text-slate-500">(Optional – JPG / PNG / WEBP, max 5 MB)</span></label>
+                <div
+                  className={`relative flex flex-col items-center justify-center rounded-xl border-2 border-dashed transition-all duration-200 cursor-pointer ${
+                    stPhotoDragging
+                      ? 'border-brand-400 bg-brand-500/10 scale-[1.01]'
+                      : stPhotoPreview
+                      ? 'border-emerald-500/50 bg-emerald-500/5'
+                      : 'border-slate-700 hover:border-brand-500/60 bg-slate-900/60 hover:bg-slate-900'
+                  }`}
+                  style={{ minHeight: '120px' }}
+                  onClick={() => !stPhotoPreview && stPhotoInputRef.current?.click()}
+                  onDragOver={(ev) => { ev.preventDefault(); setStPhotoDragging(true); }}
+                  onDragLeave={() => setStPhotoDragging(false)}
+                  onDrop={(ev) => {
+                    ev.preventDefault();
+                    setStPhotoDragging(false);
+                    const f = ev.dataTransfer.files?.[0];
+                    if (!f) return;
+                    if (!['image/jpeg','image/png','image/webp'].includes(f.type)) { alert('Only JPG, PNG or WEBP files are allowed.'); return; }
+                    if (f.size > 5 * 1024 * 1024) { alert('Photo must be under 5 MB.'); return; }
+                    setStPhotoFile(f);
+                    setStPhotoPreview(URL.createObjectURL(f));
+                  }}
+                >
+                  {stPhotoPreview ? (
+                    <div className="relative w-full flex items-center justify-center p-3 gap-4">
+                      <img
+                        src={stPhotoPreview}
+                        alt="Student photo preview"
+                        className="w-20 h-24 object-cover rounded-lg border-2 border-brand-500/50 shadow-lg"
+                      />
+                      <div className="flex flex-col gap-2">
+                        <p className="text-xs text-emerald-400 font-semibold">✓ Photo selected</p>
+                        <p className="text-[10px] text-slate-400 truncate max-w-[140px]">{stPhotoFile?.name}</p>
+                        <p className="text-[10px] text-slate-500">{stPhotoFile ? (stPhotoFile.size / 1024).toFixed(1) + ' KB' : ''}</p>
+                        <div className="flex gap-2 mt-1">
+                          <button
+                            type="button"
+                            onClick={(ev) => { ev.stopPropagation(); stPhotoInputRef.current?.click(); }}
+                            className="text-[10px] font-semibold text-brand-400 hover:text-brand-300 transition-colors px-2 py-1 rounded bg-brand-500/10 hover:bg-brand-500/20"
+                          >
+                            Replace
+                          </button>
+                          <button
+                            type="button"
+                            onClick={(ev) => { ev.stopPropagation(); setStPhotoFile(null); setStPhotoPreview(null); }}
+                            className="text-[10px] font-semibold text-rose-400 hover:text-rose-300 transition-colors px-2 py-1 rounded bg-rose-500/10 hover:bg-rose-500/20"
+                          >
+                            Remove
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center gap-2 py-6 px-4 text-center select-none">
+                      <div className="w-10 h-10 rounded-full bg-slate-800 border border-slate-700 flex items-center justify-center">
+                        <Image size={18} className="text-slate-500" />
+                      </div>
+                      <p className="text-xs text-slate-400 font-medium">
+                        {stPhotoDragging ? 'Drop photo here' : 'Drag & drop or click to upload'}
+                      </p>
+                      <p className="text-[10px] text-slate-600">Passport-size photo recommended • 3:4 ratio</p>
+                    </div>
+                  )}
+                  <input
+                    ref={stPhotoInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(ev) => {
+                      const f = ev.target.files?.[0];
+                      if (!f) return;
+                      if (!['image/jpeg','image/png','image/webp'].includes(f.type)) { alert('Only JPG, PNG or WEBP files are allowed.'); return; }
+                      if (f.size > 5 * 1024 * 1024) { alert('Photo must be under 5 MB.'); return; }
+                      setStPhotoFile(f);
+                      setStPhotoPreview(URL.createObjectURL(f));
+                      ev.target.value = '';
+                    }}
+                  />
+                </div>
+                {stPhotoUploading && (
+                  <p className="text-[10px] text-brand-400 flex items-center gap-1 animate-pulse">
+                    <Upload size={10} /> Uploading photo to cloud storage…
+                  </p>
+                )}
               </div>
 
               <div className="space-y-1 sm:col-span-2">

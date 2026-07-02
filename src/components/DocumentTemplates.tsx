@@ -106,6 +106,25 @@ export function buildAddressString(student: DocumentStudentData): string {
   return parts.join(', ');
 }
 
+/** Helper: Waits until all images inside the element are completely loaded or failed, and fonts are ready */
+export async function waitUntilImagesAndFontsLoaded(element: HTMLElement): Promise<void> {
+  const imgs = Array.from(element.querySelectorAll('img'));
+  const promises = imgs.map((img) => {
+    if (img.complete && img.naturalWidth !== 0) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      img.onload = () => resolve();
+      img.onerror = () => resolve();
+    });
+  });
+
+  if (document.fonts && document.fonts.ready) {
+    await document.fonts.ready;
+  }
+
+  await Promise.all(promises);
+  // Add a small safety buffer for final browser rendering/layout
+  await new Promise((resolve) => setTimeout(resolve, 300));
+}
 
 // ─── STUDENT ID CARD ──────────────────────────────────────────────────────────
 export const downloadStudentIdCardPdf = async (
@@ -115,9 +134,12 @@ export const downloadStudentIdCardPdf = async (
   principalName: string = 'Principal'
 ) => {
   const container = document.createElement('div');
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  container.style.top = '-9999px';
+  container.style.position = 'fixed';
+  container.style.left = '0';
+  container.style.top = '0';
+  container.style.zIndex = '-9999';
+  container.style.opacity = '0.02';
+  container.style.pointerEvents = 'none';
   container.style.width = '450px';
   container.style.background = '#0b1329';
 
@@ -145,7 +167,7 @@ export const downloadStudentIdCardPdf = async (
     <!-- Header Block -->
     <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 20px;">
       <div style="width: 44px; height: 44px; border-radius: 50%; background-color: #ffffff; border: 1px solid #334155; overflow: hidden; display: flex; align-items: center; justify-content: center; shrink-0;">
-        ${school.logoUrl ? `<img src="${school.logoUrl}" style="width: 100%; height: 100%; object-fit: cover;" />` : `<span style="font-weight: 800; color: #4f46e5; font-size: 18px;">${school.name.substring(0,1)}</span>`}
+        ${school.logoUrl ? `<img src="${school.logoUrl}" style="width: 100%; height: 100%; object-fit: cover;" crossorigin="anonymous" />` : `<span style="font-weight: 800; color: #4f46e5; font-size: 18px;">${school.name.substring(0,1)}</span>`}
       </div>
       <div style="flex: 1; min-width: 0;">
         <h2 style="font-size: 13px; font-weight: 800; color: #f8fafc; margin: 0; text-transform: uppercase; letter-spacing: 0.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${school.name}</h2>
@@ -195,15 +217,15 @@ export const downloadStudentIdCardPdf = async (
     <!-- Card Footer (QR & Signature) -->
     <div style="display: flex; align-items: flex-end; justify-content: space-between; border-top: 1px solid rgba(51, 65, 85, 0.4); padding-top: 10px;">
       <div style="width: 48px; height: 48px; display: flex; align-items: center; justify-content: center; background: white; padding: 2px; border-radius: 8px;">
-        <img src="${qrUrl}" style="width: 100%; height: 100%; object-fit: contain;" />
+        <img src="${qrUrl}" style="width: 100%; height: 100%; object-fit: contain;" crossorigin="anonymous" />
       </div>
 
       <!-- Seal & Signature Overlay Container -->
       <div style="width: 130px; text-align: center; position: relative;">
-        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 10px; bottom: 12px; width: 36px; height: 36px; opacity: 0.4; pointer-events: none; object-fit: contain;" />` : ''}
+        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 10px; bottom: 12px; width: 36px; height: 36px; opacity: 0.4; pointer-events: none; object-fit: contain;" crossorigin="anonymous" />` : ''}
         ${principalSignatureUrl ? `
           <div style="height: 24px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 2px;">
-            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 100px; object-fit: contain;" />
+            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 100px; object-fit: contain;" crossorigin="anonymous" />
           </div>
         ` : `
           <span style="font-family: 'Brush Script MT', cursive, sans-serif; color: #818cf8; font-size: 11px; display: block; margin-bottom: 2px;">${principalName}</span>
@@ -214,7 +236,8 @@ export const downloadStudentIdCardPdf = async (
   ${AEGIS_PDF_FOOTER}
   `;
 
-  await new Promise(r => setTimeout(r, 800));
+  // Wait for all dynamic resources inside the card to fully load
+  await waitUntilImagesAndFontsLoaded(card);
 
   try {
     const canvas = await html2canvas(card, {
@@ -228,8 +251,9 @@ export const downloadStudentIdCardPdf = async (
     const pdf = new jsPDF({
       orientation: 'p',
       unit: 'mm',
-      format: [85.6, 54] // Standard credit card size is 85.6mm x 54mm
+      format: [54, 85.6] // 54mm width by 85.6mm height
     });
+    pdf.addImage(imgData, 'PNG', 0, 0, 54, 85.6);
 
     const fileName = `idcard_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
     if (Capacitor.isNativePlatform()) {
@@ -255,9 +279,12 @@ export const downloadAdmissionFormPdf = async (
   principalName: string = 'Registrar'
 ) => {
   const container = document.createElement('div');
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  container.style.top = '-9999px';
+  container.style.position = 'fixed';
+  container.style.left = '0';
+  container.style.top = '0';
+  container.style.zIndex = '-9999';
+  container.style.opacity = '0.02';
+  container.style.pointerEvents = 'none';
   container.style.width = '800px';
   container.style.background = 'white';
 
@@ -274,7 +301,7 @@ export const downloadAdmissionFormPdf = async (
     <!-- Header Block -->
     <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #334155; padding-bottom: 16px; margin-bottom: 24px;">
       <div style="width: 70px; height: 70px; display: flex; align-items: center; justify-content: center; border-radius: 50%; background-color: #f8fafc; border: 1px solid #cbd5e1; overflow: hidden;">
-        ${school.logoUrl ? `<img src="${school.logoUrl}" style="width: 100%; height: 100%; object-fit: cover;" />` : `<span style="font-weight: bold; font-family: sans-serif; font-size: 26px; color: #1e293b;">${school.name.substring(0,1)}</span>`}
+        ${school.logoUrl ? `<img src="${school.logoUrl}" style="width: 100%; height: 100%; object-fit: cover;" crossorigin="anonymous" />` : `<span style="font-weight: bold; font-family: sans-serif; font-size: 26px; color: #1e293b;">${school.name.substring(0,1)}</span>`}
       </div>
       <div style="text-align: center; flex: 1; padding: 0 16px;">
         <h1 style="font-size: 22px; font-weight: 900; letter-spacing: 1px; color: #0f172a; margin: 0; font-family: sans-serif; text-transform: uppercase;">${school.name}</h1>
@@ -370,10 +397,10 @@ export const downloadAdmissionFormPdf = async (
       </div>
 
       <div style="width: 200px; text-align: center; position: relative; font-size: 10px;">
-        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 20px; bottom: 20px; width: 44px; height: 44px; opacity: 0.7; pointer-events: none; object-fit: contain;" />` : ''}
+        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 20px; bottom: 20px; width: 44px; height: 44px; opacity: 0.7; pointer-events: none; object-fit: contain;" crossorigin="anonymous" />` : ''}
         ${principalSignatureUrl ? `
           <div style="height: 35px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px;">
-            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 140px; object-fit: contain;" />
+            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 140px; object-fit: contain;" crossorigin="anonymous" />
           </div>
         ` : `
           <div style="height: 35px;"></div>
@@ -384,7 +411,8 @@ export const downloadAdmissionFormPdf = async (
   ${AEGIS_PDF_FOOTER}
   `;
 
-  await new Promise(r => setTimeout(r, 1000));
+  // Wait for all dynamic resources to load inside the form container
+  await waitUntilImagesAndFontsLoaded(form);
 
   try {
     const canvas = await html2canvas(form, {
@@ -400,6 +428,10 @@ export const downloadAdmissionFormPdf = async (
       unit: 'mm',
       format: 'a4'
     });
+
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
 
     const fileName = `admission_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
     if (Capacitor.isNativePlatform()) {
@@ -424,9 +456,12 @@ export const downloadTransferCertificatePdf = async (
   principalName: string = 'Principal'
 ) => {
   const container = document.createElement('div');
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  container.style.top = '-9999px';
+  container.style.position = 'fixed';
+  container.style.left = '0';
+  container.style.top = '0';
+  container.style.zIndex = '-9999';
+  container.style.opacity = '0.02';
+  container.style.pointerEvents = 'none';
   container.style.width = '800px';
   container.style.background = 'white';
 
@@ -442,7 +477,7 @@ export const downloadTransferCertificatePdf = async (
   tc.innerHTML = `
     <!-- Header Block -->
     <div style="text-align: center; border-bottom: 2px dashed #475569; padding-bottom: 16px; margin-bottom: 24px; position: relative;">
-      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 10px; top: 10px; width: 60px; height: 60px; object-fit: contain;" />` : ''}
+      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 10px; top: 10px; width: 60px; height: 60px; object-fit: contain;" crossorigin="anonymous" />` : ''}
       <h1 style="font-size: 22px; font-weight: bold; color: #1e293b; margin: 0; text-transform: uppercase;">${school.name}</h1>
       <p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; text-transform: uppercase;">${school.address || ''}</p>
       <p style="font-size: 9px; color: #475569; margin: 2px 0 0 0; font-weight: 600;">Contact: ${school.phone || ''} | Email: ${school.email || ''}</p>
@@ -492,10 +527,10 @@ export const downloadTransferCertificatePdf = async (
       </div>
 
       <div style="width: 200px; text-align: center; position: relative; font-size: 11px;">
-        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 20px; bottom: 20px; width: 48px; height: 48px; opacity: 0.75; pointer-events: none; object-fit: contain;" />` : ''}
+        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 20px; bottom: 20px; width: 48px; height: 48px; opacity: 0.75; pointer-events: none; object-fit: contain;" crossorigin="anonymous" />` : ''}
         ${principalSignatureUrl ? `
           <div style="height: 38px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px;">
-            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 140px; object-fit: contain;" />
+            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 140px; object-fit: contain;" crossorigin="anonymous" />
           </div>
         ` : `
           <div style="height: 38px;"></div>
@@ -506,7 +541,8 @@ export const downloadTransferCertificatePdf = async (
   ${AEGIS_PDF_FOOTER}
   `;
 
-  await new Promise(r => setTimeout(r, 1000));
+  // Wait for all dynamic resources inside the TC container to load
+  await waitUntilImagesAndFontsLoaded(tc);
 
   try {
     const canvas = await html2canvas(tc, {
@@ -522,6 +558,10 @@ export const downloadTransferCertificatePdf = async (
       unit: 'mm',
       format: 'a4'
     });
+
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
 
     const fileName = `transfer_certificate_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
     if (Capacitor.isNativePlatform()) {
@@ -546,9 +586,12 @@ export const downloadBonafideCertificatePdf = async (
   principalName: string = 'Principal'
 ) => {
   const container = document.createElement('div');
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  container.style.top = '-9999px';
+  container.style.position = 'fixed';
+  container.style.left = '0';
+  container.style.top = '0';
+  container.style.zIndex = '-9999';
+  container.style.opacity = '0.02';
+  container.style.pointerEvents = 'none';
   container.style.width = '800px';
   container.style.background = 'white';
 
@@ -564,7 +607,7 @@ export const downloadBonafideCertificatePdf = async (
   bc.innerHTML = `
     <!-- Header Block -->
     <div style="text-align: center; border-bottom: 2px dashed #475569; padding-bottom: 16px; margin-bottom: 24px; position: relative;">
-      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 10px; top: 10px; width: 60px; height: 60px; object-fit: contain;" />` : ''}
+      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 10px; top: 10px; width: 60px; height: 60px; object-fit: contain;" crossorigin="anonymous" />` : ''}
       <h1 style="font-size: 22px; font-weight: bold; color: #1e293b; margin: 0; text-transform: uppercase;">${school.name}</h1>
       <p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; text-transform: uppercase;">${school.address || ''}</p>
       <p style="font-size: 9px; color: #475569; margin: 2px 0 0 0; font-weight: 600;">Contact: ${school.phone || ''} | Email: ${school.email || ''}</p>
@@ -591,10 +634,10 @@ export const downloadBonafideCertificatePdf = async (
       </div>
 
       <div style="width: 200px; text-align: center; position: relative; font-size: 11px;">
-        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 20px; bottom: 20px; width: 48px; height: 48px; opacity: 0.75; pointer-events: none; object-fit: contain;" />` : ''}
+        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 20px; bottom: 20px; width: 48px; height: 48px; opacity: 0.75; pointer-events: none; object-fit: contain;" crossorigin="anonymous" />` : ''}
         ${principalSignatureUrl ? `
           <div style="height: 38px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px;">
-            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 140px; object-fit: contain;" />
+            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 140px; object-fit: contain;" crossorigin="anonymous" />
           </div>
         ` : `
           <div style="height: 38px;"></div>
@@ -605,7 +648,8 @@ export const downloadBonafideCertificatePdf = async (
   ${AEGIS_PDF_FOOTER}
   `;
 
-  await new Promise(r => setTimeout(r, 1000));
+  // Wait for all dynamic resources inside the Bonafide container to load
+  await waitUntilImagesAndFontsLoaded(bc);
 
   try {
     const canvas = await html2canvas(bc, {
@@ -621,6 +665,10 @@ export const downloadBonafideCertificatePdf = async (
       unit: 'mm',
       format: 'a4'
     });
+
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
 
     const fileName = `bonafide_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
     if (Capacitor.isNativePlatform()) {
@@ -645,9 +693,12 @@ export const downloadCertificateOfExcellencePdf = async (
   principalName: string = 'Principal'
 ) => {
   const container = document.createElement('div');
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  container.style.top = '-9999px';
+  container.style.position = 'fixed';
+  container.style.left = '0';
+  container.style.top = '0';
+  container.style.zIndex = '-9999';
+  container.style.opacity = '0.02';
+  container.style.pointerEvents = 'none';
   container.style.width = '1100px';
   container.style.background = 'white';
 
@@ -664,7 +715,7 @@ export const downloadCertificateOfExcellencePdf = async (
   cert.innerHTML = `
     <!-- Top gold accent emblem -->
     <div style="text-align: center; margin-bottom: 20px;">
-      ${school.logoUrl ? `<img src="${school.logoUrl}" style="width: 70px; height: 70px; object-fit: contain; margin-bottom: 12px;" />` : ''}
+      ${school.logoUrl ? `<img src="${school.logoUrl}" style="width: 70px; height: 70px; object-fit: contain; margin-bottom: 12px;" crossorigin="anonymous" />` : ''}
       <h2 style="font-family: sans-serif; font-size: 24px; font-weight: 800; color: #1e293b; letter-spacing: 2px; margin: 0; text-transform: uppercase;">${school.name}</h2>
       <p style="font-family: sans-serif; font-size: 9.5px; color: #64748b; margin: 4px 0 0 0; text-transform: uppercase; letter-spacing: 1px;">${school.address || ''}</p>
     </div>
@@ -691,7 +742,7 @@ export const downloadCertificateOfExcellencePdf = async (
 
       <!-- Gold Certificate Emblem Seal placeholder -->
       <div style="width: 80px; height: 80px; display: flex; align-items: center; justify-content: center; border-radius: 50%; border: 3px double #d4af37; background: radial-gradient(circle, #fef08a 0%, #facc15 100%); box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);">
-        ${school.sealUrl ? `<img src="${school.sealUrl}" style="width: 60%; height: 60%; object-fit: contain; opacity: 0.9;" />` : `
+        ${school.sealUrl ? `<img src="${school.sealUrl}" style="width: 60%; height: 60%; object-fit: contain; opacity: 0.9;" crossorigin="anonymous" />` : `
           <svg style="width: 32px; height: 32px; color: #b59410;" fill="currentColor" viewBox="0 0 20 20">
             <path d="M9.049 2.927c.3-.921 1.603-.921 1.902 0l1.07 3.292a1 1 0 00.95.69h3.462c.969 0 1.371 1.24.588 1.81l-2.8 2.034a1 1 0 00-.364 1.118l1.07 3.292c.3.921-.755 1.688-1.54 1.118l-2.8-2.034a1 1 0 00-1.175 0l-2.8 2.034c-.784.57-1.838-.197-1.539-1.118l1.07-3.292a1 1 0 00-.364-1.118L2.98 8.72c-.783-.57-.38-1.81.588-1.81h3.461a1 1 0 00.951-.69l1.07-3.292z" />
           </svg>
@@ -701,7 +752,7 @@ export const downloadCertificateOfExcellencePdf = async (
       <div style="width: 180px; text-align: center; position: relative; font-size: 11px;">
         ${principalSignatureUrl ? `
           <div style="height: 38px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px; z-index: 10;">
-            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 140px; object-fit: contain;" />
+            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 140px; object-fit: contain;" crossorigin="anonymous" />
           </div>
         ` : `
           <div style="height: 38px;"></div>
@@ -712,7 +763,8 @@ export const downloadCertificateOfExcellencePdf = async (
   ${AEGIS_PDF_FOOTER}
   `;
 
-  await new Promise(r => setTimeout(r, 1000));
+  // Wait for all dynamic resources inside the Excellence Certificate container to load
+  await waitUntilImagesAndFontsLoaded(cert);
 
   try {
     const canvas = await html2canvas(cert, {
@@ -730,6 +782,10 @@ export const downloadCertificateOfExcellencePdf = async (
     });
 
     // A4 Landscape is 297mm x 210mm
+    const pageW = pdf.internal.pageSize.getWidth();
+    const pageH = pdf.internal.pageSize.getHeight();
+    pdf.addImage(imgData, 'PNG', 0, 0, pageW, pageH);
+
     const fileName = `excellence_certificate_${student.fullName.toLowerCase().replace(/\s+/g, '_')}.pdf`;
     if (Capacitor.isNativePlatform()) {
       const pdfBlob = pdf.output('blob');
@@ -759,9 +815,12 @@ export const downloadCharacterCertificatePdf = async (
   verificationNumber?: string
 ) => {
   const container = document.createElement('div');
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  container.style.top = '-9999px';
+  container.style.position = 'fixed';
+  container.style.left = '0';
+  container.style.top = '0';
+  container.style.zIndex = '-9999';
+  container.style.opacity = '0.02';
+  container.style.pointerEvents = 'none';
   container.style.width = '800px';
   container.style.background = 'white';
 
@@ -795,7 +854,7 @@ export const downloadCharacterCertificatePdf = async (
 
     <!-- Header -->
     <div style="text-align: center; margin-bottom: 20px; position: relative;">
-      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 0; top: 0; width: 70px; height: 70px; object-fit: contain;" />` : ''}
+      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 0; top: 0; width: 70px; height: 70px; object-fit: contain;" crossorigin="anonymous" />` : ''}
       <h1 style="font-size: 24px; font-weight: 900; color: #1e3a5f; margin: 0; text-transform: uppercase; letter-spacing: 1.5px; font-family: sans-serif;">${school.name}</h1>
       ${school.affiliationNumber ? `<p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; font-family: sans-serif;">AFFILIATION NO.: ${school.affiliationNumber} | SCHOOL CODE: ${school.schoolCode || ''}</p>` : `<p style="font-size: 9px; color: #64748b; margin: 4px 0 0 0; font-family: sans-serif;">${school.address || ''}</p>`}
     </div>
@@ -833,17 +892,17 @@ export const downloadCharacterCertificatePdf = async (
       <!-- QR Code -->
       <div style="text-align: center;">
         <div style="background: white; padding: 3px; border: 1px solid #e2e8f0; display: inline-block; border-radius: 4px;">
-          <img src="${qrUrl}" style="width: 70px; height: 70px; display: block;" />
+          <img src="${qrUrl}" style="width: 70px; height: 70px; display: block;" crossorigin="anonymous" />
         </div>
         <p style="font-size: 8px; color: #94a3b8; margin: 4px 0 0 0; font-family: sans-serif;">Scan to Verify</p>
       </div>
 
       <!-- Seal + Signature -->
       <div style="width: 220px; text-align: center; position: relative;">
-        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 10px; bottom: 30px; width: 52px; height: 52px; opacity: 0.5; object-fit: contain;" />` : ''}
+        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 10px; bottom: 30px; width: 52px; height: 52px; opacity: 0.5; object-fit: contain;" crossorigin="anonymous" />` : ''}
         ${principalSignatureUrl ? `
           <div style="height: 42px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px;">
-            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 160px; object-fit: contain;" />
+            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 160px; object-fit: contain;" crossorigin="anonymous" />
           </div>
         ` : `<div style="height: 42px;"></div>`}
         <span style="font-weight: bold; color: #1e3a5f; border-top: 2px solid #1e3a5f; display: block; padding-top: 6px; font-size: 11px; font-family: sans-serif;">${principalName}</span>
@@ -855,7 +914,8 @@ export const downloadCharacterCertificatePdf = async (
   ${AEGIS_PDF_FOOTER}
   `;
 
-  await new Promise(r => setTimeout(r, 1000));
+  // Wait for all dynamic resources inside the cert to load
+  await waitUntilImagesAndFontsLoaded(cert);
 
   try {
     const canvas = await html2canvas(cert, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
@@ -893,9 +953,12 @@ export const downloadAdmissionRecordPdf = async (
   principalName: string = 'Authorised Signatory'
 ) => {
   const container = document.createElement('div');
-  container.style.position = 'absolute';
-  container.style.left = '-9999px';
-  container.style.top = '-9999px';
+  container.style.position = 'fixed';
+  container.style.left = '0';
+  container.style.top = '0';
+  container.style.zIndex = '-9999';
+  container.style.opacity = '0.02';
+  container.style.pointerEvents = 'none';
   container.style.width = '800px';
   container.style.background = 'white';
 
@@ -923,7 +986,7 @@ export const downloadAdmissionRecordPdf = async (
   rec.innerHTML = `
     <!-- Header -->
     <div style="text-align: center; border-bottom: 2px solid #1e3a5f; padding-bottom: 16px; margin-bottom: 20px; position: relative;">
-      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 0; top: 0; width: 65px; height: 65px; object-fit: contain;" />` : ''}
+      ${school.logoUrl ? `<img src="${school.logoUrl}" style="position: absolute; left: 0; top: 0; width: 65px; height: 65px; object-fit: contain;" crossorigin="anonymous" />` : ''}
       <h1 style="font-size: 22px; font-weight: 900; color: #1e3a5f; margin: 0; text-transform: uppercase; letter-spacing: 1px; font-family: sans-serif;">${school.name}</h1>
       ${school.affiliationNumber ? `<p style="font-size: 9px; color: #64748b; margin: 3px 0 0 0; font-family: sans-serif;">AFFILIATION NO.: ${school.affiliationNumber} | SCHOOL CODE: ${school.schoolCode || ''}</p>` : `<p style="font-size: 9px; color: #64748b; margin: 3px 0 0 0; font-family: sans-serif;">${school.address || ''}</p>`}
       <h2 style="font-size: 16px; font-weight: 900; color: #1e293b; margin: 14px 0 0 0; text-transform: uppercase; letter-spacing: 2px; font-family: sans-serif;">ADMISSION RECORD</h2>
@@ -970,10 +1033,10 @@ export const downloadAdmissionRecordPdf = async (
       </div>
 
       <div style="width: 220px; text-align: center; position: relative; font-size: 10px; font-family: sans-serif;">
-        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 10px; bottom: 30px; width: 52px; height: 52px; opacity: 0.5; object-fit: contain;" />` : ''}
+        ${school.sealUrl ? `<img src="${school.sealUrl}" style="position: absolute; right: 10px; bottom: 30px; width: 52px; height: 52px; opacity: 0.5; object-fit: contain;" crossorigin="anonymous" />` : ''}
         ${principalSignatureUrl ? `
           <div style="height: 36px; display: flex; align-items: center; justify-content: center; overflow: hidden; margin-bottom: 4px;">
-            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 160px; object-fit: contain;" />
+            <img src="${principalSignatureUrl}" style="max-height: 100%; max-width: 160px; object-fit: contain;" crossorigin="anonymous" />
           </div>
         ` : `<div style="height: 36px;"></div>`}
         <span style="font-weight: bold; color: #1e3a5f; border-top: 1px solid #e2e8f0; display: block; padding-top: 6px;">${principalName}</span>
@@ -982,7 +1045,8 @@ export const downloadAdmissionRecordPdf = async (
   ${AEGIS_PDF_FOOTER}
   `;
 
-  await new Promise(r => setTimeout(r, 1000));
+  // Wait for all dynamic resources inside the admission record container to load
+  await waitUntilImagesAndFontsLoaded(rec);
 
   try {
     const canvas = await html2canvas(rec, { scale: 2, useCORS: true, logging: false, backgroundColor: '#ffffff' });
