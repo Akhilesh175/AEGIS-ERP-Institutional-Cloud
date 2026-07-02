@@ -39,9 +39,9 @@ const getTabsForRole = (role: string, planName: string): string[] => {
 
   switch (role) {
     case 'STUDENT':
-      return ['dashboard', 'timetable', 'ptm', 'grades', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'fees', 'hostel', 'support', 'groupdiscussion'];
+      return ['dashboard', 'timetable', 'ptm', 'grades', 'documents', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'fees', 'hostel', 'support', 'groupdiscussion'];
     case 'PARENT':
-      return ['dashboard', 'notifications', 'ptm', 'homework', 'timetable', 'grades', 'fees', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'hostel', 'support'];
+      return ['dashboard', 'notifications', 'ptm', 'homework', 'timetable', 'grades', 'documents', 'fees', 'materials', 'quizzes', 'library', 'sports', 'transit', 'forums', 'hostel', 'support'];
     case 'TEACHER':
     case 'DRIVER':
       return ['dashboard', 'timetable', 'ptm', 'classroster', 'attendance', 'grades', 'marksheets', 'assignments', 'quizzes', 'materials', 'forums', 'sports', 'analytics', 'paymentsettings', 'support', 'groupdiscussion'];
@@ -58,7 +58,7 @@ const getTabsForRole = (role: string, planName: string): string[] => {
         'dashboard', 'impersonation', 'dangerzone', 'subscriptions',
         'students', 'teachers', 'parents', 'classes', 'subjects', 'academicsessions', 
         'fees', 'communications', 'analytics', 'rbac', 'backups', 'books', 'transport',
-        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'groupdiscussion', 'sports', 'ptm'
+        'marksheets', 'quizzes', 'attendance', 'assignments', 'hostel', 'support', 'documents', 'groupdiscussion', 'sports', 'ptm'
       ];
     case 'FINANCE_ADMIN':
       return [
