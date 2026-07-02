@@ -18,6 +18,29 @@ import { supabase, supabaseAdmin } from '../lib/supabase';
 import { subscriptionPlans, SubscriptionFeatures } from './subscriptionConfig';
 import { useStore } from '../store/useStore';
 
+// ── DB Schema Version Detection flags ────────────────────────────────────────
+export let hasRegistrationPhotoUrlColumn = false;
+export let hasProfilePhotoUrlColumn = false;
+let schemaChecked = false;
+
+export async function detectPhotoSchema() {
+  if (schemaChecked) return;
+  try {
+    const { error: err1 } = await supabase.from('students').select('registration_photo_url').limit(1);
+    hasRegistrationPhotoUrlColumn = !err1;
+  } catch {
+    hasRegistrationPhotoUrlColumn = false;
+  }
+  try {
+    const { error: err2 } = await supabase.from('users').select('profile_photo_url').limit(1);
+    hasProfilePhotoUrlColumn = !err2;
+  } catch {
+    hasProfilePhotoUrlColumn = false;
+  }
+  schemaChecked = true;
+  console.log('[detectPhotoSchema] Column check complete:', { hasRegistrationPhotoUrlColumn, hasProfilePhotoUrlColumn });
+}
+
 // Helper to simulate network latency
 const delay = (ms = 400) => new Promise(resolve => setTimeout(resolve, ms));
 
@@ -634,10 +657,15 @@ export const mockApi = {
       .from('avatars')
       .getPublicUrl(filePath);
 
-    // 4. Update avatar_url in database
+    // 4. Update avatar_url in database (always) + profile_photo_url when column exists (System 2)
+    await detectPhotoSchema();
+    const profilePhotoUpdate: Record<string, any> = { avatar_url: publicUrl };
+    if (hasProfilePhotoUrlColumn) {
+      profilePhotoUpdate['profile_photo_url'] = publicUrl;
+    }
     const { error: dbUpdateError } = await supabaseAdmin
       .from('users')
-      .update({ avatar_url: publicUrl })
+      .update(profilePhotoUpdate)
       .eq('id', userId);
 
     if (dbUpdateError) {
@@ -648,6 +676,7 @@ export const mockApi = {
     const userIdx = mockDb.users.findIndex(u => u.id === userId);
     if (userIdx !== -1) {
       mockDb.users[userIdx].avatarUrl = publicUrl;
+      mockDb.users[userIdx].profilePhotoUrl = publicUrl;
       mockDb.saveAll();
     }
 
@@ -679,10 +708,15 @@ export const mockApi = {
       }
     }
 
-    // 2. Set avatar_url to NULL in database
+    // 2. Set avatar_url to NULL in database + clear profile_photo_url if column exists (System 2)
+    await detectPhotoSchema();
+    const clearUpdate: Record<string, any> = { avatar_url: null };
+    if (hasProfilePhotoUrlColumn) {
+      clearUpdate['profile_photo_url'] = null;
+    }
     const { error: dbUpdateError } = await supabaseAdmin
       .from('users')
-      .update({ avatar_url: null })
+      .update(clearUpdate)
       .eq('id', userId);
 
     if (dbUpdateError) {
@@ -693,6 +727,7 @@ export const mockApi = {
     const userIdx = mockDb.users.findIndex(u => u.id === userId);
     if (userIdx !== -1) {
       mockDb.users[userIdx].avatarUrl = '';
+      mockDb.users[userIdx].profilePhotoUrl = '';
       mockDb.saveAll();
     }
   },
@@ -2671,6 +2706,8 @@ export const mockApi = {
             lastName: r.last_name,
             phone: r.phone || '',
             avatarUrl: r.avatar_url || 'https://images.unsplash.com/photo-1472099645785-5658abf4ff4e?w=150',
+            // profile_photo_url is the personal UI photo (System 2), separate from academic photo
+            profilePhotoUrl: r.profile_photo_url || r.avatar_url || '',
             isActive: r.is_active,
             schoolId: r.school_id,
             createdAt: r.created_at || new Date().toISOString(),
@@ -5197,16 +5234,24 @@ export const mockApi = {
   async adminGetStudents(): Promise<(Student & { userDetails: User; className: string })[]> {
     await delay();
     const schoolId = await getAdminSchoolId();
+    await detectPhotoSchema();
+
+    // Dynamically build query depending on schema column support
+    const userFields = `id, email, first_name, last_name, phone, avatar_url, role, school_id, is_active, created_at${
+      hasProfilePhotoUrlColumn ? ', profile_photo_url' : ''
+    }`;
+    const queryFields = `
+      id, user_id, school_id, class_id, academic_session_id, admission_number, roll_number, date_of_birth, gender, created_at${
+        hasRegistrationPhotoUrlColumn ? ', registration_photo_url' : ''
+      },
+      users!inner(${userFields}),
+      student_profiles(photo_url, student_id, school_id)
+    `;
 
     // Fetch live student profiles from Supabase (source of truth)
-    // Left-join student_profiles to get photo_url (single source of truth for student photos)
     const { data: studentRows, error } = await supabase
       .from('students')
-      .select(`
-        id, user_id, school_id, class_id, academic_session_id, admission_number, roll_number, date_of_birth, gender, created_at,
-        users!inner(id, email, first_name, last_name, phone, avatar_url, role, school_id, is_active, created_at),
-        student_profiles(photo_url, student_id, school_id)
-      `)
+      .select(queryFields)
       .eq('school_id', schoolId);
 
     if (error || !studentRows || studentRows.length === 0) {
@@ -5227,23 +5272,15 @@ export const mockApi = {
       const userMapped: User = {
         id: u.id, email: u.email, role: u.role,
         firstName: u.first_name, lastName: u.last_name,
-        phone: u.phone || '', avatarUrl: u.avatar_url || '', isActive: u.is_active,
+        phone: u.phone || '',
+        avatarUrl: u.avatar_url || '',
+        profilePhotoUrl: (hasProfilePhotoUrlColumn ? u.profile_photo_url : u.avatar_url) || '',
+        isActive: u.is_active,
         schoolId: u.school_id, password: '', createdAt: u.created_at, updatedAt: u.created_at
       };
       const existingUser = mockDb.users.findIndex(usr => usr.id === u.id);
       if (existingUser === -1) mockDb.users.push(userMapped);
       else mockDb.users[existingUser] = { ...mockDb.users[existingUser], ...userMapped };
-
-      const studentMapped: Student = {
-        id: row.id, userId: row.user_id, schoolId: row.school_id,
-        classId: row.class_id || '', academicSessionId: row.academic_session_id || 'session-1',
-        admissionNumber: row.admission_number,
-        rollNumber: row.roll_number, dateOfBirth: row.date_of_birth || '',
-        gender: row.gender, createdAt: row.created_at
-      };
-      const existingStudent = mockDb.students.findIndex(s => s.id === row.id);
-      if (existingStudent === -1) mockDb.students.push(studentMapped);
-      else mockDb.students[existingStudent] = studentMapped;
 
       // Extract photo_url from student_profiles join result.
       // Enforce ownership check: only use photo_url if it belongs to this student+school.
@@ -5255,8 +5292,23 @@ export const mockApi = {
           ? (profileJoin?.photo_url || '')
           : '';
 
+      const academicPhoto = row.registration_photo_url || profilePhotoUrl || '';
+
+      const studentMapped: Student = {
+        id: row.id, userId: row.user_id, schoolId: row.school_id,
+        classId: row.class_id || '', academicSessionId: row.academic_session_id || 'session-1',
+        admissionNumber: row.admission_number,
+        rollNumber: row.roll_number, dateOfBirth: row.date_of_birth || '',
+        gender: row.gender, createdAt: row.created_at,
+        photoUrl: academicPhoto,
+        registrationPhotoUrl: academicPhoto
+      };
+      const existingStudent = mockDb.students.findIndex(s => s.id === row.id);
+      if (existingStudent === -1) mockDb.students.push(studentMapped);
+      else mockDb.students[existingStudent] = studentMapped;
+
       const cls = mockDb.classes.find(c => c.id === row.class_id);
-      return { ...studentMapped, photoUrl: profilePhotoUrl, userDetails: userMapped, className: cls?.name || 'Unassigned' };
+      return { ...studentMapped, photoUrl: academicPhoto, userDetails: userMapped, className: cls?.name || 'Unassigned' };
     });
 
     // Remove stale local entries not in Supabase
@@ -15649,26 +15701,39 @@ export const mockApi = {
         fatherName: fatherName,
         motherName: motherName,
         address: address,
-        // Priority: student_profiles.photo_url → users.avatar_url → empty
-        // Fetch photo_url from Supabase with school+student isolation
+        // Official Academic Photo: registration_photo_url (students table) → student_profiles.photo_url
+        // NEVER falls back to users.avatar_url / profile_photo_url (those are personal profile photos)
         photoUrl: await (async () => {
           try {
+            await detectPhotoSchema();
+            // Step 1: Try students.registration_photo_url (new dedicated column)
+            if (hasRegistrationPhotoUrlColumn) {
+              const { data: stRow } = await supabase
+                .from('students')
+                .select('registration_photo_url')
+                .eq('id', studentId)
+                .eq('school_id', schoolId)
+                .maybeSingle();
+              if (stRow?.registration_photo_url) return stRow.registration_photo_url;
+            }
+            // Step 2: Fallback to student_profiles.photo_url (legacy / pre-migration)
             const { data: sp } = await supabase
               .from('student_profiles')
               .select('photo_url, student_id, school_id')
               .eq('student_id', studentId)
-              .eq('school_id', schoolId)  // Tenant isolation
+              .eq('school_id', schoolId)
               .maybeSingle();
-            // Ownership double-check before returning
             if (sp?.student_id === studentId && sp?.school_id === schoolId) {
               return sp.photo_url || '';
             }
+            // Step 3: No academic photo found — return empty (show placeholder, never use profile photo)
             return '';
           } catch {
             return '';
           }
         })(),
-        avatarUrl: studentUser.avatarUrl || ''
+        // avatarUrl is intentionally NOT used for official documents
+        avatarUrl: ''
       },
       academic: {
         term: termName,

@@ -18,6 +18,7 @@
 
 import { supabase } from '../lib/supabase';
 import type { DocumentType, GeneratedDocument, StudentProfile } from '../types';
+import { detectPhotoSchema, hasRegistrationPhotoUrlColumn } from './mockApi';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -679,6 +680,28 @@ export async function uploadStudentPhoto(
     }
 
     logAudit('Database Update Success', { newPhotoUrl: cacheBustedUrl });
+
+    // ── 6b. Dual-write to students.registration_photo_url (new column) ────────
+    // This keeps the dedicated academic photo column in sync during the migration
+    // period. Once all rows have migrated, this can be removed.
+    try {
+      await detectPhotoSchema();
+      if (hasRegistrationPhotoUrlColumn) {
+        const { error: regPhotoErr } = await supabase
+          .from('students')
+          .update({ registration_photo_url: cacheBustedUrl })
+          .eq('id', studentId)
+          .eq('school_id', schoolId);
+        if (regPhotoErr) {
+          logAudit('Dual-Write Warning', { error: 'students.registration_photo_url update failed (non-fatal)', detail: regPhotoErr.message });
+        } else {
+          logAudit('Dual-Write Success', { column: 'students.registration_photo_url', newPhotoUrl: cacheBustedUrl });
+        }
+      }
+    } catch (dualWriteErr: any) {
+      logAudit('Dual-Write Warning', { error: dualWriteErr?.message || dualWriteErr });
+    }
+
     logAudit('Upload Success', { newPhotoUrl: cacheBustedUrl, storagePath });
 
     // ── 7. Safe Deferred Cleanup of Previous Photo ────────────────────────

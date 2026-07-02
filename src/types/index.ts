@@ -18,6 +18,8 @@ export interface User {
   lastName: string;
   phone?: string;
   avatarUrl?: string;
+  /** Single Source of Truth for profile photo / avatar */
+  profilePhotoUrl?: string;
   isActive: boolean;
   schoolId?: string;
   academicSessionId?: string;
@@ -190,6 +192,8 @@ export interface Student {
   sectionName?: string;
   /** Uploaded registration photo from student_profiles.photo_url (single source of truth) */
   photoUrl?: string;
+  /** Single Source of Truth for official academic/registration photo */
+  registrationPhotoUrl?: string;
   userDetails?: {
     firstName: string;
     lastName: string;

@@ -89,7 +89,9 @@ export interface DocumentParentData {
 
 /** Helper: returns the best available photo URL for a student */
 export function getStudentPhotoUrl(student: DocumentStudentData): string {
-  return student.photoUrl || student.avatarUrl || '';
+  // Official academic documents MUST ONLY show the official registration photo (photoUrl)
+  // Never fall back to user's profile photo (avatarUrl)
+  return student.photoUrl || '';
 }
 
 /** Helper: Renders photo image HTML or a beautiful fallback SVG placeholder */
@@ -183,8 +185,8 @@ export const downloadStudentIdCardPdf = async (
     `${window.location.origin}/#verify/student/${student.id}`
   )}`;
 
-  // Best available photo: photoUrl → avatarUrl → SVG placeholder
-  const studentPhoto = student.photoUrl || student.avatarUrl || '';
+  // Best available official academic photo
+  const studentPhoto = getStudentPhotoUrl(student);
 
   card.innerHTML = `
     <!-- Top Branding Accent Banner -->
@@ -361,7 +363,7 @@ export const downloadAdmissionFormPdf = async (
         <p style="font-size: 9px; color: #475569; margin: 2px 0 0 0; font-family: sans-serif; font-weight: 600;">Contact: ${school.phone || ''} | Email: ${school.email || ''}</p>
       </div>
       <div style="width: 90px; height: 100px; border: 1.5px solid #cbd5e1; display: flex; align-items: center; justify-content: center; background-color: #f8fafc; font-size: 9px; color: #64748b; text-align: center; font-family: sans-serif; overflow: hidden; box-sizing: border-box;">
-        ${renderDocumentPhotoHtml(student.photoUrl || student.avatarUrl, '0px', '32px', '32px')}
+        ${renderDocumentPhotoHtml(getStudentPhotoUrl(student), '0px', '32px', '32px')}
       </div>
     </div>
 
@@ -527,7 +529,7 @@ export const downloadTransferCertificatePdf = async (
   tc.style.boxSizing = 'border-box';
   tc.style.fontFamily = 'Georgia, serif';
 
-  const tcStudentPhoto = student.photoUrl || student.avatarUrl || '';
+  const tcStudentPhoto = getStudentPhotoUrl(student);
   const verNum = verificationNumber || `AEGIS-TRF-${new Date().getFullYear()}-${Math.random().toString(36).substring(2,8).toUpperCase()}`;
   const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=80x80&data=${encodeURIComponent(`${window.location.origin}/#verify/doc/${verNum}`)}`;
 
@@ -678,7 +680,7 @@ export const downloadBonafideCertificatePdf = async (
   bc.style.boxSizing = 'border-box';
   bc.style.fontFamily = 'Georgia, serif';
 
-  const bcStudentPhoto = student.photoUrl || student.avatarUrl || '';
+  const bcStudentPhoto = getStudentPhotoUrl(student);
 
   bc.innerHTML = `
     <!-- Header Block: Logo left + Student Photo right -->
@@ -815,7 +817,7 @@ export const downloadCertificateOfExcellencePdf = async (
     <div style="text-align: center; font-size: 15px; line-height: 2; color: #292524; max-width: 800px; margin: 0 auto;">
       <p style="margin: 0; font-style: italic;">This honor and recognition is proudly presented to</p>
       <div style="width: 90px; height: 108px; border-radius: 8px; border: 2px solid #d4af37; overflow: hidden; margin: 12px auto 4px auto; background: #f8fafc; display: flex; align-items: center; justify-content: center; box-sizing: border-box; flex-shrink: 0;">
-        ${renderDocumentPhotoHtml(student.photoUrl || student.avatarUrl, '8px', '32px', '32px')}
+        ${renderDocumentPhotoHtml(getStudentPhotoUrl(student), '8px', '32px', '32px')}
       </div>
       <h3 style="font-size: 26px; font-weight: bold; color: #1c1917; margin: 12px 0 8px 0; text-transform: uppercase; letter-spacing: 2.5px;">${student.fullName}</h3>
       <p style="margin: 0; font-style: italic;">of class <strong>${student.className}</strong>, for displaying outstanding scholastic distinction, wisdom, and exemplary commitment to academic excellence in the current session cycle.</p>
@@ -949,7 +951,7 @@ export const downloadCharacterCertificatePdf = async (
       </div>
       <!-- Student passport photo (top-right) -->
       <div style="width: 78px; height: 94px; border: 1.5px solid #1e3a5f; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: 16px; font-size: 8px; color: #94a3b8; text-align: center; font-family: sans-serif; box-sizing: border-box;">
-        ${renderDocumentPhotoHtml(student.photoUrl || student.avatarUrl, '0px', '28px', '28px')}
+        ${renderDocumentPhotoHtml(getStudentPhotoUrl(student), '0px', '28px', '28px')}
       </div>
     </div>
 
@@ -1088,7 +1090,7 @@ export const downloadAdmissionRecordPdf = async (
       </div>
       <!-- Student passport photo (top-right) -->
       <div style="width: 78px; height: 94px; border: 1.5px solid #1e3a5f; overflow: hidden; background: #f8fafc; display: flex; align-items: center; justify-content: center; flex-shrink: 0; margin-left: 16px; font-size: 8px; color: #94a3b8; text-align: center; font-family: sans-serif; box-sizing: border-box;">
-        ${renderDocumentPhotoHtml(student.photoUrl || student.avatarUrl, '0px', '28px', '28px')}
+        ${renderDocumentPhotoHtml(getStudentPhotoUrl(student), '0px', '28px', '28px')}
       </div>
     </div>
 

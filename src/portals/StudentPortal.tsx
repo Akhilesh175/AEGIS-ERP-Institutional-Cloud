@@ -113,11 +113,18 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
   const [historyInvoice, setHistoryInvoice] = useState<any | null>(null);
 
   /**
-   * Official student photo URL from student_profiles.photo_url.
+   * Official student photo URL from student_profiles.photo_url (System 1: Academic).
    * Fetched with school_id + student_id isolation to prevent cross-student/cross-tenant leakage.
-   * Priority for display: studentPhotoUrl → studentUser.avatarUrl → placeholder icon.
    */
   const [studentPhotoUrl, setStudentPhotoUrl] = useState<string>('');
+
+  /**
+   * Personal profile photo URL for portal UI display (System 2: Personal Avatar).
+   * Source: users.profile_photo_url → users.avatar_url.
+   * Used in: Banner, Navbar, Chat, Dashboard avatar.
+   * NEVER used on official documents (ID Cards, Certificates, Marksheets).
+   */
+  const [profilePhotoDisplayUrl, setProfilePhotoDisplayUrl] = useState<string>('');
 
   // Dynamic Library & Transport States
   const [transitAssignment, setTransitAssignment] = useState<any>(null);
@@ -182,7 +189,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
   const [complaintCategory, setComplaintCategory] = useState<'ROOM' | 'ELECTRICITY' | 'WATER' | 'MAINTENANCE' | 'OTHER'>('ROOM');
   const [complaintDescription, setComplaintDescription] = useState('');
 
-  // ── Fetch official student photo from student_profiles (school+student isolation) ──
+  // ── Fetch academic photo (System 1) + personal profile photo (System 2) separately ──
   useEffect(() => {
     const schoolId = session?.user?.schoolId;
     const entity = mockDb.students.find(s => s.id === studentId);
@@ -193,29 +200,41 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
     let cancelled = false;
     (async () => {
       try {
-        const { data, error } = await supabase
+        // System 1: Official Academic Photo (student_profiles.photo_url)
+        // Used ONLY for official documents — NOT for portal UI avatar
+        const { data: spData, error: spErr } = await supabase
           .from('student_profiles')
           .select('photo_url, student_id, school_id')
-          .eq('student_id', dbStudentId)     // MANDATORY: student_id isolation
-          .eq('school_id', schoolId)         // MANDATORY: tenant isolation
+          .eq('student_id', dbStudentId)
+          .eq('school_id', schoolId)
           .maybeSingle();
 
-        if (cancelled || error || !data) return;
-
-        // Double-check ownership to prevent any cross-student photo leakage
-        if (data.student_id !== dbStudentId || data.school_id !== schoolId) {
-          console.error('[StudentPortal] Photo ownership mismatch detected. Suppressing display.');
-          return;
+        if (!cancelled && !spErr && spData?.student_id === dbStudentId && spData?.school_id === schoolId) {
+          setStudentPhotoUrl(spData.photo_url || '');
         }
 
-        setStudentPhotoUrl(data.photo_url || '');
+        // System 2: Personal Profile Photo (users.profile_photo_url → avatar_url)
+        // Used ONLY for portal UI: banner, navbar, chat, dashboard avatar
+        const userId = session?.user?.id;
+        if (userId) {
+          const { data: userData, error: userErr } = await supabase
+            .from('users')
+            .select('profile_photo_url, avatar_url')
+            .eq('id', userId)
+            .maybeSingle();
+
+          if (!cancelled && !userErr && userData) {
+            const personalPhoto = userData.profile_photo_url || userData.avatar_url || '';
+            setProfilePhotoDisplayUrl(personalPhoto);
+          }
+        }
       } catch (err) {
-        console.warn('[StudentPortal] Failed to fetch student photo_url:', err);
+        console.warn('[StudentPortal] Failed to fetch student photos:', err);
       }
     })();
 
     return () => { cancelled = true; };
-  }, [studentId, session?.user?.schoolId]);
+  }, [studentId, session?.user?.schoolId, session?.user?.id]);
 
   const loadData = async () => {
     try {
@@ -860,10 +879,11 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
       {activeTab !== 'groupdiscussion' && (
         <div className="bg-gradient-to-r from-brand-950 to-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col md:flex-row items-center justify-between gap-4">
           <div className="flex flex-col sm:flex-row items-center gap-4 text-center sm:text-left">
-            {/* Priority: studentPhotoUrl (student_profiles.photo_url) → avatarUrl (users) → BookOpen icon */}
-            {(studentPhotoUrl || studentUser?.avatarUrl) ? (
+            {/* System 2 – Personal Profile Photo: profile_photo_url → avatar_url → BookOpen placeholder */}
+            {/* This is the student's personal avatar; NEVER the official academic/registration photo */}
+            {(profilePhotoDisplayUrl || studentUser?.avatarUrl) ? (
               <img 
-                src={studentPhotoUrl || studentUser!.avatarUrl!} 
+                src={profilePhotoDisplayUrl || studentUser!.avatarUrl!} 
                 alt="" 
                 className="w-12 h-12 rounded-xl object-cover border border-slate-700 shadow-md shrink-0 animate-fade-in"
                 onError={(e) => {

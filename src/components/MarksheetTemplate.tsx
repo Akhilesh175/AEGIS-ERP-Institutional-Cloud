@@ -215,9 +215,9 @@ export const MarksheetTemplate: React.FC<MarksheetTemplateProps> = ({ data }) =>
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
               }}
             >
-              {(data.student.photoUrl || data.student.avatarUrl) ? (
+              {data.student.photoUrl ? (
                 <img
-                  src={data.student.photoUrl || data.student.avatarUrl}
+                  src={data.student.photoUrl}
                   alt="Student Photo"
                   style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                   crossOrigin="anonymous"
