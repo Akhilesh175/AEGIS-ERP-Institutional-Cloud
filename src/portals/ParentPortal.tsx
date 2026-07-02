@@ -2840,8 +2840,8 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                         sectionName: enrichedSt.sectionName,
                         dateOfBirth: enrichedSt.dateOfBirth,
                         gender: enrichedSt.gender,
-                        photoUrl: enrichedSt.photoUrl,
-                        avatarUrl: enrichedSt.avatarUrl || st.userDetails?.avatarUrl,
+                        photoUrl: enrichedSt.photoUrl,     // System 1 — official academic photo only
+                        avatarUrl: '',                      // intentionally empty — never use personal photo in documents
                         bloodGroup: enrichedSt.bloodGroup,
                         aadhaarNumber: enrichedSt.aadhaarNumber,
                         nationality: enrichedSt.nationality,

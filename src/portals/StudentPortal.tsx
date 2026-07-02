@@ -2199,8 +2199,8 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                     sectionName: enrichedSt.sectionName,
                     dateOfBirth: enrichedSt.dateOfBirth,
                     gender: enrichedSt.gender,
-                    photoUrl: enrichedSt.photoUrl,
-                    avatarUrl: enrichedSt.avatarUrl || studentUser?.avatarUrl,
+                    photoUrl: enrichedSt.photoUrl,     // System 1 — official academic photo only
+                    avatarUrl: '',                      // intentionally empty — never use personal photo in documents
                     bloodGroup: enrichedSt.bloodGroup,
                     aadhaarNumber: enrichedSt.aadhaarNumber,
                     nationality: enrichedSt.nationality,

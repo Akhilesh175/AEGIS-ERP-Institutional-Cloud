@@ -58,9 +58,12 @@ export interface FullStudentDocData {
   state: string;
   pincode: string;
   country: string;
-  // Photo
+  // Photo — SYSTEM 1 (Official Academic Photo) ONLY
+  // photoUrl = students.registration_photo_url → student_profiles.photo_url → ''
+  // NEVER falls back to users.avatar_url or users.profile_photo_url
   photoUrl: string;
-  avatarUrl: string;
+  registrationPhotoUrl: string; // Alias of photoUrl — always students.registration_photo_url
+  avatarUrl: string;            // Kept for interface compatibility only — DO NOT use in documents
   // Father
   fatherName: string;
   fatherPhone: string;
@@ -128,12 +131,14 @@ export async function fetchStudentDocData(
 ): Promise<FullStudentDocData | null> {
   try {
     // Fetch student row + user row + class + section + academic_session
+    // CRITICAL: registration_photo_url is the official academic photo (System 1)
     const { data: st, error: stErr } = await supabase
       .from('students')
       .select(`
         id, user_id, school_id, admission_number, roll_number,
         date_of_birth, gender, father_name, mother_name,
         class_id, section_id, academic_session_id,
+        registration_photo_url,
         users:user_id (
           first_name, last_name, avatar_url, phone, school_id,
           email_addresses (email, is_primary)
@@ -210,50 +215,61 @@ export async function fetchStudentDocData(
     const sectionName = (st as any).sections?.name || '';
     const sessionName = (st as any).academic_sessions?.name || '2025-2026';
 
-    return {
-      studentId: st.id,
-      userId: st.user_id,
-      schoolId: st.school_id,
-      fullName: `${u.first_name || ''} ${u.last_name || ''}`.trim(),
-      firstName: u.first_name || '',
-      lastName: u.last_name || '',
-      admissionNumber: st.admission_number,
-      rollNumber: st.roll_number,
-      admissionDate: profile?.admission_date || '',
-      className,
-      sectionName,
-      academicSession: sessionName,
-      dateOfBirth: st.date_of_birth || '',
-      gender: st.gender || '',
-      bloodGroup: profile?.blood_group || '',
-      aadhaarNumber: profile?.aadhaar_number || '',
-      nationality: profile?.nationality || 'Indian',
-      religion: profile?.religion || '',
-      category: profile?.category || 'General',
-      house: profile?.house || '',
-      phone: u.phone || '',
-      email: primaryEmail,
-      addressLine1: profile?.address_line1 || '',
-      addressLine2: profile?.address_line2 || '',
-      city: profile?.city || '',
-      state: profile?.state || '',
-      pincode: profile?.pincode || '',
-      country: profile?.country || 'India',
-      photoUrl: profile?.photo_url || '',
-      avatarUrl: u.avatar_url || '',
-      fatherName,
-      fatherPhone,
-      fatherEmail,
-      fatherOccupation,
-      motherName,
-      motherPhone,
-      motherEmail,
-      motherOccupation,
-      previousSchool: profile?.previous_school || '',
-      previousClass: profile?.previous_class || '',
-      previousBoard: profile?.previous_board || '',
-      previousPercentage: profile?.previous_percentage || '',
-    };
+      // ── Official Academic Photo Resolution (System 1) ──────────────────────
+      // Priority: students.registration_photo_url → student_profiles.photo_url → ''
+      // NEVER falls back to users.avatar_url (that is System 2 — personal profile photo)
+      // Rule: if registration photo exists, always display it.
+      //        if not, display NO PHOTO placeholder. Never show personal profile photo.
+      const registrationPhotoUrl = (st as any).registration_photo_url || '';
+      const officialPhotoUrl = registrationPhotoUrl || profile?.photo_url || '';
+
+      return {
+        studentId: st.id,
+        userId: st.user_id,
+        schoolId: st.school_id,
+        fullName: `${u.first_name || ''} ${u.last_name || ''}`.trim(),
+        firstName: u.first_name || '',
+        lastName: u.last_name || '',
+        admissionNumber: st.admission_number,
+        rollNumber: st.roll_number,
+        admissionDate: profile?.admission_date || '',
+        className,
+        sectionName,
+        academicSession: sessionName,
+        dateOfBirth: st.date_of_birth || '',
+        gender: st.gender || '',
+        bloodGroup: profile?.blood_group || '',
+        aadhaarNumber: profile?.aadhaar_number || '',
+        nationality: profile?.nationality || 'Indian',
+        religion: profile?.religion || '',
+        category: profile?.category || 'General',
+        house: profile?.house || '',
+        phone: u.phone || '',
+        email: primaryEmail,
+        addressLine1: profile?.address_line1 || '',
+        addressLine2: profile?.address_line2 || '',
+        city: profile?.city || '',
+        state: profile?.state || '',
+        pincode: profile?.pincode || '',
+        country: profile?.country || 'India',
+        // System 1 — Official Academic Photo ONLY
+        photoUrl: officialPhotoUrl,
+        registrationPhotoUrl: officialPhotoUrl,
+        // avatarUrl intentionally empty — do NOT use in any official document
+        avatarUrl: '',
+        fatherName,
+        fatherPhone,
+        fatherEmail,
+        fatherOccupation,
+        motherName,
+        motherPhone,
+        motherEmail,
+        motherOccupation,
+        previousSchool: profile?.previous_school || '',
+        previousClass: profile?.previous_class || '',
+        previousBoard: profile?.previous_board || '',
+        previousPercentage: profile?.previous_percentage || '',
+      };
   } catch (err) {
     console.error('[documentService] fetchStudentDocData error:', err);
     return null;
@@ -681,25 +697,24 @@ export async function uploadStudentPhoto(
 
     logAudit('Database Update Success', { newPhotoUrl: cacheBustedUrl });
 
-    // ── 6b. Dual-write to students.registration_photo_url (new column) ────────
-    // This keeps the dedicated academic photo column in sync during the migration
-    // period. Once all rows have migrated, this can be removed.
+    // ── 6b. Write to students.registration_photo_url (PRIMARY System 1 column) ──
+    // This is the DEFINITIVE single source of truth for all official academic documents.
+    // Always attempt this write — if the column doesn't exist yet (pre-migration),
+    // the error is caught and logged but does NOT fail the upload.
     try {
-      await detectPhotoSchema();
-      if (hasRegistrationPhotoUrlColumn) {
-        const { error: regPhotoErr } = await supabase
-          .from('students')
-          .update({ registration_photo_url: cacheBustedUrl })
-          .eq('id', studentId)
-          .eq('school_id', schoolId);
-        if (regPhotoErr) {
-          logAudit('Dual-Write Warning', { error: 'students.registration_photo_url update failed (non-fatal)', detail: regPhotoErr.message });
-        } else {
-          logAudit('Dual-Write Success', { column: 'students.registration_photo_url', newPhotoUrl: cacheBustedUrl });
-        }
+      const { error: regPhotoErr } = await supabase
+        .from('students')
+        .update({ registration_photo_url: cacheBustedUrl })
+        .eq('id', studentId)
+        .eq('school_id', schoolId);
+      if (regPhotoErr) {
+        // Column may not exist yet on pre-migration DBs — non-fatal, student_profiles.photo_url serves as fallback
+        logAudit('Registration Photo Write Warning', { error: 'students.registration_photo_url update failed (column may not exist yet)', detail: regPhotoErr.message });
+      } else {
+        logAudit('Registration Photo Write Success', { column: 'students.registration_photo_url', newPhotoUrl: cacheBustedUrl });
       }
-    } catch (dualWriteErr: any) {
-      logAudit('Dual-Write Warning', { error: dualWriteErr?.message || dualWriteErr });
+    } catch (regWriteErr: any) {
+      logAudit('Registration Photo Write Warning', { error: regWriteErr?.message || regWriteErr });
     }
 
     logAudit('Upload Success', { newPhotoUrl: cacheBustedUrl, storagePath });
@@ -833,11 +848,13 @@ export async function getStudentPhotoUrl(
 // ─── 10. Update Student Photo URL (Patch-Only, Ownership Verified) ─────────────
 
 /**
- * Updates ONLY photo_url on an existing student_profiles row.
- * Verifies ownership (school_id + student_id) before writing.
- * Used by the "Change Photo" admin edit flow after uploadStudentPhoto has already
- * written the URL via its own upsert — this is available as a standalone helper
- * for flows that manage storage externally.
+ * Updates the official academic registration photo URL for a student.
+ * Writes to BOTH:
+ *   ① students.registration_photo_url  (System 1 — primary source of truth)
+ *   ② student_profiles.photo_url       (System 1 — legacy/fallback, kept in sync)
+ *
+ * Verifies school_id + student_id ownership before any write.
+ * NEVER touches users.profile_photo_url or users.avatar_url (those are System 2).
  */
 export async function updateStudentPhotoUrl(
   studentId: string,
@@ -845,7 +862,28 @@ export async function updateStudentPhotoUrl(
   photoUrl: string
 ): Promise<boolean> {
   try {
-    // Verify ownership before any write
+    // ── Step 1: Write to students.registration_photo_url (primary column) ──────
+    // This is the definitive single source of truth for all official documents.
+    // Uses a graceful fallback in case the column doesn't exist yet (pre-migration).
+    try {
+      const { error: regErr } = await supabase
+        .from('students')
+        .update({ registration_photo_url: photoUrl })
+        .eq('id', studentId)
+        .eq('school_id', schoolId);
+      if (regErr) {
+        // Column may not exist yet — log but continue to student_profiles write
+        console.warn('[documentService] updateStudentPhotoUrl – students.registration_photo_url write failed (column may not exist yet):', regErr.message);
+      } else {
+        console.log('[documentService] updateStudentPhotoUrl – students.registration_photo_url updated successfully.');
+      }
+    } catch (regWriteErr: any) {
+      console.warn('[documentService] updateStudentPhotoUrl – students.registration_photo_url exception (non-fatal):', regWriteErr?.message);
+    }
+
+    // ── Step 2: Write to student_profiles.photo_url (legacy/fallback column) ────
+    // Kept in sync so older code paths that still read student_profiles.photo_url
+    // also reflect the correct official academic photo.
     const { data: existing, error: fetchErr } = await supabase
       .from('student_profiles')
       .select('id, student_id, school_id')
