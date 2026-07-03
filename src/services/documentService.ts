@@ -18,7 +18,6 @@
 
 import { supabase } from '../lib/supabase';
 import type { DocumentType, GeneratedDocument, StudentProfile } from '../types';
-import { detectPhotoSchema, hasRegistrationPhotoUrlColumn } from './mockApi';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 

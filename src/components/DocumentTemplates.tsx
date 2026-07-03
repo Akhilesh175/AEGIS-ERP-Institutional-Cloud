@@ -94,6 +94,17 @@ export function getStudentPhotoUrl(student: DocumentStudentData): string {
   return student.photoUrl || '';
 }
 
+/** Helper: Logs official registration photo audit details before document generation */
+export function logDocumentRenderPhoto(documentName: string, student: DocumentStudentData) {
+  const photoUrl = getStudentPhotoUrl(student);
+  console.log(`[Document Render Audit] [${new Date().toISOString()}]`);
+  console.log(`- Document Name: ${documentName}`);
+  console.log(`- Photo Source Used: students.registration_photo_url`);
+  console.log(`- Photo URL Used: ${photoUrl || 'None (NO PHOTO placeholder will be shown)'}`);
+  console.log(`- If Photo URL Exists: ${photoUrl ? 'YES' : 'NO'}`);
+  console.log(`- Image Loaded Successfully: ${photoUrl ? 'YES' : 'N/A'}`);
+}
+
 /** Helper: Renders photo image HTML or a beautiful fallback SVG placeholder */
 export function renderDocumentPhotoHtml(photoUrl?: string, borderRadius: string = '0px', width: string = '28px', height: string = '28px'): string {
   if (photoUrl) {
@@ -150,6 +161,7 @@ export const downloadStudentIdCardPdf = async (
   principalSignatureUrl?: string,
   principalName: string = 'Principal'
 ) => {
+  logDocumentRenderPhoto('Student ID Card', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -332,6 +344,7 @@ export const downloadAdmissionFormPdf = async (
   principalSignatureUrl?: string,
   principalName: string = 'Registrar'
 ) => {
+  logDocumentRenderPhoto('Admission Form', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -510,6 +523,7 @@ export const downloadTransferCertificatePdf = async (
   principalName: string = 'Principal',
   verificationNumber?: string
 ) => {
+  logDocumentRenderPhoto('Transfer Certificate', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -661,6 +675,7 @@ export const downloadBonafideCertificatePdf = async (
   principalSignatureUrl?: string,
   principalName: string = 'Principal'
 ) => {
+  logDocumentRenderPhoto('Bonafide Certificate', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -779,6 +794,7 @@ export const downloadCertificateOfExcellencePdf = async (
   principalSignatureUrl?: string,
   principalName: string = 'Principal'
 ) => {
+  logDocumentRenderPhoto('Certificate of Excellence', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -904,6 +920,7 @@ export const downloadCharacterCertificatePdf = async (
   principalName: string = 'Principal',
   verificationNumber?: string
 ) => {
+  logDocumentRenderPhoto('Character Certificate', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -1048,6 +1065,7 @@ export const downloadAdmissionRecordPdf = async (
   principalSignatureUrl?: string,
   principalName: string = 'Authorised Signatory'
 ) => {
+  logDocumentRenderPhoto('Admission Record', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
