@@ -12,6 +12,7 @@ import {
   Layers, Key, PlusCircle, Search, RefreshCw, Eye, EyeOff,
   Database, Terminal, HardDrive, Play, CheckCircle2, Clock, Sliders, Shield, AlertTriangle, CheckCircle, XCircle, Trash2, CheckSquare, Mail, Send, Megaphone, X, CreditCard, Lock
 } from 'lucide-react';
+import { formatUserName } from '../utils/nameUtils';
 
 export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab }) => {
   const { session } = useStore();
@@ -961,7 +962,7 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
 
                       return (
                         <tr key={usr.id} className="hover:bg-slate-900/10 text-slate-200">
-                          <td className="py-3 px-4 font-semibold">{usr.firstName} {usr.lastName}</td>
+                          <td className="py-3 px-4 font-semibold">{formatUserName(usr)}</td>
                           <td className="py-3 px-4 font-mono text-slate-300">{usr.email}</td>
                           <td className="py-3 px-4 text-slate-400 font-mono">{usr.phone || 'N/A'}</td>
                           <td className="py-3 px-4 text-brand-400 font-bold uppercase tracking-wider">{getSchoolName(usr.schoolId!)}</td>
@@ -972,13 +973,13 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                           </td>
                           <td className="py-3 px-4 flex items-center gap-2">
                             <button 
-                              onClick={() => handleResetPassword(usr.id, `${usr.firstName} ${usr.lastName}`)}
+                              onClick={() => handleResetPassword(usr.id, formatUserName(usr))}
                               className="text-brand-400 hover:text-brand-300 font-semibold text-[10px] border border-brand-500/20 hover:border-brand-500/40 bg-brand-500/5 hover:bg-brand-500/10 px-2 py-1 rounded transition-all uppercase tracking-wider"
                             >
                               Reset Pass
                             </button>
                             <button 
-                              onClick={() => handleDeleteAdmin(usr.id, `${usr.firstName} ${usr.lastName}`)}
+                              onClick={() => handleDeleteAdmin(usr.id, formatUserName(usr))}
                               className="text-red-400 hover:text-red-300 font-semibold text-[10px] border border-red-500/20 hover:border-red-500/40 bg-red-500/5 hover:bg-red-500/10 px-2 py-1 rounded transition-all uppercase tracking-wider"
                             >
                               Delete
@@ -1040,7 +1041,7 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                     const q = userSearchQuery.toLowerCase();
                     return (
                       u.email.toLowerCase().includes(q) ||
-                      (u.firstName + ' ' + u.lastName).toLowerCase().includes(q)
+                      formatUserName(u).toLowerCase().includes(q)
                     );
                   })
                   .map((usr: User) => {
@@ -1065,7 +1066,7 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
 
                     return (
                       <tr key={usr.id} className="hover:bg-slate-900/10">
-                        <td className="py-3 px-4 font-semibold">{usr.firstName} {usr.lastName}</td>
+                        <td className="py-3 px-4 font-semibold">{formatUserName(usr)}</td>
                         <td className="py-3 px-4 font-mono text-slate-350">{usr.email}</td>
                         <td className="py-3 px-4">
                           <span className={`px-2 py-0.5 rounded font-mono text-[9px] font-bold uppercase ${
@@ -1082,7 +1083,7 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
                         <td className="py-3 px-4 font-mono text-brand-400">{usr.password || 'password'}</td>
                         <td className="py-3 px-4">
                           <button 
-                            onClick={() => handleResetPassword(usr.id, usr.firstName + ' ' + usr.lastName)}
+                            onClick={() => handleResetPassword(usr.id, formatUserName(usr))}
                             className="bg-brand-600/10 hover:bg-brand-600/25 border border-brand-500/20 hover:border-brand-500/40 text-brand-400 font-bold px-2 py-1 rounded-lg text-[10px] transition-all"
                           >
                             Reset Password

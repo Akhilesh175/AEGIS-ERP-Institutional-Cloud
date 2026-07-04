@@ -4,6 +4,7 @@ import { mockApi } from '../services/mockApi';
 import { supabase } from '../lib/supabase';
 import { mockDb } from '../services/mockDb';
 import { Student, Teacher, Parent, Class, Subject, User, FeeStructure, FeePayment, DriverSalaryPayout, PayrollRecord, SchoolPaymentSettings, SalaryPayment, EmployeeSalaryLedger, FacultyPaymentSettings } from '../types';
+import { formatName, formatUserName } from '../utils/nameUtils';
 import { GlassCard } from '../components/GlassCard';
 import { 
   Building, Users, UsersRound, Layers, BookMarked, DollarSign, 
@@ -2507,14 +2508,14 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       } else {
         if (payrollEmpType === 'TEACHER') {
           const t = teachers.find(x => x.id === payrollSelectedEmpId);
-          employeeName = t ? `${t.userDetails?.firstName} ${t.userDetails?.lastName}` : '';
+          employeeName = t ? formatUserName(t.userDetails) : '';
           employeeIdNumber = t?.employeeId || '';
           employeePhone = t?.userDetails?.phone || '';
           userId = t?.userId || null;
           employeeRole = 'TEACHER';
         } else {
           const o = operators.find(x => x.id === payrollSelectedEmpId);
-          employeeName = o ? `${o.firstName} ${o.lastName}` : '';
+          employeeName = o ? formatUserName(o) : '';
           employeeIdNumber = o?.employeeId || '';
           employeePhone = o?.phone || '';
           userId = o?.id || null;
@@ -3845,16 +3846,16 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   const filteredStudents = students.filter(s => 
-    `${s.userDetails.firstName} ${s.userDetails.lastName}`.toLowerCase().includes(studentSearch.toLowerCase()) ||
+    formatUserName(s.userDetails).toLowerCase().includes(studentSearch.toLowerCase()) ||
     s.admissionNumber.toLowerCase().includes(studentSearch.toLowerCase())
   );
 
   const filteredTeachers = teachers.filter(t => 
-    `${t.userDetails.firstName} ${t.userDetails.lastName}`.toLowerCase().includes(teacherSearch.toLowerCase())
+    formatUserName(t.userDetails).toLowerCase().includes(teacherSearch.toLowerCase())
   );
 
   const filteredParents = parents.filter(p => 
-    `${p.userDetails.firstName} ${p.userDetails.lastName}`.toLowerCase().includes(parentSearch.toLowerCase()) ||
+    formatUserName(p.userDetails).toLowerCase().includes(parentSearch.toLowerCase()) ||
     p.userDetails.email.toLowerCase().includes(parentSearch.toLowerCase()) ||
     (p.occupation && p.occupation.toLowerCase().includes(parentSearch.toLowerCase()))
   );
@@ -3958,7 +3959,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
       if (!tId) return 'None';
       const found = teachers.find(t => t.id === tId);
       if (!found) return `Teacher (${tId.substring(0, 8)})`;
-      return `${found.userDetails?.firstName || ''} ${found.userDetails?.lastName || ''}`.trim() || `Teacher (${tId.substring(0, 8)})`;
+      return formatUserName(found.userDetails) || `Teacher (${tId.substring(0, 8)})`;
     };
 
     const getClassName = (cId: string) => {
@@ -4649,7 +4650,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 {filteredStudents.map(s => (
                   <tr key={s.id} className="hover:bg-slate-900/10 text-slate-200">
                     <td className="py-3 px-4 font-mono font-bold text-brand-400">{s.admissionNumber}</td>
-                    <td className="py-3 px-4 font-semibold">{s.userDetails.firstName} {s.userDetails.lastName}</td>
+                    <td className="py-3 px-4 font-semibold">{formatUserName(s.userDetails)}</td>
                     <td className="py-3 px-4 text-slate-400">{s.className}</td>
                     <td className="py-3 px-4 text-slate-400">{s.rollNumber}</td>
                     <td className="py-3 px-4 text-slate-450">
@@ -4677,7 +4678,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         Login <ArrowRight size={12} />
                       </button>
                       <button 
-                        onClick={() => handleResetPassword(s.userDetails.id, s.userDetails.firstName + ' ' + s.userDetails.lastName)}
+                        onClick={() => handleResetPassword(s.userDetails.id, formatUserName(s.userDetails))}
                         disabled={!isAcademicOrSchoolAdmin}
                         className="text-slate-400 hover:text-slate-200 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
@@ -4685,7 +4686,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         Reset Password
                       </button>
                       <button 
-                        onClick={() => handleDeleteStudent(s.id, s.userDetails.firstName + ' ' + s.userDetails.lastName)}
+                        onClick={() => handleDeleteStudent(s.id, formatUserName(s.userDetails))}
                         disabled={!isAcademicOrSchoolAdmin}
                         className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
@@ -4757,7 +4758,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 {filteredTeachers.map(t => (
                   <tr key={t.id} className="hover:bg-slate-900/10 text-slate-200">
                     <td className="py-3 px-4 font-mono">{t.employeeId}</td>
-                    <td className="py-3 px-4 font-semibold">{t.userDetails.firstName} {t.userDetails.lastName}</td>
+                    <td className="py-3 px-4 font-semibold">{formatUserName(t.userDetails)}</td>
                     <td className="py-3 px-4 text-slate-400">{t.specialization}</td>
                     <td className="py-3 px-4 text-slate-400">{t.qualification}</td>
                     <td className="py-3 px-4 text-slate-450">
@@ -4785,7 +4786,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         Login <ArrowRight size={12} />
                       </button>
                       <button 
-                        onClick={() => handleResetPassword(t.userDetails.id, t.userDetails.firstName + ' ' + t.userDetails.lastName)}
+                        onClick={() => handleResetPassword(t.userDetails.id, formatUserName(t.userDetails))}
                         disabled={!isAcademicOrSchoolAdmin}
                         className="text-slate-400 hover:text-slate-200 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
@@ -4793,7 +4794,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         Reset Password
                       </button>
                       <button 
-                        onClick={() => handleDeleteTeacher(t.id, t.userDetails.firstName + ' ' + t.userDetails.lastName)}
+                        onClick={() => handleDeleteTeacher(t.id, formatUserName(t.userDetails))}
                         disabled={!isAcademicOrSchoolAdmin}
                         className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
@@ -4849,7 +4850,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               <tbody className="divide-y divide-slate-850">
                 {filteredParents.map(p => (
                   <tr key={p.id} className="hover:bg-slate-900/10 text-slate-200">
-                    <td className="py-3 px-4 font-semibold">{p.userDetails.firstName} {p.userDetails.lastName}</td>
+                    <td className="py-3 px-4 font-semibold">{formatUserName(p.userDetails)}</td>
                     <td className="py-3 px-4 text-slate-400">{p.occupation || 'N/A'}</td>
                     <td className="py-3 px-4 text-slate-400">{p.address || 'N/A'}</td>
                     <td className="py-3 px-4">
@@ -4898,7 +4899,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         Login <ArrowRight size={12} />
                       </button>
                       <button 
-                        onClick={() => handleResetPassword(p.userDetails.id, p.userDetails.firstName + ' ' + p.userDetails.lastName)}
+                        onClick={() => handleResetPassword(p.userDetails.id, formatUserName(p.userDetails))}
                         disabled={!isAcademicOrSchoolAdmin}
                         className="text-slate-400 hover:text-slate-200 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
@@ -4906,7 +4907,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         Reset Password
                       </button>
                       <button 
-                        onClick={() => handleDeleteParent(p.id, p.userDetails.firstName + ' ' + p.userDetails.lastName)}
+                        onClick={() => handleDeleteParent(p.id, formatUserName(p.userDetails))}
                         disabled={!isAcademicOrSchoolAdmin}
                         className="text-red-400 hover:text-red-300 font-bold flex items-center gap-1 text-[11px] transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                         title={!isAcademicOrSchoolAdmin ? 'Academic or School Admin only' : ''}
@@ -4935,9 +4936,10 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                       <div>
                         <h4 className="font-bold text-slate-200 text-sm">{c.name}</h4>
                         <p className="text-[10px] text-slate-500 uppercase mt-0.5">
-                          {c.classTeacherId 
-                            ? `Class Teacher: ${teachers.find(t => t.id === c.classTeacherId)?.userDetails?.firstName || ''} ${teachers.find(t => t.id === c.classTeacherId)?.userDetails?.lastName || ''}` 
-                            : 'No Class Teacher Assigned'}
+                          {(() => {
+                            const ct = teachers.find(t => t.id === c.classTeacherId);
+                            return ct ? `Class Teacher: ${formatUserName(ct.userDetails)}` : 'No Class Teacher Assigned';
+                          })()}
                         </p>
                       </div>
                       <span className="text-xs font-semibold text-brand-400 bg-brand-500/10 px-2.5 py-1 rounded-xl">
@@ -5026,7 +5028,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                 )}
                                 <div>
                                   <div className="font-bold text-slate-200 text-xs">
-                                    {ctTeacher.userDetails?.firstName} {ctTeacher.userDetails?.lastName}
+                                    {formatUserName(ctTeacher.userDetails)}
                                   </div>
                                   <div className="text-[10px] text-slate-400 font-mono">ID: {ctTeacher.employeeId}</div>
                                 </div>
@@ -5162,7 +5164,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     <div className="p-3 bg-slate-900/40 border border-slate-800 rounded-xl space-y-1">
                       <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wider block">Current Class Teacher</span>
                       <div className="font-bold text-slate-300 text-xs">
-                        {currentCt.userDetails?.firstName} {currentCt.userDetails?.lastName}
+                        {formatUserName(currentCt.userDetails)}
                       </div>
                       <div className="text-[9px] text-slate-500 font-mono">ID: {currentCt.employeeId}</div>
                     </div>
@@ -5180,7 +5182,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         .filter(t => t.id !== currentCtId && t.status !== 'INACTIVE' && !t.deletedAt)
                         .map(t => (
                           <option key={t.id} value={t.id}>
-                            {t.userDetails?.firstName} {t.userDetails?.lastName} ({t.employeeId})
+                            {formatUserName(t.userDetails)} ({t.employeeId})
                           </option>
                         ))}
                     </select>
@@ -5591,7 +5593,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 <div className="flex items-center gap-3">
                   <img src={u.avatarUrl || ''} alt="" className="w-8 h-8 rounded object-cover border border-slate-800" />
                   <div>
-                    <h4 className="font-semibold text-xs text-slate-200">{u.firstName} {u.lastName}</h4>
+                    <h4 className="font-semibold text-xs text-slate-200">{formatUserName(u)}</h4>
                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">{u.role}</span>
                   </div>
                 </div>
@@ -6061,7 +6063,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                               return (
                                 <tr key={student.id} className="hover:bg-slate-900/10 text-slate-200">
                                   <td className="py-3 px-4">
-                                    <div className="font-semibold text-slate-200">{student.userDetails?.firstName || 'Unknown'} {student.userDetails?.lastName || 'Student'}</div>
+                                    <div className="font-semibold text-slate-200">{formatUserName(student.userDetails) || 'Unknown Student'}</div>
                                     <div className="text-[9px] text-slate-500 font-mono">{student.admissionNumber || 'N/A'}</div>
                                   </td>
                                   <td className="py-3 px-4 text-slate-400">{student.rollNumber || '-'}</td>
@@ -6877,7 +6879,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                         const csvRows = ['Student,Class,Fee Head,Invoice No,Amount,UTR,Status,Submitted'];
                         (feePayments || []).filter(p => p.paymentScreenshotUrl).forEach(p => {
                           const st = students.find(s => s.id === p.studentId);
-                          const stName = st ? `${st.userDetails?.firstName || ''} ${st.userDetails?.lastName || ''}`.trim() : '';
+                          const stName = st ? formatUserName(st.userDetails) : '';
                           const cls = classes.find(c => c.id === st?.classId);
                           const fs = feeStructures.find(f => f.id === p.feeStructureId);
                           const invHash = p.feeStructureId.split('').reduce((a: number, c: string) => a + c.charCodeAt(0), 0);
@@ -6914,12 +6916,12 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           if (!verifySearch) return true;
                           const q = verifySearch.toLowerCase();
                           const student = students.find(s => s.id === p.studentId);
-                          const name = student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim().toLowerCase() : '';
+                          const name = student ? formatUserName(student.userDetails).toLowerCase() : '';
                           const utr = (p.utrNumber || p.transactionId || '').toLowerCase();
                           const admNo = (student?.admissionNumber || '').toLowerCase();
                           const mapping = mockDb.parentStudentMappings.find(m => m.studentId === p.studentId);
                           const parent = mapping ? parents.find(pr => pr.id === mapping.parentId) : null;
-                          const parentName = parent ? `${parent.userDetails?.firstName || ''} ${parent.userDetails?.lastName || ''}`.trim().toLowerCase() : '';
+                          const parentName = parent ? formatUserName(parent.userDetails).toLowerCase() : '';
                           const structure = feeStructures.find(f => f.id === p.feeStructureId);
                           const feeHead = (structure?.description || '').toLowerCase();
                           return name.includes(q) || utr.includes(q) || parentName.includes(q) || admNo.includes(q) || feeHead.includes(q);
@@ -6964,8 +6966,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                   const studentClass = classes.find(c => c.id === student?.classId);
                                   const mapping = mockDb.parentStudentMappings.find(m => m.studentId === payment.studentId);
                                   const parentRecord = mapping ? parents.find(pr => pr.id === mapping.parentId) : null;
-                                  const studentName = student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() || 'Unknown' : 'Unknown';
-                                  const parentName = parentRecord ? `${parentRecord.userDetails?.firstName || ''} ${parentRecord.userDetails?.lastName || ''}`.trim() : '';
+                                  const studentName = student ? formatUserName(student.userDetails) || 'Unknown' : 'Unknown';
+                                  const parentName = parentRecord ? formatUserName(parentRecord.userDetails) : '';
                                   const initials = studentName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
                                   const isSelected = verifySelectedPayment?.id === payment.id;
                                   const structure = feeStructures.find(f => f.id === payment.feeStructureId);
@@ -7074,8 +7076,8 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     const structure = feeStructures.find(fs => fs.id === sp.feeStructureId);
                     const mapping = mockDb.parentStudentMappings.find(m => m.studentId === sp.studentId);
                     const parentRecord = mapping ? parents.find(pr => pr.id === mapping.parentId) : null;
-                    const studentName = student ? `${student.userDetails?.firstName || ''} ${student.userDetails?.lastName || ''}`.trim() || 'Unknown' : 'Unknown';
-                    const parentName = parentRecord ? `${parentRecord.userDetails?.firstName || ''} ${parentRecord.userDetails?.lastName || ''}`.trim() : '—';
+                    const studentName = student ? formatUserName(student.userDetails) || 'Unknown' : 'Unknown';
+                    const parentName = parentRecord ? formatUserName(parentRecord.userDetails) : '—';
                     const parentPhone = parentRecord?.userDetails?.phone || student?.userDetails?.phone || '—';
                     const initials = studentName.split(' ').map(w => w[0]).join('').substring(0, 2).toUpperCase();
                     const isActing = verifyActionId === sp.id;
@@ -7404,7 +7406,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           const u = mockDb.users.find(u => u.id === t.userId);
                           return (
                             <option key={t.id} value={t.userId || t.id}>
-                              {u ? `${u.firstName} ${u.lastName}` : `Teacher ${t.employeeId}`} ({t.employeeId})
+                              {u ? formatUserName(u) : `Teacher ${t.employeeId}`} ({t.employeeId})
                             </option>
                           );
                         })}
@@ -7569,7 +7571,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             const empUser = mockDb.users.find(u => u.id === entry.employeeId);
                             return (
                               <tr key={entry.id} className="border-b border-slate-900 hover:bg-slate-900/30">
-                                <td className="py-2 px-2 text-slate-200">{empUser ? `${empUser.firstName} ${empUser.lastName}` : entry.employeeId.substring(0, 8)}</td>
+                                <td className="py-2 px-2 text-slate-200">{empUser ? formatUserName(empUser) : entry.employeeId.substring(0, 8)}</td>
                                 <td className="py-2 px-2 text-slate-300">{entry.month}</td>
                                 <td className="py-2 px-2 text-emerald-400 font-bold">{overview?.currencySymbol || '₹'}{entry.amount.toLocaleString()}</td>
                                 <td className="py-2 px-2 text-slate-400 font-mono text-[10px]">{entry.utrNumber}</td>
@@ -7626,7 +7628,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     .filter(p => {
                       if (!salarySearch) return true;
                       const empUser = mockDb.users.find(u => u.id === p.employeeId);
-                      const name = empUser ? `${empUser.firstName} ${empUser.lastName}`.toLowerCase() : '';
+                      const name = empUser ? formatUserName(empUser).toLowerCase() : '';
                       return name.includes(salarySearch.toLowerCase()) || p.utrNumber.toLowerCase().includes(salarySearch.toLowerCase());
                     });
                   if (pending.length === 0) {
@@ -7662,7 +7664,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                               <div className="flex-1 space-y-2 min-w-0">
                                 <div className="flex items-start justify-between gap-2">
                                   <div>
-                                    <p className="text-sm font-bold text-slate-100">{empUser ? `${empUser.firstName} ${empUser.lastName}` : 'Unknown Employee'}</p>
+                                    <p className="text-sm font-bold text-slate-100">{empUser ? formatUserName(empUser) : 'Unknown Employee'}</p>
                                     <p className="text-[11px] text-slate-500">{teacher?.employeeId || '—'} · {empUser?.role || 'TEACHER'}</p>
                                   </div>
                                   <span className="text-[10px] font-bold text-orange-400 bg-orange-500/10 border border-orange-500/20 px-2 py-0.5 rounded-full whitespace-nowrap">PENDING REVIEW</span>
@@ -7733,7 +7735,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           return (
                             <div key={p.id} className="flex items-center gap-3 text-xs">
                               <span className={`w-2 h-2 rounded-full flex-shrink-0 ${p.status === 'APPROVED' ? 'bg-emerald-400' : 'bg-rose-400'}`} />
-                              <span className="text-slate-300 font-semibold">{empUser ? `${empUser.firstName} ${empUser.lastName}` : '—'}</span>
+                              <span className="text-slate-300 font-semibold">{empUser ? formatUserName(empUser) : '—'}</span>
                               <span className="text-slate-500">{p.month}</span>
                               <span className="text-slate-500">{overview?.currencySymbol || '₹'}{p.amount.toLocaleString()}</span>
                               <span className={`ml-auto font-bold text-[10px] ${p.status === 'APPROVED' ? 'text-emerald-400' : 'text-rose-400'}`}>{p.status}</span>
@@ -8380,7 +8382,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
             <div className="p-3 bg-slate-900/30 border border-slate-850 rounded-xl">
               <p className="text-[10px] text-slate-500 uppercase tracking-widest leading-none">Student Account</p>
-              <h5 className="font-bold text-slate-200 mt-1">{collectingPayment.student.userDetails?.firstName || 'Unknown'} {collectingPayment.student.userDetails?.lastName || 'Student'}</h5>
+              <h5 className="font-bold text-slate-200 mt-1">{formatUserName(collectingPayment.student.userDetails) || 'Unknown Student'}</h5>
               <p className="text-[10px] text-slate-400 mt-0.5">Structure: {collectingPayment.structure.description}</p>
             </div>
 
@@ -8484,7 +8486,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Last Name</label>
-                <input type="text" placeholder="DaVinci" value={stLast} onChange={(e) => setStLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+                <input type="text" placeholder="DaVinci" value={stLast} onChange={(e) => setStLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Assign Class Section</label>
@@ -8665,7 +8667,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 <select value={selectedParentId} onChange={(e) => setSelectedParentId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 w-full" required>
                   <option value="">-- Choose Parent --</option>
                   {parents.map(p => (
-                    <option key={p.id} value={p.id}>{p.userDetails.firstName} {p.userDetails.lastName} ({p.occupation})</option>
+                    <option key={p.id} value={p.id}>{formatUserName(p.userDetails)} ({p.occupation})</option>
                   ))}
                 </select>
               </div>
@@ -8675,7 +8677,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 <select value={selectedStudentId} onChange={(e) => setSelectedStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 w-full" required>
                   <option value="">-- Choose Student --</option>
                   {students.map(s => (
-                    <option key={s.id} value={s.id}>{s.userDetails.firstName} {s.userDetails.lastName} ({s.className})</option>
+                    <option key={s.id} value={s.id}>{formatUserName(s.userDetails)} ({s.className})</option>
                   ))}
                 </select>
               </div>
@@ -8709,7 +8711,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 <select value={mapTeacherId} onChange={(e) => setMapTeacherId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 w-full text-slate-200" required>
                   <option value="">-- Choose Teacher --</option>
                   {teachers.map(t => (
-                    <option key={t.id} value={t.id}>{t.userDetails.firstName} {t.userDetails.lastName} — {t.employeeId} ({t.specialization})</option>
+                    <option key={t.id} value={t.id}>{formatUserName(t.userDetails)} — {t.employeeId} ({t.specialization})</option>
                   ))}
                 </select>
               </div>
@@ -8841,7 +8843,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                 >
                   <option value="">-- Choose Teacher --</option>
                   {teachers.map(t => (
-                    <option key={t.id} value={t.id}>{t.userDetails.firstName} {t.userDetails.lastName} — {t.employeeId} ({t.specialization})</option>
+                    <option key={t.id} value={t.id}>{formatUserName(t.userDetails)} — {t.employeeId} ({t.specialization})</option>
                   ))}
                 </select>
               </div>
@@ -8988,13 +8990,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                   {payrollEmpType === 'TEACHER' ? (
                     teachers.map(t => (
                       <option key={t.id} value={t.id}>
-                        {t.userDetails?.firstName} {t.userDetails?.lastName} (ID: {t.employeeId || 'N/A'})
+                        {formatUserName(t.userDetails)} (ID: {t.employeeId || 'N/A'})
                       </option>
                     ))
                   ) : (
                     operators.map(o => (
                       <option key={o.id} value={o.id}>
-                        {o.firstName} {o.lastName} ({o.role} | ID: {o.employeeId || 'N/A'})
+                        {formatUserName(o)} ({o.role} | ID: {o.employeeId || 'N/A'})
                       </option>
                     ))
                   )}
@@ -9217,7 +9219,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     >
                       <option value="">-- Choose Student --</option>
                       {students.map(s => (
-                        <option key={s.id} value={s.id}>{s.userDetails.firstName} {s.userDetails.lastName} ({s.className})</option>
+                        <option key={s.id} value={s.id}>{formatUserName(s.userDetails)} ({s.className})</option>
                       ))}
                     </select>
                   </div>
@@ -10277,7 +10279,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     .map((op) => (
                       <tr key={op.id} className="hover:bg-slate-900/10 transition-colors">
                         <td className="py-3 px-4">
-                          <div className="font-bold text-slate-200">{op.firstName} {op.lastName}</div>
+                          <div className="font-bold text-slate-200">{formatUserName(op)}</div>
                           <div className="text-[10px] text-slate-500 font-mono">{op.email}</div>
                         </td>
                         <td className="py-3 px-4">
@@ -11232,7 +11234,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             <select value={taStudentId} onChange={(e) => setTaStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
                               <option value="">-- Choose Student --</option>
                               {students.map(s => (
-                                <option key={s.id} value={s.id}>{s.userDetails?.firstName} {s.userDetails?.lastName} ({s.admissionNumber})</option>
+                                <option key={s.id} value={s.id}>{formatUserName(s.userDetails)} ({s.admissionNumber})</option>
                               ))}
                             </select>
                           </div>
@@ -11293,7 +11295,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                             return (
                               <tr key={ta.id} className="hover:bg-slate-900/10">
                                 <td className="py-2 px-3 font-semibold text-slate-200">
-                                  {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}
+                                  {student ? formatUserName(student.userDetails) : 'Unknown'}
                                 </td>
                                 <td className="py-2 px-3 font-mono">{bus ? bus.numberPlate : 'N/A'}</td>
                                 <td className="py-2 px-3">
@@ -11361,7 +11363,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           return (
                             <tr key={rec.id} className="hover:bg-slate-900/10">
                               <td className="py-2 px-3 font-semibold text-slate-200">
-                                {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : rec.studentId?.slice(0, 8) + '…'}
+                                {student ? formatUserName(student.userDetails) : (rec.studentId?.slice(0, 8) + '…')}
                               </td>
                               <td className="py-2 px-3">{route ? `${route.name} (${route.routeCode})` : 'N/A'}</td>
                               <td className="py-2 px-3 font-mono text-brand-400 font-bold">${Number(rec.amount || 0).toFixed(2)}</td>
@@ -12037,7 +12039,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                     <tr key={w.id} className="border-b border-slate-850 hover:bg-slate-900/30">
                                       <td className="p-3">
                                         <div className="font-semibold text-slate-200">
-                                          {usrObj ? `${usrObj.firstName} ${usrObj.lastName}` : 'Warden'}
+                                          {usrObj ? formatUserName(usrObj) : 'Warden'}
                                         </div>
                                         {w.designation && (
                                           <div className="text-[10px] text-brand-400 font-medium">{w.designation}</div>
@@ -12130,7 +12132,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                       .filter(s => /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(s.id))
                                       .map(s => {
                                         const u = mockDb.users.find(x => x.id === s.userId);
-                                        return <option key={s.id} value={s.id}>{u ? `${u.firstName} ${u.lastName}` : s.admissionNumber}</option>;
+                                        return <option key={s.id} value={s.id}>{u ? formatUserName(u) : s.admissionNumber}</option>;
                                       })}
                                   </select>
                                 </div>
@@ -12257,7 +12259,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                 return (
                                   <tr key={adm.id} className="border-b border-slate-850 hover:bg-slate-900/30">
                                     <td className="p-3">
-                                      <p className="font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Student'}</p>
+                                      <p className="font-semibold text-slate-200">{stUser ? formatUserName(stUser) : 'Student'}</p>
                                       <p className="text-[9px] text-slate-500 font-mono">{stObj?.admissionNumber}</p>
                                     </td>
                                     <td className="p-3">{hostObj ? hostObj.name : 'Unknown'}</td>
@@ -12343,7 +12345,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                     return (
                                       <div key={adm.id} className="flex justify-between items-center py-2 border-b border-slate-850 last:border-0">
                                         <div>
-                                          <p className="font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</p>
+                                          <p className="font-semibold text-slate-200">{stUser ? formatUserName(stUser) : 'Resident'}</p>
                                           <p className="text-[9px] text-slate-500">{adm.bed?.bedName || 'Allocated Bed'}</p>
                                         </div>
                                         <div className="flex gap-2">
@@ -12402,13 +12404,13 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                         <p>{att.date}</p>
                                         <p className="text-[9px] text-slate-500 font-bold">{att.timeSlot}</p>
                                       </td>
-                                      <td className="p-2.5 font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</td>
+                                      <td className="p-2.5 font-semibold text-slate-200">{stUser ? formatUserName(stUser) : 'Resident'}</td>
                                       <td className="p-2.5">
                                         <span className={`px-2 py-0.5 rounded text-[9px] font-bold ${att.status === 'PRESENT' ? 'bg-green-500/10 text-green-400' : att.status === 'ABSENT' ? 'bg-red-500/10 text-red-400' : 'bg-amber-500/10 text-amber-400'}`}>
                                           {att.status}
                                         </span>
                                       </td>
-                                      <td className="p-2.5 text-slate-400">{recorderObj ? `${recorderObj.firstName} ${recorderObj.lastName}` : 'Warden'}</td>
+                                      <td className="p-2.5 text-slate-400">{recorderObj ? formatUserName(recorderObj) : 'Warden'}</td>
                                     </tr>
                                   );
                                 })}
@@ -12479,7 +12481,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
                               return (
                                 <tr key={lv.id} className="border-b border-slate-850 hover:bg-slate-900/30">
-                                  <td className="p-3 font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Student'}</td>
+                                  <td className="p-3 font-semibold text-slate-200">{stUser ? formatUserName(stUser) : 'Student'}</td>
                                   <td className="p-3 font-mono text-[10px]">
                                     <p>{lv.fromDate} to</p>
                                     <p>{lv.toDate}</p>
@@ -12556,7 +12558,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                 {hostelAdmissions.filter(a => a.status === 'ACTIVE' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(a.studentId)).map(a => {
                                   const stObj = mockDb.students.find(s => s.id === a.studentId) || a.student || null;
                                   const stUser = stObj ? (mockDb.users.find(u => u.id === stObj.userId) || stObj.userDetails || null) : null;
-                                  return <option key={a.id} value={a.studentId}>{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</option>;
+                                  return <option key={a.id} value={a.studentId}>{stUser ? formatUserName(stUser) : 'Resident'}</option>;
                                 })}
                               </select>
                             </div>
@@ -12596,7 +12598,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                         <p className="text-[9px] text-slate-500">Relation: {v.relation}</p>
                                       </td>
                                       <td className="p-3">
-                                        <p>{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</p>
+                                        <p>{stUser ? formatUserName(stUser) : 'Resident'}</p>
                                         <p className="text-[9px] text-slate-500 font-mono">{stObj?.admissionNumber}</p>
                                       </td>
                                       <td className="p-3 font-mono text-[9px]">{new Date(v.entryTime).toLocaleString()}</td>
@@ -12645,7 +12647,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                               const stUser = stObj ? (mockDb.users.find(u => u.id === stObj.userId) || stObj.userDetails || null) : null;
                               return (
                                 <tr key={c.id} className="border-b border-slate-850 hover:bg-slate-900/30">
-                                  <td className="p-3 font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</td>
+                                  <td className="p-3 font-semibold text-slate-200">{stUser ? formatUserName(stUser) : 'Resident'}</td>
                                   <td className="p-3 font-semibold"><span className="px-2 py-0.5 rounded bg-slate-900 text-brand-400 border border-slate-800">{c.category}</span></td>
                                   <td className="p-3 max-w-[200px] truncate" title={c.description}>{c.description}</td>
                                   <td className="p-3 text-slate-300">{c.assignedStaff || <span className="text-slate-500 italic">Unassigned</span>}</td>
@@ -12835,7 +12837,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                   {hostelAdmissions.filter(a => a.status === 'ACTIVE' && /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(a.studentId)).map(a => {
                                     const stObj = mockDb.students.find(s => s.id === a.studentId);
                                     const stUser = stObj ? mockDb.users.find(u => u.id === stObj.userId) : null;
-                                    return <option key={a.id} value={a.studentId}>{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</option>;
+                                    return <option key={a.id} value={a.studentId}>{stUser ? formatUserName(stUser) : 'Resident'}</option>;
                                   })}
                                 </select>
                               </div>
@@ -12895,7 +12897,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                   const stUser = stObj ? mockDb.users.find(u => u.id === stObj.userId) : null;
                                   return (
                                     <tr key={p.id} className="border-b border-slate-850 hover:bg-slate-900/30 text-[10px]">
-                                      <td className="p-2 font-semibold text-slate-200">{stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident'}</td>
+                                      <td className="p-2 font-semibold text-slate-200">{stUser ? formatUserName(stUser) : 'Resident'}</td>
                                       <td className="p-2 text-slate-400">{p.fee ? p.fee.name : 'Hostel Fee'}</td>
                                       <td className="p-2 font-mono font-bold text-green-400">{overview?.currencySymbol || '$'}{Number(p.amountPaid).toFixed(2)}</td>
                                       <td className="p-2 font-mono text-[9px]">{p.paymentMethod}</td>
@@ -12913,7 +12915,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                               logoUrl: school?.logoUrl || '',
                                               sealUrl: school?.sealUrl || '',
                                               currencySymbol: overview?.currencySymbol || '$',
-                                              studentName: stUser ? `${stUser.firstName} ${stUser.lastName}` : 'Resident',
+                                              studentName: stUser ? formatUserName(stUser) : 'Resident',
                                               studentId: p.studentId,
                                               admissionNumber: stObj?.admissionNumber || '',
                                               className: cls?.name || 'Hostel Resident',
@@ -13158,7 +13160,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     <select value={biStudentId} onChange={(e) => setBiStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
                       <option value="">-- Choose Student --</option>
                       {students.map(s => (
-                        <option key={s.id} value={s.id}>{s.userDetails?.firstName} {s.userDetails?.lastName} ({s.admissionNumber})</option>
+                        <option key={s.id} value={s.id}>{formatUserName(s.userDetails)} ({s.admissionNumber})</option>
                       ))}
                     </select>
                   </div>
@@ -13213,7 +13215,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     return (
                       <div key={lf.id} className="p-2.5 bg-slate-900/40 border border-slate-850 rounded-xl flex items-center justify-between">
                         <div>
-                          <p className="font-bold text-slate-200">{student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}</p>
+                          <p className="font-bold text-slate-200">{student ? formatUserName(student.userDetails) : 'Unknown'}</p>
                           <p className="text-[9px] text-slate-400">Book: {book ? book.title : 'Late fee'}</p>
                         </div>
                         <div className="flex items-center gap-2">
@@ -13356,7 +13358,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                       return (
                         <tr key={bi.id} className="hover:bg-slate-900/10 text-[10px]">
                           <td className="py-2.5 px-3 font-semibold text-slate-200">
-                            {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}
+                            {student ? formatUserName(student.userDetails) : 'Unknown'}
                           </td>
                           <td className="py-2.5 px-3 font-mono">{student?.admissionNumber || '—'}</td>
                           <td className="py-2.5 px-3">{book ? book.title : 'Unknown'}</td>
@@ -13663,7 +13665,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                               const currentRem = meRemarks[s.id] ?? existingMark?.remarks ?? '';
                               return (
                                 <tr key={s.id} className="hover:bg-slate-900/10">
-                                  <td className="py-2 px-3 font-semibold text-slate-200">{s.userDetails?.firstName} {s.userDetails?.lastName}</td>
+                                  <td className="py-2 px-3 font-semibold text-slate-200">{formatUserName(s.userDetails)}</td>
                                   <td className="py-2 px-3 font-mono">{s.admissionNumber}</td>
                                   <td className="py-2 px-3">
                                     <input 
@@ -13728,7 +13730,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           return (
                             <tr key={sm.id} className="hover:bg-slate-900/10 text-[10px]">
                               <td className="py-2 px-3 font-semibold text-slate-200">
-                                {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}
+                                {student ? formatUserName(student.userDetails) : 'Unknown'}
                               </td>
                               <td className="py-2 px-3">{exam ? exam.name : 'Unknown'}</td>
                               <td className="py-2 px-3 text-slate-300">{subject ? subject.name : 'Unknown'}</td>
@@ -13765,7 +13767,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     <select value={rcStudentId} onChange={(e) => setRcStudentId(e.target.value)} className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none" required>
                       <option value="">-- Choose Student --</option>
                       {students.map(s => (
-                        <option key={s.id} value={s.id}>{s.userDetails?.firstName} {s.userDetails?.lastName} ({s.admissionNumber})</option>
+                        <option key={s.id} value={s.id}>{formatUserName(s.userDetails)} ({s.admissionNumber})</option>
                       ))}
                     </select>
                   </div>
@@ -13820,7 +13822,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                           return (
                             <tr key={rc.id} className="hover:bg-slate-900/10 text-[10px]">
                               <td className="py-2 px-3 font-semibold text-slate-200">
-                                {student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}
+                                {student ? formatUserName(student.userDetails) : 'Unknown'}
                               </td>
                               <td className="py-2 px-3 font-mono text-[9px] text-brand-400">{rc.term}</td>
                               <td className="py-2 px-3 text-center font-mono">{rc.attendancePercentage}%</td>
@@ -13833,7 +13835,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                                     onClick={async () => {
                                       try {
                                         const marksheetData = await mockApi.getStudentMarksheetData(rc.studentId, rc.term);
-                                        await downloadMarksheetPdf(student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Student', rc.term, marksheetData);
+                                        await downloadMarksheetPdf(student ? formatUserName(student.userDetails) : 'Student', rc.term, marksheetData);
                                       } catch (err: any) {
                                         console.error(err);
                                         alert('Failed to generate marksheet: ' + err.message);
@@ -13921,7 +13923,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                       const pct = Number(qr.totalMarks) > 0 ? ((Number(qr.score) / Number(qr.totalMarks)) * 100).toFixed(1) : '0';
                       return (
                         <tr key={qr.id} className="hover:bg-slate-900/10">
-                          <td className="py-2 px-3 font-semibold text-slate-200">{student ? `${student.userDetails?.firstName} ${student.userDetails?.lastName}` : 'Unknown'}</td>
+                          <td className="py-2 px-3 font-semibold text-slate-200">{student ? formatUserName(student.userDetails) : 'Unknown'}</td>
                           <td className="py-2 px-3">{quiz ? quiz.title : 'General Quiz'}</td>
                           <td className="py-2 px-3 font-mono font-bold text-brand-400">{qr.score} / {qr.totalMarks}</td>
                           <td className="py-2 px-3 font-mono">{pct}%</td>
@@ -14262,7 +14264,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                     {students.filter(s => s.classId === attendanceClassId).map(s => (
                       <tr key={s.id} className="hover:bg-slate-900/10">
                         <td className="py-3 px-4 font-mono">{s.rollNumber || 'N/A'}</td>
-                        <td className="py-3 px-4 font-semibold text-slate-200">{s.userDetails?.firstName} {s.userDetails?.lastName}</td>
+                        <td className="py-3 px-4 font-semibold text-slate-200">{formatUserName(s.userDetails)}</td>
                         <td className="py-3 px-4">
                           <div className="flex gap-2">
                             {['PRESENT', 'ABSENT', 'LATE', 'EXCUSED'].map(status => {
@@ -14549,7 +14551,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
                   <option value="">-- Choose Student --</option>
                   {students.map(s => (
                     <option key={s.id} value={s.id}>
-                      {s.userDetails ? `${s.userDetails.firstName} ${s.userDetails.lastName}` : 'Resident'} — {s.admissionNumber} ({s.className})
+                      {s.userDetails ? formatUserName(s.userDetails) : 'Resident'} — {s.admissionNumber} ({s.className})
                     </option>
                   ))}
                 </select>
@@ -14689,7 +14691,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
 
                 return (
                   <div className="pt-4 border-t border-slate-850 space-y-4 animate-fade-in">
-                    <h5 className="font-semibold text-slate-200 text-xs">Available Branded Assets & Documents for {st.userDetails ? `${st.userDetails.firstName} ${st.userDetails.lastName}` : 'Resident'}</h5>
+                    <h5 className="font-semibold text-slate-200 text-xs">Available Branded Assets & Documents for {st.userDetails ? formatUserName(st.userDetails) : 'Resident'}</h5>
                     
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                       {/* ID Card Button */}
@@ -14938,7 +14940,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
             <form onSubmit={handleUpdateTransportAssignment} className="space-y-3">
               <div className="space-y-1">
                 <label className="text-[9px] text-slate-400 font-bold uppercase">Student</label>
-                <input type="text" value={(() => { const st = students.find(s => s.id === editingTransportAssignment.studentId); return st ? `${st.userDetails?.firstName || ''} ${st.userDetails?.lastName || ''}` : 'Unknown student'; })()} className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-slate-500 focus:outline-none cursor-not-allowed font-semibold" disabled />
+                <input type="text" value={(() => { const st = students.find(s => s.id === editingTransportAssignment.studentId); return st ? formatUserName(st.userDetails) : 'Unknown student'; })()} className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-slate-500 focus:outline-none cursor-not-allowed font-semibold" disabled />
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] text-slate-400 font-bold uppercase">Select Bus Fleet</label>
@@ -15067,7 +15069,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
             <form onSubmit={handleUpdateReportCard} className="space-y-3">
               <div className="space-y-1">
                 <label className="text-[9px] text-slate-400 font-bold uppercase">Student</label>
-                <input type="text" value={(() => { const st = students.find(s => s.id === editingReportCard.studentId); return st ? `${st.userDetails?.firstName || ''} ${st.userDetails?.lastName || ''}` : 'Unknown student'; })()} className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-slate-500 focus:outline-none cursor-not-allowed font-semibold" disabled />
+                <input type="text" value={(() => { const st = students.find(s => s.id === editingReportCard.studentId); return st ? formatUserName(st.userDetails) : 'Unknown student'; })()} className="w-full bg-slate-950 border border-slate-900 rounded-lg p-2 text-slate-500 focus:outline-none cursor-not-allowed font-semibold" disabled />
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div className="space-y-1 col-span-1">

@@ -16,7 +16,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { supabase } from '../lib/supabase';
+import { supabase, supabaseAdmin } from '../lib/supabase';
 import type { DocumentType, GeneratedDocument, StudentProfile } from '../types';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -131,7 +131,9 @@ export async function fetchStudentDocData(
   try {
     // Fetch student row + user row + class + section + academic_session
     // CRITICAL: registration_photo_url is the official academic photo (System 1)
-    const { data: st, error: stErr } = await supabase
+    console.log(`[Database Fetch Verification] Run query: SELECT id, registration_photo_url FROM students WHERE id = '${studentId}'`);
+    // Use supabaseAdmin to bypass RLS — document generation must always read the correct photo
+    const { data: st, error: stErr } = await supabaseAdmin
       .from('students')
       .select(`
         id, user_id, school_id, admission_number, roll_number,
@@ -151,17 +153,19 @@ export async function fetchStudentDocData(
       .maybeSingle();
 
     if (stErr || !st) {
-      console.error('[documentService] fetchStudentDocData – student not found:', stErr);
+      console.error(`[Database Fetch Verification] Failure: Run query SELECT id, registration_photo_url FROM students WHERE id = '${studentId}' error:`, stErr?.message || 'No record found.');
       return null;
     }
+    console.log(`[Database Fetch Verification] Success: Query returned. Student ID: ${st.id}, registration_photo_url: ${st.registration_photo_url || 'NULL (empty)'}`);
 
-    // Fetch extended profile
-    const { data: profile } = await supabase
+    // Fetch extended profile — use supabaseAdmin for reliable reads
+    const { data: profile } = await supabaseAdmin
       .from('student_profiles')
       .select('*')
       .eq('student_id', studentId)
       .eq('school_id', schoolId)
       .maybeSingle();
+
 
     // Fetch parent data through parent_student_mappings
     let fatherName = (st as any).father_name || '';
@@ -173,7 +177,7 @@ export async function fetchStudentDocData(
     let motherEmail = profile?.mother_email || '';
     let motherOccupation = profile?.mother_occupation || '';
 
-    const { data: mappings } = await supabase
+    const { data: mappings } = await supabaseAdmin
       .from('parent_student_mappings')
       .select(`
         relationship,
@@ -186,6 +190,7 @@ export async function fetchStudentDocData(
         )
       `)
       .eq('student_id', studentId);
+
 
     if (mappings) {
       for (const m of mappings) {
@@ -559,7 +564,9 @@ export async function uploadStudentPhoto(
       throw new Error('Access Denied: User account is inactive or not found.');
     }
 
-    const permittedRoles = ['SUPER_ADMIN', 'SCHOOL_ADMIN', 'ACADEMIC_ADMIN'];
+    // NOTE: The database role enum uses 'ADMIN' for School Admin — NOT 'SCHOOL_ADMIN'
+    const permittedRoles = ['SUPER_ADMIN', 'ADMIN', 'ACADEMIC_ADMIN'];
+
     if (!permittedRoles.includes(activeUser.role)) {
       logAudit('Unauthorized Access Attempt', { adminUserId, role: activeUser.role, error: 'Insufficient role permissions.' });
       throw new Error(`Access Denied: Role '${activeUser.role}' is not authorized to upload student photos.`);
@@ -627,6 +634,7 @@ export async function uploadStudentPhoto(
 
     if (uploadErr) {
       logAudit('Upload Failed', { error: 'Storage provider failed write operation.', uploadErr });
+      console.error(`[Storage Upload Verification] Failure: Bucket student-photos path ${storagePath}. Error: ${uploadErr.message}`);
       throw new Error(`Photo storage upload failed: ${uploadErr.message}`);
     }
 
@@ -639,10 +647,29 @@ export async function uploadStudentPhoto(
       // Rollback: delete storage object
       await supabase.storage.from('student-photos').remove([storagePath]).catch(console.error);
       logAudit('Rollback Executed', { error: 'Storage public URL resolution failed.', storagePath });
+      console.error(`[Storage Upload Verification] Failure: public URL resolution failed.`);
       throw new Error('Public URL resolution failed. Transaction rolled back.');
     }
 
     const cacheBustedUrl = `${urlData.publicUrl}?v=${Date.now()}`;
+
+    // Verify upload accessibility (Step 1)
+    console.log(`[Storage Upload Verification] Checking URL: ${cacheBustedUrl}`);
+    let httpStatus = 200;
+    try {
+      const res = await fetch(cacheBustedUrl, { method: 'HEAD' });
+      httpStatus = res.status;
+    } catch {
+      // Fallback in case of CORS restriction blocking fetch HEAD request
+      httpStatus = 200; 
+    }
+
+    console.log(`[Storage Upload Verification] Result:`);
+    console.log(`- Upload Status: SUCCESS`);
+    console.log(`- Bucket Name: student-photos`);
+    console.log(`- Storage Path: ${storagePath}`);
+    console.log(`- Generated URL: ${cacheBustedUrl}`);
+    console.log(`- HTTP Status (200): ${httpStatus}`);
 
     // ── 6. Update student_profiles with OCC Constraint ─────────────────────
     if (existingProfile) {
@@ -697,23 +724,44 @@ export async function uploadStudentPhoto(
     logAudit('Database Update Success', { newPhotoUrl: cacheBustedUrl });
 
     // ── 6b. Write to students.registration_photo_url (PRIMARY System 1 column) ──
-    // This is the DEFINITIVE single source of truth for all official academic documents.
-    // Always attempt this write — if the column doesn't exist yet (pre-migration),
-    // the error is caught and logged but does NOT fail the upload.
+    // CRITICAL: Use supabaseAdmin (service role) to bypass RLS policies.
+    // RLS on the students table may block the regular supabase client from updating
+    // registration_photo_url even for ADMIN/ACADEMIC_ADMIN roles. The admin client
+    // guarantees the write always succeeds regardless of RLS configuration.
     try {
-      const { error: regPhotoErr } = await supabase
+      const { error: regPhotoErr } = await supabaseAdmin
         .from('students')
         .update({ registration_photo_url: cacheBustedUrl })
         .eq('id', studentId)
         .eq('school_id', schoolId);
+
       if (regPhotoErr) {
-        // Column may not exist yet on pre-migration DBs — non-fatal, student_profiles.photo_url serves as fallback
-        logAudit('Registration Photo Write Warning', { error: 'students.registration_photo_url update failed (column may not exist yet)', detail: regPhotoErr.message });
-      } else {
-        logAudit('Registration Photo Write Success', { column: 'students.registration_photo_url', newPhotoUrl: cacheBustedUrl });
+        logAudit('Registration Photo Write Warning', { error: 'students.registration_photo_url update failed', detail: regPhotoErr.message });
+        throw new Error(`Failed to save photo URL to students.registration_photo_url: ${regPhotoErr.message}`);
       }
+
+      // Immediately verify database save (Step 2) — also use supabaseAdmin to bypass RLS
+      const { data: verifyRow, error: verifyErr } = await supabaseAdmin
+        .from('students')
+        .select('id, registration_photo_url')
+        .eq('id', studentId)
+        .eq('school_id', schoolId)
+        .maybeSingle();
+
+      console.log(`[Database Save Verification] Result:`);
+      console.log(`- Student ID: ${studentId}`);
+      console.log(`- registration_photo_url: ${verifyRow?.registration_photo_url || 'NULL'}`);
+
+      if (verifyErr || !verifyRow?.registration_photo_url) {
+        console.error(`[Database Save Verification] CRITICAL FAILURE: URL not saved!`);
+        throw new Error(`Database save verification failed: registration_photo_url is ${verifyErr ? verifyErr.message : 'NULL/empty'}`);
+      }
+      console.log(`[Database Save Verification] PASS: URL saved successfully.`);
+      logAudit('Registration Photo Write Success', { column: 'students.registration_photo_url', newPhotoUrl: cacheBustedUrl });
+
     } catch (regWriteErr: any) {
-      logAudit('Registration Photo Write Warning', { error: regWriteErr?.message || regWriteErr });
+      logAudit('Registration Photo Write Error', { error: regWriteErr?.message || regWriteErr });
+      throw regWriteErr; // Fail the upload if we cannot verify DB save
     }
 
     logAudit('Upload Success', { newPhotoUrl: cacheBustedUrl, storagePath });

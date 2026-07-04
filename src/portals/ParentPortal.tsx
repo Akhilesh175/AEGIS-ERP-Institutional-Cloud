@@ -39,6 +39,7 @@ import {
 import type { GeneratedDocument } from '../types';
 
 import { ParentPTMManagement } from '../components/PTMManagement';
+import { formatName, formatUserName } from '../utils/nameUtils';
 
 const renderVideoPlayer = (url: string) => {
   if (!url) return null;
@@ -707,14 +708,14 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
   };
 
   const parentUser = mockDb.users.find(u => u.id === session?.user?.id);
-  const parentName = parentUser ? `${parentUser.firstName} ${parentUser.lastName}` : 'Guardian';
+  const parentName = parentUser ? formatUserName(parentUser) : 'Guardian';
   
   // Get unique school names from assigned students
   const schoolIds = Array.from(new Set(assignedStudents.map(s => s.schoolId)));
   const schoolNames = schoolIds.map(id => mockDb.schools.find(sch => sch.id === id)?.name).filter(Boolean).join(', ') || 'Aegis Academy';
 
   // Get student names
-  const studentNames = assignedStudents.map(s => `${s.userDetails?.firstName || 'Student'} ${s.userDetails?.lastName || ''}`.trim()).join(', ') || 'No linked wards';
+  const studentNames = assignedStudents.map(s => formatUserName(s.userDetails || { firstName: 'Student', lastName: '' })).join(', ') || 'No linked wards';
 
   // RACE CONDITION FIX: Only show skeleton if ward data hasn't loaded yet OR if academic record is loading
   // We NEVER show 'No Wards Linked' until wardLoadComplete=true to prevent premature empty state
@@ -821,7 +822,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
               className="bg-slate-950 border border-slate-800 text-slate-200 text-xs font-semibold rounded-xl px-3 py-2 focus:outline-none focus:border-brand-500"
             >
               {assignedStudents.map(s => (
-                <option key={s.id} value={s.id}>{s.userDetails?.firstName || 'Student'} {s.userDetails?.lastName || ''} ({s.className})</option>
+                <option key={s.id} value={s.id}>{formatUserName(s.userDetails || { firstName: 'Student', lastName: '' })} ({s.className})</option>
               ))}
             </select>
           </div>
@@ -994,7 +995,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                     Class Timetable Schedule
                   </h3>
                   <p className="text-xs text-slate-400 mt-1">
-                    Weekly academic lectures and class schedule for {academicRecord?.studentProfile?.firstName} {academicRecord?.studentProfile?.lastName}.
+                    Weekly academic lectures and class schedule for {formatUserName(academicRecord?.studentProfile)}.
                   </p>
                 </div>
 
@@ -1036,7 +1037,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                       {subject ? subject.name : 'Course Lecture'}
                                     </h5>
                                     <p className="text-[10px] text-slate-450 font-medium">
-                                      Instructor: {teacherUser ? `${teacherUser.firstName} ${teacherUser.lastName}` : 'Guest Faculty'}
+                                      Instructor: {teacherUser ? formatUserName(teacherUser) : 'Guest Faculty'}
                                     </p>
                                     <div className="flex items-center gap-3 text-[10px] text-slate-400 mt-1.5 font-sans">
                                       <span className="flex items-center gap-1">
@@ -1602,7 +1603,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                     {s.userDetails?.firstName?.substring(0, 1)}
                                   </div>
                                   <div className="min-w-0">
-                                    <span className="block text-xs font-bold text-slate-200 truncate">{s.userDetails?.firstName} {s.userDetails?.lastName}</span>
+                                    <span className="block text-xs font-bold text-slate-200 truncate">{formatUserName(s.userDetails)}</span>
                                     <span className="block text-[10px] text-slate-550 truncate">{s.className} | Adm: {s.admissionNumber}</span>
                                   </div>
                                 </div>
@@ -1713,12 +1714,12 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                 paymentMethod: inv.payment?.paymentMethod || undefined,
                                 transactionId: inv.payment?.transactionId || undefined,
                                 status: inv.status === 'PAID' ? 'PAID' : (inv.status === 'PENDING' ? 'PENDING' : 'UNPAID') as any,
-                                studentName: stObj ? `${stObj.userDetails?.firstName} ${stObj.userDetails?.lastName}` : 'Student',
+                                studentName: stObj ? formatUserName(stObj.userDetails) : 'Student',
                                 studentClass: stObj?.className || 'N/A',
                                 studentRollNo: stObj?.rollNumber ? String(stObj.rollNumber) : 'N/A',
                                 studentAdmissionNo: stObj?.admissionNumber ? String(stObj.admissionNumber) : 'N/A',
                                 studentId: selectedStudent || '',
-                                parentName: parentUser ? `${parentUser.firstName} ${parentUser.lastName}` : 'Guardian',
+                                parentName: parentUser ? formatUserName(parentUser) : 'Guardian',
                                 parentPhone: parentUser?.phone || 'N/A',
                                 parentEmail: parentUser?.email || 'N/A',
                                 parentRelation: 'Parent',
@@ -1743,7 +1744,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                       </div>
                                       <h4 className="font-bold text-slate-200 text-xs mt-2">{inv.description}</h4>
                                       <p className="text-[10px] text-slate-450">
-                                        {stObj?.userDetails?.firstName} {stObj?.userDetails?.lastName} ({stObj?.className})
+                                        {formatUserName(stObj?.userDetails)} ({stObj?.className})
                                       </p>
                                       <div className="flex flex-wrap gap-x-4 gap-y-1 text-[9.5px] text-slate-550 font-mono mt-1">
                                         <span>Bill Date: {new Date(inv.billDate).toLocaleDateString()}</span>
@@ -2831,7 +2832,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
                       const docSt = {
                         id: enrichedSt.studentId,
-                        fullName: enrichedSt.fullName || (st.userDetails ? `${st.userDetails.firstName} ${st.userDetails.lastName}` : 'Student Name'),
+                        fullName: enrichedSt.fullName || (st.userDetails ? formatUserName(st.userDetails) : 'Student Name'),
                         firstName: enrichedSt.firstName,
                         lastName: enrichedSt.lastName,
                         admissionNumber: enrichedSt.admissionNumber,
@@ -3501,10 +3502,10 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
                                 <div>
                                   <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Warden Name</p>
                                   <h3 className="text-base font-bold text-slate-100">
-                                    {wardenDetails.firstName && wardenDetails.lastName 
-                                      ? `${wardenDetails.firstName} ${wardenDetails.lastName}`
+                                    {wardenDetails.firstName 
+                                      ? formatName(wardenDetails.firstName, wardenDetails.lastName)
                                       : wardenDetails.userDetails 
-                                        ? `${wardenDetails.userDetails.firstName} ${wardenDetails.userDetails.lastName}` 
+                                        ? formatUserName(wardenDetails.userDetails) 
                                         : 'Assigned Warden'}
                                   </h3>
                                 </div>
@@ -3978,7 +3979,7 @@ export const ParentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAc
 
                         return filtered.map((n) => {
                           const senderObj = mockDb.users.find(u => u.id === n.senderId);
-                          const senderName = senderObj ? `${senderObj.firstName} ${senderObj.lastName}` : 'Aegis Core Gateway';
+                          const senderName = senderObj ? formatUserName(senderObj) : 'Aegis Core Gateway';
                           
                           return (
                             <div

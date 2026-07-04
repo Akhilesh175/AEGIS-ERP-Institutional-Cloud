@@ -42,6 +42,7 @@ import type { GeneratedDocument } from '../types';
 
 import { ClassDiscussion } from '../components/ClassDiscussion';
 import { StudentPTMManagement } from '../components/PTMManagement';
+import { formatName, formatUserName } from '../utils/nameUtils';
 
 const renderVideoPlayer = (url: string) => {
   if (!url) return null;
@@ -850,7 +851,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
   const studentClass = mockDb.classes.find(c => c.id === studentEntity?.classId);
   const studentSchool = mockDb.schools.find(s => s.id === studentEntity?.schoolId) || mockDb.schools.find(s => s.id === studentUser?.schoolId);
   
-  const studentName = studentUser ? `${studentUser.firstName} ${studentUser.lastName}` : 'Student';
+  const studentName = studentUser ? formatUserName(studentUser) : 'Student';
   const className = studentClass ? studentClass.name : 'Unassigned Class';
   const admissionNumber = studentEntity ? studentEntity.admissionNumber : 'N/A';
   const schoolName = studentSchool ? studentSchool.name : 'Aegis Academy';
@@ -1945,12 +1946,12 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                         paymentMethod: inv.payment?.paymentMethod || undefined,
                         transactionId: inv.payment?.transactionId || undefined,
                         status: inv.status === 'PAID' ? 'PAID' : (inv.status === 'PENDING' ? 'PENDING' : 'UNPAID') as any,
-                        studentName: `${session?.user?.firstName || 'Student'} ${session?.user?.lastName || ''}`,
+                        studentName: formatUserName(session?.user || { firstName: 'Student', lastName: '' }),
                         studentClass: cls?.name || 'Class 10 - A',
                         studentRollNo: stObj?.rollNumber ? String(stObj.rollNumber) : '15',
                         studentAdmissionNo: stObj?.admissionNumber ? String(stObj.admissionNumber) : 'AEGIS2026/015',
                         studentId: studentId || '',
-                        parentName: parentUser ? `${parentUser.firstName} ${parentUser.lastName}` : 'Guardian',
+                        parentName: parentUser ? formatUserName(parentUser) : 'Guardian',
                         parentPhone: parentUser?.phone || 'N/A',
                         parentEmail: parentUser?.email || 'N/A',
                         parentRelation: 'Father',
@@ -1975,7 +1976,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                               </div>
                               <h4 className="font-bold text-slate-200 text-sm mt-2">{inv.description}</h4>
                               <p className="text-[10px] text-slate-450">
-                                {session?.user?.firstName} ${session?.user?.lastName} ({cls?.name || 'Class 10 - A'})
+                                {formatUserName(session?.user)} ({cls?.name || 'Class 10 - A'})
                               </p>
                               <div className="flex flex-wrap gap-x-4 gap-y-1 text-[9.5px] text-slate-500 font-mono mt-1">
                                 <span>Bill Date: {new Date(inv.billDate).toLocaleDateString()}</span>
@@ -2126,12 +2127,12 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                         paymentMethod: f.payment?.paymentMethod || undefined,
                         transactionId: f.payment?.transactionId || undefined,
                         status: isPaid ? 'PAID' : 'UNPAID' as any,
-                        studentName: `${session?.user?.firstName || 'Student'} ${session?.user?.lastName || ''}`,
+                        studentName: formatUserName(session?.user || { firstName: 'Student', lastName: '' }),
                         studentClass: cls?.name || 'Class 10 - A',
                         studentRollNo: stObj?.rollNumber ? String(stObj.rollNumber) : '15',
                         studentAdmissionNo: stObj?.admissionNumber ? String(stObj.admissionNumber) : 'AEGIS2026/015',
                         studentId: studentId || '',
-                        parentName: parentUser ? `${parentUser.firstName} ${parentUser.lastName}` : 'Guardian',
+                        parentName: parentUser ? formatUserName(parentUser) : 'Guardian',
                         parentPhone: parentUser?.phone || 'N/A',
                         parentEmail: parentUser?.email || 'N/A',
                         parentRelation: 'Father',
@@ -2474,10 +2475,10 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
                           <div>
                             <p className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold">Name</p>
                             <h3 className="text-base font-bold text-slate-100">
-                              {wardenDetails.firstName && wardenDetails.lastName 
-                                ? `${wardenDetails.firstName} ${wardenDetails.lastName}`
+                              {wardenDetails.firstName 
+                                ? formatName(wardenDetails.firstName, wardenDetails.lastName)
                                 : wardenDetails.userDetails 
-                                  ? `${wardenDetails.userDetails.firstName} ${wardenDetails.userDetails.lastName}` 
+                                  ? formatUserName(wardenDetails.userDetails) 
                                   : 'Assigned Warden'}
                             </h3>
                           </div>

@@ -20,6 +20,7 @@ import { useFeatureEntitlements } from '../hooks/useFeatureEntitlements';
 import { downloadMarksheetPdf } from '../components/MarksheetTemplate';
 import { ClassDiscussion } from '../components/ClassDiscussion';
 import { TeacherPTMManagement } from '../components/PTMManagement';
+import { formatName, formatUserName } from '../utils/nameUtils';
 
 export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: string) => void }> = ({ activeTab, setActiveTab }) => {
   const { session, syncSubscriptionPlan } = useStore();
@@ -462,7 +463,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
 
     classStudents.forEach(st => {
       const user = mockDb.users.find(u => u.id === st.userId);
-      const studentName = user ? `${user.firstName} ${user.lastName}` : 'Unknown Student';
+      const studentName = user ? formatUserName(user) : 'Unknown Student';
       
       // Get all marks for this student and subject
       const marks = mockDb.studentMarks.filter(m => m.studentId === st.id && m.subjectId === mapping.subjectId);
@@ -1712,7 +1713,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
   const teacherSchool = mockDb.schools.find(s => s.id === teacherEntity?.schoolId) || mockDb.schools.find(s => s.id === teacherUser?.schoolId);
   const teacherSchoolName = teacherSchool?.name || 'Aegis Academy';
   const facultyId = teacherEntity?.employeeId || 'N/A';
-  const teacherName = teacherUser ? `${teacherUser.firstName} ${teacherUser.lastName}` : 'Faculty Member';
+  const teacherName = teacherUser ? formatUserName(teacherUser) : 'Faculty Member';
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
@@ -2114,7 +2115,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                           if (!u) return null;
                           return (
                             <option key={t.id} value={t.id}>
-                              {u.firstName} {u.lastName} — {t.employeeId} ({t.specialization})
+                              {formatUserName(u)} — {t.employeeId} ({t.specialization})
                             </option>
                           );
                         });
@@ -2221,7 +2222,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                                       {subject ? subject.name : 'Unknown Subject'}
                                     </h5>
                                     <p className="text-[10px] text-slate-400">
-                                      Instructor: {teacherUser ? `${teacherUser.firstName} ${teacherUser.lastName}` : 'Guest Faculty'}
+                                      Instructor: {teacherUser ? formatUserName(teacherUser) : 'Guest Faculty'}
                                     </p>
                                     <div className="flex items-center gap-3 text-[10px] text-slate-500 mt-1.5">
                                       <span className="flex items-center gap-1">
@@ -2290,11 +2291,11 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                       return (
                         <div key={s.id} className="p-3 bg-slate-900/20 border border-slate-850/60 rounded-xl flex items-center justify-between animate-fade-in">
                           <div>
-                            <p className="font-bold text-slate-200 text-xs">{u.firstName} {u.lastName}</p>
+                            <p className="font-bold text-slate-200 text-xs">{formatUserName(u)}</p>
                             <p className="text-[10px] text-slate-500 font-mono">Adm: {s.admissionNumber} | Roll: {s.rollNumber}</p>
                           </div>
                           <button
-                            onClick={() => handleCTDeleteStudent(s.id, `${u.firstName} ${u.lastName}`)}
+                            onClick={() => handleCTDeleteStudent(s.id, formatUserName(u))}
                             className="text-red-400 hover:text-red-300 font-semibold text-[10px] border border-red-500/10 hover:border-red-500/30 bg-red-500/5 hover:bg-red-500/10 px-2 py-1 rounded-lg transition-all"
                           >
                             Remove
@@ -2343,14 +2344,14 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                           if (!cs) return null;
                           const csu = mockDb.users.find(usr => usr.id === cs.userId);
                           if (!csu) return null;
-                          return `${csu.firstName} ${csu.lastName}`;
+                          return formatUserName(csu);
                         })
                         .filter(Boolean) as string[];
 
                       return (
                         <div key={p.id} className="p-3 bg-slate-900/20 border border-slate-850/60 rounded-xl flex items-center justify-between animate-fade-in">
                           <div>
-                            <p className="font-bold text-slate-200 text-xs">{u.firstName} {u.lastName}</p>
+                            <p className="font-bold text-slate-200 text-xs">{formatUserName(u)}</p>
                             <div className="flex flex-wrap gap-1 mt-1">
                               {linkedWards.map((name, idx) => (
                                 <span key={idx} className="text-[9px] font-semibold text-brand-400 bg-brand-500/5 border border-brand-500/10 px-1.5 py-0.5 rounded">
@@ -2360,7 +2361,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                             </div>
                           </div>
                           <button
-                            onClick={() => handleCTDeleteParent(p.id, `${u.firstName} ${u.lastName}`)}
+                            onClick={() => handleCTDeleteParent(p.id, formatUserName(u))}
                             className="text-red-400 hover:text-red-300 font-semibold text-[10px] border border-red-500/10 hover:border-red-500/30 bg-red-500/5 hover:bg-red-500/10 px-2 py-1 rounded-lg transition-all"
                           >
                             Remove
@@ -2419,7 +2420,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                           const u = p ? mockDb.users.find(uDb => uDb.id === p.userId) : null;
                           return {
                             relationship: m.relationship || 'Guardian',
-                            name: u ? `${u.firstName} ${u.lastName}` : 'N/A',
+                            name: u ? formatUserName(u) : 'N/A',
                             phone: u ? u.phone || 'N/A' : 'N/A',
                             email: u ? u.email : 'N/A',
                             userId: u ? u.id : null
@@ -2431,7 +2432,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                             <td className="py-3 px-4 font-mono font-bold text-brand-400">{s.rollNumber}</td>
                             <td className="py-3 px-4 font-mono text-slate-400">{s.admissionNumber}</td>
                             <td className="py-3 px-4">
-                              <div className="font-semibold text-slate-100">{s.userDetails.firstName} {s.userDetails.lastName}</div>
+                              <div className="font-semibold text-slate-100">{formatUserName(s.userDetails)}</div>
                               <div className="text-[10px] text-slate-500 font-semibold">{s.userDetails.email}</div>
                               {s.userDetails.phone && <div className="text-[10px] text-slate-400 font-mono mt-0.5">Primary: {s.userDetails.phone}</div>}
                               {(() => {
@@ -2616,7 +2617,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                           <tr key={s.id} className="hover:bg-slate-900/10 text-slate-200 transition-colors">
                             <td className="py-3 px-4 font-mono text-slate-400">{s.rollNumber}</td>
                             <td className="py-3 px-4 font-semibold text-slate-100">
-                              {s.userDetails?.firstName} {s.userDetails?.lastName}
+                              {formatUserName(s.userDetails)}
                             </td>
                             <td className="py-3 px-4">
                               <div className="flex gap-1.5">
@@ -2937,7 +2938,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                       <option value="">-- Select Student --</option>
                       {mockDb.students.filter(s => s.classId === selectedManagedClass).map(st => {
                         const u = mockDb.users.find(u => u.id === st.userId);
-                        return <option key={st.id} value={st.id}>{u?.firstName} {u?.lastName}</option>;
+                        return <option key={st.id} value={st.id}>{formatUserName(u)}</option>;
                       })}
                     </select>
                   </div>
@@ -4261,7 +4262,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                         const u = mockDb.users.find(usr => usr.id === s.userId);
                         if (!u) return null;
                         return (
-                          <option key={s.id} value={s.id}>{u.firstName} {u.lastName}</option>
+                          <option key={s.id} value={s.id}>{formatUserName(u)}</option>
                         );
                       })}
                     </select>
@@ -4654,7 +4655,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                         {quizAttempts.map(attempt => {
                           const student = mockDb.students.find(s => s.id === attempt.studentId);
                           const studentUser = student ? mockDb.users.find(u => u.id === student.userId) : null;
-                          const name = studentUser ? `${studentUser.firstName} ${studentUser.lastName}` : 'Unknown Student';
+                          const name = studentUser ? formatUserName(studentUser) : 'Unknown Student';
 
                           // Calculate correct/incorrect counts
                           const questions = mockDb.quizQuestions.filter(q => q.quizId === selectedQuizForAttempts.id);
@@ -4752,7 +4753,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                         if (!u) return null;
                         return (
                           <option key={t.id} value={t.id}>
-                            {u.firstName} {u.lastName} — {t.employeeId} ({t.specialization})
+                            {formatUserName(u)} — {t.employeeId} ({t.specialization})
                           </option>
                         );
                       });
@@ -5100,7 +5101,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                 {fpSettings ? (
                   <div className="space-y-3">
                     {[
-                      { label: 'Account Holder', value: `${session?.user.firstName || ''} ${session?.user.lastName || ''}`.trim() || '—' },
+                      { label: 'Account Holder', value: formatUserName(session?.user) || '—' },
                       { label: 'Bank Name', value: fpSettings.bankName || '—' },
                       { label: 'Account Number', value: fpShowAccNumber ? (fpSettings.accountNumber || '—') : (fpSettings.accountNumber ? '•••• •••• ' + fpSettings.accountNumber.slice(-4) : '—') },
                       { label: 'IFSC Code', value: fpSettings.ifscCode || '—' },
@@ -5243,7 +5244,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                               const content = [
                                 'SALARY PAYMENT SLIP',
                                 '===================',
-                                `Employee Name: ${session?.user.firstName || ''} ${session?.user.lastName || ''}`.trim(),
+                                `Employee Name: ${formatUserName(session?.user)}`,
                                 `Employee ID:   ${rec.employeeId}`,
                                 `Month:         ${rec.month}`,
                                 `Amount Paid:   ₹${(rec.amount || 0).toLocaleString()}`,
@@ -5385,7 +5386,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
                       const user = mockDb.users.find(u => u.id === st.userId);
                       return (
                         <option key={st.id} value={st.id}>
-                          {user ? `${user.firstName} ${user.lastName}` : 'Unknown'} (Roll: {st.rollNumber})
+                          {formatUserName(user) || 'Unknown'} (Roll: {st.rollNumber})
                         </option>
                       );
                     });

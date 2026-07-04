@@ -39,8 +39,8 @@ export interface DocumentStudentData {
   sectionName: string;
   dateOfBirth: string;
   gender: string;
-  // Photo — prefer photoUrl from student_profiles; fall back to avatarUrl from users
   photoUrl?: string;
+  registrationPhotoUrl?: string;
   avatarUrl?: string;
   // Personal
   bloodGroup?: string;
@@ -87,6 +87,43 @@ export interface DocumentParentData {
   address?: string;
 }
 
+/** Verify image loading and output logs as requested in Step 5 */
+export async function verifyImageLoading(url: string): Promise<{ success: boolean; details?: string }> {
+  if (!url) {
+    console.error('[Image Load Verification] Failure: Photo URL is null or empty.');
+    return { success: false, details: 'Invalid URL (empty or null)' };
+  }
+  
+  // Attempt pre-flight fetch to inspect HTTP Status codes
+  try {
+    const res = await fetch(url, { method: 'GET', cache: 'no-store' });
+    if (res.ok && res.status === 200) {
+      console.log(`[Image Load Verification] Success: URL ${url} is accessible. HTTP Status: 200`);
+      return { success: true };
+    } else {
+      const details = `HTTP Status ${res.status} - Possible Permission Error, Bucket Error or Invalid URL`;
+      console.error(`[Image Load Verification] Failure: URL ${url}. Details: ${details}`);
+      return { success: false, details };
+    }
+  } catch (err: any) {
+    // If CORS prevents fetch, fallback to programmatic Image element loading check
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.crossOrigin = 'anonymous';
+      img.onload = () => {
+        console.log(`[Image Load Verification] Success: URL ${url} loaded via Image element.`);
+        resolve({ success: true });
+      };
+      img.onerror = () => {
+        const details = `Image loading failed (CORS blocked or Invalid URL / 403 / 404 / Permission Error)`;
+        console.error(`[Image Load Verification] Failure: URL ${url}. Details: ${details}`);
+        resolve({ success: false, details });
+      };
+      img.src = url;
+    });
+  }
+}
+
 /** Helper: returns the best available photo URL for a student */
 export function getStudentPhotoUrl(student: DocumentStudentData): string {
   // Official academic documents MUST ONLY show the official registration photo (photoUrl)
@@ -95,14 +132,28 @@ export function getStudentPhotoUrl(student: DocumentStudentData): string {
 }
 
 /** Helper: Logs official registration photo audit details before document generation */
-export function logDocumentRenderPhoto(documentName: string, student: DocumentStudentData) {
+export async function logDocumentRenderPhoto(documentName: string, student: DocumentStudentData) {
   const photoUrl = getStudentPhotoUrl(student);
-  console.log(`[Document Render Audit] [${new Date().toISOString()}]`);
-  console.log(`- Document Name: ${documentName}`);
-  console.log(`- Photo Source Used: students.registration_photo_url`);
-  console.log(`- Photo URL Used: ${photoUrl || 'None (NO PHOTO placeholder will be shown)'}`);
-  console.log(`- If Photo URL Exists: ${photoUrl ? 'YES' : 'NO'}`);
-  console.log(`- Image Loaded Successfully: ${photoUrl ? 'YES' : 'N/A'}`);
+  console.log(`[Document Render Verification - ${documentName}] [${new Date().toISOString()}]`);
+  console.log(`- Student ID: ${student.id || 'N/A'}`);
+  console.log(`- Student Name: ${student.fullName || 'N/A'}`);
+  console.log(`- registration_photo_url: ${student.registrationPhotoUrl || 'N/A'}`);
+  console.log(`- Photo URL selected: ${photoUrl || 'N/A'}`);
+  
+  const isCorrectSource = photoUrl === student.registrationPhotoUrl;
+  console.log(`- Photo Source Validation: ${isCorrectSource ? 'PASS (using students.registration_photo_url)' : 'FAIL (not using registration_photo_url)'}`);
+
+  if (photoUrl) {
+    console.log(`[Image Load Verification] Loading photo URL: ${photoUrl}`);
+    const check = await verifyImageLoading(photoUrl);
+    if (!check.success) {
+      console.error(`[Image Load Verification] ERROR: Photo failed to load! Details: ${check.details}`);
+    } else {
+      console.log(`[Image Load Verification] SUCCESS: Photo loaded successfully.`);
+    }
+  } else {
+    console.warn(`[Image Load Verification] No photo URL exists. Placeholder will be shown.`);
+  }
 }
 
 /** Helper: Renders photo image HTML or a beautiful fallback SVG placeholder */
@@ -161,7 +212,7 @@ export const downloadStudentIdCardPdf = async (
   principalSignatureUrl?: string,
   principalName: string = 'Principal'
 ) => {
-  logDocumentRenderPhoto('Student ID Card', student);
+  await logDocumentRenderPhoto('Student ID Card', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -344,7 +395,7 @@ export const downloadAdmissionFormPdf = async (
   principalSignatureUrl?: string,
   principalName: string = 'Registrar'
 ) => {
-  logDocumentRenderPhoto('Admission Form', student);
+  await logDocumentRenderPhoto('Admission Form', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -523,7 +574,7 @@ export const downloadTransferCertificatePdf = async (
   principalName: string = 'Principal',
   verificationNumber?: string
 ) => {
-  logDocumentRenderPhoto('Transfer Certificate', student);
+  await logDocumentRenderPhoto('Transfer Certificate', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -675,7 +726,7 @@ export const downloadBonafideCertificatePdf = async (
   principalSignatureUrl?: string,
   principalName: string = 'Principal'
 ) => {
-  logDocumentRenderPhoto('Bonafide Certificate', student);
+  await logDocumentRenderPhoto('Bonafide Certificate', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -794,7 +845,7 @@ export const downloadCertificateOfExcellencePdf = async (
   principalSignatureUrl?: string,
   principalName: string = 'Principal'
 ) => {
-  logDocumentRenderPhoto('Certificate of Excellence', student);
+  await logDocumentRenderPhoto('Certificate of Excellence', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -920,7 +971,7 @@ export const downloadCharacterCertificatePdf = async (
   principalName: string = 'Principal',
   verificationNumber?: string
 ) => {
-  logDocumentRenderPhoto('Character Certificate', student);
+  await logDocumentRenderPhoto('Character Certificate', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';
@@ -1065,7 +1116,7 @@ export const downloadAdmissionRecordPdf = async (
   principalSignatureUrl?: string,
   principalName: string = 'Authorised Signatory'
 ) => {
-  logDocumentRenderPhoto('Admission Record', student);
+  await logDocumentRenderPhoto('Admission Record', student);
   const container = document.createElement('div');
   container.style.position = 'fixed';
   container.style.left = '0';

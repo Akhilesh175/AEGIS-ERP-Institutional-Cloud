@@ -1,4 +1,5 @@
 import { mockDb, getSystemTelemetry, SEED_EXAMS, SEED_EXAM_SCHEDULES, SEED_EXAM_MARKS, encryptAccountNumberSync, decryptAccountNumberSync } from './mockDb';
+import { formatName } from '../utils/nameUtils';
 import { 
   User, Student, Parent, Teacher, Class, Subject, Timetable, 
   Attendance, Assignment, AssignmentSubmission, Quiz, QuizAttempt, 
@@ -5402,7 +5403,7 @@ export const mockApi = {
     adminId: string, 
     email: string, 
     firstName: string, 
-    lastName: string, 
+    lastName: string,  // OPTIONAL — students with single names are fully supported
     classId: string, 
     admissionNumber: string, 
     rollNumber: number, 
@@ -5484,7 +5485,7 @@ export const mockApi = {
       email: normalizedEmail,
       role: 'STUDENT',
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName?.trim() || null,
       phone: phone || '',
       school_id: schoolId,
       is_active: true
@@ -5556,7 +5557,8 @@ export const mockApi = {
 
     // Sync to local mockDb cache
     const user: User = {
-      id: newUserId, email: normalizedEmail, role: 'STUDENT', firstName, lastName,
+      id: newUserId, email: normalizedEmail, role: 'STUDENT', firstName, lastName: lastName?.trim() || '',
+
       phone: phone || '', avatarUrl: '', isActive: true, schoolId,
       password, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
     };
