@@ -1521,7 +1521,7 @@ export const App: React.FC = () => {
               ? // Chat is a fixed full-screen overlay on mobile — strip padding so
                 // there's no gap beneath it. On desktop (md:) the overlay reverts to
                 // relative positioning and uses its own internal sizing.
-                'flex-1 min-w-0 overflow-hidden p-0 md:overflow-y-auto md:px-8 md:py-6'
+                'flex-1 min-w-0 overflow-hidden p-0 md:overflow-y-auto md:px-8 md:pt-0 md:pb-6'
               : 'flex-1 min-w-0 overflow-y-auto px-6 py-6 md:px-8'
           }
         >

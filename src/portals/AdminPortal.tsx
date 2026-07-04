@@ -4020,7 +4020,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
   };
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
+    <div className={activeTab === 'groupdiscussion' ? 'w-full h-full animate-fade-in' : 'space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in'}>
       
       {/* Portal Identity Header */}
       {activeTab !== 'groupdiscussion' && <AdminPortalHeader />}

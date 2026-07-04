@@ -875,7 +875,7 @@ export const StudentPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawA
   }, [activeTab, studentEntity?.id]);
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
+    <div className={activeTab === 'groupdiscussion' ? 'w-full h-full animate-fade-in' : 'space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in'}>
       {/* Portal Identity Context Bar */}
       {activeTab !== 'groupdiscussion' && (
         <div className="bg-gradient-to-r from-brand-950 to-slate-900 border border-slate-800 rounded-3xl p-5 md:p-6 flex flex-col md:flex-row items-center justify-between gap-4">

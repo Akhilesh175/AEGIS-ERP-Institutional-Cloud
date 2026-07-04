@@ -121,7 +121,7 @@ export const FullScreenChatLayout: React.FC<{ children: React.ReactNode }> = ({
         // On mobile: start exactly below the Navbar (measured in useLayoutEffect).
         // Since --navbar-height includes env(safe-area-inset-top) from index.css padding-top,
         // we do NOT add env(safe-area-inset-top) here to avoid double-counting.
-        top: 'calc(var(--visual-viewport-top, 0px) + var(--navbar-height, 60px))',
+        top: isMobile ? 'calc(var(--visual-viewport-top, 0px) + var(--navbar-height, 60px))' : undefined,
       }}
     >
       {children}
