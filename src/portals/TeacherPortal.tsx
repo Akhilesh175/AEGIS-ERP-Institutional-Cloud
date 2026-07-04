@@ -4166,7 +4166,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Last Name</label>
-                <input type="text" placeholder="Last Name" value={ctStLast} onChange={(e) => setCtStLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+                <input type="text" placeholder="Last Name" value={ctStLast} onChange={(e) => setCtStLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Admission Number</label>
@@ -4230,7 +4230,7 @@ export const TeacherPortal: React.FC<{ activeTab: string; setActiveTab?: (tab: s
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Last Name</label>
-                <input type="text" placeholder="Last Name" value={ctPrLast} onChange={(e) => setCtPrLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+                <input type="text" placeholder="Last Name" value={ctPrLast} onChange={(e) => setCtPrLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
               </div>
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Home Address</label>

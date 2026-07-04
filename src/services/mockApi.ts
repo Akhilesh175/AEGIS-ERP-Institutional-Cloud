@@ -5485,7 +5485,7 @@ export const mockApi = {
       email: normalizedEmail,
       role: 'STUDENT',
       first_name: firstName,
-      last_name: lastName?.trim() || null,
+      last_name: lastName?.trim() || '',
       phone: phone || '',
       school_id: schoolId,
       is_active: true
@@ -6418,7 +6418,7 @@ export const mockApi = {
       email: normalizedEmail,
       role: 'TEACHER',
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       phone: phone,
       school_id: schoolId,
       is_active: true
@@ -6670,7 +6670,7 @@ export const mockApi = {
       role: role,
       role_id: roleId,
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       phone: phone,
       school_id: schoolId,
       is_active: isActive !== undefined ? isActive : true
@@ -7015,7 +7015,7 @@ export const mockApi = {
       role: role,
       role_id: targetRoleId,
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       phone: phone,
       employee_id: trimmedEmployeeId,
       is_active: isActive,
@@ -7268,7 +7268,7 @@ export const mockApi = {
       email: normalizedEmail,
       role: 'PARENT',
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       phone: phone,
       school_id: schoolId,
       is_active: true
@@ -7760,7 +7760,7 @@ export const mockApi = {
       email: normalizedEmail,
       role: 'STUDENT',
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       phone: phone || '',
       school_id: schoolId,
       is_active: true
@@ -7923,7 +7923,7 @@ export const mockApi = {
       email: normalizedEmail,
       role: 'PARENT',
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       phone: phone,
       school_id: schoolId,
       is_active: true
@@ -8710,7 +8710,7 @@ export const mockApi = {
       email: normalizedEmail,
       role: 'ADMIN',
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       phone,
       school_id: schoolId,
       is_active: true
@@ -19715,7 +19715,7 @@ export const mockApi = {
       email: normalizedEmail,
       role: 'SPORTS_ADMIN',
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       phone: phone,
       school_id: schoolId,
       employee_id: employeeId || null,
@@ -19794,7 +19794,7 @@ export const mockApi = {
     const lastName = rest.join(' ');
     await supabaseAdmin.from('users').update({
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       phone: updateData.mobile,
       is_active: updateData.status === 'ACTIVE'
     }).eq('id', currentAdmin.user_id);
@@ -19945,7 +19945,7 @@ export const mockApi = {
       email: normalizedEmail,
       role: 'TEACHER',
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       phone: coach.phone || null,
       school_id: user.school_id,
       employee_id: coach.employeeId || null,
@@ -20076,7 +20076,7 @@ export const mockApi = {
 
     await supabaseAdmin.from('users').update({
       first_name: firstName,
-      last_name: lastName,
+      last_name: lastName || '',
       is_active: userIsActive
     }).eq('id', data.user_id);
 

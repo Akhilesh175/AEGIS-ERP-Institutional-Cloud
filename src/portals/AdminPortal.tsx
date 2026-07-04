@@ -8880,7 +8880,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Last Name</label>
-                <input type="text" placeholder="Last Name" value={tcLast} onChange={(e) => setTcLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+                <input type="text" placeholder="Last Name" value={tcLast} onChange={(e) => setTcLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Specialization</label>
@@ -9190,7 +9190,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Last Name</label>
-                <input type="text" placeholder="Last Name" value={prLast} onChange={(e) => setPrLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+                <input type="text" placeholder="Last Name" value={prLast} onChange={(e) => setPrLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
               </div>
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Home Address</label>
@@ -10683,7 +10683,7 @@ export const AdminPortal: React.FC<{ activeTab: string }> = ({ activeTab: rawAct
               </div>
               <div className="space-y-1">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Last Name</label>
-                <input type="text" placeholder="Last Name" value={saLast} onChange={(e) => setSaLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" required />
+                <input type="text" placeholder="Last Name" value={saLast} onChange={(e) => setSaLast(e.target.value)} className="w-full bg-slate-900 border border-slate-800 text-xs rounded-lg p-2 focus:outline-none" />
               </div>
               <div className="space-y-1 sm:col-span-2">
                 <label className="text-[9px] font-bold uppercase tracking-wider text-slate-500">Phone</label>
