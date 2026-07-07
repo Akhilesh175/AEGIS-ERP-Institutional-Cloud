@@ -336,6 +336,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'tenants', label: 'School Registry', icon: Layers },
           { id: 'users', label: 'Global User Manager', icon: UsersRound },
           { id: 'saas-billing', label: 'SaaS Billing Gateway', icon: CreditCard },
+          { id: 'ai-analytics', label: 'AEGIS AI Control', icon: Sparkles },
           { id: 'communications', label: 'Platform Broadcasts', icon: Mail },
           { id: 'audits', label: 'Global Audit Logs', icon: Settings, locked: !plan.features.auditLogs },
           { id: 'backups', label: 'Disaster Recovery Panel', icon: Database },

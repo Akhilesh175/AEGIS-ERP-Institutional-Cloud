@@ -71,7 +71,7 @@ export const ROLE_TAB_IDS: Readonly<Record<string, readonly string[]>> = {
 
   SUPER_ADMIN: [
     'dashboard', 'tenants', 'users', 'saas-billing', 'communications',
-    'audits', 'backups', 'logging', 'sports', 'ptm', 'support',
+    'audits', 'backups', 'logging', 'sports', 'ptm', 'support', 'ai-analytics',
     // Subscription Management sub-tabs (invoices intentionally excluded)
     'sub-dashboard', 'sub-plans', 'sub-pricing', 'sub-coupons',
     'sub-purchases', 'sub-timeline', 'sub-audits', 'sub-reports',

@@ -6,6 +6,7 @@ import { mockApi } from './services/mockApi';
 import { supabase } from './lib/supabase';
 import { Navbar } from './components/Navbar';
 import { Sidebar } from './components/Sidebar';
+import { AIAssistant } from './components/AIAssistant';
 import { StudentPortal } from './portals/StudentPortal';
 import { ParentPortal } from './portals/ParentPortal';
 import { TeacherPortal } from './portals/TeacherPortal';
@@ -1192,7 +1193,12 @@ export const App: React.FC = () => {
                         </div>
                         <h2 className="text-lg font-bold text-slate-100 font-sans tracking-wide">Secure Authorization</h2>
                       </div>
-                      <p className="text-xs text-slate-400 mt-1">Authenticate credentials to access your multi-tenant portal.</p>
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-1">
+                        <p className="text-xs text-slate-400">Authenticate credentials to access your multi-tenant portal.</p>
+                        <span className="text-[10px] font-bold text-brand-400 bg-brand-500/10 border border-brand-500/25 px-2 py-0.5 rounded-full flex items-center gap-1 font-mono self-start sm:self-auto">
+                          <Sparkles size={9} className="animate-pulse" /> Need help? Ask AEGIS AI
+                        </span>
+                      </div>
                     </div>
 
                     {/* Session auto-expiry banner — shows once after inactivity logout */}
@@ -1687,6 +1693,8 @@ export const App: React.FC = () => {
           onSignOut={() => performSessionExpiry('manual')}
         />
       )}
+      {/* AEGIS AI Global Assistant Widget */}
+      <AIAssistant activeTab={activeTab} />
     </div>
   );
 };
