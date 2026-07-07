@@ -180,9 +180,44 @@ Keep explanations engaging, motivating, and simple. Context: ${context}`;
   } else if (role === 'SUPER_ADMIN') {
     systemPrompt = `You are "AEGIS AI Enterprise Assistant". Assist Super Admins with SaaS growth analytics, platform health logs, subscription metrics, and error rates. Maintain tenant isolation guidelines. Context: ${context}`;
   } else if (role === 'PUBLIC') {
-    systemPrompt = `You are "AEGIS AI" public assistant. Explain AEGIS ERP features, subscription tiers (Freemium, Basic at $49/mo, Pro at $99/mo, Enterprise at $199/mo), and FAQs. Guide users to registration or demo booking. You have no access to student profiles, grades, fees, or school records. Prompt users to log in if they ask for school data.`;
+    systemPrompt = `You are "AEGIS AI" public assistant. Explain AEGIS ERP features, subscription tiers (Freemium, Basic, Pro, Enterprise), and FAQs. Guide users to registration or demo booking. You have no access to student profiles, grades, fees, or school records. Prompt users to log in if they ask for school data.`;
   } else {
     systemPrompt = `You are "AEGIS AI School Assistant" for Role: ${role}. Assist school administrators with circular generation, analytics summaries, event planning, and resource audits. Context: ${context}`;
+  }
+
+  // 2.2 Conditional Single Source of Truth pricing fetch based on keyword intent
+  const pricingKeywords = ['pricing', 'subscription', 'plan', 'upgrade', 'basic', 'pro', 'enterprise', 'freemium', 'billing', 'cost'];
+  const isPricingIntent = pricingKeywords.some(keyword => prompt.toLowerCase().includes(keyword));
+  let plansInfo = '';
+
+  if (isPricingIntent) {
+    console.log('[ai-pricing] User intent detected as pricing-related. Fetching live database plans...');
+    try {
+      const { data: plansData, error: plansError } = await supabaseAdmin
+        .from('subscription_plans')
+        .select('name, price_monthly, price_yearly')
+        .eq('is_active', true)
+        .order('price_monthly', { ascending: true });
+
+      if (plansError) throw plansError;
+
+      if (plansData && plansData.length > 0) {
+        plansInfo = plansData.map(p => {
+          const monthly = Number(p.price_monthly);
+          const yearly = Number(p.price_yearly);
+          const formattedMonthly = monthly === 0 ? '₹0' : `₹${monthly.toLocaleString('en-IN')}`;
+          const formattedYearly = yearly === 0 ? '₹0' : `₹${yearly.toLocaleString('en-IN')}`;
+          return `- ${p.name}: Monthly: ${formattedMonthly}, Yearly: ${formattedYearly}`;
+        }).join('\n');
+      } else {
+        plansInfo = 'Unable to retrieve current pricing. Please visit the pricing page.';
+      }
+    } catch (err) {
+      console.error('[ai-pricing] Failed to fetch live subscription plans:', err);
+      plansInfo = 'Unable to retrieve current pricing. Please visit the pricing page.';
+    }
+
+    systemPrompt += `\n\n[CRITICAL: LIVE SUBSCRIPTION PRICING Single Source of Truth]\nActive subscription plans and pricing retrieved directly from the live database. Use these exact prices only. If this data says "Unable to retrieve", you MUST say "Unable to retrieve current pricing. Please visit the pricing page." and never guess, estimate, or hardcode prices:\n${plansInfo}`;
   }
 
   // Inject command parsing constraints
@@ -341,62 +376,3 @@ Supported actions: CREATE_TIMETABLE, GENERATE_REPORT, SEND_REMINDERS, CREATE_CIR
   });
 }
 
-// Fallback Helper for Demo Mode
-function getDemoResponse(role: string, prompt: string): string {
-  const lowerPrompt = prompt.toLowerCase();
-
-  if (role === 'STUDENT') {
-    if (lowerPrompt.includes('essay') || lowerPrompt.includes('answer') || lowerPrompt.includes('homework')) {
-      return `I am your **AEGIS AI Learning Assistant** (Demo Mode). I notice you are asking me to complete coursework or write homework directly. To help you learn, I cannot complete this for you. 
-
-Instead, let's explore the core concept together! Here is a learning hint:
-* *Hint:* Think about the inputs (reactants) of photosynthesis: Carbon Dioxide ($CO_2$), Water ($H_2O$), and Light. What does the plant synthesize using these?
-Would you like me to guide you step-by-step or generate a 3-question practice quiz to test your understanding?`;
-    }
-    return `Hello! I am your **AEGIS AI Learning Assistant** (Demo Mode). I can help you solve mathematical problems, explain physics concepts, analyze biology structures, or build customized revision schedules. 
-
-What topic are you studying today? (Suggested: "Explain Newton's Laws step-by-step")`;
-  }
-
-  if (role === 'TEACHER') {
-    if (lowerPrompt.includes('lesson') || lowerPrompt.includes('plan')) {
-      return `Here is a sample **Grade 9 Physics Lesson Plan** (Demo Mode):
-| Topic | Duration | Bloom's Level | Key Activity |
-|---|---|---|---|
-| Introduction to Kinematics | 45 Mins | Remember / Understand | Interactive slider demo showing distance vs displacement |
-| Mathematical Speed vs Velocity | 30 Mins | Apply | Practical calculation sheet |
-
-[ACTION_CMD: CREATE_CIRCULAR] { "title": "Kinematics Lesson Schedule", "content": "Physics Class for Grade 9 will focus on Kinematics this week." }`;
-    }
-    return `Hello, teacher! I am your **AEGIS AI Teaching Assistant** (Demo Mode). I can help you:
-* Draft worksheets and MCQs.
-* Write report card remarks.
-* Generate lesson plan tables.
-
-What would you like to draft today?`;
-  }
-
-  if (role === 'PUBLIC') {
-    return `Welcome to **AEGIS ERP**! I am **AEGIS AI** (Demo Mode). 
-Here are details about our subscription plans:
-1. **Freemium Tier:** $0, covers core school rosters (upto 50 students).
-2. **Basic Tier ($49/month):** Covers academics, attendance, and basic documents.
-3. **Pro Tier ($99/month):** Covers all portals, homework, marks, and Razorpay integrations.
-4. **Enterprise Tier ($199/month):** Full access including AI, Meet rooms, Warden, and Sports catalogs.
-
-Would you like me to explain features or guide you to book a demo?`;
-  }
-
-  if (role === 'SUPER_ADMIN') {
-    return `**AEGIS AI Enterprise Assistant** (Demo Mode SaaS Stats):
-* **Platform Status:** 🟢 Stable / Online
-* **API Availability:** 99.98%
-* **Active Schools:** 1,245
-* **Token Projection cost:** $14.50 (ap-northeast-1)
-* **Average Latency:** 245ms
-
-Would you like to analyze revenue trends or search audit logs?`;
-  }
-
-  return `Hello! I am your **AEGIS AI Assistant** (Demo Mode). I have analyzed your active workspace context. Let me know how I can assist you with your portal duties!`;
-}
