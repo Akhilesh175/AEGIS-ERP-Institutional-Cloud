@@ -305,6 +305,11 @@ Supported actions: CREATE_TIMETABLE, GENERATE_REPORT, SEND_REMINDERS, CREATE_CIR
     });
   }
 
+  const keyFingerprint = geminiKey.length > 8
+    ? `${geminiKey.substring(0, 6)}...${geminiKey.substring(geminiKey.length - 4)}`
+    : 'invalid-key-length';
+  console.log(`[ai-startup] Loaded GEMINI_API_KEY fingerprint: ${keyFingerprint}`);
+
   const contentsParts: any[] = [{ text: `${systemPrompt}\n\nUser: ${prompt}` }];
   if (file && mimeType) {
     contentsParts.push({
