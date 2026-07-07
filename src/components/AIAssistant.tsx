@@ -26,6 +26,14 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ activeTab }) => {
   const [messages, setMessages] = useState<Message[]>([]);
   const [loading, setLoading] = useState(false);
   const [suggestedPrompts, setSuggestedPrompts] = useState<string[]>([]);
+  const [windowWidth, setWindowWidth] = useState(typeof window !== 'undefined' ? window.innerWidth : 1024);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleResize = () => setWindowWidth(window.innerWidth);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   
   // Dragging and resizing state
   const [position, setPosition] = useState({ x: 100, y: 100 });
@@ -462,6 +470,19 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ activeTab }) => {
               ? undefined
               : isFullscreen
               ? { top: 0, left: 0, width: '100vw', height: '100vh', zIndex: 100 }
+              : windowWidth < 1024
+              ? {
+                  left: '50%',
+                  transform: 'translateX(-50%)',
+                  width: 'min(420px, calc(100vw - 16px))',
+                  maxWidth: 'calc(100vw - 16px)',
+                  boxSizing: 'border-box',
+                  bottom: 'max(16px, env(safe-area-inset-bottom))',
+                  top: 'auto',
+                  right: 'auto',
+                  height: 'min(600px, calc(100vh - 100px - env(safe-area-inset-top) - env(safe-area-inset-bottom)))',
+                  zIndex: 99
+                }
               : {
                   top: position.y,
                   left: position.x,
@@ -579,7 +600,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ activeTab }) => {
                 {/* Bubble content */}
                 <div
                   className={[
-                    'max-w-[85%] p-3 text-xs leading-relaxed',
+                    'max-w-[85%] p-3 text-xs leading-relaxed break-words overflow-x-auto overflow-y-hidden',
                     msg.sender === 'user'
                       ? 'bg-gradient-to-tr from-brand-600 to-brand-500 text-white rounded-2xl rounded-tr-none'
                       : 'bg-slate-900 border border-slate-850 text-slate-200 rounded-2xl rounded-tl-none shadow-md'
@@ -597,7 +618,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ activeTab }) => {
                   )}
 
                   {/* Render content */}
-                  <div className="whitespace-pre-line prose prose-invert prose-xs">
+                  <div className="whitespace-pre-line prose prose-invert prose-xs break-words overflow-x-auto overflow-y-hidden max-w-full">
                     {msg.text}
                   </div>
 
