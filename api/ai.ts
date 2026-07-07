@@ -211,7 +211,7 @@ Supported actions: CREATE_TIMETABLE, GENERATE_REPORT, SEND_REMINDERS, CREATE_CIR
     : 'invalid-key-length';
   console.log(`[ai-startup] Loaded GEMINI_API_KEY fingerprint: ${keyFingerprint}`);
 
-  const activeModel = 'gemini-1.5-flash';
+  const activeModel = process.env.GEMINI_MODEL || process.env.VITE_GEMINI_MODEL || 'gemini-1.5-flash';
   console.log(`[ai-gemini] Starting request with model: ${activeModel}`);
 
   const partsArray: any[] = [{ text: `${systemPrompt}\n\nUser: ${prompt}` }];
