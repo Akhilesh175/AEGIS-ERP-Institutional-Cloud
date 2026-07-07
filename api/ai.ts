@@ -211,7 +211,11 @@ Supported actions: CREATE_TIMETABLE, GENERATE_REPORT, SEND_REMINDERS, CREATE_CIR
     : 'invalid-key-length';
   console.log(`[ai-startup] Loaded GEMINI_API_KEY fingerprint: ${keyFingerprint}`);
 
-  const activeModel = process.env.GEMINI_MODEL || process.env.VITE_GEMINI_MODEL || 'gemini-2.5-flash';
+  const rawModelEnv = process.env.GEMINI_MODEL || process.env.VITE_GEMINI_MODEL || '';
+  console.log(`[ai-startup] Loaded GEMINI_MODEL: ${rawModelEnv}`);
+  console.log(`[ai-startup] Loaded GEMINI_API_KEY fingerprint: ${keyFingerprint}`);
+
+  const activeModel = rawModelEnv || 'gemini-2.5-flash';
   console.log(`[ai-gemini] Resolved model: ${activeModel}`);
   console.log(`[ai-gemini] SDK version: @google/genai ^2.10.0`);
   console.log(`[ai-gemini] API endpoint: https://generativelanguage.googleapis.com/v1beta/models`);
@@ -245,8 +249,8 @@ Supported actions: CREATE_TIMETABLE, GENERATE_REPORT, SEND_REMINDERS, CREATE_CIR
     const candidate = candidates[0];
     const finishReason = candidate?.finishReason || 'STOP';
     
-    console.log(`[ai-gemini] Model: ${activeModel}`);
-    console.log(`[ai-gemini] Status: 200 OK`);
+    console.log(`[ai-gemini] Model actually used: ${activeModel}`);
+    console.log(`[ai-gemini] HTTP status returned by Google: 200`);
     console.log(`[ai-gemini] finishReason: ${finishReason}`);
     console.log(`[ai-gemini] candidates: ${JSON.stringify(candidates)}`);
     console.log(`[ai-gemini] Response body: ${response.text}`);
@@ -283,6 +287,8 @@ Supported actions: CREATE_TIMETABLE, GENERATE_REPORT, SEND_REMINDERS, CREATE_CIR
     tokenCount = prompt.split(/\s+/).length + responseText.split(/\s+/).length;
   } catch (err: any) {
     console.error('[ai-gemini] Google GenAI SDK call failed:', err);
+    console.log(`[ai-gemini] Model actually used: ${activeModel}`);
+    console.log(`[ai-gemini] HTTP status returned by Google: ${err.status || 500}`);
 
     // Return the exact error transparently to the frontend
     const errMsg = err.message || String(err);
