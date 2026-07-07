@@ -13,6 +13,14 @@ import {
 } from 'lucide-react';
 import { BrandLogo } from './common/BrandLogo';
 
+const AegisAILogoIcon: React.FC<{ className?: string }> = ({ className }) => (
+  <img 
+    src="/aegis-ai-logo.jpg" 
+    alt="AEGIS AI Logo" 
+    className={`object-cover rounded-md ${className || 'w-4 h-4'}`} 
+  />
+);
+
 interface SidebarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
@@ -336,7 +344,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab }) => 
           { id: 'tenants', label: 'School Registry', icon: Layers },
           { id: 'users', label: 'Global User Manager', icon: UsersRound },
           { id: 'saas-billing', label: 'SaaS Billing Gateway', icon: CreditCard },
-          { id: 'ai-analytics', label: 'AEGIS AI Control', icon: Sparkles },
+          { id: 'ai-analytics', label: 'AEGIS AI Control', icon: AegisAILogoIcon },
           { id: 'communications', label: 'Platform Broadcasts', icon: Mail },
           { id: 'audits', label: 'Global Audit Logs', icon: Settings, locked: !plan.features.auditLogs },
           { id: 'backups', label: 'Disaster Recovery Panel', icon: Database },

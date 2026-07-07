@@ -2176,8 +2176,12 @@ export const SuperAdminPortal: React.FC<{ activeTab: string }> = ({ activeTab })
           {/* Header */}
           <GlassCard className="border border-brand-500/10 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
             <div className="flex items-center gap-3">
-              <div className="p-2 rounded-xl bg-brand-500/10 border border-brand-500/20">
-                <Sparkles className="text-brand-400 animate-pulse" size={20} />
+              <div className="w-9 h-9 rounded-xl overflow-hidden border border-brand-500/20 bg-slate-900 flex items-center justify-center shrink-0">
+                <img
+                  src="/aegis-ai-logo.jpg"
+                  alt="AEGIS AI Logo"
+                  className="w-full h-full object-cover"
+                />
               </div>
               <div>
                 <h3 className="font-bold text-slate-100 text-sm">AEGIS AI Control Panel</h3>

@@ -811,15 +811,15 @@ export const App: React.FC = () => {
     }
   }
 
+  let viewportContent: React.ReactNode;
+  const isAuthView = session && session.user.activeRoleSelected && !activeTab.startsWith('verify/marksheet/') && !window.location.pathname.startsWith('/meet/');
+
   if (activeTab.startsWith('verify/marksheet/')) {
     const code = activeTab.replace('verify/marksheet/', '');
-    return <MarksheetVerificationPage code={code} onBack={() => { window.location.hash = 'dashboard'; setActiveTab('dashboard'); }} />;
-  }
-
-  // Intercept meet page URLs: /meet/{meeting_id}
-  if (window.location.pathname.startsWith('/meet/')) {
+    viewportContent = <MarksheetVerificationPage code={code} onBack={() => { window.location.hash = 'dashboard'; setActiveTab('dashboard'); }} />;
+  } else if (window.location.pathname.startsWith('/meet/')) {
     const meetingId = window.location.pathname.substring(6);
-    return (
+    viewportContent = (
       <AegisMeet 
         meetingId={meetingId} 
         onLeave={() => {
@@ -827,22 +827,20 @@ export const App: React.FC = () => {
         }} 
       />
     );
-  }
-
-  if (!session) {
+  } else if (!session) {
     const hash = currentHash.substring(1);
     const isRegisterFlow = hash.startsWith('register') || hash.startsWith('verify-registration') || hash.startsWith('plans');
     if (isRegisterFlow) {
-      return (
+      viewportContent = (
         <SaaSAuthFlow 
           onBackToLogin={() => { window.location.hash = ''; setCurrentHash(''); }} 
           theme={theme} 
           toggleTheme={toggleTheme} 
         />
       );
-    }
-    return (
-      <div className="min-h-screen bg-[#070a13] flex flex-col justify-between p-4 md:p-8 relative overflow-hidden font-sans text-slate-200 selection:bg-brand-500/30 selection:text-brand-200">
+    } else {
+      viewportContent = (
+        <div className="min-h-screen bg-[#070a13] flex flex-col justify-between p-4 md:p-8 relative overflow-hidden font-sans text-slate-200 selection:bg-brand-500/30 selection:text-brand-200">
         {/* Cyber Security Tech Background Graphics */}
         <div className="absolute top-[-20%] left-[-15%] w-[60%] h-[60%] rounded-full bg-brand-500/10 blur-[130px] pointer-events-none" />
         <div className="absolute bottom-[-20%] right-[-15%] w-[60%] h-[60%] rounded-full bg-brand-600/10 blur-[130px] pointer-events-none" />
@@ -1195,9 +1193,13 @@ export const App: React.FC = () => {
                       </div>
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 mt-1">
                         <p className="text-xs text-slate-400">Authenticate credentials to access your multi-tenant portal.</p>
-                        <span className="text-[10px] font-bold text-brand-400 bg-brand-500/10 border border-brand-500/25 px-2 py-0.5 rounded-full flex items-center gap-1 font-mono self-start sm:self-auto">
+                        <button
+                          type="button"
+                          onClick={() => useStore.getState().setAiOpen(true)}
+                          className="text-[10px] font-bold text-brand-400 bg-brand-500/10 border border-brand-500/25 px-2 py-0.5 rounded-full flex items-center gap-1 font-mono self-start sm:self-auto hover:bg-brand-500/20 active:scale-95 transition-all cursor-pointer"
+                        >
                           <Sparkles size={9} className="animate-pulse" /> Need help? Ask AEGIS AI
-                        </span>
+                        </button>
                       </div>
                     </div>
 
@@ -1467,11 +1469,10 @@ export const App: React.FC = () => {
         </div>
 
       </div>
-    );
-  }
-
-  if (session && !session.user.activeRoleSelected) {
-    return (
+      );
+    }
+  } else if (session && !session.user.activeRoleSelected) {
+    viewportContent = (
       <RoleSelectorOverlay 
         session={session} 
         setSession={setSession} 
@@ -1479,12 +1480,10 @@ export const App: React.FC = () => {
         toggleTheme={toggleTheme} 
       />
     );
-  }
-
-  console.log(`[App Routing] Active tab/route: ${activeTab}, Role: ${session?.user?.role}`);
-
-  return (
-    <div className="h-screen bg-[#070a13] flex flex-col overflow-hidden transition-colors duration-300">
+  } else {
+    console.log(`[App Routing] Active tab/route: ${activeTab}, Role: ${session?.user?.role}`);
+    viewportContent = (
+      <div className="h-screen bg-[#070a13] flex flex-col overflow-hidden transition-colors duration-300">
       {/* Navbar Header */}
       <Navbar activeTab={activeTab} onBack={handleNavigateBack} />
 
@@ -1693,8 +1692,24 @@ export const App: React.FC = () => {
           onSignOut={() => performSessionExpiry('manual')}
         />
       )}
+      </div>
+    );
+  }
+
+  return (
+    <div className={isAuthView ? "relative h-full w-full overflow-hidden" : "relative min-h-screen w-full"}>
+      {viewportContent}
       {/* AEGIS AI Global Assistant Widget */}
       <AIAssistant activeTab={activeTab} />
+      {showInactivityWarning && (
+        <InactivityWarningModal
+          remainingMs={inactivityRemaining}
+          onStay={() => {
+            inactivityApiRef.current?.resetAfterStay();
+          }}
+          onSignOut={() => performSessionExpiry('manual')}
+        />
+      )}
     </div>
   );
 };

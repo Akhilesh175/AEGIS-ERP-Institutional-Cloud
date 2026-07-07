@@ -8,6 +8,7 @@ import {
 import { GlassCard } from './GlassCard';
 import { BrandLogo, AEGIS_LOGO_URL } from './common/BrandLogo';
 import { PLAN_DEFINITIONS } from '../services/subscriptionService';
+import { useStore } from '../store/useStore';
 
 // Broadcast a plan_updated event on the school's realtime channel
 // so any already-logged-in admin session gets a live sidebar refresh.
@@ -603,13 +604,25 @@ export const SaaSAuthFlow: React.FC<SaaSAuthFlowProps> = ({
           <BrandLogo variant="horizontal" size="md" showTagline={true} />
         </div>
         
-        <button 
-          onClick={toggleTheme}
-          className="p-2.5 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-brand-500/30 text-slate-400 hover:text-slate-200 transition-all duration-200 backdrop-blur-sm shadow-md"
-          title="Toggle Theme"
-        >
-          {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
-        </button>
+        <div className="flex items-center gap-3">
+          <button 
+            type="button"
+            onClick={() => useStore.getState().setAiOpen(true)}
+            className="flex items-center gap-1.5 px-3.5 py-2.5 rounded-xl bg-brand-500/10 border border-brand-500/25 hover:border-brand-400 text-brand-400 hover:text-brand-300 font-bold text-[10px] font-mono transition-all duration-200 backdrop-blur-sm shadow-md cursor-pointer active:scale-95"
+            title="Ask AEGIS AI"
+          >
+            <Sparkles size={11} className="animate-pulse text-brand-400" />
+            Need help? Ask AEGIS AI
+          </button>
+
+          <button 
+            onClick={toggleTheme}
+            className="p-2.5 rounded-xl bg-slate-900/50 border border-slate-800 hover:border-brand-500/30 text-slate-400 hover:text-slate-200 transition-all duration-200 backdrop-blur-sm shadow-md"
+            title="Toggle Theme"
+          >
+            {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+          </button>
+        </div>
       </div>
 
       {/* Central Screen Switcher */}

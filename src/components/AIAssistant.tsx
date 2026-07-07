@@ -19,8 +19,7 @@ interface AIAssistantProps {
 }
 
 export const AIAssistant: React.FC<AIAssistantProps> = ({ activeTab }) => {
-  const { session } = useStore();
-  const [isOpen, setIsOpen] = useState(false);
+  const { session, isAiOpen, setAiOpen } = useStore();
   const [isDocked, setIsDocked] = useState(false);
   const [isFullscreen, setIsFullscreen] = useState(false);
   const [input, setInput] = useState('');
@@ -439,17 +438,23 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ activeTab }) => {
   return (
     <>
       {/* Floating Sparkles Bubble Button */}
-      {!isOpen && (
+      {!isAiOpen && (
         <button
-          onClick={() => setIsOpen(true)}
-          className="fixed bottom-6 right-6 z-50 p-4 bg-gradient-to-tr from-brand-600 to-indigo-500 rounded-full shadow-2xl text-white hover:scale-110 active:scale-95 transition-all shadow-brand-500/25 border border-brand-400/20"
-          title="Ask AEGIS AI"
+          onClick={() => setAiOpen(true)}
+          className="fixed bottom-6 right-6 z-50 rounded-full shadow-2xl transition-all duration-300 hover:scale-105 hover:shadow-brand-500/35 border border-brand-500/20 focus:outline-none focus:ring-2 focus:ring-brand-450 overflow-hidden flex items-center justify-center group bg-slate-950 w-[42px] h-[42px] sm:w-[44px] sm:h-[44px] lg:w-[48px] lg:h-[48px] cursor-pointer"
+          aria-label="Open AEGIS AI Assistant"
+          title={typeof window !== 'undefined' && window.innerWidth > 768 ? 'Open AEGIS AI' : undefined}
         >
-          <Sparkles className="w-6 h-6 animate-pulse" />
+          <img
+            src="/aegis-ai-logo.jpg"
+            alt="AEGIS AI Logo"
+            className="w-full h-full object-cover transition-transform duration-300 group-hover:scale-105"
+            loading="lazy"
+          />
         </button>
       )}
 
-      {isOpen && (
+      {isAiOpen && (
         <div
           ref={containerRef}
           style={
@@ -479,8 +484,12 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ activeTab }) => {
             ].join(' ')}
           >
             <div className="flex items-center gap-2">
-              <div className="w-7 h-7 rounded-xl bg-brand-500/10 border border-brand-500/20 flex items-center justify-center text-brand-400">
-                <Sparkles size={14} className="animate-spin" style={{ animationDuration: '6s' }} />
+              <div className="w-8 h-8 rounded-xl overflow-hidden border border-brand-500/20 flex items-center justify-center bg-slate-900 shrink-0">
+                <img
+                  src="/aegis-ai-logo.jpg"
+                  alt="AEGIS AI Logo"
+                  className="w-full h-full object-cover"
+                />
               </div>
               <div>
                 <h4 className="text-[11px] font-bold text-slate-100 uppercase tracking-widest leading-none font-mono">AEGIS AI</h4>
@@ -515,7 +524,7 @@ export const AIAssistant: React.FC<AIAssistantProps> = ({ activeTab }) => {
 
               {/* Minimize/Close */}
               <button
-                onClick={() => setIsOpen(false)}
+                onClick={() => setAiOpen(false)}
                 className="p-1.5 text-slate-400 hover:text-red-400 rounded-lg hover:bg-slate-800/40 ml-1"
                 title="Minimize"
               >

@@ -28,6 +28,8 @@ interface SchoolERPStore {
   warningLevel: ExpiryWarningLevel;
   daysRemaining: number;
   setSubscriptionLifecycleState: (state: { subscriptionStatus: SubscriptionStatus; warningLevel: ExpiryWarningLevel; daysRemaining: number }) => void;
+  isAiOpen: boolean;
+  setAiOpen: (isOpen: boolean) => void;
 }
 
 export const useStore = create<SchoolERPStore>((set, get) => ({
@@ -49,6 +51,8 @@ export const useStore = create<SchoolERPStore>((set, get) => ({
     warningLevel: state.warningLevel, 
     daysRemaining: state.daysRemaining 
   }),
+  isAiOpen: false,
+  setAiOpen: (isOpen) => set({ isAiOpen: isOpen }),
 
   setMobileMenuOpen: (isOpen) => set({ isMobileMenuOpen: isOpen }),
 
