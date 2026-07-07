@@ -47,6 +47,107 @@ function normalizePlan(raw: string): string {
   return lower;
 }
 
+async function fetchGeminiWithRetry(
+  geminiKey: string,
+  model: string,
+  payload: any
+): Promise<any> {
+  const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${geminiKey}`;
+  const maxRetries = 3;
+  let attempt = 0;
+
+  while (true) {
+    attempt++;
+    console.log(`[ai-gemini] Fetch attempt ${attempt} for model ${model}. Request URL: https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent`);
+    
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 15000); // 15-second timeout
+
+      const response = await fetch(geminiUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      const status = response.status;
+      console.log(`[ai-gemini] Response HTTP status: ${status}`);
+
+      // Log response headers safely
+      const headersObj: Record<string, string> = {};
+      response.headers.forEach((value, key) => {
+        headersObj[key] = value;
+      });
+      console.log(`[ai-gemini] Response Headers: ${JSON.stringify(headersObj)}`);
+
+      // Read response body safely
+      const rawText = await response.text();
+      const truncatedRawText = rawText.length > 2000 ? rawText.substring(0, 2000) + '... [TRUNCATED]' : rawText;
+      console.log(`[ai-gemini] Raw Response Body: ${truncatedRawText}`);
+
+      if (!response.ok) {
+        let errorJson: any = {};
+        try {
+          errorJson = JSON.parse(rawText);
+        } catch {}
+        
+        const errorMsg = errorJson?.error?.message || `HTTP ${status}`;
+        console.error(`[ai-gemini] Request failed on attempt ${attempt}. Status: ${status}, Error message: ${errorMsg}`);
+
+        // Decide if we should retry (only transient network errors or 503/504)
+        const isTransientError = status === 503 || status === 504 || status === 408;
+        if (isTransientError && attempt < maxRetries) {
+          const backoff = Math.pow(2, attempt) * 1000;
+          console.log(`[ai-gemini] Transient error status ${status}. Retrying in ${backoff}ms...`);
+          await new Promise(resolve => setTimeout(resolve, backoff));
+          continue;
+        }
+
+        // Propagate descriptive error
+        throw {
+          status,
+          message: errorMsg,
+          errorData: errorJson
+        };
+      }
+
+      // Successful request
+      let data: any;
+      try {
+        data = JSON.parse(rawText);
+      } catch (err) {
+        throw new Error('Failed to parse Gemini response JSON');
+      }
+
+      return data;
+
+    } catch (err: any) {
+      // Check for fetch network failure or timeout
+      const isTimeout = err.name === 'AbortError';
+      const isNetworkError = err.message && (
+        err.message.includes('fetch') || 
+        err.message.includes('network') || 
+        err.message.includes('Timeout') || 
+        err.message.includes('econnrefused')
+      );
+      
+      console.error(`[ai-gemini] Network/timeout error on attempt ${attempt}:`, err.message || err);
+
+      if ((isTimeout || isNetworkError) && attempt < maxRetries) {
+        const backoff = Math.pow(2, attempt) * 1000;
+        console.log(`[ai-gemini] Retrying network/timeout error in ${backoff}ms...`);
+        await new Promise(resolve => setTimeout(resolve, backoff));
+        continue;
+      }
+
+      throw err;
+    }
+  }
+}
+
 export default async function handler(req: any, res: any) {
   // CORS setup
   res.setHeader('Access-Control-Allow-Origin', '*');
@@ -190,51 +291,109 @@ Example:
 [ACTION_CMD: CREATE_CIRCULAR] { "title": "Maths Reschedule", "content": "The exam is pushed to Monday." }
 Supported actions: CREATE_TIMETABLE, GENERATE_REPORT, SEND_REMINDERS, CREATE_CIRCULAR, GENERATE_PAPER, APPROVE_LEAVE.`;
 
-  // 3. LLM API call using Provider Abstraction (Primary Gemini, fallback to Mock)
+  // 3. LLM API call using Provider Abstraction (Primary Gemini with model fallback and error handlers)
   let responseText = '';
   let tokenCount = 0;
   const geminiKey = process.env.GEMINI_API_KEY || process.env.VITE_GEMINI_API_KEY;
 
-  if (geminiKey) {
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${geminiKey}`;
-    try {
-      const contentsParts: any[] = [{ text: `${systemPrompt}\n\nUser: ${prompt}` }];
-      if (file && mimeType) {
-        contentsParts.push({
-          inlineData: {
-            mimeType: mimeType,
-            data: file
-          }
-        });
-      }
-
-      // Model request payload
-      const response = await fetch(geminiUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: contentsParts }],
-          generationConfig: { maxOutputTokens: 1024 }
-        })
-      });
-
-      const data = await response.json();
-      responseText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-      tokenCount = prompt.split(/\s+/).length + responseText.split(/\s+/).length; // simple approximation
-
-      if (!responseText) {
-        throw new Error('Empty response from model API');
-      }
-    } catch (err: any) {
-      console.error('[ai-gemini] Gemini provider connection failed, activating fallback:', err);
-      // Fallback response text on provider error
-      responseText = `I apologize, but I am experiencing temporary connectivity difficulties with the AI engine. Here is a guided fallback to help you:\n\n* For support and feature guides, please visit our public Help Center.\n* If you requested an action, please perform it manually through your sidebar dashboard.`;
-    }
-  } else {
-    // Graceful Demo Fallback Mode
-    responseText = getDemoResponse(role, prompt);
-    tokenCount = prompt.split(/\s+/).length + responseText.split(/\s+/).length;
+  if (!geminiKey) {
+    console.error("[ai-startup] GEMINI_API_KEY environment variable is not configured.");
+    return res.status(500).json({
+      success: false,
+      error: 'Configuration Error',
+      message: 'GEMINI_API_KEY environment variable is missing on the server. Please check your credentials.'
+    });
   }
+
+  const contentsParts: any[] = [{ text: `${systemPrompt}\n\nUser: ${prompt}` }];
+  if (file && mimeType) {
+    contentsParts.push({
+      inlineData: {
+        mimeType: mimeType,
+        data: file
+      }
+    });
+  }
+
+  const MODELS = [
+    'gemini-1.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-pro'
+  ];
+
+  let lastError: any = null;
+  let data: any = null;
+  let chosenModel = '';
+
+  for (const model of MODELS) {
+    chosenModel = model;
+    try {
+      data = await fetchGeminiWithRetry(geminiKey, model, {
+        contents: [{ parts: contentsParts }],
+        generationConfig: { maxOutputTokens: 1024 }
+      });
+      lastError = null;
+      break; // Success!
+    } catch (err: any) {
+      lastError = err;
+      console.error(`[ai-gemini] Model ${model} execution error:`, err.message || err);
+      // Decide if we should try next model (only if model compatibility/404 or bad request with model in text)
+      const isModelNotFoundError = err.status === 404 || (err.status === 400 && (err.message || '').toLowerCase().includes('model'));
+      if (isModelNotFoundError) {
+        console.log(`[ai-gemini] Falling back to the next model due to: ${err.message || 'Model not found'}`);
+        continue;
+      }
+      // For any other errors (like 401 Unauthorized, 403 Forbidden, 429 Rate Limited), fail immediately.
+      break;
+    }
+  }
+
+  if (lastError) {
+    console.error(`[ai-gemini] Final API failure after trying all configured models:`, lastError);
+    return res.status(lastError.status || 500).json({
+      success: false,
+      error: 'AI Provider Failure',
+      message: lastError.message || 'The AI model engine encountered an error and could not complete your request.'
+    });
+  }
+
+  // Safe parsing of Gemini API candidates structure
+  const candidate = data?.candidates?.[0];
+  if (!candidate) {
+    console.error('[ai-gemini] No candidates returned by model API. Raw response data:', JSON.stringify(data));
+    return res.status(200).json({
+      success: false,
+      error: 'Empty Response',
+      message: 'No text was generated by the model. The query may have been blocked due to content policy constraints.'
+    });
+  }
+
+  const finishReason = candidate.finishReason || 'STOP';
+  const safetyRatings = candidate.safetyRatings || [];
+  console.log(`[ai-gemini] Parsed candidate metadata - Chosen Model: ${chosenModel}, Finish Reason: ${finishReason}`);
+  console.log(`[ai-gemini] Safety Ratings: ${JSON.stringify(safetyRatings)}`);
+
+  // Detect and handle safety/content policy blocks
+  if (finishReason === 'SAFETY' || finishReason === 'RECITATION' || finishReason === 'OTHER') {
+    console.warn(`[ai-gemini] Response was safety blocked by Gemini. Finish reason: ${finishReason}`);
+    return res.status(200).json({
+      success: false,
+      error: 'Safety Blocked',
+      message: `I apologize, but this response was blocked by content guidelines (Reason: ${finishReason}). Please try rephrasing your request.`
+    });
+  }
+
+  responseText = candidate.content?.parts?.[0]?.text || '';
+  if (!responseText) {
+    console.error('[ai-gemini] Candidate parts text is empty. Raw candidates structure:', JSON.stringify(data.candidates));
+    return res.status(200).json({
+      success: false,
+      error: 'Empty Response Content',
+      message: 'The model returned an empty response. Please try sending a more specific query.'
+    });
+  }
+
+  tokenCount = prompt.split(/\s+/).length + responseText.split(/\s+/).length;
 
   // Parse if action took place
   let actionTaken: string | null = null;
